@@ -14,14 +14,9 @@ StreamAttention is an experimental, high-performance implementation of the Flash
 - [Usage](#usage)
   - [Single-GPU Usage](#single-gpu-usage)
   - [Multi-GPU Usage](#multi-gpu-usage)
-- [Technical Details](#technical-details)
-  - [Parameters Explained](#parameters-explained)
-  - [Tiling and Online Softmax](#tiling-and-online-softmax)
-- [Known Issues & Torchrun Problems](#known-issues--torchrun-problems)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [Contact](#contact)
 
 ---
 
@@ -84,3 +79,37 @@ V = torch.randn(global_seq_len, d_model, device="cuda")
 O = flash_attention(Q, K, V)
 print("Output shape:", O.shape)
 ```
+Multi-GPU Usage
+StreamAttention supports multi-GPU execution using PyTorch Distributed (NCCL backend). To run a multi-GPU demo:
+
+Set Environment Variables:
+
+When running in distributed mode, set RANK and WORLD_SIZE (or use a launcher like torchrun). For example:
+```bash
+export RANK=0
+export WORLD_SIZE=4
+export MASTER_ADDR=localhost
+export MASTER_PORT=29500
+```
+Run the Multi-GPU Demo:
+
+The demo script examples/demo_multi_gpu.py initializes the distributed environment, partitions queries, executes the kernel on each GPU, and optionally gathers outputs:
+```bash
+python examples/demo_multi_gpu.py
+```
+Note on torchrun:
+Many developers on X/Twitter have noted that torchrun can be finicky—ensure that environment variables (RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT) are set correctly. If you encounter errors like "NCCL error" or "Connection timeout," double-check your network configuration, GPU visibility, and port availability. Sometimes it feels like herding cats (or GPUs), but hang in there!
+
+
+Contributing
+Contributions are welcome! To contribute:
+
+Fork the repository and create a feature branch.
+Submit pull requests with clear descriptions of your changes.
+Report issues or suggest enhancements by opening an issue on GitHub.
+
+License
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+Contact
+For questions, suggestions, or collaboration opportunities, please contact [alphacr792@gmail.com] or open an issue on GitHub.
