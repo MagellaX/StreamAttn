@@ -101,15 +101,15 @@ Note on torchrun:
 Many developers on X/Twitter have noted that torchrun can be finicky—ensure that environment variables (RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT) are set correctly. If you encounter errors like "NCCL error" or "Connection timeout," double-check your network configuration, GPU visibility, and port availability. Sometimes it feels like herding cats (or GPUs), but hang in there!
 
 
-Contributing
+##Contributing
 Contributions are welcome! To contribute:
 
 Fork the repository and create a feature branch.
 Submit pull requests with clear descriptions of your changes.
 Report issues or suggest enhancements by opening an issue on GitHub.
 
-License
+##License
 This project is licensed under the MIT License. See the LICENSE file for details.
 
-Contact
+##Contact
 For questions, suggestions, or collaboration opportunities, please contact [alphacr792@gmail.com] or open an issue on GitHub.
