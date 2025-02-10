@@ -1,0 +1,89 @@
+# ----------------------------
+# Python bytecode and caches
+# ----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ----------------------------
+# Virtual environments
+# ----------------------------
+venv/
+env/
+.venv/
+
+# ----------------------------
+# Distribution / Packaging
+# ----------------------------
+*.egg-info/
+*.egg
+*.whl
+/dist/
+/build/
+
+# ----------------------------
+# CUDA Build Artifacts
+# ----------------------------
+# Object files, PTX, and cubin files (from CUDA compilation)
+*.o
+*.obj
+*.ptx
+*.cubin
+
+# Executable binaries generated from CUDA sources
+advanced_flash_attention_double_buffer
+multi_gpu_flash_attention
+
+# Additionally, ignore any generated files in the cuda/ directory
+cuda/*.o
+cuda/*.ptx
+cuda/*.cubin
+cuda/advanced_flash_attention_double_buffer
+cuda/multi_gpu_flash_attention
+
+# ----------------------------
+# Triton Artifacts
+# ----------------------------
+# (Typically, Triton kernels are compiled at runtime; no persistent build artifacts expected.)
+# If any Triton-generated files exist, add them here.
+
+# ----------------------------
+# Logs and Temporary Files
+# ----------------------------
+*.log
+*.tmp
+temp/
+tmp/
+
+# ----------------------------
+# Jupyter Notebook Checkpoints
+# ----------------------------
+.ipynb_checkpoints/
+
+# ----------------------------
+# Documentation Build Artifacts
+# ----------------------------
+docs/_build/
+
+# ----------------------------
+# IDE and Editor Specific Files
+# ----------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ----------------------------
+# System Files
+# ----------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----------------------------
+# CMake Artifacts (if used)
+# ----------------------------
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
