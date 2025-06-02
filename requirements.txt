@@ -1,3 +1,7 @@
-torch>=1.9.0
+# Core dependencies
+torch>=1.13.0
 triton>=2.0.0
-numpy
+
+# Optional dependencies for development
+pytest>=7.0.0
+numpy>=1.21.0

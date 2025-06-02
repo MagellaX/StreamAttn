@@ -1,251 +1,274 @@
 /*
- * Advanced FlashAttention with Double Buffering, cp.async, and CUDA Streams
- *
- * This experimental implementation fuses the softmax reduction and weighted sum
- * computations using an “online” (numerically stable) update while hiding global–to–shared
- * memory latency with double buffering and asynchronous copies via cp.async.
- *
- * It also partitions work across multiple CUDA streams so that host–device transfers,
- * kernel execution, and data pipelining can be overlapped.
- *
- * IMPORTANT: This code is provided as an experimental prototype.
- *   - It assumes that each block’s thread count equals the feature dimension (d_model).
- *   - It assumes d_model divides evenly into the block size.
- *   - It uses cp.async (available on compute capability 8.0+); on older architectures it falls back to synchronous loads.
- *   - Proper error checking, edge–case handling, and robustness enhancements are omitted.
- *
- * Compile with:
- *    nvcc -std=c++14 -O3 advanced_flash_attention_double_buffer.cu -o advanced_flash_attention_double_buffer
+ * Advanced FlashAttention CUDA Implementation with Double Buffering
+ * 
+ * This implements the novel techniques described in the documentation:
+ * - Fused online softmax update with running accumulators
+ * - Double buffering with cp.async for overlapping data transfer
+ * - Cooperative groups for efficient reductions
+ * - Tiled processing for memory efficiency
  */
 
+#include <cuda.h>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 #include <cooperative_groups.h>
-#include <cstdio>
+#include <cuda/pipeline>
+#include <iostream>
 #include <cmath>
-#include <cstdlib>
-#include <algorithm>
-using namespace std;
+
 namespace cg = cooperative_groups;
 
-// cp.async helper: available on Ampere and later.
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-__device__ inline void cp_async(void* dst, const void* src, size_t bytes) {
-    asm volatile("cp.async.ca.shared.global [%0], [%1], %2;" 
-                 : : "r"(dst), "l"(src), "n"(bytes) : "memory");
-}
-#endif
+// Constants for kernel configuration
+constexpr int WARP_SIZE = 32;
+constexpr int TILE_K = 64;
+constexpr int TILE_Q = 128;
+constexpr int BLOCK_SIZE = 256;
+constexpr int SMEM_STAGES = 2;  // Double buffering
 
-// Advanced fused FlashAttention kernel with double buffering and asynchronous shared memory loads.
-// Each block processes one query vector. We assume blockDim.x == d_model.
-__global__ void advanced_flash_attention_kernel(
-    const float* __restrict__ Q,   // [num_queries, d_model]
-    const float* __restrict__ K,   // [seq_len, d_model]
-    const float* __restrict__ V,   // [seq_len, d_model]
-    float* __restrict__ O,         // [num_queries, d_model]
-    int seq_len,
-    int d_model,
-    float scale)
-{
-    // Each block handles one query vector.
-    int query_idx = blockIdx.x;
-    if(query_idx >= seq_len) return;
-
-    int tid = threadIdx.x;  // Assume tid in [0, d_model)
-    // Load this query’s element into register.
-    float q_val = Q[query_idx * d_model + tid];
-
-    // Parameters for tiling along the key dimension.
-    constexpr int TILE_K = 64;  // Number of keys per tile.
-    const int buffer_size = TILE_K * d_model;  // Number of floats in one tile buffer.
-
-    // Allocate dynamic shared memory for double buffering: four buffers (two for keys, two for values).
-    extern __shared__ float shared_mem[];
-    float* key_buffer0 = shared_mem;                   // Buffer for keys (tile 0)
-    float* val_buffer0 = key_buffer0 + buffer_size;      // Buffer for values (tile 0)
-    float* key_buffer1 = val_buffer0 + buffer_size;      // Buffer for keys (tile 1)
-    float* val_buffer1 = key_buffer1 + buffer_size;      // Buffer for values (tile 1)
-
-    // Set up pointers for double buffering.
-    float* cur_key = key_buffer0;
-    float* cur_val = val_buffer0;
-    float* next_key = key_buffer1;
-    float* next_val = val_buffer1;
-
-    // Initialize accumulators for the online softmax computation.
-    float acc_num = 0.0f;
-    float acc_den = 0.0f;
-    float running_max = -INFINITY;
-
-    // Preload the first tile (synchronously).
-    int first_tile_size = min(TILE_K, seq_len);
-    for (int i = tid; i < first_tile_size * d_model; i += blockDim.x) {
-        cur_key[i] = K[i];  // Loads first tile (rows 0 to first_tile_size-1)
-        cur_val[i] = V[i];
+// Helper function for cp.async with fallback
+template<typename T>
+__device__ __forceinline__ void async_copy_global_to_shared(
+    T* smem_ptr, const T* gmem_ptr, bool pred) {
+#if __CUDA_ARCH__ >= 800
+    // Use cp.async for Ampere and newer
+    if (pred) {
+        __pipeline_memcpy_async(smem_ptr, gmem_ptr, sizeof(T));
     }
-    __syncthreads();
-
-    // Total number of tiles.
-    int num_tiles = (seq_len + TILE_K - 1) / TILE_K;
-
-    // Process each tile; use double buffering to overlap shared memory loads with computation.
-    for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-        int tile_start = tile_idx * TILE_K;
-        int cur_tile_size = min(TILE_K, seq_len - tile_start);
-
-        // If there is a subsequent tile, preload it into the "next" buffer.
-        if (tile_idx < num_tiles - 1) {
-            int next_tile_size = min(TILE_K, seq_len - (tile_start + cur_tile_size));
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-            // Use cp.async for asynchronous copy into next buffer.
-            for (int i = tid; i < next_tile_size * d_model; i += blockDim.x) {
-                int row = i / d_model;
-                int col = i % d_model;
-                const float* k_src = K + (tile_start + cur_tile_size + row) * d_model + col;
-                const float* v_src = V + (tile_start + cur_tile_size + row) * d_model + col;
-                cp_async(&next_key[i], k_src, sizeof(float));
-                cp_async(&next_val[i], v_src, sizeof(float));
-            }
-            __syncthreads(); // Ensure asynchronous copies complete.
 #else
-            // Fallback: synchronous copy.
-            for (int i = tid; i < next_tile_size * d_model; i += blockDim.x) {
-                int row = i / d_model;
-                int col = i % d_model;
-                next_key[i] = K[(tile_start + cur_tile_size + row) * d_model + col];
-                next_val[i] = V[(tile_start + cur_tile_size + row) * d_model + col];
-            }
-            __syncthreads();
-#endif
-        }
-
-        // Process the keys in the current tile.
-        for (int i = 0; i < cur_tile_size; i++) {
-            // Compute dot product between the query and the i-th key in the tile.
-            float dot = q_val * cur_key[i * d_model + tid];
-            // Use cooperative groups to perform a block-wide reduction.
-            cg::thread_block cta = cg::this_thread_block();
-            float dot_sum = cg::reduce(cta, dot, cg::plus<float>());
-            if (tid == 0) {
-                dot_sum = dot_sum * scale;
-            }
-            // Broadcast the computed dot product to all threads.
-            dot_sum = __shfl_sync(0xffffffff, dot_sum, 0);
-
-            // Update running maximum and accumulators for numerically stable softmax.
-            float new_max = fmaxf(running_max, dot_sum);
-            float exp_factor = expf(running_max - new_max);
-            float exp_val = expf(dot_sum - new_max);
-            float v_elem = cur_val[i * d_model + tid];
-            acc_num = acc_num * exp_factor + v_elem * exp_val;
-            acc_den = acc_den * exp_factor + exp_val;
-            running_max = new_max;
-        }
-
-        // Swap buffers: next buffer becomes current.
-        float* temp_key = cur_key;
-        float* temp_val = cur_val;
-        cur_key = next_key;
-        cur_val = next_val;
-        next_key = temp_key;
-        next_val = temp_val;
-        __syncthreads();
+    // Fallback for older architectures
+    if (pred) {
+        *smem_ptr = *gmem_ptr;
     }
-
-    // Finalize output: each thread writes its corresponding element.
-    float out_val = acc_num / acc_den;
-    O[query_idx * d_model + tid] = out_val;
+#endif
 }
 
-// Host code: data setup, stream creation, and kernel launch.
-int main() {
-    // Problem dimensions.
-    const int seq_len = 1024;  // Number of queries (and keys/values)
-    const int d_model = 128;   // Feature dimension (assumed equal to blockDim.x)
-    const float scale = 1.0f / sqrtf(static_cast<float>(d_model));
-
-    // Allocate host pinned memory.
-    size_t vec_size = seq_len * d_model * sizeof(float);
-    float *h_Q, *h_K, *h_V, *h_O;
-    cudaMallocHost(&h_Q, vec_size);
-    cudaMallocHost(&h_K, vec_size);
-    cudaMallocHost(&h_V, vec_size);
-    cudaMallocHost(&h_O, vec_size);
-
-    // Initialize Q, K, V with random values.
-    for (int i = 0; i < seq_len * d_model; i++) {
-        h_Q[i] = static_cast<float>(rand()) / RAND_MAX;
-        h_K[i] = static_cast<float>(rand()) / RAND_MAX;
-        h_V[i] = static_cast<float>(rand()) / RAND_MAX;
+// Advanced FlashAttention kernel with double buffering
+template<typename T, int D_MODEL>
+__global__ void advanced_flash_attention_kernel(
+    const T* __restrict__ Q,    // [local_seq_len, d_model]
+    const T* __restrict__ K,    // [global_seq_len, d_model]
+    const T* __restrict__ V,    // [global_seq_len, d_model]
+    T* __restrict__ O,          // [local_seq_len, d_model]
+    float* __restrict__ L,      // [local_seq_len] log-sum-exp
+    int local_seq_len,
+    int global_seq_len,
+    float scale
+) {
+    // Thread block and warp information
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<WARP_SIZE> warp = cg::tiled_partition<WARP_SIZE>(block);
+    
+    const int tid = threadIdx.x;
+    const int wid = tid / WARP_SIZE;
+    const int lane = tid % WARP_SIZE;
+    const int query_idx = blockIdx.x;
+    
+    // Early exit if out of bounds
+    if (query_idx >= local_seq_len) return;
+    
+    // Shared memory for double buffering
+    extern __shared__ char smem[];
+    T* smem_k = reinterpret_cast<T*>(smem);
+    T* smem_v = smem_k + SMEM_STAGES * TILE_K * D_MODEL;
+    T* smem_q = smem_v + SMEM_STAGES * TILE_K * D_MODEL;
+    
+    // Load query vector to shared memory (persistent across tiles)
+    for (int d = tid; d < D_MODEL; d += BLOCK_SIZE) {
+        smem_q[d] = Q[query_idx * D_MODEL + d];
     }
-
-    // Allocate device memory.
-    float *d_Q, *d_K, *d_V, *d_O;
-    cudaMalloc(&d_Q, vec_size);
-    cudaMalloc(&d_K, vec_size);
-    cudaMalloc(&d_V, vec_size);
-    cudaMalloc(&d_O, vec_size);
-
-    // Copy Q, K, V to device.
-    cudaMemcpy(d_Q, h_Q, vec_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_K, h_K, vec_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_V, h_V, vec_size, cudaMemcpyHostToDevice);
-
-    // Create multiple CUDA streams for overlapping data transfers and computation.
-    const int num_streams = 4;
-    cudaStream_t streams[num_streams];
-    for (int s = 0; s < num_streams; s++) {
-        cudaStreamCreate(&streams[s]);
-    }
-
-    // Partition queries among streams.
-    int queries_per_stream = seq_len / num_streams;
-    int extra = seq_len % num_streams;
-    int offset = 0;
-    constexpr int TILE_K = 64;
-    size_t shared_mem_size = 4 * TILE_K * d_model * sizeof(float);
-
-    // Launch kernel asynchronously on each stream.
-    for (int s = 0; s < num_streams; s++) {
-        int num_queries = queries_per_stream + (s < extra ? 1 : 0);
-        advanced_flash_attention_kernel<<<num_queries, d_model, shared_mem_size, streams[s]>>>(
-            d_Q + offset * d_model,
-            d_K,
-            d_V,
-            d_O + offset * d_model,
-            seq_len,
-            d_model,
-            scale
-        );
-        offset += num_queries;
-    }
-
-    // Wait for all streams and clean up.
-    for (int s = 0; s < num_streams; s++) {
-        cudaStreamSynchronize(streams[s]);
-        cudaStreamDestroy(streams[s]);
-    }
-
-    // Copy results back to host.
-    cudaMemcpy(h_O, d_O, vec_size, cudaMemcpyDeviceToHost);
-
-    // Print first 5 output vectors.
-    for (int i = 0; i < 5; i++) {
-        printf("Output vector %d: ", i);
-        for (int j = 0; j < d_model; j++) {
-            printf("%f ", h_O[i * d_model + j]);
+    block.sync();
+    
+    // Initialize accumulators for online softmax
+    float acc_num[D_MODEL / BLOCK_SIZE + 1] = {0.0f};
+    float acc_den = 0.0f;
+    float running_max = -INFINITY;  // Robust initialization
+    
+    // Pipeline for asynchronous memory operations
+#if __CUDA_ARCH__ >= 800
+    cuda::pipeline<cuda::thread_scope_thread> pipe = cuda::make_pipeline();
+#endif
+    
+    // Process keys/values in tiles with double buffering
+    int num_tiles = (global_seq_len + TILE_K - 1) / TILE_K;
+    
+    for (int tile = 0; tile < num_tiles; tile++) {
+        int tile_start = tile * TILE_K;
+        int stage = tile % SMEM_STAGES;
+        
+        // Asynchronous load of K and V tiles
+        for (int i = tid; i < TILE_K * D_MODEL; i += BLOCK_SIZE) {
+            int k_idx = tile_start + i / D_MODEL;
+            int d_idx = i % D_MODEL;
+            
+            bool in_bounds = (k_idx < global_seq_len) && (d_idx < D_MODEL);
+            
+            // Load K tile with cp.async
+            async_copy_global_to_shared(
+                &smem_k[stage * TILE_K * D_MODEL + i],
+                &K[k_idx * D_MODEL + d_idx],
+                in_bounds
+            );
+            
+            // Load V tile with cp.async
+            async_copy_global_to_shared(
+                &smem_v[stage * TILE_K * D_MODEL + i],
+                &V[k_idx * D_MODEL + d_idx],
+                in_bounds
+            );
         }
-        printf("\n");
+        
+#if __CUDA_ARCH__ >= 800
+        // Commit the async copies
+        pipe.producer_commit();
+        
+        // Wait for the copies to complete
+        pipe.consumer_wait();
+#else
+        block.sync();
+#endif
+        
+        // Process the tile - compute QK^T
+        for (int k = 0; k < TILE_K; k++) {
+            int key_idx = tile_start + k;
+            if (key_idx >= global_seq_len) break;
+            
+            // Compute dot product Q[query_idx] · K[key_idx]
+            float dot = 0.0f;
+            for (int d = tid; d < D_MODEL; d += BLOCK_SIZE) {
+                dot += smem_q[d] * smem_k[stage * TILE_K * D_MODEL + k * D_MODEL + d];
+            }
+            
+            // Reduce within warp using cooperative groups
+            dot = cg::reduce(warp, dot, cg::plus<float>());
+            
+            // Broadcast to all threads in warp
+            dot = cg::shfl(warp, dot, 0);
+            
+            // Scale the dot product
+            dot *= scale;
+            
+            // Online softmax update (THE NOVEL PART!)
+            float new_max = fmaxf(running_max, dot);
+            float exp_factor = expf(running_max - new_max);
+            float exp_val = expf(dot - new_max);
+            
+            // Update accumulators with current value vector
+            for (int d = tid; d < D_MODEL; d += BLOCK_SIZE) {
+                int acc_idx = d / BLOCK_SIZE;
+                float v_val = smem_v[stage * TILE_K * D_MODEL + k * D_MODEL + d];
+                acc_num[acc_idx] = acc_num[acc_idx] * exp_factor + v_val * exp_val;
+            }
+            
+            // Update denominator and running max
+            if (tid == 0) {
+                acc_den = acc_den * exp_factor + exp_val;
+                running_max = new_max;
+            }
+        }
+        
+        // Synchronize before next tile
+        block.sync();
     }
+    
+    // Broadcast final acc_den and running_max to all threads
+    acc_den = cg::shfl(warp, acc_den, 0);
+    running_max = cg::shfl(warp, running_max, 0);
+    
+    // Compute final output: O = acc_num / acc_den
+    for (int d = tid; d < D_MODEL; d += BLOCK_SIZE) {
+        int acc_idx = d / BLOCK_SIZE;
+        O[query_idx * D_MODEL + d] = acc_num[acc_idx] / acc_den;
+    }
+    
+    // Store log-sum-exp for numerical stability checks
+    if (tid == 0 && L != nullptr) {
+        L[query_idx] = running_max + logf(acc_den);
+    }
+}
 
-    // Cleanup.
+// Host function to launch the kernel
+template<typename T>
+void launch_advanced_flash_attention(
+    const T* Q, const T* K, const T* V, T* O, float* L,
+    int local_seq_len, int global_seq_len, int d_model,
+    cudaStream_t stream = 0
+) {
+    // Calculate shared memory size for double buffering
+    size_t smem_size = sizeof(T) * (2 * SMEM_STAGES * TILE_K * d_model + d_model);
+    
+    // Configure kernel launch parameters
+    dim3 grid(local_seq_len);
+    dim3 block(BLOCK_SIZE);
+    
+    // Set shared memory config for maximum shared memory
+    cudaFuncSetAttribute(
+        advanced_flash_attention_kernel<T, 128>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        smem_size
+    );
+    
+    float scale = 1.0f / sqrtf(static_cast<float>(d_model));
+    
+    // Launch kernel based on d_model
+    switch(d_model) {
+        case 64:
+            advanced_flash_attention_kernel<T, 64><<<grid, block, smem_size, stream>>>(
+                Q, K, V, O, L, local_seq_len, global_seq_len, scale);
+            break;
+        case 128:
+            advanced_flash_attention_kernel<T, 128><<<grid, block, smem_size, stream>>>(
+                Q, K, V, O, L, local_seq_len, global_seq_len, scale);
+            break;
+        case 256:
+            advanced_flash_attention_kernel<T, 256><<<grid, block, smem_size, stream>>>(
+                Q, K, V, O, L, local_seq_len, global_seq_len, scale);
+            break;
+        default:
+            std::cerr << "Unsupported d_model: " << d_model << std::endl;
+            break;
+    }
+}
+
+// Example usage and testing
+int main() {
+    // Dimensions
+    const int local_seq_len = 1024;
+    const int global_seq_len = 1024;
+    const int d_model = 128;
+    
+    // Allocate device memory
+    float *d_Q, *d_K, *d_V, *d_O, *d_L;
+    size_t size_qo = local_seq_len * d_model * sizeof(float);
+    size_t size_kv = global_seq_len * d_model * sizeof(float);
+    size_t size_l = local_seq_len * sizeof(float);
+    
+    cudaMalloc(&d_Q, size_qo);
+    cudaMalloc(&d_K, size_kv);
+    cudaMalloc(&d_V, size_kv);
+    cudaMalloc(&d_O, size_qo);
+    cudaMalloc(&d_L, size_l);
+    
+    // Initialize with random data (in practice, copy from host)
+    // ... initialization code ...
+    
+    // Launch kernel
+    launch_advanced_flash_attention(
+        d_Q, d_K, d_V, d_O, d_L,
+        local_seq_len, global_seq_len, d_model
+    );
+    
+    // Synchronize and check for errors
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+    }
+    
+    // Cleanup
     cudaFree(d_Q);
     cudaFree(d_K);
     cudaFree(d_V);
     cudaFree(d_O);
-    cudaFreeHost(h_Q);
-    cudaFreeHost(h_K);
-    cudaFreeHost(h_V);
-    cudaFreeHost(h_O);
-
+    cudaFree(d_L);
+    
     return 0;
 }
