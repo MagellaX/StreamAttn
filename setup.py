@@ -60,7 +60,7 @@ setup(
         "Documentation": "https://streamattention.readthedocs.io",
         "Source Code": "https://github.com/yourusername/StreamAttention",
     },
-    packages=find_packages(exclude=["tests*", "docs*", "examples*"]),
+    packages=find_packages(exclude=["tests*", "benchmarks*", "docs*", "examples*"]),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -76,10 +76,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=core_requirements,
-    extras_require={
-        **optional_requirements,
-        "hf": ["transformers>=4.39"],
-    },
+    extras_require=optional_requirements,
     include_package_data=True,
     package_data={
         "stream_attention": ["*.yaml", "*.json"],

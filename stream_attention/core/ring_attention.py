@@ -18,7 +18,6 @@ from typing import Optional, Tuple, List, Dict, Any
 import logging
 from dataclasses import dataclass
 from contextlib import contextmanager
-import torch.nn.functional as F
 
 from .config import StreamAttentionConfig
 from .flashattention_v3 import FlashAttentionV3
