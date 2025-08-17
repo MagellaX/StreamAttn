@@ -1,6 +1,8 @@
 # Core dependencies
 torch>=1.13.0
-triton>=2.0.0
+
+# Triton is optional and not available on Windows; kernel falls back to SDPA
+# triton>=2.0.0
 
 # Optional dependencies for development
 pytest>=7.0.0

@@ -424,21 +424,26 @@ class StarAttention(nn.Module):
         # Convert lists to tensors
         outputs = torch.stack(all_outputs, dim=0)           # [n_hosts, batch, seq, heads, dim]
         max_scores = torch.stack(all_max_scores, dim=0)     # [n_hosts, batch, heads, seq, 1]
-        sum_exp_weighted = torch.stack(all_sum_exps, dim=0) # [n_hosts, batch, heads, seq, 1]
+        sum_exp_weighted = torch.stack(all_sum_exps, dim=0) # [n_hosts, batch, heads, seq, 1] = s_h * exp(m_h)
         
         # Find global max
         global_max = max_scores.max(dim=0, keepdim=True)[0]  # [1, batch, heads, seq, 1]
         
-        # Numerator weights per host and denominator across hosts
-        numer = sum_exp_weighted * torch.exp(max_scores - global_max)  # [n_hosts, batch, heads, seq, 1]
-        numer = numer.permute(0, 1, 3, 2, 4)                           # [n_hosts, batch, seq, heads, 1]
-        denom = numer.sum(dim=0, keepdim=False)                         # [batch, seq, heads, 1]
+        # Numerator across hosts: sum_h exp(m_h - m) * scaled_output_h
+        host_weights_num = torch.exp(max_scores - global_max)            # [n_hosts, batch, heads, seq, 1]
+        host_weights_num = host_weights_num.permute(0, 1, 3, 2, 4)       # [n_hosts, batch, seq, heads, 1]
+        numer = (outputs * host_weights_num).sum(dim=0)                  # [batch, seq, heads, dim]
+        
+        # Denominator across hosts: sum_h exp(m_h - m) * s_h,
+        # where s_h * exp(m_h) was gathered as sum_exp_weighted
+        denom = (sum_exp_weighted * torch.exp(-global_max)).sum(dim=0)   # [batch, heads, seq, 1]
+        denom = denom.permute(0, 2, 1, 3)                                 # [batch, seq, heads, 1]
         
         # Avoid divide by zero
         denom = denom + self.eps
         
-        # Weighted sum across hosts
-        output = (outputs * (numer / denom.unsqueeze(0))).sum(dim=0)
+        # Final output
+        output = numer / denom
         
         return output
     

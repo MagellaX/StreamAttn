@@ -37,7 +37,7 @@ def test_long_context(seq_len: int, batch_size: int = 1):
         # Warmup
         print("Warming up...")
         with torch.no_grad():
-            _ = attention(x)
+            _ = attention(hidden_states=x)
             
         if torch.cuda.is_available():
             torch.cuda.synchronize()
@@ -47,7 +47,7 @@ def test_long_context(seq_len: int, batch_size: int = 1):
         start_time = time.time()
         
         with torch.no_grad():
-            output = attention(x)
+            output = attention(hidden_states=x)
             
         if torch.cuda.is_available():
             torch.cuda.synchronize()

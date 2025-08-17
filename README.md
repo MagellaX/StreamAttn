@@ -44,7 +44,7 @@ config = StreamAttentionConfig(
 )
 
 # Create the module
-attention = StreamAttention(config).cuda() if torch.cuda.is_available() else StreamAttention(config)
+attention = (StreamAttention(config).cuda() if torch.cuda.is_available() else StreamAttention(config))
 
 # Hidden-states path (with internal Q,K,V projections)
 batch_size, seq_len = 2, 1024
@@ -52,7 +52,7 @@ hidden_dim = config.num_heads * config.head_dim
 x = torch.randn(batch_size, seq_len, hidden_dim, device=attention.attention.device, dtype=(torch.float16 if torch.cuda.is_available() else torch.float32))
 
 with torch.no_grad():
-    y = attention(x)
+    y = attention(hidden_states=x)
 print(y.shape)
 
 # Explicit Q,K,V path

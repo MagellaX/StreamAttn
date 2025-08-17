@@ -10,6 +10,7 @@ import torch.nn as nn
 from transformers import AutoModel, AutoTokenizer, GPT2Model, GPT2Config
 
 from stream_attention import StreamAttention, StreamAttentionConfig
+from stream_attention.integration.hf import replace_gpt2_attention
 
 
 def example_1_drop_in_replacement():
@@ -67,16 +68,9 @@ def example_2_huggingface_integration():
         use_qkv_projections=True
     )
     
-    # Replace all attention layers
-    for i, layer in enumerate(model.h):
-        # Create StreamAttention from existing weights
-        stream_attn = StreamAttention(stream_config)
-        
-        # Replace the attention module
-        layer.attn = stream_attn
-        print(f"  Replaced attention in layer {i}")
-    
-    print("✓ HuggingFace model updated with StreamAttention!\n")
+    # Replace GPT-2 attention safely using adapter wrapper
+    num_replaced = replace_gpt2_attention(model, stream_config)
+    print(f"✓ HuggingFace model updated with StreamAttention via adapter (layers replaced: {num_replaced})\n")
     
     # Test the model
     tokenizer = AutoTokenizer.from_pretrained(model_name)

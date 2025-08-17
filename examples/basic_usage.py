@@ -46,7 +46,7 @@ def main():
     # Forward pass
     print("Running forward pass...")
     with torch.no_grad():
-        output = attention(hidden_states)
+        output = attention(hidden_states=hidden_states)
         if isinstance(output, tuple):
             output = output[0]
     

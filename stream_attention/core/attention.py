@@ -93,12 +93,20 @@ class StreamAttention(nn.Module):
         1) Hidden-states input [B, T, H*D] with internal QKV projections
         2) Explicit Q, K, V tensors [B, T, H, D] (positional args compatible)
         """
-        # Positional-args compatibility: model(q, k, v)
+        # Positional-args compatibility
+        # 1) Explicit Q, K, V provided positionally as 4D tensors
         if len(args) == 3 and all(isinstance(x, torch.Tensor) and x.dim() == 4 for x in args):
             query, key, value = args  # type: ignore
-        elif len(args) == 1 and isinstance(args[0], torch.Tensor) and args[0].dim() == 4 and isinstance(attention_mask, torch.Tensor) and isinstance(position_ids, torch.Tensor) and attention_mask.dim() == 4 and position_ids.dim() == 4:
-            # Called as forward(q, k, v) but matched old signature
-            query, key, value = args[0], attention_mask, position_ids  # type: ignore
+        # 2) Single positional hidden_states tensor [B, T, H*D]
+        elif len(args) == 1 and isinstance(args[0], torch.Tensor) and args[0].dim() == 3 and hidden_states is None:
+            hidden_states = args[0]
+        # 3) Guard against incompatible multi-positional calls (e.g., HF GPT-2)
+        elif len(args) > 0 and isinstance(args[0], torch.Tensor) and args[0].dim() == 3 and (query is None and key is None and value is None) and hidden_states is None:
+            raise TypeError(
+                "StreamAttention received extra positional arguments alongside hidden_states. "
+                "For Hugging Face GPT-2, use the integration adapter: "
+                "stream_attention.integration.hf.replace_gpt2_attention()."
+            )
         elif query is None and key is None and value is None:
             # Hidden-states path
             if hidden_states is None:
