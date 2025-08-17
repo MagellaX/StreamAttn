@@ -3,7 +3,7 @@ Basic usage example for StreamAttention
 """
 
 import torch
-from stream_attention import StreamAttention, AttentionConfig
+from stream_attention import StreamAttention, StreamAttentionConfig
 
 def main():
     # Configuration
@@ -23,10 +23,11 @@ def main():
     print()
     
     # Create configuration
-    config = AttentionConfig(
+    config = StreamAttentionConfig(
         num_heads=num_heads,
         head_dim=head_dim,
-        max_sequence_length=100_000,  # Support up to 100K tokens
+        tile_size_q=128,
+        tile_size_k=64,
     )
     
     # Initialize StreamAttention
@@ -34,13 +35,12 @@ def main():
     attention = StreamAttention(config).to(device)
     
     print(f"Using device: {device}")
-    print(f"Available attention methods: {attention._available_methods()}")
     print()
     
     # Create input tensor
     hidden_states = torch.randn(
         batch_size, seq_len, hidden_dim,
-        device=device, dtype=torch.float16
+        device=device, dtype=(torch.float16 if device == 'cuda' else torch.float32)
     )
     
     # Forward pass

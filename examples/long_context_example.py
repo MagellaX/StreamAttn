@@ -7,7 +7,7 @@ Demonstrates handling sequences up to 1M tokens
 import torch
 import time
 import gc
-from stream_attention import StreamAttention, AttentionConfig
+from stream_attention import StreamAttention, StreamAttentionConfig
 
 def test_long_context(seq_len: int, batch_size: int = 1):
     """Test StreamAttention on long sequences"""
@@ -15,20 +15,12 @@ def test_long_context(seq_len: int, batch_size: int = 1):
     print("-" * 50)
     
     # Configuration for long context
-    config = AttentionConfig(
+    config = StreamAttentionConfig(
         num_heads=32,
         head_dim=128,
-        max_sequence_length=2_000_000,  # 2M tokens max
-        
-        # Enable Star Attention for long sequences
-        star_attention={"enabled": True},
-        
-        # Memory optimizations
-        memory={
-            "gradient_checkpointing_enabled": True,
-            "kv_cache_compression": True,
-            "kv_compression_ratio": 8,
-        }
+        tile_size_q=256,
+        tile_size_k=128,
+        gradient_checkpointing=True,
     )
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -56,9 +48,7 @@ def test_long_context(seq_len: int, batch_size: int = 1):
         
         with torch.no_grad():
             output = attention(x)
-            if isinstance(output, tuple):
-                output = output[0]
-                
+            
         if torch.cuda.is_available():
             torch.cuda.synchronize()
             

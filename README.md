@@ -31,27 +31,34 @@ output = acc_num / acc_den
 ## 💡 Quick Start
 
 ```bash
-pip install stream-attention
+pip install -e .
 ```
 
 ```python
 from stream_attention import StreamAttention, StreamAttentionConfig
 
-# Configure the novel attention
 config = StreamAttentionConfig(
     num_heads=32,
     head_dim=128,
-    tile_size_q=128,  # Key performance parameter
+    tile_size_q=128,
     tile_size_k=64
 )
-
-# Create attention module
 attention = StreamAttention(config)
-
-# Use as drop-in replacement
-x = torch.randn(2, 1024, 4096, device='cuda')
-output, _ = attention(x)
 ```
+
+## 🧪 Benchmarks vs FlashAttention-3
+
+```bash
+# Compare fused online attention vs FA-3 across lengths
+stream-attention-benchmark --seq 512 1024 2048 4096 --batch 1 --heads 8 --dim 64
+
+# Accuracy sanity check
+stream-attention-test --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
+```
+
+Notes:
+- Uses Triton when available; otherwise falls back to PyTorch SDPA (flash backend on CUDA).
+- Supports CUDA fp16/bf16. On CPU, computation upcasts to fp32 for stability and support.
 
 ## 📊 Performance
 

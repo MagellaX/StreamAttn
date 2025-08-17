@@ -397,18 +397,19 @@ class StarAttention(nn.Module):
         
         # Stack for efficient computation
         outputs = torch.stack(local_outputs, dim=0)  # [n_blocks, batch, seq, heads, dim]
-        max_scores = torch.stack([s.max_scores for s in local_stats], dim=0)
-        sum_exps = torch.stack([s.sum_exp for s in local_stats], dim=0)
+        max_scores = torch.stack([s.max_scores for s in local_stats], dim=0)  # [n_blocks, batch, heads, seq, 1]
+        sum_exps = torch.stack([s.sum_exp for s in local_stats], dim=0)      # [n_blocks, batch, heads, seq, 1]
         
         # Global max for numerical stability
-        global_max = max_scores.max(dim=0, keepdim=True)[0]
+        global_max = max_scores.max(dim=0, keepdim=True)[0]  # [1, batch, heads, seq, 1]
         
-        # Reweight each output
-        weights = sum_exps * torch.exp(max_scores - global_max)
-        weights = weights / weights.sum(dim=0, keepdim=True)
+        # Reweight each output -> weights shape to [n_blocks, batch, seq, heads, 1]
+        weights = sum_exps * torch.exp(max_scores - global_max)  # [n_blocks, batch, heads, seq, 1]
+        weights = weights.permute(0, 1, 3, 2, 4)                # [n_blocks, batch, seq, heads, 1]
+        weights = weights / (weights.sum(dim=0, keepdim=True) + self.eps)
         
         # Weighted sum
-        output = (outputs * weights.transpose(-1, -2)).sum(dim=0)
+        output = (outputs * weights).sum(dim=0)
         
         return output
     
@@ -421,19 +422,23 @@ class StarAttention(nn.Module):
         """Aggregate attention from multiple hosts"""
         
         # Convert lists to tensors
-        outputs = torch.stack(all_outputs, dim=0)
-        max_scores = torch.stack(all_max_scores, dim=0)
-        sum_exp_weighted = torch.stack(all_sum_exps, dim=0)
+        outputs = torch.stack(all_outputs, dim=0)           # [n_hosts, batch, seq, heads, dim]
+        max_scores = torch.stack(all_max_scores, dim=0)     # [n_hosts, batch, heads, seq, 1]
+        sum_exp_weighted = torch.stack(all_sum_exps, dim=0) # [n_hosts, batch, heads, seq, 1]
         
         # Find global max
-        global_max = max_scores.max(dim=0, keepdim=True)[0]
+        global_max = max_scores.max(dim=0, keepdim=True)[0]  # [1, batch, heads, seq, 1]
         
-        # Compute weights with numerical stability
-        exp_diff = torch.exp(max_scores - global_max)
-        total_sum_exp = (sum_exp_weighted * exp_diff).sum(dim=0, keepdim=True)
+        # Numerator weights per host and denominator across hosts
+        numer = sum_exp_weighted * torch.exp(max_scores - global_max)  # [n_hosts, batch, heads, seq, 1]
+        numer = numer.permute(0, 1, 3, 2, 4)                           # [n_hosts, batch, seq, heads, 1]
+        denom = numer.sum(dim=0, keepdim=False)                         # [batch, seq, heads, 1]
         
-        # Final aggregation
-        output = (outputs * exp_diff.transpose(-1, -2) / total_sum_exp.transpose(-1, -2)).sum(dim=0)
+        # Avoid divide by zero
+        denom = denom + self.eps
+        
+        # Weighted sum across hosts
+        output = (outputs * (numer / denom.unsqueeze(0))).sum(dim=0)
         
         return output
     
