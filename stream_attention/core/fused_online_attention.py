@@ -205,7 +205,9 @@ class FusedOnlineAttention(nn.Module):
         key: torch.Tensor,
         value: torch.Tensor,
         causal: bool = True,
-        return_lse: bool = False
+        return_lse: bool = False,
+        attention_mask: Optional[torch.Tensor] = None,
+        dropout_p: float = 0.0,
     ) -> torch.Tensor:
         """
         Forward pass of Fused Online Attention
@@ -234,8 +236,13 @@ class FusedOnlineAttention(nn.Module):
             query = query[:, start_idx:end_idx]
             seq_len_q = query.shape[1]
         
-        # Triton path only on CUDA
-        use_triton = TRITON_AVAILABLE and query.is_cuda and key.is_cuda and value.is_cuda
+        # Triton path only on CUDA, without mask/dropout, and only when not requiring autograd
+        use_triton = (
+            TRITON_AVAILABLE
+            and query.is_cuda and key.is_cuda and value.is_cuda
+            and attention_mask is None
+            and (dropout_p == 0.0 or not self.training)
+        )
         # If gradients are required, fall back to PyTorch SDPA which supports autograd
         if use_triton and (torch.is_grad_enabled() and (query.requires_grad or key.requires_grad or value.requires_grad)):
             use_triton = False
@@ -260,17 +267,64 @@ class FusedOnlineAttention(nn.Module):
                 output = torch.cat(output_list, dim=1)
             return (output, lse) if return_lse else output
         else:
-            # Fallback to PyTorch SDPA
+            # Fallback to PyTorch SDPA (supports mask, dropout, autograd)
             q = query.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_q, self.head_dim)
             k = key.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
             v = value.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
+
+            attn_mask_bh = None
+            if attention_mask is not None:
+                attn_mask_bh = self._prepare_attn_mask(
+                    attention_mask, batch_size, self.num_heads, seq_len_q, seq_len_k, q.device, q.dtype
+                )
+
+            sdpa_kwargs = dict(attn_mask=attn_mask_bh, is_causal=causal, dropout_p=(dropout_p if self.training else 0.0))
             if q.is_cuda:
                 with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
-                    out = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=causal)
+                    out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
             else:
-                out = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=causal)
+                out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
             out = out.reshape(batch_size, self.num_heads, seq_len_q, self.head_dim).permute(0,2,1,3).contiguous()
             return (out, None) if return_lse else out
+
+    def _prepare_attn_mask(
+        self,
+        attention_mask: torch.Tensor,
+        batch_size: int,
+        num_heads: int,
+        seq_len_q: int,
+        seq_len_k: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        """
+        Normalize attention_mask to shape [B*H, S_q, S_k] for PyTorch SDPA.
+        Supports boolean masks or additive masks. Broadcasts as needed.
+        """
+        mask = attention_mask
+        if mask.dtype == torch.float16 or mask.dtype == torch.bfloat16:
+            # Avoid dtype issues in masking; keep as float for additive masks
+            mask = mask.to(dtype)
+        if mask.dtype == torch.bool:
+            # keep boolean
+            pass
+        # Accept common shapes and broadcast
+        if mask.dim() == 2:
+            # [B, S_k] -> [B, 1, 1, S_k]
+            mask = mask.view(batch_size, 1, 1, seq_len_k)
+        elif mask.dim() == 3:
+            # [B, S_q, S_k] -> [B, 1, S_q, S_k]
+            mask = mask.view(batch_size, 1, seq_len_q, seq_len_k)
+        elif mask.dim() == 4:
+            # [B, H|1, S_q|1, S_k]
+            pass
+        else:
+            raise ValueError("Unsupported attention_mask shape. Expected 2D, 3D, or 4D tensor.")
+
+        # Broadcast heads and reshape to [B*H, S_q, S_k]
+        bh_mask = mask.expand(batch_size, num_heads, mask.shape[-2] if mask.dim() == 4 else seq_len_q, seq_len_k)
+        bh_mask = bh_mask.reshape(batch_size * num_heads, bh_mask.shape[-2], bh_mask.shape[-1]).to(device)
+        return bh_mask
     
     def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100):
         """Benchmark the kernel performance"""

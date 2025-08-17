@@ -46,7 +46,11 @@ Proper configuration of environment variables is essential:
 
 ### Numerical Stability
 
-With very large sequence lengths or higher `d_model` values, the online softmax may suffer from precision issues. Consider using higher-precision arithmetic or initializing `running_max` with `float('-inf')` if supported.
+Use log-sum-exp recentering:
+
+- Maintain per-query `running_max` and rescale accumulators by `exp(running_max - new_max)` on each tile.
+- Accumulate numerator `acc_num` and denominator `acc_den` in fp32 even when inputs are fp16/bf16.
+- Initialize `running_max` with `-inf` to guarantee first tile update.
 
 ### Performance Tuning
 
@@ -54,11 +58,16 @@ The chosen tile size (`TILE_K = 64`) is a starting point. Optimal performance ma
 
 ### Triton Limitations
 
-Currently, Triton does not support the `cp.async` instruction. This implementation relies on `tl.load` with masking and the Triton scheduler to hide memory latency. Future Triton updates might offer enhanced functionality.
+Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The module automatically falls back to PyTorch SDPA for autograd, masking, or dropout.
 
 ### Distributed Setup Issues
 
-When scaling to many GPUs, inter-device communication overhead can become significant. Be prepared to tune NCCL settings and experiment with partitioning strategies. Common errors include timeouts and "NCCL communication failed" messages—remember, even GPUs sometimes need a little extra coaxing!
+When scaling to many GPUs, inter-device communication overhead can become significant. Prefer online-softmax aggregation using log-sum-exp. For multi-host variants (Star/Ring), ensure aggregation uses:
+
+- Numerator: \[∑_h exp(m_h − m) · (output_h · s_h)\]
+- Denominator: \[∑_h exp(m_h − m) · s_h\]
+
+where `s_h` is per-host sum of exp and `m_h` the per-host max; `m` is global max.
 
 ## Troubleshooting
 

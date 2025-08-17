@@ -87,6 +87,7 @@ class StreamAttention(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         causal: bool = True,
+        dropout_p: float = 0.0,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """
         Forward pass supporting two modes:
@@ -134,7 +135,9 @@ class StreamAttention(nn.Module):
             query=query,
             key=key,
             value=value,
-            causal=causal  # Default to causal for autoregressive models
+            causal=causal,  # Default to causal for autoregressive models
+            attention_mask=attention_mask,
+            dropout_p=dropout_p,
         )
         
         # Reshape back if we came from hidden_states
