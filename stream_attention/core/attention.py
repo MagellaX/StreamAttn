@@ -14,7 +14,7 @@ This is a breakthrough implementation that:
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict, Any, List, Union
 import logging
 
 from .config import StreamAttentionConfig
@@ -87,7 +87,7 @@ class StreamAttention(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         causal: bool = True,
-    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]]:  # returns Tensor unless use_cache=True
         """
         Forward pass supporting two modes:
         1) Hidden-states input [B, T, H*D] with internal QKV projections

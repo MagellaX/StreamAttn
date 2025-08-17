@@ -51,7 +51,7 @@ class FlashAttentionV3(nn.Module):
 			# Expect mask broadcastable to [B*H, Q, K]
 			# Convert boolean mask to additive mask if needed
 			if attention_mask.dtype == torch.bool:
-				attn_mask = torch.where(attention_mask, 0.0, float("-inf")).to(q.dtype)
+				attn_mask = torch.where(attention_mask, float("-inf"), 0.0).to(q.dtype)
 			else:
 				attn_mask = attention_mask
 		else:

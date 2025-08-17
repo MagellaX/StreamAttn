@@ -264,12 +264,54 @@ class FusedOnlineAttention(nn.Module):
             q = query.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_q, self.head_dim)
             k = key.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
             v = value.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
+            cpu_cast_back = None
+            if q.device.type == 'cpu' and q.dtype in (torch.float16, torch.bfloat16):
+                cpu_cast_back = q.dtype
+                q = q.float(); k = k.float(); v = v.float()
             if q.is_cuda:
                 with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
-                    out = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=causal)
+                    try:
+                        out = torch.nn.functional.scaled_dot_product_attention(
+                            q, k, v,
+                            attn_mask=None,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                            scale=self.scale,
+                        )
+                    except TypeError:
+                        # Older PyTorch versions without 'scale' kwarg
+                        alpha = self.scale * math.sqrt(self.head_dim)
+                        out = torch.nn.functional.scaled_dot_product_attention(
+                            q * alpha, k, v,
+                            attn_mask=None,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                        )
             else:
-                out = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=causal)
+                try:
+                    out = torch.nn.functional.scaled_dot_product_attention(
+                        q, k, v,
+                        attn_mask=None,
+                        dropout_p=self.dropout if self.training else 0.0,
+                        is_causal=causal,
+                        scale=self.scale,
+                    )
+                except TypeError:
+                    # Older PyTorch versions without 'scale' kwarg
+                    alpha = self.scale * math.sqrt(self.head_dim)
+                    out = torch.nn.functional.scaled_dot_product_attention(
+                        q * alpha, k, v,
+                        attn_mask=None,
+                        dropout_p=self.dropout if self.training else 0.0,
+                        is_causal=causal,
+                    )
+            if cpu_cast_back is not None:
+                out = out.to(cpu_cast_back)
             out = out.reshape(batch_size, self.num_heads, seq_len_q, self.head_dim).permute(0,2,1,3).contiguous()
+            if self.world_size > 1:
+                output_list = [torch.empty_like(out) for _ in range(self.world_size)]
+                dist.all_gather(output_list, out)
+                out = torch.cat(output_list, dim=1)
             return (out, None) if return_lse else out
     
     def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100):

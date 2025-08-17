@@ -16,11 +16,14 @@ This repository provides:
 The project depends on PyTorch (CUDA optional) and Triton (optional for the custom fused kernel).
 
 ```bash
-# Editable install (preferred for development)
-pip install -e .
+# Stable release (from PyPI)
+pip install stream-attention
 
 # Optional extras
-pip install -e .[hf]        # Hugging Face integration helpers
+pip install "stream-attention[hf]"  # Hugging Face integration helpers
+
+# Development install (from a cloned repo)
+pip install -e .
 ```
 
 Notes:

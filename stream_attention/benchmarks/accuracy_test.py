@@ -24,6 +24,8 @@ def main():
 	cfg = StreamAttentionConfig(num_heads=args.heads, head_dim=args.dim, use_fp16=(dtype==torch.float16))
 	fused = FusedOnlineAttention(num_heads=args.heads, head_dim=args.dim, dtype=dtype).to(device)
 	fa3 = FlashAttentionV3(cfg).to(device)
+	# Ensure FA3 uses the same dtype as inputs on CUDA to keep comparisons fair
+	fa3.dtype = dtype if device.type == "cuda" else torch.float32
 
 	q = torch.randn(args.batch, args.seq, args.heads, args.dim, device=device, dtype=dtype)
 	k = torch.randn(args.batch, args.seq, args.heads, args.dim, device=device, dtype=dtype)

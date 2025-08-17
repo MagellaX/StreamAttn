@@ -5,7 +5,7 @@ try:
 	from transformers import PreTrainedModel
 	from transformers.models.llama.modeling_llama import LlamaAttention
 	export_hf = True
-except Exception:  # transformers may not be installed
+except ImportError:  # transformers may not be installed
 	export_hf = False
 	PreTrainedModel = object  # type: ignore
 	LlamaAttention = object  # type: ignore
