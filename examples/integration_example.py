@@ -39,7 +39,7 @@ def example_1_drop_in_replacement():
     standard_out, _ = standard_attn(x, x, x)
     
     # StreamAttention (with projections)
-    stream_out, _ = stream_attn(x)
+    stream_out = stream_attn(x)
     
     print(f"Input shape: {x.shape}")
     print(f"Standard output shape: {standard_out.shape}")
@@ -70,10 +70,7 @@ def example_2_huggingface_integration():
     # Replace all attention layers
     for i, layer in enumerate(model.h):
         # Create StreamAttention from existing weights
-        stream_attn = StreamAttention.from_pretrained_attention(
-            layer.attn,
-            stream_config
-        )
+        stream_attn = StreamAttention(stream_config)
         
         # Replace the attention module
         layer.attn = stream_attn
@@ -128,7 +125,7 @@ def example_3_custom_transformer():
             
         def forward(self, x, mask=None):
             # Self-attention with residual
-            attn_out, _ = self.attention(self.norm1(x))
+            attn_out = self.attention(self.norm1(x))
             x = x + attn_out
             
             # FFN with residual
@@ -208,7 +205,7 @@ def example_5_multi_gpu():
     x = torch.randn(2, 4096, 4096, device=device)
     
     # Forward pass - automatically distributed
-    output, _ = model(x)
+    output = model(x)
     
     print(f"GPU {local_rank}: Input shape: {x.shape}")
     print(f"GPU {local_rank}: Output shape: {output.shape}")
@@ -249,12 +246,12 @@ def example_6_long_context():
         torch.cuda.reset_peak_memory_stats()
         
         with torch.cuda.amp.autocast():
-            output, _ = model(x)
+            output = model(x)
         
         peak_memory = torch.cuda.max_memory_allocated() / 1e9
         print(f"Peak memory usage: {peak_memory:.2f} GB")
     else:
-        output, _ = model(x)
+        output = model(x)
     
     print(f"Output shape: {output.shape}")
     print("✓ Long context processing successful!\n")

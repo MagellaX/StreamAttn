@@ -44,6 +44,19 @@ class StreamAttentionConfig:
     num_warps: int = 4
     num_stages: int = 2
     
+    # Additional fields for integrations/tests
+    max_sequence_length: int = 65536
+    enable_flash_attention: bool = True
+    enable_ring_attention: bool = True
+    enable_star_attention: bool = True
+    enable_kv_compression: bool = True
+    kv_compression_ratio: float = 4.0
+    ring_attention_block_size: int = 2048
+    ring_attention_overlap_size: int = 256
+    star_attention_block_size: int = 2048
+    star_attention_anchor_size: int = 256
+    star_attention_num_hosts: int = 1
+    
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "StreamAttentionConfig":
         """Load configuration from YAML file"""
@@ -65,6 +78,22 @@ class StreamAttentionConfig:
             config.tile_size_q = int(os.getenv("STREAM_ATTENTION_TILE_Q"))
         if os.getenv("STREAM_ATTENTION_TILE_K"):
             config.tile_size_k = int(os.getenv("STREAM_ATTENTION_TILE_K"))
+        if os.getenv("STREAM_ATTENTION_MAX_SEQ_LEN"):
+            config.max_sequence_length = int(os.getenv("STREAM_ATTENTION_MAX_SEQ_LEN"))
+        if os.getenv("STREAM_ATTENTION_ENABLE_KV_COMPRESSION"):
+            config.enable_kv_compression = os.getenv("STREAM_ATTENTION_ENABLE_KV_COMPRESSION").lower() in {"1","true","yes"}
+        if os.getenv("STREAM_ATTENTION_KV_COMPRESSION_RATIO"):
+            config.kv_compression_ratio = float(os.getenv("STREAM_ATTENTION_KV_COMPRESSION_RATIO"))
+        if os.getenv("STREAM_ATTENTION_RING_BLOCK_SIZE"):
+            config.ring_attention_block_size = int(os.getenv("STREAM_ATTENTION_RING_BLOCK_SIZE"))
+        if os.getenv("STREAM_ATTENTION_RING_OVERLAP_SIZE"):
+            config.ring_attention_overlap_size = int(os.getenv("STREAM_ATTENTION_RING_OVERLAP_SIZE"))
+        if os.getenv("STREAM_ATTENTION_STAR_BLOCK_SIZE"):
+            config.star_attention_block_size = int(os.getenv("STREAM_ATTENTION_STAR_BLOCK_SIZE"))
+        if os.getenv("STREAM_ATTENTION_STAR_ANCHOR_SIZE"):
+            config.star_attention_anchor_size = int(os.getenv("STREAM_ATTENTION_STAR_ANCHOR_SIZE"))
+        if os.getenv("STREAM_ATTENTION_STAR_NUM_HOSTS"):
+            config.star_attention_num_hosts = int(os.getenv("STREAM_ATTENTION_STAR_NUM_HOSTS"))
         
         return config
     
@@ -83,7 +112,18 @@ class StreamAttentionConfig:
             "dropout": self.dropout,
             "enable_distributed": self.enable_distributed,
             "num_warps": self.num_warps,
-            "num_stages": self.num_stages
+            "num_stages": self.num_stages,
+            "max_sequence_length": self.max_sequence_length,
+            "enable_flash_attention": self.enable_flash_attention,
+            "enable_ring_attention": self.enable_ring_attention,
+            "enable_star_attention": self.enable_star_attention,
+            "enable_kv_compression": self.enable_kv_compression,
+            "kv_compression_ratio": self.kv_compression_ratio,
+            "ring_attention_block_size": self.ring_attention_block_size,
+            "ring_attention_overlap_size": self.ring_attention_overlap_size,
+            "star_attention_block_size": self.star_attention_block_size,
+            "star_attention_anchor_size": self.star_attention_anchor_size,
+            "star_attention_num_hosts": self.star_attention_num_hosts,
         }
     
     def optimal_tile_sizes(self, seq_len: int) -> Tuple[int, int]:

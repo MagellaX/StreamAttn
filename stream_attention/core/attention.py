@@ -76,115 +76,97 @@ class StreamAttention(nn.Module):
     
     def forward(
         self,
-        hidden_states: torch.Tensor,
+        *args,
+        hidden_states: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.Tensor] = None,
         past_key_value: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         use_cache: bool = False,
-        output_attentions: bool = False
+        output_attentions: bool = False,
+        query: Optional[torch.Tensor] = None,
+        key: Optional[torch.Tensor] = None,
+        value: Optional[torch.Tensor] = None,
+        causal: bool = True,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """
-        Forward pass with interface compatible with HuggingFace transformers
-        
-        Args:
-            hidden_states: [batch_size, seq_len, hidden_dim]
-            attention_mask: Optional attention mask
-            position_ids: Optional position IDs (not used in current implementation)
-            past_key_value: Optional past KV cache for generation
-            use_cache: Whether to return updated KV cache
-            output_attentions: Whether to return attention weights (not supported)
-        
-        Returns:
-            output: [batch_size, seq_len, hidden_dim]
-            past_key_value: Optional updated KV cache
+        Forward pass supporting two modes:
+        1) Hidden-states input [B, T, H*D] with internal QKV projections
+        2) Explicit Q, K, V tensors [B, T, H, D] (positional args compatible)
         """
-        batch_size, seq_len, hidden_dim = hidden_states.shape
+        # Positional-args compatibility: model(q, k, v)
+        if len(args) == 3 and all(isinstance(x, torch.Tensor) and x.dim() == 4 for x in args):
+            query, key, value = args  # type: ignore
+        elif len(args) == 1 and isinstance(args[0], torch.Tensor) and args[0].dim() == 4 and isinstance(attention_mask, torch.Tensor) and isinstance(position_ids, torch.Tensor) and attention_mask.dim() == 4 and position_ids.dim() == 4:
+            # Called as forward(q, k, v) but matched old signature
+            query, key, value = args[0], attention_mask, position_ids  # type: ignore
+        elif query is None and key is None and value is None:
+            # Hidden-states path
+            if hidden_states is None:
+                raise ValueError("Either hidden_states or (query,key,value) must be provided")
+            batch_size, seq_len, hidden_dim = hidden_states.shape
+            hidden_states = hidden_states.view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
+            if self.use_projections:
+                hidden_flat = hidden_states.view(batch_size * seq_len, -1)
+                q = self.q_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
+                k = self.k_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
+                v = self.v_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
+            else:
+                q = k = v = hidden_states
+            query, key, value = q, k, v
+        # else: query, key, value provided explicitly
         
-        # Reshape to separate heads
-        hidden_states = hidden_states.view(
-            batch_size, seq_len, self.config.num_heads, self.config.head_dim
-        )
-        
-        # Apply projections if enabled
-        if self.use_projections:
-            # Project and reshape
-            hidden_flat = hidden_states.view(batch_size * seq_len, -1)
-            q = self.q_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
-            k = self.k_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
-            v = self.v_proj(hidden_flat).view(batch_size, seq_len, self.config.num_heads, self.config.head_dim)
-        else:
-            q = k = v = hidden_states
-        
-        # Handle KV cache for generation
+        # KV cache support
         if past_key_value is not None:
             past_k, past_v = past_key_value
-            k = torch.cat([past_k, k], dim=1)
-            v = torch.cat([past_v, v], dim=1)
+            key = torch.cat([past_k, key], dim=1)
+            value = torch.cat([past_v, value], dim=1)
         
-        # Apply the novel fused online attention
+        # Apply attention
         attention_output = self.attention(
-            query=q,
-            key=k,
-            value=v,
-            causal=True  # Default to causal for autoregressive models
+            query=query,
+            key=key,
+            value=value,
+            causal=causal  # Default to causal for autoregressive models
         )
         
-        # Reshape back to [batch, seq, hidden_dim]
-        attention_output = attention_output.view(batch_size, seq_len, hidden_dim)
+        # Reshape back if we came from hidden_states
+        if hidden_states is not None and attention_output.dim() == 4:
+            batch_size = attention_output.shape[0]
+            seq_len = attention_output.shape[1]
+            hidden_dim = self.config.num_heads * self.config.head_dim
+            attention_output = attention_output.view(batch_size, seq_len, hidden_dim)
         
-        # Apply output projection if enabled
-        if self.use_projections:
+        # Output projection and layer norm
+        if self.use_projections and attention_output.dim() == 3:
             attention_output = self.out_proj(attention_output)
-        
-        # Apply layer norm if enabled
-        if self.layer_norm is not None:
+        if self.layer_norm is not None and attention_output.dim() == 3:
             attention_output = self.layer_norm(attention_output)
         
-        # Prepare output
-        outputs = (attention_output,)
-        
         if use_cache:
-            outputs += ((k, v),)
-        
-        return outputs
+            return attention_output, (key, value)
+        return attention_output
     
     def replace_attention_in_model(self, model: nn.Module, module_name_pattern: str = "self_attn"):
         """
         Replace attention modules in an existing model with StreamAttention
         
-        This allows easy integration into existing models like GPT, BERT, etc.
-        
-        Args:
-            model: The model to modify
-            module_name_pattern: Pattern to match attention module names
-        
-        Example:
-            ```python
-            from transformers import AutoModel
-            
-            model = AutoModel.from_pretrained("gpt2")
-            stream_attn = StreamAttention(config)
-            stream_attn.replace_attention_in_model(model, "attn")
-            ```
+        This creates distinct StreamAttention instances per matched module to avoid
+        parameter sharing across layers.
         """
         replaced_count = 0
-        
         for name, module in model.named_modules():
             if module_name_pattern in name and isinstance(module, nn.Module):
-                # Get parent module and attribute name
                 parent_name = '.'.join(name.split('.')[:-1])
                 attr_name = name.split('.')[-1]
                 parent = model
-                
                 if parent_name:
                     for part in parent_name.split('.'):
                         parent = getattr(parent, part)
-                
-                # Replace with StreamAttention
-                setattr(parent, attr_name, self)
+                # Create a fresh instance per replacement
+                new_attn = create_stream_attention(self.config)
+                setattr(parent, attr_name, new_attn)
                 replaced_count += 1
                 logger.info(f"Replaced {name} with StreamAttention")
-        
         logger.info(f"Replaced {replaced_count} attention modules")
         return model
     
@@ -196,21 +178,11 @@ class StreamAttention(nn.Module):
         Returns speedup metrics for different sequence lengths
         """
         results = {}
-        
         for seq_len in seq_lengths:
-            # Benchmark StreamAttention
-            stream_results = self.attention.benchmark(
-                seq_len=seq_len,
-                batch_size=batch_size
-            )
-            
-            # Estimate standard attention time (quadratic complexity)
-            # This is a rough estimate - in practice, compare against actual implementation
+            stream_results = self.attention.benchmark(seq_len=seq_len, batch_size=batch_size)
             standard_flops = 2 * seq_len * seq_len * self.config.num_heads * self.config.head_dim * batch_size
-            standard_time_estimate = standard_flops / (stream_results['tflops'] * 1e12) * 2  # Conservative estimate
-            
+            standard_time_estimate = standard_flops / (stream_results['tflops'] * 1e12) * 2
             speedup = standard_time_estimate / (stream_results['time_ms'] / 1000)
-            
             results[seq_len] = {
                 'stream_time_ms': stream_results['time_ms'],
                 'standard_time_ms': standard_time_estimate * 1000,
@@ -218,36 +190,8 @@ class StreamAttention(nn.Module):
                 'tflops': stream_results['tflops'],
                 'bandwidth_gb_s': stream_results['bandwidth_gb_s']
             }
-            
-            logger.info(
-                f"Seq {seq_len}: {speedup:.2f}x speedup, "
-                f"{stream_results['tflops']:.2f} TFLOPS, "
-                f"{stream_results['bandwidth_gb_s']:.1f} GB/s"
-            )
-        
+            logger.info(f"Seq {seq_len}: {speedup:.2f}x speedup, {stream_results['tflops']:.2f} TFLOPS, {stream_results['bandwidth_gb_s']:.1f} GB/s")
         return results
-    
-    @staticmethod
-    def from_pretrained_attention(attention_module: nn.Module, config: StreamAttentionConfig):
-        """
-        Create StreamAttention from an existing attention module
-        
-        This extracts weights from existing attention and initializes StreamAttention
-        """
-        stream_attn = StreamAttention(config)
-        
-        # Copy weights if the original module has projections
-        if hasattr(attention_module, 'q_proj') and stream_attn.use_projections:
-            stream_attn.q_proj.weight.data = attention_module.q_proj.weight.data.clone()
-            stream_attn.k_proj.weight.data = attention_module.k_proj.weight.data.clone()
-            stream_attn.v_proj.weight.data = attention_module.v_proj.weight.data.clone()
-            
-            if hasattr(attention_module, 'o_proj'):
-                stream_attn.out_proj.weight.data = attention_module.o_proj.weight.data.clone()
-            elif hasattr(attention_module, 'out_proj'):
-                stream_attn.out_proj.weight.data = attention_module.out_proj.weight.data.clone()
-        
-        return stream_attn
 
 
 def create_stream_attention(config: StreamAttentionConfig) -> StreamAttention:
