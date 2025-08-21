@@ -236,7 +236,38 @@ class FusedOnlineAttention(nn.Module):
 				out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 			out = out.reshape(batch_size, self.num_heads, seq_len_q, self.head_dim).permute(0,2,1,3).contiguous()
 			return (out, None) if return_lse else out
-	
+
+	@torch.no_grad()
+	def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100) -> Dict[str, float]:
+		"""
+		Microbenchmark for FusedOnlineAttention on the current device.
+		Returns a dict with time_ms, tflops, and bandwidth_gb_s.
+		"""
+		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		dtype = (self.dtype if device.type == "cuda" else torch.float32)
+		nh = self.num_heads
+		hd = self.head_dim
+		q = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
+		k = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
+		v = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
+		for _ in range(warmup):
+			_ = self.forward(q, k, v, causal=True)
+		if device.type == "cuda":
+			torch.cuda.synchronize()
+		import time
+		start = time.time()
+		for _ in range(iterations):
+			_ = self.forward(q, k, v, causal=True)
+		if device.type == "cuda":
+			torch.cuda.synchronize()
+		elapsed = (time.time() - start) / iterations
+		flops = 4.0 * batch_size * nh * seq_len * seq_len * hd
+		tflops = flops / elapsed / 1e12
+		bytes_per_el = torch.tensor([], dtype=dtype).element_size()
+		memory_bytes = 3 * batch_size * seq_len * nh * hd * bytes_per_el
+		bandwidth = memory_bytes / elapsed / 1e9
+		return {"time_ms": elapsed * 1000.0, "tflops": tflops, "bandwidth_gb_s": bandwidth, "seq_len": seq_len, "batch_size": batch_size}
+
 	def _prepare_attn_mask(
 		self,
 		attention_mask: torch.Tensor,
