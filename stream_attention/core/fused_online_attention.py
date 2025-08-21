@@ -314,7 +314,7 @@ class FusedOnlineAttention(nn.Module):
 		# Prepare mask arguments
 		has_mask = attention_mask is not None
 		if has_mask:
-			mask_norm = attention_mask.to(torch.int32) if attention_mask.dtype == torch.bool else (attention_mask != 0).to(torch.int32)
+			mask_norm = attention_mask.to(torch.int32) if attention_mask.dtype == torch.bool else (attention_mask == 0).to(torch.int32)
 			if mask_norm.dim() != 2 or mask_norm.shape[0] != batch_size or mask_norm.shape[1] != seq_len_k:
 				raise ValueError("attention_mask must be shape [batch, seq_len_k] for fused Triton path")
 			mask_norm = mask_norm.contiguous().to(query.device)
