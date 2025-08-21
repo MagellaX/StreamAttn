@@ -148,13 +148,6 @@ if TRITON_AVAILABLE:
 class FusedOnlineAttention(nn.Module):
 	"""
 	Production-ready Fused Online Attention module
-	
-	This module implements the novel fused attention mechanism with:
-	- Online softmax computation in a single pass
-	- Tiled processing for memory efficiency
-	- Multi-GPU support via PyTorch Distributed
-	- Automatic mixed precision support
-	- Comprehensive error handling
 	"""
 	
 	def __init__(
@@ -177,11 +170,8 @@ class FusedOnlineAttention(nn.Module):
 		self.scale = scale or (1.0 / math.sqrt(head_dim))
 		self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 		self.dtype = dtype
-		
-		# Multi-GPU setup
 		self.world_size = dist.get_world_size() if dist.is_initialized() else 1
 		self.rank = dist.get_rank() if dist.is_initialized() else 0
-		
 		logger.info(
 			f"FusedOnlineAttention initialized: heads={num_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, triton={TRITON_AVAILABLE}"
 		)
@@ -196,33 +186,22 @@ class FusedOnlineAttention(nn.Module):
 		attention_mask: Optional[torch.Tensor] = None,
 		dropout_p: float = 0.0,
 	) -> torch.Tensor:
-		"""
-		Forward pass of Fused Online Attention
-		"""
 		batch_size, seq_len_q, num_heads_q, head_dim_q = query.shape
 		_, seq_len_k, num_heads_k, head_dim_k = key.shape
-		assert num_heads_q == num_heads_k == self.num_heads, f"Number of heads mismatch: {num_heads_q} vs {num_heads_k} vs {self.num_heads}"
-		assert head_dim_q == head_dim_k == self.head_dim, f"Head dimension mismatch: {head_dim_q} vs {head_dim_k} vs {self.head_dim}"
-		
-		# Multi-GPU partitioning (simple query sharding)
+		assert num_heads_q == num_heads_k == self.num_heads
+		assert head_dim_q == head_dim_k == self.head_dim
 		if self.world_size > 1:
 			queries_per_gpu = seq_len_q // self.world_size
 			start_idx = self.rank * queries_per_gpu
 			end_idx = start_idx + queries_per_gpu if self.rank < self.world_size - 1 else seq_len_q
 			query = query[:, start_idx:end_idx]
 			seq_len_q = query.shape[1]
-		
-		# Triton path: CUDA, optional key padding mask [B, S_k], no dropout; autograd supported via wrapper
 		mask_supported = (attention_mask is None) or (
 			attention_mask.dim() == 2 and attention_mask.shape[0] == batch_size and attention_mask.shape[1] == seq_len_k
 		)
 		use_triton = (
-			TRITON_AVAILABLE
-			and query.is_cuda and key.is_cuda and value.is_cuda
-			and mask_supported
-			and (dropout_p == 0.0 or not self.training)
+			TRITON_AVAILABLE and query.is_cuda and key.is_cuda and value.is_cuda and mask_supported and (dropout_p == 0.0 or not self.training)
 		)
-		# If gradients are required and Triton is usable, dispatch to autograd wrapper (backward via SDPA)
 		if use_triton and (torch.is_grad_enabled() and (query.requires_grad or key.requires_grad or value.requires_grad)):
 			if return_lse:
 				use_triton = False
@@ -231,27 +210,20 @@ class FusedOnlineAttention(nn.Module):
 		if use_triton:
 			return self._forward_triton(query, key, value, causal=causal, attention_mask=attention_mask, dropout_p=dropout_p, return_lse=return_lse)
 		else:
-			# Fallback to PyTorch SDPA (supports mask, dropout, autograd)
 			q = query.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_q, self.head_dim)
 			k = key.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
 			v = value.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
-
 			attn_mask_bh = None
 			if attention_mask is not None:
-				attn_mask_bh = self._prepare_attn_mask(
-					attention_mask, batch_size, self.num_heads, seq_len_q, seq_len_k, q.device, q.dtype
-				)
-			# Build combined additive mask when a mask is present to avoid conflicts with is_causal on some backends
+				attn_mask_bh = self._prepare_attn_mask(attention_mask, batch_size, self.num_heads, seq_len_q, seq_len_k, q.device, q.dtype)
 			if attn_mask_bh is not None:
-				# Convert boolean to additive 0/-inf
+				# Convert to additive mask and include causal if requested
 				if attn_mask_bh.dtype == torch.bool:
-					add_mask = torch.where(attn_mask_bh, torch.zeros(1, dtype=q.dtype, device=q.device), torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device))
+					add_mask = torch.where(attn_mask_bh, torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device), torch.zeros(1, dtype=q.dtype, device=q.device))
 				else:
 					add_mask = attn_mask_bh
-				# Add causal mask if requested
 				if causal:
-					tri = torch.triu(torch.ones(seq_len_q, seq_len_k, dtype=torch.bool, device=q.device), diagonal=1)
-					tri = tri.unsqueeze(0)  # [1, S_q, S_k]
+					tri = torch.triu(torch.ones(seq_len_q, seq_len_k, dtype=torch.bool, device=q.device), diagonal=1).unsqueeze(0)
 					tri_add = torch.where(tri, torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device), torch.zeros(1, dtype=q.dtype, device=q.device))
 					add_mask = add_mask + tri_add
 				sdpa_kwargs = dict(attn_mask=add_mask, is_causal=False, dropout_p=(dropout_p if self.training else 0.0))
@@ -264,7 +236,7 @@ class FusedOnlineAttention(nn.Module):
 				out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 			out = out.reshape(batch_size, self.num_heads, seq_len_q, self.head_dim).permute(0,2,1,3).contiguous()
 			return (out, None) if return_lse else out
-
+	
 	def _prepare_attn_mask(
 		self,
 		attention_mask: torch.Tensor,
@@ -275,10 +247,6 @@ class FusedOnlineAttention(nn.Module):
 		device: torch.device,
 		dtype: torch.dtype,
 	) -> torch.Tensor:
-		"""
-		Normalize attention_mask to shape [B*H, S_q, S_k] for PyTorch SDPA.
-		Supports boolean masks or additive masks. Broadcasts as needed.
-		"""
 		mask = attention_mask
 		if mask.dtype == torch.float16 or mask.dtype == torch.bfloat16:
 			mask = mask.to(dtype)
@@ -311,19 +279,20 @@ class FusedOnlineAttention(nn.Module):
 		output = torch.empty_like(query)
 		lse = torch.empty((batch_size, self.num_heads, seq_len_q), dtype=torch.float32, device=query.device)
 		grid = lambda meta: (triton.cdiv(seq_len_q, meta['TILE_M']), batch_size, self.num_heads)
-		# Prepare mask arguments
 		has_mask = attention_mask is not None
 		if has_mask:
-			mask_norm = attention_mask.to(torch.int32) if attention_mask.dtype == torch.bool else (attention_mask == 0).to(torch.int32)
+			if attention_mask.dtype == torch.bool:
+				mask_norm = (~attention_mask).to(torch.int32)
+			else:
+				mask_norm = (attention_mask == 0).to(torch.int32)
 			if mask_norm.dim() != 2 or mask_norm.shape[0] != batch_size or mask_norm.shape[1] != seq_len_k:
 				raise ValueError("attention_mask must be shape [batch, seq_len_k] for fused Triton path")
 			mask_norm = mask_norm.contiguous().to(query.device)
 			mask_ptr = mask_norm
 			stride_mb, stride_mn = mask_ptr.stride(0), mask_ptr.stride(1)
 		else:
-			mask_ptr = output  # dummy
+			mask_ptr = output
 			stride_mb, stride_mn = 0, 0
-
 		fused_online_attention_kernel[grid](
 			query, key, value, output, lse,
 			mask_ptr,
@@ -362,7 +331,6 @@ class FusedOnlineAttentionAutogradFn(torch.autograd.Function):
 		query, key, value = ctx.saved_tensors
 		bsz, sq, nh, hd = query.shape
 		sk = key.shape[1]
-		# Recompute via SDPA to obtain gradients
 		q = query.detach().requires_grad_(True).permute(0,2,1,3).reshape(bsz * nh, sq, hd)
 		k = key.detach().requires_grad_(True).permute(0,2,1,3).reshape(bsz * nh, sk, hd)
 		v = value.detach().requires_grad_(True).permute(0,2,1,3).reshape(bsz * nh, sk, hd)
@@ -370,10 +338,11 @@ class FusedOnlineAttentionAutogradFn(torch.autograd.Function):
 		if ctx.has_mask and ctx.attention_mask is not None:
 			mask = ctx.attention_mask
 			if mask.dtype != torch.bool:
-				mask = (mask != 0)
+				mask = (mask == 0)  # numeric: 0 valid
+			else:
+				mask = ~mask       # boolean: True means masked -> invert
 			mask = mask.view(bsz, 1, 1, sk).expand(bsz, 1, sq, sk)
 			attn_mask_bh = mask.expand(bsz, nh, sq, sk).reshape(bsz * nh, sq, sk).to(q.device)
-		# Combine into additive mask if needed
 		add_mask = None
 		if attn_mask_bh is not None:
 			add_mask = torch.where(attn_mask_bh, torch.zeros(1, dtype=q.dtype, device=q.device), torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device))
@@ -381,19 +350,11 @@ class FusedOnlineAttentionAutogradFn(torch.autograd.Function):
 				tri = torch.triu(torch.ones(sq, sk, dtype=torch.bool, device=q.device), diagonal=1).unsqueeze(0)
 				tri_add = torch.where(tri, torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device), torch.zeros(1, dtype=q.dtype, device=q.device))
 				add_mask = add_mask + tri_add
-		# Use flash on CUDA, math elsewhere
 		if q.is_cuda:
-			if add_mask is not None:
-				with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
-					y = F.scaled_dot_product_attention(q, k, v, attn_mask=add_mask, is_causal=False, dropout_p=0.0)
-			else:
-				with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
-					y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=ctx.causal, dropout_p=0.0)
+			with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=True, enable_mem_efficient=False):
+				y = F.scaled_dot_product_attention(q, k, v, attn_mask=(add_mask if add_mask is not None else None), is_causal=(False if add_mask is not None else ctx.causal), dropout_p=0.0)
 		else:
-			if add_mask is not None:
-				y = F.scaled_dot_product_attention(q, k, v, attn_mask=add_mask, is_causal=False, dropout_p=0.0)
-			else:
-				y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=ctx.causal, dropout_p=0.0)
+			y = F.scaled_dot_product_attention(q, k, v, attn_mask=(add_mask if add_mask is not None else None), is_causal=(False if add_mask is not None else ctx.causal), dropout_p=0.0)
 		y = y.reshape(bsz, nh, sq, hd).permute(0,2,1,3).contiguous()
 		grads = torch.autograd.grad(y, (q, k, v), grad_out, allow_unused=False)
 		dq = grads[0].reshape(bsz, nh, sq, hd).permute(0,2,1,3).contiguous()
@@ -408,5 +369,4 @@ def create_fused_online_attention(
 	head_dim: int,
 	**kwargs
 ) -> FusedOnlineAttention:
-	"""Factory function to create FusedOnlineAttention instance"""
 	return FusedOnlineAttention(num_heads, head_dim, **kwargs)
