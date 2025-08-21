@@ -258,7 +258,7 @@ class FusedOnlineAttention(nn.Module):
 			else:
 				sdpa_kwargs = dict(attn_mask=None, is_causal=causal, dropout_p=(dropout_p if self.training else 0.0))
 			if q.is_cuda:
-				with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
+				with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=True, enable_mem_efficient=False):
 					out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 			else:
 				out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
