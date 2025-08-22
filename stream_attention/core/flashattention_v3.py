@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,7 +15,7 @@ def _use_flash_sdpa() -> bool:
 class FlashAttentionV3(nn.Module):
     """
     FlashAttention V3 wrapper using PyTorch SDPA backends.
-    
+
     - Uses flash-kernel backed scaled_dot_product_attention on CUDA
     - Falls back to math/mem-efficient kernels elsewhere
     - API: inputs as [batch, seq_len, num_heads, head_dim]
@@ -63,13 +62,11 @@ class FlashAttentionV3(nn.Module):
         cpu_cast_back = None
         if q.device.type == 'cpu' and q.dtype in (torch.float16, torch.bfloat16):
             cpu_cast_back = q.dtype
-            q = q.float(); k = k.float(); v = v.float()
+            q = q.float()
+            k = k.float()
+            v = v.float()
             if attn_mask is not None:
                 attn_mask = attn_mask.float()
-
-
-
-
 
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
@@ -90,29 +87,25 @@ class FlashAttentionV3(nn.Module):
                         dropout_p=self.dropout if self.training else 0.0,
                         is_causal=causal,
                     )
-            except RuntimeError as e:
-                raise RuntimeError(
-                    "Flash attention kernel not available; ensure PyTorch is built with flash attention support"
-                ) from e
+            except RuntimeError:
+                # Fall back to default implementation if flash attention not available
+                out = F.scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    attn_mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=causal,
+                )
         else:
             out = F.scaled_dot_product_attention(
-                q, k, v, attn_mask,
+                q,
+                k,
+                v,
+                attn_mask,
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=causal,
             )
-
-
-
-
-        if _use_flash_sdpa() and q.device.type == 'cuda':
-            try:
-                with torch.nn.attention.sdpa_kernel(enable_flash=True):
-                    out = F.scaled_dot_product_attention(q, k, v, attn_mask, dropout_p=self.dropout if self.training else 0.0, is_causal=causal)
-            except RuntimeError:
-                out = F.scaled_dot_product_attention(q, k, v, attn_mask, dropout_p=self.dropout if self.training else 0.0, is_causal=causal)
-        else:
-            out = F.scaled_dot_product_attention(q, k, v, attn_mask, dropout_p=self.dropout if self.training else 0.0, is_causal=causal)
-
 
         if cpu_cast_back is not None:
             out = out.to(cpu_cast_back)
@@ -154,4 +147,10 @@ class FlashAttentionV3(nn.Module):
         memory_bytes = 3 * batch_size * seq_len * (self.num_heads or nh) * (self.head_dim or hd) * bytes_per_el
         bandwidth = memory_bytes / elapsed / 1e9
 
-        return {"time_ms": elapsed * 1000.0, "tflops": tflops, "bandwidth_gb_s": bandwidth, "seq_len": seq_len, "batch_size": batch_size}
+        return {
+            "time_ms": elapsed * 1000.0,
+            "tflops": tflops,
+            "bandwidth_gb_s": bandwidth,
+            "seq_len": seq_len,
+            "batch_size": batch_size,
+        }
