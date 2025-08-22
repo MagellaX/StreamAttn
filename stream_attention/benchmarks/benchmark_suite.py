@@ -9,22 +9,22 @@ from stream_attention.core.config import StreamAttentionConfig
 
 
 def run_bench(seq_lens: List[int], batch_size: int, num_heads: int, head_dim: int, warmup: int, iters: int) -> Dict[int, Dict[str, float]]:
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	cfg = StreamAttentionConfig(num_heads=num_heads, head_dim=head_dim, use_fp16=(device.type == "cuda"))
-	fused = FusedOnlineAttention(num_heads=num_heads, head_dim=head_dim, dtype=(torch.float16 if device.type == "cuda" else torch.float32))
-	fa3 = FlashAttentionV3(cfg)
-	results = {}
-	for L in seq_lens:
-		fr = fused.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
-		ar = fa3.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
-		results[L] = {
-			"fused_time_ms": fr["time_ms"],
-			"fused_tflops": fr["tflops"],
-			"fa3_time_ms": ar["time_ms"],
-			"fa3_tflops": ar["tflops"],
-			"speedup_vs_fa3": ar["time_ms"] / fr["time_ms"] if fr["time_ms"] > 0 else float("inf"),
-		}
-	return results
+        cfg = StreamAttentionConfig(num_heads=num_heads, head_dim=head_dim, use_fp16=torch.cuda.is_available())
+        fused = FusedOnlineAttention(num_heads=num_heads, head_dim=head_dim,
+                                     dtype=(torch.float16 if torch.cuda.is_available() else torch.float32))
+        fa3 = FlashAttentionV3(cfg)
+        results = {}
+        for L in seq_lens:
+                fr = fused.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
+                ar = fa3.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
+                results[L] = {
+                        "fused_time_ms": fr["time_ms"],
+                        "fused_tflops": fr["tflops"],
+                        "fa3_time_ms": ar["time_ms"],
+                        "fa3_tflops": ar["tflops"],
+                        "speedup_vs_fa3": ar["time_ms"] / fr["time_ms"] if fr["time_ms"] > 0 else float("inf"),
+                }
+        return results
 
 
 def main():
