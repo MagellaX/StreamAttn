@@ -98,6 +98,7 @@ class FlashAttentionV3(nn.Module):
                 is_causal=causal,
             )
 
+
         if _use_flash_sdpa() and q.device.type == 'cuda':
             try:
                 with torch.nn.attention.sdpa_kernel(enable_flash=True):

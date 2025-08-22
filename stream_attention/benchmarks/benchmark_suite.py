@@ -42,7 +42,11 @@ def run_bench(seq_lens: List[int], batch_size: int, num_heads: int, head_dim: in
         fa3 = FlashAttentionV3(cfg)
         results = {}
         for L in seq_lens:
+
+                fr = fused.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
+
                 fr = _benchmark_module(fused, L, batch_size, warmup, iters)
+
                 ar = fa3.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
                 results[L] = {
                         "fused_time_ms": fr["time_ms"],
