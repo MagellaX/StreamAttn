@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -97,10 +96,16 @@ class FlashAttentionV3(nn.Module):
                         dropout_p=self.dropout if self.training else 0.0,
                         is_causal=causal,
                     )
-            except RuntimeError as e:
-                raise RuntimeError(
-                    "Flash attention kernel not available; ensure PyTorch is built with flash attention support"
-                ) from e
+            except RuntimeError:
+                # Fall back to default implementation if flash attention not available
+                out = F.scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    attn_mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=causal,
+                )
         else:
             out = F.scaled_dot_product_attention(
                 q,
@@ -110,6 +115,7 @@ class FlashAttentionV3(nn.Module):
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=causal,
             )
+
 
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
@@ -140,6 +146,8 @@ class FlashAttentionV3(nn.Module):
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=causal,
             )
+
+
 
         if cpu_cast_back is not None:
             out = out.to(cpu_cast_back)

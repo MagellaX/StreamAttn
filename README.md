@@ -55,7 +55,7 @@ with torch.no_grad():
     y = attention(hidden_states=x)
 print(y.shape)
 
-# Explicit Q,K,V path (supports attn_mask and dropout via SDPA fallback)
+# Explicit Q,K,V path (supports attention mask via SDPA fallback)
 q = torch.randn(batch_size, seq_len, config.num_heads, config.head_dim, device=x.device, dtype=x.dtype)
 k = torch.randn_like(q)
 v = torch.randn_like(q)
@@ -63,7 +63,7 @@ with torch.no_grad():
     # Example boolean mask [B, S_k]
     key_padding_mask = torch.ones(batch_size, seq_len, dtype=torch.bool, device=x.device)
     key_padding_mask[:, -16:] = False  # mask out last 16 positions
-    y_qkv = attention(q, k, v, causal=True, attention_mask=key_padding_mask, dropout_p=0.0)
+    y_qkv = attention(q, k, v, causal=True, attention_mask=key_padding_mask)
 print(y_qkv.shape)
 ```
 
@@ -74,16 +74,17 @@ print(y_qkv.shape)
 - Purpose: High-level module. Accepts either `hidden_states` ([B, T, H*D]) or explicit `(query, key, value)` ([B, T, H, D]).
 - Signature (selected):
   - `forward(hidden_states: Tensor, ..., use_cache: bool=False, causal: bool=True)` → `Tensor` or `(Tensor, (k, v))` if `use_cache=True`
-  - `forward(query: Tensor, key: Tensor, value: Tensor, causal: bool=True, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0)` → `Tensor`
+  - `forward(query: Tensor, key: Tensor, value: Tensor, causal: bool=True, attention_mask: Optional[Tensor]=None)` → `Tensor`
 - Shapes: `[batch, seq, heads, dim]` for QKV mode.
 - Dtypes: fp16/bf16 (CUDA), fp32 (CPU by default). On CPU, inputs upcast to fp32 if required.
 
 ### FusedOnlineAttention
 - Purpose: Low-level fused online softmax attention (Triton when available; SDPA fallback otherwise).
 - Signature (selected):
-  - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0)` → `Tensor` (and `lse` if requested)
+  - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None)` → `Tensor` (and `lse` if requested)
   - `benchmark(seq_len: int, batch_size: int=1, warmup: int=10, iterations: int=100)` → metrics dict
 - Autograd: If gradients are required, the module automatically falls back to PyTorch SDPA to ensure correct backward support. The Triton path is intended for forward-critical inference/benchmarking.
+- Dropout is not supported in the fused kernel; apply it outside the module if needed.
 
 ### FlashAttentionV3
 - Purpose: Baseline using PyTorch SDPA with the flash backend on CUDA, falling back gracefully on CPU.
@@ -117,7 +118,7 @@ stream-attention-test --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
 Behavior and methodology:
 - On CUDA, the baseline uses PyTorch SDPA with the flash backend (FlashAttention-3 path). On CPU, both implementations use SDPA in fp32.
 - Metrics reported: per-iteration latency, estimated TFLOPS, and approximate bandwidth based on tensor traffic. Measurements are averaged after warmup.
-- The fused kernel enables Triton only when available, running on CUDA, and autograd is not required. Otherwise, SDPA is used to ensure correctness, support for masks/dropout, and training.
+- The fused kernel uses Triton on CUDA for the forward pass; when gradients are required, it falls back to an SDPA-backed autograd path. Otherwise, SDPA is used to ensure correctness, masking, and training.
 - For reproducibility, fix random seeds, pin CUDA clocks if applicable, and isolate runs. Actual performance depends on GPU architecture, drivers, and PyTorch/Triton versions.
 
 Example output (format):
@@ -208,7 +209,7 @@ print(f"Replaced {num_replaced} attention modules")
 
 - Backward implementation for the Triton fused kernel
 - Advanced pipelining (warp specialization, asynchronous staging) and Hopper-specific paths (WGMMA/TMA)
-- Full support for attention masks and dropout in the fused kernel
+- Full support for attention masks in the fused kernel
 - Extended autotune coverage across architectures and sequence regimes
 - Optional FP8 path with block-wise scaling
 
