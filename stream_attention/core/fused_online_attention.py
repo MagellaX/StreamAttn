@@ -110,7 +110,7 @@ if TRITON_AVAILABLE:
 			# Load tiles
 			kv_mask = ((start_n + offs_n)[:, None] < N) & (offs_k[None, :] < D)
 			k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-			v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
+			v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
 			# QK^T
 			qk = tl.dot(q, tl.trans(k)) * scale
 			# Causal
