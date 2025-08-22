@@ -49,7 +49,6 @@ class StreamAttention(nn.Module):
             head_dim=config.head_dim,
             tile_size_q=config.tile_size_q,
             tile_size_k=config.tile_size_k,
-            dropout=config.dropout,
             dtype=torch.float16 if config.use_fp16 else torch.float32
         )
         
@@ -87,7 +86,6 @@ class StreamAttention(nn.Module):
         key: Optional[torch.Tensor] = None,
         value: Optional[torch.Tensor] = None,
         causal: bool = True,
-        dropout_p: float = 0.0,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """
         Forward pass supporting two modes:
@@ -137,7 +135,6 @@ class StreamAttention(nn.Module):
             value=value,
             causal=causal,  # Default to causal for autoregressive models
             attention_mask=attention_mask,
-            dropout_p=dropout_p,
         )
         
         # Reshape back if we came from hidden_states
