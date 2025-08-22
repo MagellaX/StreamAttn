@@ -37,20 +37,16 @@ def _benchmark_module(module, seq_len, batch_size, warmup, iterations):
 
 def run_bench(seq_lens: List[int], batch_size: int, num_heads: int, head_dim: int, warmup: int, iters: int) -> Dict[int, Dict[str, float]]:
         cfg = StreamAttentionConfig(num_heads=num_heads, head_dim=head_dim, use_fp16=torch.cuda.is_available())
-        fused = FusedOnlineAttention(num_heads=num_heads, head_dim=head_dim,
-                                     dtype=(torch.float16 if torch.cuda.is_available() else torch.float32))
+        fused = FusedOnlineAttention(
+            num_heads=num_heads,
+            head_dim=head_dim,
+            dtype=(torch.float16 if torch.cuda.is_available() else torch.float32),
+        )
         fa3 = FlashAttentionV3(cfg)
         results = {}
         for L in seq_lens:
-
-                fr = fused.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
-
-
-                fr = fused.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
-
                 fr = _benchmark_module(fused, L, batch_size, warmup, iters)
-
-                ar = fa3.benchmark(seq_len=L, batch_size=batch_size, warmup=warmup, iterations=iters)
+                ar = _benchmark_module(fa3, L, batch_size, warmup, iters)
                 results[L] = {
                         "fused_time_ms": fr["time_ms"],
                         "fused_tflops": fr["tflops"],
