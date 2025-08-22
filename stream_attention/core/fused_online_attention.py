@@ -129,7 +129,7 @@ if TRITON_AVAILABLE:
 			acc_num *= correction[:, None]
 			acc_den *= correction
 			exp_qk = tl.exp(qk - new_max[:, None])
-			acc_num += exp_qk @ v
+			acc_num += tl.dot(exp_qk, v)
 			acc_den += tl.sum(exp_qk, axis=1)
 			running_max = new_max
 		# Final output
