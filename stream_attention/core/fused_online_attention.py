@@ -110,7 +110,7 @@ if TRITON_AVAILABLE:
 			# Load tiles
 			kv_mask = ((start_n + offs_n)[:, None] < N) & (offs_k[None, :] < D)
 			k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-			v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
+			v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
 			# QK^T
 			qk = tl.dot(q, tl.trans(k)) * scale
 			# Causal
@@ -129,7 +129,7 @@ if TRITON_AVAILABLE:
 			acc_num *= correction[:, None]
 			acc_den *= correction
 			exp_qk = tl.exp(qk - new_max[:, None])
-			acc_num += exp_qk @ v
+			acc_num += tl.dot(exp_qk, v)
 			acc_den += tl.sum(exp_qk, axis=1)
 			running_max = new_max
 		# Final output
@@ -302,10 +302,10 @@ class FusedOnlineAttention(nn.Module):
 			output.stride(0), output.stride(2), output.stride(1), output.stride(3),
 			lse.stride(0), lse.stride(1), lse.stride(2),
 			stride_mb, stride_mn,
-			H=self.num_heads, M=seq_len_q, N=seq_len_k, D=self.head_dim,
-			TILE_M=self.tile_size_q, TILE_K=self.head_dim, TILE_N=self.tile_size_k,
-			scale=self.scale, IS_CAUSAL=causal, HAS_MASK=has_mask, num_warps=4, num_stages=2
-		)
+				H=self.num_heads, M=seq_len_q, N=seq_len_k, D=self.head_dim,
+				TILE_K=self.head_dim,
+				scale=self.scale, IS_CAUSAL=causal, HAS_MASK=has_mask
+			)
 		if self.world_size > 1:
 			output_list = [torch.empty_like(output) for _ in range(self.world_size)]
 			dist.all_gather(output_list, output)
