@@ -302,10 +302,10 @@ class FusedOnlineAttention(nn.Module):
 			output.stride(0), output.stride(2), output.stride(1), output.stride(3),
 			lse.stride(0), lse.stride(1), lse.stride(2),
 			stride_mb, stride_mn,
-			H=self.num_heads, M=seq_len_q, N=seq_len_k, D=self.head_dim,
-			TILE_M=self.tile_size_q, TILE_K=self.head_dim, TILE_N=self.tile_size_k,
-			scale=self.scale, IS_CAUSAL=causal, HAS_MASK=has_mask, num_warps=4, num_stages=2
-		)
+				H=self.num_heads, M=seq_len_q, N=seq_len_k, D=self.head_dim,
+				TILE_K=self.head_dim,
+				scale=self.scale, IS_CAUSAL=causal, HAS_MASK=has_mask
+			)
 		if self.world_size > 1:
 			output_list = [torch.empty_like(output) for _ in range(self.world_size)]
 			dist.all_gather(output_list, output)
