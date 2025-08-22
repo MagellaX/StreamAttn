@@ -118,7 +118,7 @@ stream-attention-test --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
 Behavior and methodology:
 - On CUDA, the baseline uses PyTorch SDPA with the flash backend (FlashAttention-3 path). On CPU, both implementations use SDPA in fp32.
 - Metrics reported: per-iteration latency, estimated TFLOPS, and approximate bandwidth based on tensor traffic. Measurements are averaged after warmup.
-- The fused kernel enables Triton only when available, running on CUDA, and autograd is not required. Otherwise, SDPA is used to ensure correctness, support for masking and training.
+- The fused kernel uses Triton on CUDA for the forward pass; when gradients are required, it falls back to an SDPA-backed autograd path. Otherwise, SDPA is used to ensure correctness, masking, and training.
 - For reproducibility, fix random seeds, pin CUDA clocks if applicable, and isolate runs. Actual performance depends on GPU architecture, drivers, and PyTorch/Triton versions.
 
 Example output (format):
