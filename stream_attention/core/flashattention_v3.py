@@ -20,12 +20,15 @@ class FlashAttentionV3(nn.Module):
     - Falls back to math/mem-efficient kernels elsewhere
     - API: inputs as [batch, seq_len, num_heads, head_dim]
     """
+
     def __init__(self, config=None):
         super().__init__()
         self.num_heads = getattr(config, "num_heads", None)
         self.head_dim = getattr(config, "head_dim", None)
         self.dropout = getattr(config, "dropout", 0.0) or 0.0
-        self.dtype = torch.float16 if getattr(config, "use_fp16", True) else torch.float32
+        self.dtype = (
+            torch.float16 if getattr(config, "use_fp16", True) else torch.float32
+        )
 
     def forward(
         self,
@@ -49,7 +52,7 @@ class FlashAttentionV3(nn.Module):
         attn_mask = None
         if attention_mask is not None:
             if attention_mask.dtype == torch.bool:
-                mask = torch.where(attention_mask, 0.0, float('-inf')).to(q.dtype)
+                mask = torch.where(attention_mask, 0.0, float("-inf")).to(q.dtype)
             else:
                 mask = attention_mask.to(q.dtype)
             if mask.dim() == 2:
@@ -60,7 +63,7 @@ class FlashAttentionV3(nn.Module):
                 attn_mask = mask
 
         cpu_cast_back = None
-        if q.device.type == 'cpu' and q.dtype in (torch.float16, torch.bfloat16):
+        if q.device.type == "cpu" and q.dtype in (torch.float16, torch.bfloat16):
             cpu_cast_back = q.dtype
             q = q.float()
             k = k.float()
@@ -73,7 +76,10 @@ class FlashAttentionV3(nn.Module):
                 # Prefer the newer torch.nn.attention API when available
                 with torch.nn.attention.sdpa_kernel(enable_flash=True):
                     out = F.scaled_dot_product_attention(
-                        q, k, v, attn_mask,
+                        q,
+                        k,
+                        v,
+                        attn_mask,
                         dropout_p=self.dropout if self.training else 0.0,
                         is_causal=causal,
                     )
@@ -83,7 +89,10 @@ class FlashAttentionV3(nn.Module):
                     enable_math=False, enable_flash=True, enable_mem_efficient=False
                 ):
                     out = F.scaled_dot_product_attention(
-                        q, k, v, attn_mask,
+                        q,
+                        k,
+                        v,
+                        attn_mask,
                         dropout_p=self.dropout if self.training else 0.0,
                         is_causal=causal,
                     )
@@ -107,6 +116,10 @@ class FlashAttentionV3(nn.Module):
                 is_causal=causal,
             )
 
+
+
+
+
         if cpu_cast_back is not None:
             out = out.to(cpu_cast_back)
 
@@ -114,7 +127,9 @@ class FlashAttentionV3(nn.Module):
         return out
 
     @torch.no_grad()
-    def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100) -> Dict[str, float]:
+    def benchmark(
+        self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100
+    ) -> Dict[str, float]:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         dtype = self.dtype if device.type == "cuda" else torch.float32
 
@@ -133,6 +148,7 @@ class FlashAttentionV3(nn.Module):
             torch.cuda.synchronize()
 
         import time
+
         start = time.time()
         for _ in range(iterations):
             _ = self.forward(q, k, v, causal=True)
@@ -141,10 +157,24 @@ class FlashAttentionV3(nn.Module):
         elapsed = (time.time() - start) / iterations
 
         # FLOPS: 4 * B * H * Q * K * D approximately for attention
-        flops = 4.0 * batch_size * (self.num_heads or nh) * seq_len * seq_len * (self.head_dim or hd)
+        flops = (
+            4.0
+            * batch_size
+            * (self.num_heads or nh)
+            * seq_len
+            * seq_len
+            * (self.head_dim or hd)
+        )
         tflops = flops / elapsed / 1e12
         bytes_per_el = torch.tensor([], dtype=dtype).element_size()
-        memory_bytes = 3 * batch_size * seq_len * (self.num_heads or nh) * (self.head_dim or hd) * bytes_per_el
+        memory_bytes = (
+            3
+            * batch_size
+            * seq_len
+            * (self.num_heads or nh)
+            * (self.head_dim or hd)
+            * bytes_per_el
+        )
         bandwidth = memory_bytes / elapsed / 1e9
 
         return {

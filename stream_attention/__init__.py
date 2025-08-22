@@ -7,7 +7,7 @@ in a single kernel pass.
 
 Key Features:
 - Single-pass attention computation without materializing attention matrix
-- Online softmax with running statistics for numerical stability  
+- Online softmax with running statistics for numerical stability
 - Tiled processing for efficient memory access
 - Multi-GPU support through PyTorch Distributed
 - Easy integration with existing deep learning workflows
@@ -18,7 +18,10 @@ __author__ = "StreamAttention Team"
 __license__ = "MIT"
 
 from .core.config import StreamAttentionConfig
-from .core.fused_online_attention import FusedOnlineAttention, create_fused_online_attention
+from .core.fused_online_attention import (
+    FusedOnlineAttention,
+    create_fused_online_attention,
+)
 from .core.attention import StreamAttention, create_stream_attention
 from .core.flashattention_v3 import FlashAttentionV3
 
@@ -26,7 +29,7 @@ from .core.flashattention_v3 import FlashAttentionV3
 from .utils.memory import (
     MemoryProfiler,
     create_kv_compressor,
-    gradient_checkpoint_sequential
+    gradient_checkpoint_sequential,
 )
 
 # Main API
@@ -36,16 +39,13 @@ __all__ = [
     "FusedOnlineAttention",
     "StreamAttentionConfig",
     "FlashAttentionV3",
-    
     # Factory functions
     "create_stream_attention",
     "create_fused_online_attention",
-    
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",
     "gradient_checkpoint_sequential",
-    
     # Version
-    "__version__"
-] 
+    "__version__",
+]
