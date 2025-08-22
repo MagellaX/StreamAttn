@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
+from contextlib import nullcontext
 import logging
 try:
     from torch.nn.attention import SDPBackend
@@ -75,9 +76,13 @@ class FlashAttentionV3(nn.Module):
             if attn_mask is not None:
                 attn_mask = attn_mask.float()
 
+        sdpa_ctx = nullcontext()
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
+
+                sdpa_ctx = torch.nn.attention.sdpa_kernel(enable_flash=True)
+
                 try:
                     if SDPBackend is None:
                         raise TypeError
@@ -101,30 +106,17 @@ class FlashAttentionV3(nn.Module):
                             dropout_p=self.dropout if self.training else 0.0,
                             is_causal=causal,
                         )
+
             except AttributeError:
-                # Older PyTorch versions expose the context in torch.backends
-                with torch.backends.cuda.sdp_kernel(
-                    enable_math=False, enable_flash=True, enable_mem_efficient=False
-                ):
-                    out = F.scaled_dot_product_attention(
-                        q,
-                        k,
-                        v,
-                        attn_mask,
-                        dropout_p=self.dropout if self.training else 0.0,
-                        is_causal=causal,
+                try:
+                    # Older PyTorch versions expose the context in torch.backends
+                    sdpa_ctx = torch.backends.cuda.sdp_kernel(
+                        enable_math=False, enable_flash=True, enable_mem_efficient=False
                     )
-            except RuntimeError:
-                # Fall back to default implementation if flash attention not available
-                out = F.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    attn_mask,
-                    dropout_p=self.dropout if self.training else 0.0,
-                    is_causal=causal,
-                )
-        else:
+                except (AttributeError, RuntimeError):
+                    sdpa_ctx = nullcontext()
+
+        with sdpa_ctx:
             out = F.scaled_dot_product_attention(
                 q,
                 k,
