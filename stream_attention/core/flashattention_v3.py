@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from typing import Optional, Dict
 from contextlib import nullcontext
 import logging
+try:
+    from torch.nn.attention import SDPBackend
+except ImportError:  # pragma: no cover - older PyTorch
+    SDPBackend = None
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +80,33 @@ class FlashAttentionV3(nn.Module):
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
+
                 sdpa_ctx = torch.nn.attention.sdpa_kernel(enable_flash=True)
+
+                try:
+                    if SDPBackend is None:
+                        raise TypeError
+                    with torch.nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                        out = F.scaled_dot_product_attention(
+                            q,
+                            k,
+                            v,
+                            attn_mask,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                        )
+                except TypeError:
+                    # Older PyTorch versions use flag-based arguments
+                    with torch.nn.attention.sdpa_kernel(enable_flash=True):
+                        out = F.scaled_dot_product_attention(
+                            q,
+                            k,
+                            v,
+                            attn_mask,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                        )
+
             except AttributeError:
                 try:
                     # Older PyTorch versions expose the context in torch.backends
