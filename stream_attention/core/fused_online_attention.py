@@ -312,6 +312,33 @@ class FusedOnlineAttention(nn.Module):
 			output = torch.cat(output_list, dim=1)
 		return (output, lse) if return_lse else output
 
+	@torch.no_grad()
+	def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100) -> Dict[str, float]:
+		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		dtype = self.dtype if device.type == "cuda" else torch.float32
+		nh = self.num_heads
+		hd = self.head_dim
+		q = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
+		k = torch.randn_like(q)
+		v = torch.randn_like(q)
+		for _ in range(warmup):
+			_ = self.forward(q, k, v, causal=True)
+		if device.type == "cuda":
+			torch.cuda.synchronize()
+		import time
+		start = time.time()
+		for _ in range(iterations):
+			_ = self.forward(q, k, v, causal=True)
+		if device.type == "cuda":
+			torch.cuda.synchronize()
+		elapsed = (time.time() - start) / iterations
+		flops = 4.0 * batch_size * nh * seq_len * seq_len * hd
+		tflops = flops / elapsed / 1e12
+		bytes_per_el = torch.tensor([], dtype=dtype).element_size()
+		memory_bytes = 3 * batch_size * seq_len * nh * hd * bytes_per_el
+		bandwidth = memory_bytes / elapsed / 1e9
+		return {"time_ms": elapsed * 1000.0, "tflops": tflops, "bandwidth_gb_s": bandwidth, "seq_len": seq_len, "batch_size": batch_size}
+
 
 class FusedOnlineAttentionAutogradFn(torch.autograd.Function):
 	@staticmethod
