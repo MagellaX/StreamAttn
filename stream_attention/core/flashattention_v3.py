@@ -3,6 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 import logging
+try:
+    from torch.nn.attention import SDPBackend
+except Exception:  # pragma: no cover - older PyTorch
+    SDPBackend = None
 
 logger = logging.getLogger(__name__)
 
@@ -74,15 +78,29 @@ class FlashAttentionV3(nn.Module):
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
-                with torch.nn.attention.sdpa_kernel(enable_flash=True):
-                    out = F.scaled_dot_product_attention(
-                        q,
-                        k,
-                        v,
-                        attn_mask,
-                        dropout_p=self.dropout if self.training else 0.0,
-                        is_causal=causal,
-                    )
+                try:
+                    if SDPBackend is None:
+                        raise TypeError
+                    with torch.nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+                        out = F.scaled_dot_product_attention(
+                            q,
+                            k,
+                            v,
+                            attn_mask,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                        )
+                except TypeError:
+                    # Older PyTorch versions use flag-based arguments
+                    with torch.nn.attention.sdpa_kernel(enable_flash=True):
+                        out = F.scaled_dot_product_attention(
+                            q,
+                            k,
+                            v,
+                            attn_mask,
+                            dropout_p=self.dropout if self.training else 0.0,
+                            is_causal=causal,
+                        )
             except AttributeError:
                 # Older PyTorch versions expose the context in torch.backends
                 with torch.backends.cuda.sdp_kernel(
