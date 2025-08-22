@@ -58,7 +58,7 @@ The chosen tile size (`TILE_K = 64`) is a starting point. Optimal performance ma
 
 ### Triton Limitations
 
-Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The module automatically falls back to PyTorch SDPA for autograd, masking, or dropout.
+Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The module automatically falls back to PyTorch SDPA for autograd or masking.
 
 ### Distributed Setup Issues
 

@@ -1,5 +1,9 @@
 import argparse
+import os
+import sys
 import torch
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from stream_attention.core.fused_online_attention import FusedOnlineAttention
 from stream_attention.core.flashattention_v3 import FlashAttentionV3
 from stream_attention.core.config import StreamAttentionConfig
