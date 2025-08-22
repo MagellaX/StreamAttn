@@ -117,35 +117,6 @@ class FlashAttentionV3(nn.Module):
             )
 
 
-        if _use_flash_sdpa() and q.device.type == "cuda":
-            try:
-                with torch.nn.attention.sdpa_kernel(enable_flash=True):
-                    out = F.scaled_dot_product_attention(
-                        q,
-                        k,
-                        v,
-                        attn_mask,
-                        dropout_p=self.dropout if self.training else 0.0,
-                        is_causal=causal,
-                    )
-            except RuntimeError:
-                out = F.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    attn_mask,
-                    dropout_p=self.dropout if self.training else 0.0,
-                    is_causal=causal,
-                )
-        else:
-            out = F.scaled_dot_product_attention(
-                q,
-                k,
-                v,
-                attn_mask,
-                dropout_p=self.dropout if self.training else 0.0,
-                is_causal=causal,
-            )
 
 
 

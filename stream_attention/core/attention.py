@@ -52,9 +52,6 @@ class StreamAttention(nn.Module):
 
             dropout=config.dropout,
             dtype=torch.float16 if config.use_fp16 else torch.float32,
-
-            dtype=torch.float16 if config.use_fp16 else torch.float32
-
         )
 
         # Optional: Linear projections for Q, K, V

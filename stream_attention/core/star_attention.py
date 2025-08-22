@@ -376,7 +376,7 @@ class StarAttention(nn.Module):
             * query_len
             * num_heads
             * head_dim
-            * state.kv_caches[0][0].shape[1]
+            * next(iter(state.kv_caches.values()))[0].shape[1]
             * len(state.kv_caches)
         ) / 1e9
         actual_time = state.phase1_time + state.phase2_time

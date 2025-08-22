@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass
 from contextlib import contextmanager
 import torch.nn.functional as F
+from types import SimpleNamespace
 
 from .config import StreamAttentionConfig
 from .flashattention_v3 import FlashAttentionV3
@@ -316,10 +317,8 @@ class RingAttention(nn.Module):
 
         # Prepare communication buffers
         kv_buffer_shape = (batch_size, local_seq_len, num_heads, head_dim)
-        send_k = key.clone()
-        send_v = value.clone()
-        recv_k = torch.empty(kv_buffer_shape, dtype=key.dtype, device=device)
-        recv_v = torch.empty(kv_buffer_shape, dtype=value.dtype, device=device)
+        send_buffer = torch.stack([key.clone(), value.clone()], dim=0).contiguous()
+        recv_buffer = torch.empty_like(send_buffer)
 
         # Current KV blocks
         curr_k = key
@@ -340,12 +339,17 @@ class RingAttention(nn.Module):
 
                     # Send current KV to next rank, receive from previous
                     send_handle, recv_handle = self.ring_comm.send_recv(
-                        torch.stack([send_k, send_v], dim=0),
-                        torch.stack([recv_k, recv_v], dim=0),
+                        send_buffer, recv_buffer
                     )
 
                 # Compute attention for current block
                 comp_start = time.time()
+
+                # Capture immutable indices for checkpoint to avoid mutable state issues
+                local_state = SimpleNamespace(
+                    query_block_idx=state.query_block_idx,
+                    key_value_block_idx=state.key_value_block_idx,
+                )
 
                 if self.use_gradient_checkpointing and self.training:
                     # Use gradient checkpointing to save memory
@@ -354,12 +358,12 @@ class RingAttention(nn.Module):
                         query,
                         curr_k,
                         curr_v,
-                        state,
+                        local_state,
                         causal,
                     )
                 else:
                     block_output, block_lse = self._compute_block_attention(
-                        query, curr_k, curr_v, state, causal
+                        query, curr_k, curr_v, local_state, causal
                     )
 
                 state.computation_time += time.time() - comp_start
@@ -380,13 +384,10 @@ class RingAttention(nn.Module):
                     state.communication_time += time.time() - comm_start
 
                     # Unstack received tensors
-                    curr_k, curr_v = torch.unbind(
-                        torch.stack([recv_k, recv_v], dim=0), dim=0
-                    )
+                    curr_k, curr_v = recv_buffer[0], recv_buffer[1]
 
                     # Swap buffers for next iteration
-                    send_k, recv_k = recv_k, send_k
-                    send_v, recv_v = recv_v, send_v
+                    send_buffer, recv_buffer = recv_buffer, send_buffer
 
                 state.blocks_processed += 1
 

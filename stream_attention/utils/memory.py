@@ -477,6 +477,9 @@ class MemoryEfficientAttention(nn.Module):
             scores = scores.masked_fill(
                 ~chunk_mask.unsqueeze(1).unsqueeze(-1), float("-inf")
             )
+            # Prevent NaNs when an entire query row is masked: replace fully -inf rows with zeros
+            all_masked = ~torch.isfinite(scores).any(dim=-1, keepdim=True)
+            scores = torch.where(all_masked, torch.zeros_like(scores), scores)
 
         # Softmax
         attn_weights = F.softmax(scores, dim=-1)

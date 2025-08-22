@@ -38,9 +38,19 @@ def replace_llama_attention(
             parent = model
             for part in parent_name.split(".") if parent_name else []:
                 parent = getattr(parent, part)
-            setattr(parent, attr, StreamAttention(config))
+            try:
+                param = next(module.parameters())
+                device = param.device
+                dtype = param.dtype
+            except StopIteration:
+                device = None
+                dtype = None
+            new_mod = StreamAttention(config)
+            if device is not None:
+                new_mod = new_mod.to(device=device, dtype=dtype)
+            setattr(parent, attr, new_mod)
             replaced += 1
-            logger.info(f"Replaced {name} with StreamAttention")
+            logger.info(f"Replaced {name} with StreamAttention (aligned to device/dtype)")
     return replaced
 
 
@@ -57,7 +67,17 @@ def replace_attention_generic(
             for part in parent_name.split(".") if parent_name else []:
                 parent = getattr(parent, part)
             try:
-                setattr(parent, attr, StreamAttention(config))
+                param = next(module.parameters())
+                device = param.device
+                dtype = param.dtype
+            except Exception:
+                device = None
+                dtype = None
+            try:
+                new_mod = StreamAttention(config)
+                if device is not None:
+                    new_mod = new_mod.to(device=device, dtype=dtype)
+                setattr(parent, attr, new_mod)
                 replaced += 1
             except Exception:
                 continue
@@ -128,7 +148,17 @@ def replace_gpt2_attention(
             parent = model
             for part in parent_name.split(".") if parent_name else []:
                 parent = getattr(parent, part)
-            setattr(parent, attr, GPT2AttentionAdapter(config))
+            try:
+                param = next(module.parameters())
+                device = param.device
+                dtype = param.dtype
+            except StopIteration:
+                device = None
+                dtype = None
+            adapter = GPT2AttentionAdapter(config)
+            if device is not None:
+                adapter = adapter.to(device=device, dtype=dtype)
+            setattr(parent, attr, adapter)
             replaced += 1
-            logger.info(f"Replaced {name} with GPT2AttentionAdapter(StreamAttention)")
+            logger.info(f"Replaced {name} with GPT2AttentionAdapter(StreamAttention) aligned to device/dtype")
     return replaced
