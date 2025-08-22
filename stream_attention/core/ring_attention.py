@@ -262,7 +262,7 @@ class RingAttention(nn.Module):
         
         return combined_output, combined_lse
     
-    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float16)
+    @torch.amp.custom_fwd(device_type="cuda", cast_inputs=torch.float16)
     def forward(
         self,
         query: torch.Tensor,
