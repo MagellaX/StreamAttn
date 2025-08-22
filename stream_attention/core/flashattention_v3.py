@@ -5,7 +5,7 @@ from typing import Optional, Dict
 import logging
 try:
     from torch.nn.attention import SDPBackend
-except Exception:  # pragma: no cover - older PyTorch
+except ImportError:  # pragma: no cover - older PyTorch
     SDPBackend = None
 
 logger = logging.getLogger(__name__)
