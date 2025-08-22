@@ -68,6 +68,9 @@ class FlashAttentionV3(nn.Module):
                 attn_mask = attn_mask.float()
 
 
+
+
+
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
@@ -97,6 +100,8 @@ class FlashAttentionV3(nn.Module):
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=causal,
             )
+
+
 
 
         if _use_flash_sdpa() and q.device.type == 'cuda':

@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 if TRITON_AVAILABLE:
 
+
+
+
         @triton.autotune(
                 configs=[
                         triton.Config({'TILE_M': 64, 'TILE_N': 64}, num_warps=4, num_stages=2),
@@ -144,6 +147,215 @@ if TRITON_AVAILABLE:
                 lse_ptrs = Lse + off_b * stride_lb + off_h * stride_lh + offs_m * stride_lm
                 lse_mask = offs_m < M
                 tl.store(lse_ptrs, lse, mask=lse_mask)
+
+
+
+class FusedOnlineAttention(nn.Module):
+        """
+        Production-ready Fused Online Attention module
+        """
+        
+        def __init__(
+                self,
+                num_heads: int,
+                head_dim: int,
+                tile_size_q: int = 128,
+                tile_size_k: int = 64,
+                dropout: float = 0.0,
+                scale: Optional[float] = None,
+                device: Optional[torch.device] = None,
+                dtype: torch.dtype = torch.float16
+        ):
+                super().__init__()
+                self.num_heads = num_heads
+                self.head_dim = head_dim
+                self.tile_size_q = tile_size_q
+                self.tile_size_k = tile_size_k
+                self.dropout = dropout
+                self.scale = scale or (1.0 / math.sqrt(head_dim))
+                self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+                self.dtype = dtype
+                self.world_size = dist.get_world_size() if dist.is_initialized() else 1
+                self.rank = dist.get_rank() if dist.is_initialized() else 0
+                logger.info(
+                        f"FusedOnlineAttention initialized: heads={num_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, triton={TRITON_AVAILABLE}"
+                )
+        
+        def forward(
+                self,
+                query: torch.Tensor,
+                key: torch.Tensor,
+                value: torch.Tensor,
+                causal: bool = True,
+                return_lse: bool = False,
+                attention_mask: Optional[torch.Tensor] = None,
+                dropout_p: float = 0.0,
+        ) -> torch.Tensor:
+                batch_size, seq_len_q, num_heads_q, head_dim_q = query.shape
+                _, seq_len_k, num_heads_k, head_dim_k = key.shape
+                assert num_heads_q == num_heads_k == self.num_heads
+                assert head_dim_q == head_dim_k == self.head_dim
+                if self.world_size > 1:
+                        queries_per_gpu = seq_len_q // self.world_size
+                        start_idx = self.rank * queries_per_gpu
+                        end_idx = start_idx + queries_per_gpu if self.rank < self.world_size - 1 else seq_len_q
+                        query = query[:, start_idx:end_idx]
+                        seq_len_q = query.shape[1]
+                mask_supported = (attention_mask is None) or (
+                        attention_mask.dim() == 2 and attention_mask.shape[0] == batch_size and attention_mask.shape[1] == seq_len_k
+                )
+                use_triton = (
+                        TRITON_AVAILABLE and query.is_cuda and key.is_cuda and value.is_cuda and mask_supported and (dropout_p == 0.0 or not self.training)
+                )
+                if use_triton and (torch.is_grad_enabled() and (query.requires_grad or key.requires_grad or value.requires_grad)):
+                        if return_lse:
+                                use_triton = False
+                        else:
+                                return FusedOnlineAttentionAutogradFn.apply(self, query, key, value, bool(causal), attention_mask, float(dropout_p))
+                if use_triton:
+                        return self._forward_triton(query, key, value, causal=causal, attention_mask=attention_mask, dropout_p=dropout_p, return_lse=return_lse)
+                else:
+                        q = query.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_q, self.head_dim)
+                        k = key.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
+                        v = value.permute(0,2,1,3).reshape(batch_size * self.num_heads, seq_len_k, self.head_dim)
+                        attn_mask_bh = None
+                        if attention_mask is not None:
+                                attn_mask_bh = self._prepare_attn_mask(attention_mask, batch_size, self.num_heads, seq_len_q, seq_len_k, q.device, q.dtype)
+                        if attn_mask_bh is not None:
+                                # Convert to additive mask and include causal if requested
+                                if attn_mask_bh.dtype == torch.bool:
+                                        add_mask = torch.where(attn_mask_bh, torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device), torch.zeros(1, dtype=q.dtype, device=q.device))
+                                else:
+                                        add_mask = attn_mask_bh
+                                if causal:
+                                        tri = torch.triu(torch.ones(seq_len_q, seq_len_k, dtype=torch.bool, device=q.device), diagonal=1).unsqueeze(0)
+                                        tri_add = torch.where(tri, torch.full((1,), float('-inf'), dtype=q.dtype, device=q.device), torch.zeros(1, dtype=q.dtype, device=q.device))
+                                        add_mask = add_mask + tri_add
+                                sdpa_kwargs = dict(attn_mask=add_mask, is_causal=False, dropout_p=(dropout_p if self.training else 0.0))
+                        else:
+                                sdpa_kwargs = dict(attn_mask=None, is_causal=causal, dropout_p=(dropout_p if self.training else 0.0))
+                        if q.is_cuda:
+                                with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=True, enable_mem_efficient=False):
+                                        out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
+                        else:
+                                out = torch.nn.functional.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
+                        out = out.reshape(batch_size, self.num_heads, seq_len_q, self.head_dim).permute(0,2,1,3).contiguous()
+                        return (out, None) if return_lse else out
+        
+        def _prepare_attn_mask(
+                self,
+                attention_mask: torch.Tensor,
+                batch_size: int,
+                num_heads: int,
+                seq_len_q: int,
+                seq_len_k: int,
+                device: torch.device,
+                dtype: torch.dtype,
+        ) -> torch.Tensor:
+                mask = attention_mask
+                if mask.dtype == torch.float16 or mask.dtype == torch.bfloat16:
+                        mask = mask.to(dtype)
+                if mask.dtype == torch.bool:
+                        pass
+                if mask.dim() == 2:
+                        mask = mask.view(batch_size, 1, 1, seq_len_k)
+                elif mask.dim() == 3:
+                        mask = mask.view(batch_size, 1, seq_len_q, seq_len_k)
+                elif mask.dim() == 4:
+                        pass
+                else:
+                        raise ValueError("Unsupported attention_mask shape. Expected 2D, 3D, or 4D tensor.")
+                bh_mask = mask.expand(batch_size, num_heads, mask.shape[-2] if mask.dim() == 4 else seq_len_q, seq_len_k)
+                bh_mask = bh_mask.reshape(batch_size * num_heads, bh_mask.shape[-2], bh_mask.shape[-1]).to(device)
+                return bh_mask
+        
+        def _forward_triton(
+                self,
+                query: torch.Tensor,
+                key: torch.Tensor,
+                value: torch.Tensor,
+                causal: bool,
+                attention_mask: Optional[torch.Tensor],
+                dropout_p: float,
+                return_lse: bool = False,
+        ):
+                batch_size, seq_len_q = query.shape[0], query.shape[1]
+                seq_len_k = key.shape[1]
+                output = torch.empty_like(query)
+                lse = torch.empty((batch_size, self.num_heads, seq_len_q), dtype=torch.float32, device=query.device)
+                grid = lambda meta: (triton.cdiv(seq_len_q, meta['TILE_M']), batch_size, self.num_heads)
+                has_mask = attention_mask is not None
+                if has_mask:
+                        if attention_mask.dtype == torch.bool:
+                                mask_norm = (~attention_mask).to(torch.int32)
+                        else:
+                                mask_norm = (attention_mask == 0).to(torch.int32)
+                        if mask_norm.dim() != 2 or mask_norm.shape[0] != batch_size or mask_norm.shape[1] != seq_len_k:
+                                raise ValueError("attention_mask must be shape [batch, seq_len_k] for fused Triton path")
+                        mask_norm = mask_norm.contiguous().to(query.device)
+                        mask_ptr = mask_norm
+                        stride_mb, stride_mn = mask_ptr.stride(0), mask_ptr.stride(1)
+                else:
+                        mask_ptr = output
+                        stride_mb, stride_mn = 0, 0
+                fused_online_attention_kernel[grid](
+                        query, key, value, output, lse,
+                        mask_ptr,
+                        query.stride(0), query.stride(2), query.stride(1), query.stride(3),
+                        key.stride(0), key.stride(2), key.stride(1), key.stride(3),
+                        value.stride(0), value.stride(2), value.stride(1), value.stride(3),
+                        output.stride(0), output.stride(2), output.stride(1), output.stride(3),
+                        lse.stride(0), lse.stride(1), lse.stride(2),
+                        stride_mb, stride_mn,
+                                H=self.num_heads, M=seq_len_q, N=seq_len_k, D=self.head_dim,
+                                TILE_K=self.head_dim,
+                                scale=self.scale, IS_CAUSAL=causal, HAS_MASK=has_mask
+                        )
+                if self.world_size > 1:
+                        output_list = [torch.empty_like(output) for _ in range(self.world_size)]
+                        dist.all_gather(output_list, output)
+                        output = torch.cat(output_list, dim=1)
+                return (output, lse) if return_lse else output
+
+        @torch.no_grad()
+        def benchmark(
+                self,
+                seq_len: int,
+                batch_size: int = 1,
+                warmup: int = 10,
+                iterations: int = 100,
+        ) -> Dict[str, float]:
+                """Benchmark this module on random data"""
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                dtype = self.dtype if device.type == "cuda" else torch.float32
+
+                nh = self.num_heads
+                hd = self.head_dim
+
+                q = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
+                k = torch.randn_like(q)
+                v = torch.randn_like(q)
+
+                for _ in range(warmup):
+                        _ = self.forward(q, k, v, causal=True)
+                if device.type == "cuda":
+                        torch.cuda.synchronize()
+
+                import time
+                start = time.time()
+                for _ in range(iterations):
+                        _ = self.forward(q, k, v, causal=True)
+                if device.type == "cuda":
+                        torch.cuda.synchronize()
+                elapsed = (time.time() - start) / iterations
+
+                flops = 4.0 * batch_size * nh * seq_len * seq_len * hd
+                tflops = flops / elapsed / 1e12
+                bytes_per_el = torch.tensor([], dtype=dtype).element_size()
+                memory_bytes = 3 * batch_size * seq_len * nh * hd * bytes_per_el
+                bandwidth = memory_bytes / elapsed / 1e9
+                return {"time_ms": elapsed * 1000.0, "tflops": tflops, "bandwidth_gb_s": bandwidth, "seq_len": seq_len, "batch_size": batch_size}
+
 
 
 class FusedOnlineAttention(nn.Module):
@@ -632,6 +844,7 @@ class FusedOnlineAttention(nn.Module):
 		return (output, lse) if return_lse else output
 
 
+
 	@torch.no_grad()
 	def benchmark(self, seq_len: int, batch_size: int = 1, warmup: int = 10, iterations: int = 100) -> Dict[str, float]:
 		device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -719,5 +932,9 @@ def create_fused_online_attention(
 
         return FusedOnlineAttention(num_heads, head_dim, **kwargs)
 
+
+        return FusedOnlineAttention(num_heads, head_dim, **kwargs)
+
 	return FusedOnlineAttention(num_heads, head_dim, **kwargs)
+
 
