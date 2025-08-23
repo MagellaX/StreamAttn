@@ -10,6 +10,12 @@ This repository provides:
 - Utilities for memory profiling and KV-cache compression
 - Optional integration helpers for Hugging Face models
 
+## Recent Updates
+
+- Updated `FlashAttentionV3` wrapper to use PyTorch 2.8 `sdpa_kernel` API with a fallback for older releases.
+- Restored the Triton fused kernel and added a parity test against FlashAttention‑3.
+- Normalized indentation in the Triton kernel to avoid `TabError` on Colab and other environments.
+
 
 ## Installation
 
