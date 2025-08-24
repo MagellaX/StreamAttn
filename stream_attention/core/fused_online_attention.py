@@ -15,6 +15,7 @@ Based on the original StreamAttention research prototype.
 """
 
 import math
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -35,15 +36,30 @@ logger = logging.getLogger(__name__)
 
 if TRITON_AVAILABLE:
 
-    @triton.autotune(
-        configs=[
-            triton.Config({"TILE_M": 64, "TILE_N": 64}, num_warps=4, num_stages=2),
-            triton.Config({"TILE_M": 128, "TILE_N": 64}, num_warps=4, num_stages=2),
-            triton.Config({"TILE_M": 128, "TILE_N": 128}, num_warps=8, num_stages=2),
-            triton.Config({"TILE_M": 256, "TILE_N": 128}, num_warps=8, num_stages=3),
-        ],
-        key=["M", "N", "D"],
+    _sm = (
+        torch.cuda.get_device_capability()[0] * 10
+        + torch.cuda.get_device_capability()[1]
+        if torch.cuda.is_available()
+        else 0
     )
+
+    _SM90_CONFIGS = [
+        triton.Config({"TILE_M": 128, "TILE_N": 128}, num_warps=8, num_stages=3),
+        triton.Config({"TILE_M": 256, "TILE_N": 128}, num_warps=8, num_stages=4),
+    ]
+    _SM80_CONFIGS = [
+        triton.Config({"TILE_M": 128, "TILE_N": 64}, num_warps=4, num_stages=3),
+        triton.Config({"TILE_M": 128, "TILE_N": 128}, num_warps=8, num_stages=3),
+    ]
+    _FALLBACK_CONFIGS = [
+        triton.Config({"TILE_M": 64, "TILE_N": 64}, num_warps=4, num_stages=2),
+        triton.Config({"TILE_M": 128, "TILE_N": 64}, num_warps=4, num_stages=2),
+    ]
+    _CONFIGS = (
+        _SM90_CONFIGS if _sm >= 90 else _SM80_CONFIGS if _sm >= 80 else _FALLBACK_CONFIGS
+    )
+
+    @triton.autotune(configs=_CONFIGS, key=["M", "N", "D"])
     @triton.jit
     def fused_online_attention_kernel(
         Q,
@@ -84,6 +100,9 @@ if TRITON_AVAILABLE:
         scale: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
         HAS_MASK: tl.constexpr,
+        USE_WGMMA: tl.constexpr,
+        USE_TMA: tl.constexpr,
+        USE_CP_ASYNC: tl.constexpr,
     ):
         """
         Fused Online Softmax Attention Kernel
@@ -101,7 +120,7 @@ if TRITON_AVAILABLE:
         offs_n = tl.arange(0, TILE_N)
         offs_k = tl.arange(0, D)
 
-        # Load Q tile
+        # Load Q tile (TMA for Hopper)
         q_ptrs = (
             Q
             + off_b * stride_qb
@@ -109,7 +128,11 @@ if TRITON_AVAILABLE:
             + (offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk)
         )
         q_mask = (offs_m[:, None] < M) & (offs_k[None, :] < D)
-        q = tl.load(q_ptrs, mask=q_mask, other=0.0)
+        if USE_TMA:
+            # Placeholder for TMA-based transfer with arrival barriers
+            q = tl.load(q_ptrs, mask=q_mask, other=0.0)
+        else:
+            q = tl.load(q_ptrs, mask=q_mask, other=0.0)
 
         # Accumulators
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
@@ -133,10 +156,16 @@ if TRITON_AVAILABLE:
                 + ((start_n + offs_n)[:, None] * stride_vn + offs_k[None, :] * stride_vk)
             )
             kv_mask = ((start_n + offs_n)[:, None] < N) & (offs_k[None, :] < D)
-            k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-            v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+            if USE_CP_ASYNC:
+                # cp.async + double buffering placeholder
+                k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+            else:
+                k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
 
             # QK^T
+            # Hopper uses WGMMA tensor cores; Ampere uses mma.sync
             qk = tl.dot(q, tl.trans(k)) * scale
 
             # Causal mask
@@ -209,10 +238,16 @@ class FusedOnlineAttention(nn.Module):
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
         self.dtype = dtype
+        if self.device.type == "cuda":
+            cap = torch.cuda.get_device_capability(self.device)
+            self.sm = cap[0] * 10 + cap[1]
+        else:
+            self.sm = 0
+        self.verify = bool(int(os.getenv("STREAM_ATTN_VERIFY", "0")))
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         logger.info(
-            f"FusedOnlineAttention initialized: heads={num_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, triton={TRITON_AVAILABLE}"
+            f"FusedOnlineAttention initialized: heads={num_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, sm={self.sm}, triton={TRITON_AVAILABLE}"
         )
 
     def forward(
@@ -469,12 +504,57 @@ class FusedOnlineAttention(nn.Module):
             scale=self.scale,
             IS_CAUSAL=causal,
             HAS_MASK=has_mask,
+            USE_WGMMA=self.sm >= 90,
+            USE_TMA=self.sm >= 90,
+            USE_CP_ASYNC=self.sm >= 80 and self.sm < 90,
         )
         if self.world_size > 1:
             output_list = [torch.empty_like(output) for _ in range(self.world_size)]
             dist.all_gather(output_list, output)
             output = torch.cat(output_list, dim=1)
+        if self.verify:
+            self._verify_output(query, key, value, output, causal, attention_mask, dropout_p)
         return (output, lse) if return_lse else output
+
+    def _verify_output(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        out: torch.Tensor,
+        causal: bool,
+        attention_mask: Optional[torch.Tensor],
+        dropout_p: float,
+    ) -> None:
+        """Compare Triton output against PyTorch reference."""
+        bsz, sq, _, _ = query.shape
+        sk = key.shape[1]
+        q = query.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sq, self.head_dim)
+        k = key.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sk, self.head_dim)
+        v = value.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sk, self.head_dim)
+        attn_mask_bh = None
+        if attention_mask is not None:
+            attn_mask_bh = self._prepare_attn_mask(
+                attention_mask,
+                bsz,
+                self.num_heads,
+                sq,
+                sk,
+                q.device,
+                q.dtype,
+            )
+        sdpa_kwargs = dict(
+            attn_mask=attn_mask_bh,
+            is_causal=causal if attn_mask_bh is None else False,
+            dropout_p=0.0,
+        )
+        ref = F.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
+        ref = (
+            ref.reshape(bsz, self.num_heads, sq, self.head_dim)
+            .permute(0, 2, 1, 3)
+            .contiguous()
+        )
+        torch.testing.assert_close(out, ref, rtol=1e-2, atol=1e-2)
 
     @torch.no_grad()
     def benchmark(
