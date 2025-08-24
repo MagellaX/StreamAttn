@@ -243,7 +243,7 @@ class FusedOnlineAttention(nn.Module):
             self.sm = cap[0] * 10 + cap[1]
         else:
             self.sm = 0
-        self.verify = bool(int(os.getenv("STREAM_ATTN_VERIFY", "0")))
+        self.verify = os.getenv("STREAM_ATTN_VERIFY", "0") in ("1", "true", "True", "yes", "on")
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         logger.info(
