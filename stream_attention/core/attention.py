@@ -198,7 +198,7 @@ class StreamAttention(nn.Module):
                     for part in parent_name.split("."):
                         parent = getattr(parent, part)
                 # Create a fresh instance per replacement
-                new_attn = create_stream_attention(self.config)
+                new_attn = StreamAttention(self.config)
                 setattr(parent, attr_name, new_attn)
                 replaced_count += 1
                 logger.info(f"Replaced {name} with StreamAttention")
@@ -244,6 +244,6 @@ class StreamAttention(nn.Module):
         return results
 
 
-def create_stream_attention(config: StreamAttentionConfig) -> StreamAttention:
-    """Factory function to create StreamAttention instance"""
+def build_stream_attention(config: StreamAttentionConfig) -> StreamAttention:
+    """Legacy factory for creating :class:`StreamAttention` from a config."""
     return StreamAttention(config)
