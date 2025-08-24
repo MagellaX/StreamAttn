@@ -92,6 +92,20 @@ print(y_qkv.shape)
 - Autograd: If gradients are required, the module automatically falls back to PyTorch SDPA to ensure correct backward support. The Triton path is intended for forward-critical inference/benchmarking.
 - Dropout is not supported in the fused kernel; apply it outside the module if needed.
 
+### Multihead-style wrapper
+Use `create_stream_attention` to obtain an attention layer with a familiar
+`nn.MultiheadAttention` interface. Triton kernels are used automatically when
+available, otherwise PyTorch's SDPA backend is selected:
+
+```python
+import torch
+from stream_attention import create_stream_attention
+
+mha = create_stream_attention(embed_dim=512, num_heads=8, batch_first=True)
+x = torch.randn(2, 16, 512)
+out, _ = mha(x, x, x)
+```
+
 ### FlashAttentionV3
 - Purpose: Baseline using PyTorch SDPA with the flash backend on CUDA, falling back gracefully on CPU.
 - Signature (selected):

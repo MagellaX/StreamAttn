@@ -22,7 +22,8 @@ from .core.fused_online_attention import (
     FusedOnlineAttention,
     create_fused_online_attention,
 )
-from .core.attention import StreamAttention, create_stream_attention
+from .core.attention import StreamAttention
+from .core.multihead_attention import StreamMultiheadAttention, create_stream_attention
 from .core.flashattention_v3 import FlashAttentionV3
 
 # Utilities
@@ -36,6 +37,7 @@ from .utils.memory import (
 __all__ = [
     # Main modules
     "StreamAttention",
+    "StreamMultiheadAttention",
     "FusedOnlineAttention",
     "StreamAttentionConfig",
     "FlashAttentionV3",
