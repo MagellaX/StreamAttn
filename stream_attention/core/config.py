@@ -6,7 +6,6 @@ Configuration for the novel fused online softmax attention mechanism.
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Tuple
-import yaml
 import os
 
 
@@ -60,6 +59,13 @@ class StreamAttentionConfig:
     @classmethod
     def from_yaml(cls, yaml_path: str) -> "StreamAttentionConfig":
         """Load configuration from YAML file"""
+        try:
+            import yaml  # Lazy import to avoid hard dependency during module import
+        except Exception as e:  # pragma: no cover - depends on env
+            raise ImportError(
+                "PyYAML is required for from_yaml(). Install with `pip install pyyaml`."
+            ) from e
+
         with open(yaml_path, "r") as f:
             config_dict = yaml.safe_load(f)
         return cls(**config_dict)
