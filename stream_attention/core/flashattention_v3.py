@@ -80,15 +80,14 @@ class FlashAttentionV3(nn.Module):
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
-                sdpa_ctx = torch.nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION)
+                sdpa_ctx = torch.nn.attention.sdpa_kernel(
+                    SDPBackend.FLASH_ATTENTION
+                )
             except (AttributeError, TypeError):
-                try:
-                    # Older PyTorch versions expose the context in torch.backends
-                    sdpa_ctx = torch.backends.cuda.sdp_kernel(
-                        enable_math=False, enable_flash=True, enable_mem_efficient=False
-                    )
-                except (AttributeError, RuntimeError):
-                    sdpa_ctx = nullcontext()
+                # Fallback for older PyTorch releases
+                sdpa_ctx = torch.backends.cuda.sdp_kernel(
+                    enable_math=False, enable_flash=True, enable_mem_efficient=False
+                )
 
         with sdpa_ctx:
             out = F.scaled_dot_product_attention(
