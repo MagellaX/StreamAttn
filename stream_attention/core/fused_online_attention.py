@@ -22,6 +22,12 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from typing import Optional, Tuple, Dict
 import logging
+from contextlib import nullcontext
+
+try:
+    from torch.nn.attention import SDPBackend
+except ImportError:  # pragma: no cover - older PyTorch
+    SDPBackend = None
 
 try:
     import triton
@@ -374,12 +380,22 @@ class FusedOnlineAttention(nn.Module):
                     dropout_p=(dropout_p if self.training else 0.0),
                 )
 
+            sdpa_ctx = nullcontext()
             if q.is_cuda:
-                with torch.backends.cuda.sdp_kernel(
-                    enable_math=True, enable_flash=True, enable_mem_efficient=False
-                ):
-                    out = F.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
-            else:
+                try:
+                    sdpa_ctx = torch.nn.attention.sdpa_kernel(
+                        SDPBackend.FLASH_ATTENTION
+                    )
+                except (AttributeError, TypeError):
+                    try:
+                        sdpa_ctx = torch.backends.cuda.sdp_kernel(
+                            enable_math=True,
+                            enable_flash=True,
+                            enable_mem_efficient=False,
+                        )
+                    except Exception:  # pragma: no cover - environment dependent
+                        sdpa_ctx = nullcontext()
+            with sdpa_ctx:
                 out = F.scaled_dot_product_attention(q, k, v, **sdpa_kwargs)
 
             out = (
@@ -666,19 +682,22 @@ class FusedOnlineAttentionAutogradFn(torch.autograd.Function):
                 )
                 add_mask = add_mask + tri_add
 
+        sdpa_ctx = nullcontext()
         if q.is_cuda:
-            with torch.backends.cuda.sdp_kernel(
-                enable_math=True, enable_flash=True, enable_mem_efficient=False
-            ):
-                y = F.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    attn_mask=(add_mask if add_mask is not None else None),
-                    is_causal=(False if add_mask is not None else ctx.causal),
-                    dropout_p=0.0,
+            try:
+                sdpa_ctx = torch.nn.attention.sdpa_kernel(
+                    SDPBackend.FLASH_ATTENTION
                 )
-        else:
+            except (AttributeError, TypeError):
+                try:
+                    sdpa_ctx = torch.backends.cuda.sdp_kernel(
+                        enable_math=True,
+                        enable_flash=True,
+                        enable_mem_efficient=False,
+                    )
+                except Exception:  # pragma: no cover - environment dependent
+                    sdpa_ctx = nullcontext()
+        with sdpa_ctx:
             y = F.scaled_dot_product_attention(
                 q,
                 k,

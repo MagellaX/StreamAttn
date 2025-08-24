@@ -87,7 +87,7 @@ class FlashAttentionV3(nn.Module):
                 # Fallback for older PyTorch releases
                 try:
                     sdpa_ctx = torch.backends.cuda.sdp_kernel(
-                        enable_math=False,
+                        enable_math=True,
                         enable_flash=True,
                         enable_mem_efficient=False,
                     )
