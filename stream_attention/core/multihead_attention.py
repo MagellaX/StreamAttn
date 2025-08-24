@@ -66,6 +66,8 @@ class StreamMultiheadAttention(nn.Module):
         key_padding_mask: Optional[torch.Tensor] = None,
         need_weights: bool = False,
         attn_mask: Optional[torch.Tensor] = None,
+        average_attn_weights: bool = True,
+        is_causal: bool = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Compute attention.
 
@@ -76,6 +78,11 @@ class StreamMultiheadAttention(nn.Module):
         if attn_mask is not None:
             raise NotImplementedError(
                 "attn_mask is not supported in StreamMultiheadAttention"
+            )
+
+        if need_weights:
+            raise NotImplementedError(
+                "need_weights=True is not supported; set need_weights=False (default)"
             )
 
         if not self.batch_first:
@@ -96,8 +103,9 @@ class StreamMultiheadAttention(nn.Module):
             query=q,
             key=k,
             value=v,
-            causal=True,
+            causal=bool(is_causal),
             attention_mask=attn_mask_inner,
+            dropout_p=(self.inner.dropout if self.training else 0.0),
         )
 
         attn_output = attn_output.reshape(bsz, tgt_len, self.embed_dim)
@@ -105,9 +113,7 @@ class StreamMultiheadAttention(nn.Module):
 
         if not self.batch_first:
             attn_output = attn_output.transpose(0, 1)
-        if need_weights:
-            return attn_output, None
-        return attn_output
+        return attn_output, None
 
 
 def create_stream_attention(
