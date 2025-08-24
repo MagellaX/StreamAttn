@@ -103,7 +103,7 @@ from stream_attention import create_stream_attention
 
 mha = create_stream_attention(embed_dim=512, num_heads=8, batch_first=True)
 x = torch.randn(2, 16, 512)
-out = mha(x, x, x)
+out, _ = mha(x, x, x)
 ```
 
 ### FlashAttentionV3
