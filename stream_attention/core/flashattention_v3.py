@@ -87,7 +87,7 @@ class FlashAttentionV3(nn.Module):
                 # Fallback for older PyTorch releases
                 try:
                     sdpa_ctx = torch.backends.cuda.sdp_kernel(
-                        enable_math=False,
+                        enable_math=True,
                         enable_flash=True,
                         enable_mem_efficient=False,
                     )
@@ -100,7 +100,23 @@ class FlashAttentionV3(nn.Module):
                     )
                     sdpa_ctx = nullcontext()
 
-        with sdpa_ctx:
+        try:
+            with sdpa_ctx:
+                out = F.scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    attn_mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=causal,
+                )
+        except RuntimeError as e:  # pragma: no cover - device/kernel dependent
+            # If a forced-flash configuration leads to "no available kernel",
+            # retry without any forced backend so PyTorch can choose a valid one.
+            logger.debug(
+                "FlashAttention SDPA failed under forced settings, retrying default: %s",
+                e,
+            )
             out = F.scaled_dot_product_attention(
                 q,
                 k,
