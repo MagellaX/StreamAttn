@@ -80,17 +80,43 @@ class FlashAttentionV3(nn.Module):
         if _use_flash_sdpa() and q.device.type == "cuda":
             try:
                 # Prefer the newer torch.nn.attention API when available
-                sdpa_ctx = torch.nn.attention.sdpa_kernel(SDPBackend.FLASH_ATTENTION)
+                sdpa_ctx = torch.nn.attention.sdpa_kernel(
+                    SDPBackend.FLASH_ATTENTION
+                )
             except (AttributeError, TypeError):
+                # Fallback for older PyTorch releases
                 try:
-                    # Older PyTorch versions expose the context in torch.backends
                     sdpa_ctx = torch.backends.cuda.sdp_kernel(
-                        enable_math=False, enable_flash=True, enable_mem_efficient=False
+                        enable_math=False,
+                        enable_flash=True,
+                        enable_mem_efficient=False,
                     )
-                except (AttributeError, RuntimeError):
+                except Exception as e:  # pragma: no cover - depends on env
+                    # Gracefully degrade to default kernel selection when the
+                    # CUDA SDPA context manager is unavailable or unsupported.
+                    logger.debug(
+                        "torch.backends.cuda.sdp_kernel unavailable or unsupported: %s",
+                        e,
+                    )
                     sdpa_ctx = nullcontext()
 
-        with sdpa_ctx:
+        try:
+            with sdpa_ctx:
+                out = F.scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    attn_mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=causal,
+                )
+        except RuntimeError as e:  # pragma: no cover - device/kernel dependent
+            # If a forced-flash configuration leads to "no available kernel",
+            # retry without any forced backend so PyTorch can choose a valid one.
+            logger.debug(
+                "FlashAttention SDPA failed under forced settings, retrying default: %s",
+                e,
+            )
             out = F.scaled_dot_product_attention(
                 q,
                 k,
