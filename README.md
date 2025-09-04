@@ -222,7 +222,7 @@ print(f"Replaced {num_replaced} attention modules")
 - PyTorch 2.0+
 - CUDA: fp16 and bf16 supported via SDPA (flash backend where available). Triton kernel requires CUDA.
 - CPU: falls back to SDPA with fp32 compute for correctness and stability.
-- Distributed: query sharding is supported in the fused module for multi-GPU; ring/star provide long-context strategies.
+- Distributed: query sharding is supported in the fused module for multi-GPU; ring/star provides long-context strategies.
 
 
 ## Roadmap
@@ -245,4 +245,4 @@ print(f"Replaced {num_replaced} attention modules")
 
 ## License
 
-MIT License. See `LICENSE` for details.
+Apache License. See `LICENSE` for details.
