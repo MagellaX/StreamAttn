@@ -56,9 +56,9 @@ Use log-sum-exp recentering:
 
 The chosen tile size (`TILE_K = 64`) is a starting point. Optimal performance may require experimenting with different tile sizes based on your hardware. If performance is suboptimal, use profiling tools (e.g., NVIDIA Nsight compute) to identify and resolve bottlenecks.
 
-### Triton Limitations
+### Triton Notes
 
-Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The module automatically falls back to PyTorch SDPA for autograd, masking, or dropout.
+Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The fused forward supports native boolean/additive attention masks, dropout, and ALiBi (additive per-head bias). Deterministic mode (`set_deterministic`) seeds the Philox stream so dropout/mask sampling is reproducible across runs. A new autograd wrapper performs a single-sweep backward (computing dQ/dK/dV using saved `lse`) when `dropout_p==0`; otherwise the module falls back to PyTorch SDPA for gradients.
 
 ### Distributed Setup Issues
 
