@@ -13,7 +13,7 @@ This repository provides:
 ## Recent Updates
 ## Recent Updates
 
-- Added a single-sweep Triton backward path (streaming dQ/dK/dV using saved `lse`) when `dropout_p == 0`.
+- Added a single-sweep Triton backward path (streaming dQ/dK/dV using saved `lse`) that mirrors the forward pass, including masks, dropout, and ALiBi.
 - Triton forward now supports boolean/additive masks, dropout, deterministic Philox seeding, and ALiBi bias without SDPA fallback.
 - Expanded tests/docs covering mask/dropout/ALiBi parity plus deterministic mode usage.
 
@@ -84,7 +84,7 @@ print(y_qkv.shape)
   - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0, alibi_slopes: Optional[Tensor]=None, deterministic: Optional[bool]=None)` -> `Tensor` (and `lse` if requested)
   - `benchmark(seq_len: int, batch_size: int=1, warmup: int=10, iterations: int=100)` -> metrics dict
   - `set_deterministic(enabled: bool, seed: Optional[int]=None)` -> control deterministic dropout/mask behavior
-- Autograd: When gradients are required and `dropout_p == 0`, the Triton kernel executes a single-sweep backward pass (streaming dQ/dK/dV using the saved `lse`). If dropout is enabled during training, the module falls back to PyTorch SDPA for gradient computation.
+- Autograd: The Triton kernel now runs a single-sweep backward pass (streaming dQ/dK/dV using the saved `lse`) covering masks, dropout, and ALiBi. PyTorch SDPA is used only when Triton is unavailable.
 
 ### Multihead-style wrapper
 Use `create_stream_attention` to obtain an attention layer with a familiar

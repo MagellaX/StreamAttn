@@ -58,7 +58,7 @@ The chosen tile size (`TILE_K = 64`) is a starting point. Optimal performance ma
 
 ### Triton Notes
 
-Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The fused forward supports native boolean/additive attention masks, dropout, and ALiBi biasing. Deterministic mode (`set_deterministic`) seeds the Philox stream so dropout/mask sampling is reproducible. When `dropout_p == 0`, the same saved `lse` is reused to run a single-sweep backward pass; otherwise we fall back to PyTorch SDPA for gradients.
+Currently, Triton does not expose `cp.async`. This implementation relies on `tl.load` with masking and autotuned tile sizes. The fused forward supports native boolean/additive attention masks, dropout, and ALiBi biasing. Deterministic mode (`set_deterministic`) seeds the Philox stream so dropout/mask sampling is reproducible, and the saved `lse` enables a single-sweep backward (streaming dQ/dK/dV) that mirrors the forward path even when dropout is enabled.
 
 ### Distributed Setup Issues
 
