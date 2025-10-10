@@ -152,7 +152,9 @@ class TestStreamAttention:
             torch.full((1,), float("-inf"), dtype=q_bh.dtype, device=device),
             torch.zeros(1, dtype=q_bh.dtype, device=device),
         )
-        with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
+        with torch.backends.cuda.sdp_kernel(
+            enable_math=True, enable_flash=False, enable_mem_efficient=False
+        ):
             ref = torch.nn.functional.scaled_dot_product_attention(
                 q_bh, k_bh, v_bh, attn_mask=add_mask, is_causal=False, dropout_p=0.0
             )
