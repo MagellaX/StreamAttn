@@ -1437,9 +1437,6 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
 
         ctx.module = module
         ctx.causal = bool(causal)
-        ctx.metadata = metadata
-        ctx.dropout_p = float(dropout_p)
-        ctx.training_flag = module.training
 
         if alibi_slopes is not None:
             alibi_tensor = alibi_slopes.to(query.device)
@@ -1453,8 +1450,8 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         module: FusedOnlineAttention = ctx.module
         query, key, value, lse, alibi_tensor = ctx.saved_tensors
-        metadata = getattr(ctx, "metadata", None)
-        dropout_p = ctx.dropout_p
+        metadata = None
+        dropout_p = float(dropout_p)
 
         batch_size = query.shape[0]
         seq_len_q = query.shape[1]
