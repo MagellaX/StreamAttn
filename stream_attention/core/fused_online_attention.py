@@ -208,14 +208,17 @@ if TRITON_AVAILABLE:
 
             # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            row_has_finite = tl.any(tl.isfinite(qk), axis=1)
+            tile_has_finite = tile_max > float("-inf")
+            prev_has_finite = running_max > float("-inf")
+            row_has_finite = tile_has_finite | prev_has_finite
+
             candidate_max = tl.maximum(running_max, tile_max)
             new_max = tl.where(row_has_finite, candidate_max, running_max)
 
-            prev_max_safe = tl.where(row_has_finite, running_max, 0.0)
+            prev_max_safe = tl.where(prev_has_finite, running_max, 0.0)
             new_max_safe = tl.where(row_has_finite, new_max, prev_max_safe)
             correction = tl.exp(prev_max_safe - new_max_safe)
-            correction = tl.where(row_has_finite, correction, 1.0)
+            correction = tl.where(prev_has_finite, correction, 1.0)
 
             acc_num *= correction[:, None]
             acc_den *= correction
