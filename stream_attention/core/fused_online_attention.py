@@ -154,7 +154,7 @@ if TRITON_AVAILABLE:
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
         acc_num = tl.zeros([TILE_M, D], dtype=tl.float32)
         acc_den = tl.zeros([TILE_M], dtype=tl.float32)
-        has_valid = tl.zeros([TILE_M], dtype=tl.int32)
+        has_valid = tl.zeros([TILE_M], dtype=tl.float32)
 
         # Iterate over K/V tiles
         for start_n in range(0, N, TILE_N):
@@ -224,7 +224,7 @@ if TRITON_AVAILABLE:
 
             qk_shifted = qk - safe_new[:, None]
             exp_qk = tl.where(new_valid[:, None], tl.exp(qk_shifted), 0.0)
-            has_valid = new_valid.to(tl.int32)
+            has_valid = new_valid.to(tl.float32)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
