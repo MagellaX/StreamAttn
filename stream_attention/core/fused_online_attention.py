@@ -154,6 +154,7 @@ if TRITON_AVAILABLE:
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
         acc_num = tl.zeros([TILE_M, D], dtype=tl.float32)
         acc_den = tl.zeros([TILE_M], dtype=tl.float32)
+        has_valid = tl.zeros([TILE_M], dtype=tl.int1)
 
         # Iterate over K/V tiles
         for start_n in range(0, N, TILE_N):
@@ -208,23 +209,21 @@ if TRITON_AVAILABLE:
 
             # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            prev_valid = running_max > float("-inf")
             tile_valid = tile_max > float("-inf")
-            row_valid = prev_valid | tile_valid
+            new_has_valid = has_valid | tile_valid
 
             candidate_max = tl.maximum(running_max, tile_max)
-            new_max = tl.where(row_valid, candidate_max, float("-inf"))
+            safe_prev = tl.where(has_valid, running_max, 0.0)
+            safe_new = tl.where(new_has_valid, candidate_max, 0.0)
+            correction = tl.where(has_valid, tl.exp(safe_prev - safe_new), 1.0)
 
-            safe_prev = tl.where(prev_valid, running_max, 0.0)
-            safe_new = tl.where(row_valid, new_max, 0.0)
-            correction = tl.where(prev_valid, tl.exp(safe_prev - safe_new), 1.0)
-
+            running_max = tl.where(new_has_valid, candidate_max, float("-inf"))
             acc_num *= correction[:, None]
             acc_den *= correction
-            running_max = new_max
 
             qk_shifted = qk - safe_new[:, None]
-            exp_qk = tl.where(row_valid[:, None], tl.exp(qk_shifted), 0.0)
+            exp_qk = tl.where(new_has_valid[:, None], tl.exp(qk_shifted), 0.0)
+            has_valid = new_has_valid
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
@@ -238,7 +237,6 @@ if TRITON_AVAILABLE:
 
             acc_num += tl.dot(exp_qk, v)
             acc_den += tl.sum(exp_qk, axis=1)
-            running_max = new_max
         
         # Final output with safe denominator; handle rows with all keys masked
         zero_den = acc_den == 0
