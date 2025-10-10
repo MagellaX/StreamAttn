@@ -110,7 +110,6 @@ if TRITON_AVAILABLE:
         N: tl.constexpr,  # seq_len_k
         D: tl.constexpr,  # head_dim
         TILE_M: tl.constexpr,
-        TILE_K: tl.constexpr,
         TILE_N: tl.constexpr,
         scale: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
@@ -207,14 +206,25 @@ if TRITON_AVAILABLE:
                 k_pos = (start_n + offs_n)[None, :].to(tl.float32)
                 qk += slope * (k_pos - q_pos)
 
-            # Online softmax update
+            # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            new_max = tl.maximum(running_max, tile_max)
-            correction = tl.exp(running_max - new_max)
+            row_has_finite = tl.any(tl.isfinite(qk), axis=1)
+            candidate_max = tl.maximum(running_max, tile_max)
+            new_max = tl.where(row_has_finite, candidate_max, running_max)
+
+            prev_max_safe = tl.where(row_has_finite, running_max, 0.0)
+            new_max_safe = tl.where(row_has_finite, new_max, prev_max_safe)
+            correction = tl.exp(prev_max_safe - new_max_safe)
+            correction = tl.where(row_has_finite, correction, 1.0)
+
             acc_num *= correction[:, None]
             acc_den *= correction
-            
-            exp_qk = tl.exp(qk - new_max[:, None])
+            running_max = new_max
+
+            running_max_safe = tl.where(row_has_finite, running_max, 0.0)
+            qk_shifted = qk - running_max_safe[:, None]
+            qk_shifted = tl.where(row_has_finite[:, None], qk_shifted, float("-inf"))
+            exp_qk = tl.exp(qk_shifted)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
@@ -311,7 +321,6 @@ if TRITON_AVAILABLE:
         N: tl.constexpr,
         D: tl.constexpr,
         TILE_M: tl.constexpr,
-        TILE_K: tl.constexpr,
         TILE_N: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
         HAS_MASK: tl.constexpr,
@@ -786,7 +795,6 @@ class FusedOnlineAttention(nn.Module):
             N=seq_len_k,
             D=head_dim,
             TILE_M=self.tile_size_q,
-            TILE_K=head_dim,
             TILE_N=self.tile_size_k,
             IS_CAUSAL=causal,
             HAS_MASK=mask_tensor is not None,
@@ -1252,7 +1260,6 @@ class FusedOnlineAttention(nn.Module):
             M=seq_len_q,
             N=seq_len_k,
             D=self.head_dim,
-            TILE_K=self.head_dim,
             scale=self.scale,
             IS_CAUSAL=causal,
             HAS_MASK=has_mask,
@@ -1579,7 +1586,6 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
                 D=module.head_dim,
                 TILE_M=module.tile_size_q,
                 TILE_N=module.tile_size_k,
-                TILE_K=module.head_dim,
                 scale=module.scale,
                 IS_CAUSAL=ctx.causal,
                 HAS_MASK=has_mask,
