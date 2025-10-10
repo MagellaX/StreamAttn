@@ -149,6 +149,7 @@ if TRITON_AVAILABLE:
             q = tl.load(q_ptrs, mask=q_mask, other=0.0)
         else:
             q = tl.load(q_ptrs, mask=q_mask, other=0.0)
+        q = q.to(tl.float32)
         
         # Accumulators
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
@@ -176,10 +177,12 @@ if TRITON_AVAILABLE:
             if USE_CP_ASYNC:
                 # cp.async + double buffering placeholder
                 k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
             else:
                 k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
+            k = k.to(tl.float32)
+            v = v.to(tl.float32)
             
             # QK^T
             # Hopper uses WGMMA tensor cores; Ampere uses mma.sync
@@ -198,7 +201,7 @@ if TRITON_AVAILABLE:
                     + (offs_m[:, None] * stride_mm + (start_n + offs_n)[None, :] * stride_mn)
                 )
                 mask_mask = (offs_m[:, None] < M) & ((start_n + offs_n)[None, :] < N)
-                mask_vals = tl.load(mask_ptrs, mask=mask_mask, other=0.0)
+                mask_vals = tl.load(mask_ptrs, mask=mask_mask, other=0.0).to(qk.dtype)
                 qk += mask_vals
 
             if HAS_ALIBI:

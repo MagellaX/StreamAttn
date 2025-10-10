@@ -11,6 +11,13 @@ import numpy as np
 from typing import Tuple, Optional
 import time
 import gc
+from contextlib import nullcontext
+
+try:
+    from torch.nn.attention import sdpa_kernel as sdpa_kernel_ctx, SDPBackend
+except ImportError:  # pragma: no cover - older PyTorch
+    sdpa_kernel_ctx = None
+    SDPBackend = None
 
 from stream_attention import StreamAttention, StreamAttentionConfig
 from stream_attention.core.flashattention_v3 import FlashAttentionV3
@@ -20,6 +27,16 @@ from stream_attention.core.fused_online_attention import (
 )
 from stream_attention.core.ring_attention import RingAttention
 from stream_attention.core.star_attention import StarAttention
+
+
+def _math_sdpa_ctx():
+    if sdpa_kernel_ctx is not None and SDPBackend is not None:
+        return sdpa_kernel_ctx(SDPBackend.MATH)
+    if torch.cuda.is_available():
+        return torch.backends.cuda.sdp_kernel(
+            enable_math=True, enable_flash=False, enable_mem_efficient=False
+        )
+    return nullcontext()
 from stream_attention.utils.memory import create_kv_compressor, MemoryProfiler
 
 
@@ -152,9 +169,7 @@ class TestStreamAttention:
             torch.full((1,), float("-inf"), dtype=q_bh.dtype, device=device),
             torch.zeros(1, dtype=q_bh.dtype, device=device),
         )
-        with torch.backends.cuda.sdp_kernel(
-            enable_math=True, enable_flash=False, enable_mem_efficient=False
-        ):
+        with _math_sdpa_ctx():
             ref = torch.nn.functional.scaled_dot_product_attention(
                 q_bh, k_bh, v_bh, attn_mask=add_mask, is_causal=False, dropout_p=0.0
             )
@@ -253,7 +268,7 @@ class TestStreamAttention:
         alibi_bias = alibi_bias.reshape(batch_size * num_heads, seq_len_q, seq_len_k)
 
         combined_bias = mask_bh + alibi_bias
-        with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=False):
+        with _math_sdpa_ctx():
             ref_out = torch.nn.functional.scaled_dot_product_attention(
                 q_bh, k_bh, v_bh, attn_mask=combined_bias, is_causal=True, dropout_p=0.0
             )
