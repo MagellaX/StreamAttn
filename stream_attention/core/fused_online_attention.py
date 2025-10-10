@@ -1050,10 +1050,11 @@ class FusedOnlineAttention(nn.Module):
         dtype: torch.dtype,
     ) -> torch.Tensor:
         mask = attention_mask
-        if mask.dtype == torch.float16 or mask.dtype == torch.bfloat16:
-            mask = mask.to(dtype)
         if mask.dtype == torch.bool:
-            pass
+            mask = mask.to(torch.float32)
+            mask = mask.masked_fill(mask > 0, float('-inf'))
+        else:
+            mask = mask.to(dtype)
         if mask.dim() == 2:
             mask = mask.view(batch_size, 1, 1, seq_len_k)
         elif mask.dim() == 3:
@@ -1576,6 +1577,8 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
                 M=seq_len_q,
                 N=seq_len_k,
                 D=module.head_dim,
+                TILE_M=module.tile_size_q,
+                TILE_N=module.tile_size_k,
                 TILE_K=module.head_dim,
                 scale=module.scale,
                 IS_CAUSAL=ctx.causal,
