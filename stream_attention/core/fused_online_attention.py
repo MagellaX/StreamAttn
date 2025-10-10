@@ -209,7 +209,7 @@ if TRITON_AVAILABLE:
 
             # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            prev_valid = has_valid.to(tl.int1) > 0
+            prev_valid = has_valid > 0
             tile_valid = tile_max > float("-inf")
             new_valid = prev_valid | tile_valid
 
