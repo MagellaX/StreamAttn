@@ -208,26 +208,23 @@ if TRITON_AVAILABLE:
 
             # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            tile_has_finite = tile_max > float("-inf")
-            prev_has_finite = running_max > float("-inf")
-            row_has_finite = tile_has_finite | prev_has_finite
+            prev_valid = running_max > float("-inf")
+            tile_valid = tile_max > float("-inf")
+            row_valid = prev_valid | tile_valid
 
             candidate_max = tl.maximum(running_max, tile_max)
-            new_max = tl.where(row_has_finite, candidate_max, running_max)
+            new_max = tl.where(row_valid, candidate_max, float("-inf"))
 
-            prev_max_safe = tl.where(prev_has_finite, running_max, 0.0)
-            new_max_safe = tl.where(row_has_finite, new_max, 0.0)
-            correction = tl.where(
-                prev_has_finite, tl.exp(prev_max_safe - new_max_safe), 0.0
-            )
+            safe_prev = tl.where(prev_valid, running_max, 0.0)
+            safe_new = tl.where(row_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(safe_prev - safe_new), 1.0)
 
             acc_num *= correction[:, None]
             acc_den *= correction
-            running_max = tl.where(row_has_finite, new_max, float("-inf"))
+            running_max = new_max
 
-            qk_shifted = qk - new_max_safe[:, None]
-            qk_shifted = tl.where(row_has_finite[:, None], qk_shifted, float("-inf"))
-            exp_qk = tl.where(row_has_finite[:, None], tl.exp(qk_shifted), 0.0)
+            qk_shifted = qk - safe_new[:, None]
+            exp_qk = tl.where(row_valid[:, None], tl.exp(qk_shifted), 0.0)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
