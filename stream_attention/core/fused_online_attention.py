@@ -216,18 +216,18 @@ if TRITON_AVAILABLE:
             new_max = tl.where(row_has_finite, candidate_max, running_max)
 
             prev_max_safe = tl.where(prev_has_finite, running_max, 0.0)
-            new_max_safe = tl.where(row_has_finite, new_max, prev_max_safe)
-            correction = tl.exp(prev_max_safe - new_max_safe)
-            correction = tl.where(prev_has_finite, correction, 1.0)
+            new_max_safe = tl.where(row_has_finite, new_max, 0.0)
+            correction = tl.where(
+                prev_has_finite, tl.exp(prev_max_safe - new_max_safe), 0.0
+            )
 
             acc_num *= correction[:, None]
             acc_den *= correction
-            running_max = new_max
+            running_max = tl.where(row_has_finite, new_max, float("-inf"))
 
-            running_max_safe = tl.where(row_has_finite, running_max, 0.0)
-            qk_shifted = qk - running_max_safe[:, None]
+            qk_shifted = qk - new_max_safe[:, None]
             qk_shifted = tl.where(row_has_finite[:, None], qk_shifted, float("-inf"))
-            exp_qk = tl.exp(qk_shifted)
+            exp_qk = tl.where(row_has_finite[:, None], tl.exp(qk_shifted), 0.0)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
@@ -523,7 +523,7 @@ if TRITON_AVAILABLE:
 
         lse_ptrs = Lse + off_b * stride_lsb + off_h * stride_lsh + offs_m * stride_lsm
         lse = tl.load(lse_ptrs, mask=offs_m < M, other=float('-inf')).to(tl.float32)
-        row_mask = tl.isfinite(lse)
+        row_mask = lse > float("-inf")
         lse = tl.where(row_mask, lse, 0.0)
         go = go * row_mask[:, None]
 
