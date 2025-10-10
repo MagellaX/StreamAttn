@@ -154,7 +154,7 @@ if TRITON_AVAILABLE:
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
         acc_num = tl.zeros([TILE_M, D], dtype=tl.float32)
         acc_den = tl.zeros([TILE_M], dtype=tl.float32)
-        has_valid = tl.zeros([TILE_M], dtype=tl.int1)
+        has_valid = tl.zeros([TILE_M], dtype=tl.int32)
 
         # Iterate over K/V tiles
         for start_n in range(0, N, TILE_N):
@@ -209,21 +209,22 @@ if TRITON_AVAILABLE:
 
             # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
+            prev_valid = has_valid.to(tl.int1) > 0
             tile_valid = tile_max > float("-inf")
-            new_has_valid = has_valid | tile_valid
+            new_valid = prev_valid | tile_valid
 
             candidate_max = tl.maximum(running_max, tile_max)
-            safe_prev = tl.where(has_valid, running_max, 0.0)
-            safe_new = tl.where(new_has_valid, candidate_max, 0.0)
-            correction = tl.where(has_valid, tl.exp(safe_prev - safe_new), 1.0)
+            safe_prev = tl.where(prev_valid, running_max, 0.0)
+            safe_new = tl.where(new_valid, candidate_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(safe_prev - safe_new), 1.0)
 
-            running_max = tl.where(new_has_valid, candidate_max, float("-inf"))
+            running_max = tl.where(new_valid, candidate_max, float("-inf"))
             acc_num *= correction[:, None]
             acc_den *= correction
 
             qk_shifted = qk - safe_new[:, None]
-            exp_qk = tl.where(new_has_valid[:, None], tl.exp(qk_shifted), 0.0)
-            has_valid = new_has_valid
+            exp_qk = tl.where(new_valid[:, None], tl.exp(qk_shifted), 0.0)
+            has_valid = new_valid.to(tl.int32)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
