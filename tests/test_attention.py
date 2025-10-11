@@ -268,9 +268,19 @@ class TestStreamAttention:
         alibi_bias = alibi_bias.reshape(batch_size * num_heads, seq_len_q, seq_len_k)
 
         combined_bias = mask_bh + alibi_bias
+        causal_mask = torch.triu(
+            torch.ones(seq_len_q, seq_len_k, dtype=torch.bool, device=device),
+            diagonal=1,
+        )
+        causal_bias = torch.where(
+            causal_mask,
+            torch.full((1,), float("-inf"), dtype=combined_bias.dtype, device=device),
+            torch.zeros(1, dtype=combined_bias.dtype, device=device),
+        )
+        combined_bias = combined_bias + causal_bias
         with _math_sdpa_ctx():
             ref_out = torch.nn.functional.scaled_dot_product_attention(
-                q_bh, k_bh, v_bh, attn_mask=combined_bias, is_causal=True, dropout_p=0.0
+                q_bh, k_bh, v_bh, attn_mask=combined_bias, is_causal=False, dropout_p=0.0
             )
         ref_out = ref_out.reshape(batch_size, num_heads, seq_len_q, head_dim).permute(0, 2, 1, 3)
 
