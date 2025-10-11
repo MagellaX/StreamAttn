@@ -110,7 +110,6 @@ if TRITON_AVAILABLE:
         N: tl.constexpr,  # seq_len_k
         D: tl.constexpr,  # head_dim
         TILE_M: tl.constexpr,
-        TILE_K: tl.constexpr,
         TILE_N: tl.constexpr,
         scale: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
@@ -150,11 +149,13 @@ if TRITON_AVAILABLE:
             q = tl.load(q_ptrs, mask=q_mask, other=0.0)
         else:
             q = tl.load(q_ptrs, mask=q_mask, other=0.0)
+        q = q.to(tl.float32)
         
         # Accumulators
         running_max = tl.full([TILE_M], value=-float("inf"), dtype=tl.float32)
         acc_num = tl.zeros([TILE_M, D], dtype=tl.float32)
         acc_den = tl.zeros([TILE_M], dtype=tl.float32)
+        has_valid = tl.zeros([TILE_M], dtype=tl.float32)
 
         # Iterate over K/V tiles
         for start_n in range(0, N, TILE_N):
@@ -176,10 +177,12 @@ if TRITON_AVAILABLE:
             if USE_CP_ASYNC:
                 # cp.async + double buffering placeholder
                 k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
             else:
                 k = tl.load(k_ptrs, mask=kv_mask, other=0.0)
-                v = tl.load(v_ptrs, mask=kv_mask, other=0.0).to(tl.float32)
+                v = tl.load(v_ptrs, mask=kv_mask, other=0.0)
+            k = k.to(tl.float32)
+            v = v.to(tl.float32)
             
             # QK^T
             # Hopper uses WGMMA tensor cores; Ampere uses mma.sync
@@ -198,7 +201,7 @@ if TRITON_AVAILABLE:
                     + (offs_m[:, None] * stride_mm + (start_n + offs_n)[None, :] * stride_mn)
                 )
                 mask_mask = (offs_m[:, None] < M) & ((start_n + offs_n)[None, :] < N)
-                mask_vals = tl.load(mask_ptrs, mask=mask_mask, other=0.0)
+                mask_vals = tl.load(mask_ptrs, mask=mask_mask, other=0.0).to(qk.dtype)
                 qk += mask_vals
 
             if HAS_ALIBI:
@@ -207,14 +210,24 @@ if TRITON_AVAILABLE:
                 k_pos = (start_n + offs_n)[None, :].to(tl.float32)
                 qk += slope * (k_pos - q_pos)
 
-            # Online softmax update
+            # Online softmax update with fully masked-row safeguards
             tile_max = tl.max(qk, axis=1)
-            new_max = tl.maximum(running_max, tile_max)
-            correction = tl.exp(running_max - new_max)
+            prev_valid = has_valid > 0
+            tile_valid = tile_max > float("-inf")
+            new_valid = prev_valid | tile_valid
+
+            candidate_max = tl.maximum(running_max, tile_max)
+            safe_prev = tl.where(prev_valid, running_max, 0.0)
+            safe_new = tl.where(new_valid, candidate_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(safe_prev - safe_new), 1.0)
+
+            running_max = tl.where(new_valid, candidate_max, float("-inf"))
             acc_num *= correction[:, None]
             acc_den *= correction
-            
-            exp_qk = tl.exp(qk - new_max[:, None])
+
+            qk_shifted = qk - safe_new[:, None]
+            exp_qk = tl.where(new_valid[:, None], tl.exp(qk_shifted), 0.0)
+            has_valid = new_valid.to(tl.float32)
             
             if HAS_DROPOUT:
                 bh = off_b * H + off_h
@@ -228,7 +241,6 @@ if TRITON_AVAILABLE:
 
             acc_num += tl.dot(exp_qk, v)
             acc_den += tl.sum(exp_qk, axis=1)
-            running_max = new_max
         
         # Final output with safe denominator; handle rows with all keys masked
         zero_den = acc_den == 0
@@ -311,7 +323,6 @@ if TRITON_AVAILABLE:
         N: tl.constexpr,
         D: tl.constexpr,
         TILE_M: tl.constexpr,
-        TILE_K: tl.constexpr,
         TILE_N: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
         HAS_MASK: tl.constexpr,
@@ -511,7 +522,7 @@ if TRITON_AVAILABLE:
 
         lse_ptrs = Lse + off_b * stride_lsb + off_h * stride_lsh + offs_m * stride_lsm
         lse = tl.load(lse_ptrs, mask=offs_m < M, other=float('-inf')).to(tl.float32)
-        row_mask = tl.isfinite(lse)
+        row_mask = lse > float("-inf")
         lse = tl.where(row_mask, lse, 0.0)
         go = go * row_mask[:, None]
 
@@ -786,7 +797,6 @@ class FusedOnlineAttention(nn.Module):
             N=seq_len_k,
             D=head_dim,
             TILE_M=self.tile_size_q,
-            TILE_K=head_dim,
             TILE_N=self.tile_size_k,
             IS_CAUSAL=causal,
             HAS_MASK=mask_tensor is not None,
@@ -1050,10 +1060,11 @@ class FusedOnlineAttention(nn.Module):
         dtype: torch.dtype,
     ) -> torch.Tensor:
         mask = attention_mask
-        if mask.dtype == torch.float16 or mask.dtype == torch.bfloat16:
-            mask = mask.to(dtype)
         if mask.dtype == torch.bool:
-            pass
+            mask = mask.to(torch.float32)
+            mask = mask.masked_fill(mask > 0, float('-inf'))
+        else:
+            mask = mask.to(dtype)
         if mask.dim() == 2:
             mask = mask.view(batch_size, 1, 1, seq_len_k)
         elif mask.dim() == 3:
@@ -1251,7 +1262,6 @@ class FusedOnlineAttention(nn.Module):
             M=seq_len_q,
             N=seq_len_k,
             D=self.head_dim,
-            TILE_K=self.head_dim,
             scale=self.scale,
             IS_CAUSAL=causal,
             HAS_MASK=has_mask,
@@ -1576,7 +1586,8 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
                 M=seq_len_q,
                 N=seq_len_k,
                 D=module.head_dim,
-                TILE_K=module.head_dim,
+                TILE_M=module.tile_size_q,
+                TILE_N=module.tile_size_k,
                 scale=module.scale,
                 IS_CAUSAL=ctx.causal,
                 HAS_MASK=has_mask,
