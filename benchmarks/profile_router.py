@@ -38,6 +38,8 @@ def main():
     parser.add_argument("--safety-margin", type=float, default=1.10)
     parser.add_argument("--gate1-active-threshold", type=float, default=0.30)
     parser.add_argument("--gate1-disable-threshold", type=float, default=0.45)
+    parser.add_argument("--max-gate1-active-threshold", type=float, default=0.90)
+    parser.add_argument("--metadata-build-ms", type=float, default=None)
     parser.add_argument("--confidence", type=float, default=1.0)
     parser.add_argument("--seq-q", type=int, default=1024)
     parser.add_argument("--seq-k", type=int, default=1024)
@@ -61,6 +63,9 @@ def main():
         tile_size_q=args.tile_size_q,
         block_size=args.block_size,
         causal=args.causal,
+        metadata_available=args.metadata_build_ms is None,
+        metadata_build_allowed=args.metadata_build_ms is not None,
+        metadata_build_ms=args.metadata_build_ms,
     )
     cost_entry = CostEntry(
         dense_ms=args.dense_ms,
@@ -73,6 +78,7 @@ def main():
         policy=StreamAttnPolicy(
             gate1_active_threshold=args.gate1_active_threshold,
             gate1_disable_threshold=args.gate1_disable_threshold,
+            max_gate1_active_threshold=args.max_gate1_active_threshold,
             safety_margin=args.safety_margin,
             min_confidence=0.0,
         ),
@@ -89,7 +95,10 @@ def main():
     }
 
     for active_fraction in _parse_floats(args.active_fracs):
-        gate1_ms = cost_entry.predict_gate1_ms(active_fraction)
+        gate1_ms = cost_entry.predict_gate1_ms(
+            active_fraction,
+            metadata_build_ms=args.metadata_build_ms,
+        )
         decision = router.choose(
             request,
             prediction=Prediction(
@@ -143,6 +152,8 @@ def main():
                     "gate1_active_threshold": args.gate1_active_threshold,
                     "gate1_disable_threshold": args.gate1_disable_threshold,
                     "safety_margin": args.safety_margin,
+                    "max_gate1_active_threshold": args.max_gate1_active_threshold,
+                    "metadata_build_ms": args.metadata_build_ms,
                 },
                 "rows": rows,
                 "totals": totals,

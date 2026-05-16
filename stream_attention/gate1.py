@@ -122,6 +122,9 @@ def make_route_request(
     kv_head_id: int = -1,
     q_group_id: int = -1,
     phase: str = "prefill",
+    metadata_available: bool = False,
+    metadata_build_allowed: bool = False,
+    metadata_build_ms: Optional[float] = None,
 ) -> AttentionRouteRequest:
     """Build a router request from Q/K tensor metadata."""
 
@@ -145,6 +148,9 @@ def make_route_request(
         kv_head_id=kv_head_id,
         q_group_id=q_group_id,
         phase=phase,
+        metadata_available=metadata_available,
+        metadata_build_allowed=metadata_build_allowed,
+        metadata_build_ms=metadata_build_ms,
     )
 
 
@@ -238,6 +244,17 @@ def stream_attn_gate1(
             phase=phase,
         )
 
+    value_norm_bounds = None
+    if metadata is not None:
+        metadata.validate_for_value(value)
+        value_norm_bounds = metadata.value_norm_bounds
+
+    request = replace(
+        request,
+        metadata_available=value_norm_bounds is not None,
+        metadata_build_allowed=build_metadata_if_missing,
+    )
+
     if mode == "dense":
         decision = _decision(backend="dense", reason="forced_dense")
     elif mode == "gate1":
@@ -246,11 +263,6 @@ def stream_attn_gate1(
         decision = _decision(backend="dense", reason="missing_router")
     else:
         decision = router.choose(request)
-
-    value_norm_bounds = None
-    if metadata is not None:
-        metadata.validate_for_value(value)
-        value_norm_bounds = metadata.value_norm_bounds
 
     if (
         decision.backend == "gate1"
@@ -267,6 +279,15 @@ def stream_attn_gate1(
             reason="missing_value_norm_bounds",
             prediction=decision.prediction,
         )
+    elif (
+        decision.backend == "gate1"
+        and skip_predicate == "value_bound"
+        and value_norm_bounds is None
+        and build_metadata_if_missing
+    ):
+        metadata = StreamAttnMetadataCache.from_value(value, block_size=block_size)
+        value_norm_bounds = metadata.value_norm_bounds
+        request = replace(request, metadata_available=True)
 
     stats = None
     per_head_stats = None

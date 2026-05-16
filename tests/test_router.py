@@ -138,8 +138,70 @@ def test_router_uses_cost_derived_threshold():
     assert decision.active_threshold < 0.90
 
 
-def test_router_hysteresis_keeps_gate1_until_disable_threshold():
-    router, req = _router_with_cost()
+def test_router_cost_threshold_can_raise_policy_default():
+    req = _request()
+    cost_model = Gate1CostModel()
+    cost_model.update(
+        CostKey.from_request(req),
+        CostEntry(dense_ms=0.10, qk_only_ms=0.04),
+    )
+    router = StreamAttnRouter(
+        policy=StreamAttnPolicy(
+            min_confidence=0.0,
+            gate1_active_threshold=0.30,
+            gate1_disable_threshold=0.45,
+            max_gate1_active_threshold=0.90,
+            safety_margin=1.10,
+        ),
+        cost_model=cost_model,
+    )
+
+    decision = router.choose(
+        req,
+        prediction=Prediction(active_frac_hat=0.50, confidence=1.0, source="test"),
+    )
+
+    assert decision.backend == "gate1"
+    assert decision.active_threshold > 0.45
+
+
+def test_router_charges_metadata_build_cost():
+    req = AttentionRouteRequest(
+        **{
+            **_request().__dict__,
+            "metadata_available": False,
+            "metadata_build_allowed": True,
+            "metadata_build_ms": 0.06,
+        }
+    )
+    cost_model = Gate1CostModel()
+    cost_model.update(
+        CostKey.from_request(req),
+        CostEntry(dense_ms=0.10, qk_only_ms=0.04),
+    )
+    router = StreamAttnRouter(
+        policy=StreamAttnPolicy(min_confidence=0.0, safety_margin=1.10),
+        cost_model=cost_model,
+    )
+
+    decision = router.choose(
+        req,
+        prediction=Prediction(active_frac_hat=0.10, confidence=1.0, source="test"),
+    )
+
+    assert decision.backend == "dense"
+    assert decision.predicted_gate1_ms == pytest.approx(0.106)
+
+
+def test_router_hysteresis_keeps_gate1_until_disable_threshold_without_cost():
+    req = _request()
+    router = StreamAttnRouter(
+        policy=StreamAttnPolicy(
+            min_confidence=0.0,
+            gate1_active_threshold=0.30,
+            gate1_disable_threshold=0.45,
+        )
+    )
 
     first = router.choose(
         req,

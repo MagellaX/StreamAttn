@@ -35,6 +35,7 @@ class StreamAttnPolicy:
 
     gate1_active_threshold: float = 0.30
     gate1_disable_threshold: float = 0.45
+    max_gate1_active_threshold: float = 0.90
     min_confidence: float = 0.70
     probe_min_seq: int = 4096
     safety_margin: float = 1.10
@@ -49,6 +50,8 @@ class StreamAttnPolicy:
             raise ValueError("gate1_disable_threshold must be in [0, 1]")
         if self.gate1_disable_threshold < self.gate1_active_threshold:
             raise ValueError("disable threshold must be >= active threshold")
+        if not 0.0 <= self.max_gate1_active_threshold <= 1.0:
+            raise ValueError("max_gate1_active_threshold must be in [0, 1]")
         if not 0.0 <= self.min_confidence <= 1.0:
             raise ValueError("min_confidence must be in [0, 1]")
         if self.safety_margin < 1.0:
@@ -80,6 +83,9 @@ class AttentionRouteRequest:
     kv_head_id: int = -1
     q_group_id: int = -1
     phase: str = "prefill"
+    metadata_available: bool = False
+    metadata_build_allowed: bool = False
+    metadata_build_ms: Optional[float] = None
 
     @property
     def seq_q_bucket(self) -> int:
@@ -201,24 +207,60 @@ class CostEntry:
     def pv_ms(self) -> float:
         return max(0.0, self.dense_ms - self.qk_only_ms)
 
-    def predict_gate1_ms(self, active_fraction: float) -> float:
+    def predict_gate1_ms(
+        self,
+        active_fraction: float,
+        *,
+        metadata_build_ms: Optional[float] = None,
+    ) -> float:
         active_fraction = min(1.0, max(0.0, float(active_fraction)))
-        return self.qk_only_ms + active_fraction * self.pv_ms + self.predicate_overhead_ms
+        metadata_cost = max(0.0, float(metadata_build_ms or 0.0))
+        return (
+            self.qk_only_ms
+            + active_fraction * self.pv_ms
+            + self.predicate_overhead_ms
+            + metadata_cost
+        )
 
-    def profitable(self, active_fraction: float, *, safety_margin: float) -> bool:
-        return self.predict_gate1_ms(active_fraction) * safety_margin < self.dense_ms
+    def profitable(
+        self,
+        active_fraction: float,
+        *,
+        safety_margin: float,
+        metadata_build_ms: Optional[float] = None,
+    ) -> bool:
+        return (
+            self.predict_gate1_ms(
+                active_fraction,
+                metadata_build_ms=metadata_build_ms,
+            )
+            * safety_margin
+            < self.dense_ms
+        )
 
-    def break_even_active_fraction(self, safety_margin: float) -> float:
+    def break_even_active_fraction(
+        self,
+        safety_margin: float,
+        *,
+        metadata_build_ms: Optional[float] = None,
+    ) -> float:
         """Largest active fraction that remains profitable with margin."""
 
         if safety_margin < 1.0:
             raise ValueError("safety_margin must be >= 1")
+        metadata_cost = max(0.0, float(metadata_build_ms or 0.0))
         if self.pv_ms <= 0.0:
-            return 1.0 if self.qk_only_ms + self.predicate_overhead_ms < self.dense_ms else 0.0
+            return (
+                1.0
+                if self.qk_only_ms + self.predicate_overhead_ms + metadata_cost
+                < self.dense_ms
+                else 0.0
+            )
         threshold = (
             self.dense_ms / safety_margin
             - self.qk_only_ms
             - self.predicate_overhead_ms
+            - metadata_cost
         ) / self.pv_ms
         return min(1.0, max(0.0, threshold))
 
@@ -370,6 +412,7 @@ class StreamAttnRouter:
         key = request.active_key()
         pred = prediction or self.predict_with_aggregate_prior(request)
         cost = self.cost_model.lookup(request)
+        metadata_build_ms = self._metadata_build_ms(request)
 
         if pred.confidence < self.policy.min_confidence:
             if self._should_explore(key, request):
@@ -380,7 +423,12 @@ class StreamAttnRouter:
                     prediction=pred,
                     dense_ms=cost.dense_ms if cost else None,
                     predicted_gate1_ms=(
-                        cost.predict_gate1_ms(pred.active_frac_hat) if cost else None
+                        cost.predict_gate1_ms(
+                            pred.active_frac_hat,
+                            metadata_build_ms=metadata_build_ms,
+                        )
+                        if cost
+                        else None
                     ),
                 )
             self._last_backend[key] = "dense"
@@ -390,20 +438,29 @@ class StreamAttnRouter:
                 prediction=pred,
                 dense_ms=cost.dense_ms if cost else None,
                 predicted_gate1_ms=(
-                    cost.predict_gate1_ms(pred.active_frac_hat) if cost else None
+                    cost.predict_gate1_ms(
+                        pred.active_frac_hat,
+                        metadata_build_ms=metadata_build_ms,
+                    )
+                    if cost
+                    else None
                 ),
             )
 
         last_backend = self._last_backend.get(key, "dense")
-        active_threshold = (
-            self.policy.gate1_disable_threshold
-            if last_backend == "gate1"
-            else self.policy.gate1_active_threshold
-        )
         if cost is not None:
             active_threshold = min(
-                active_threshold,
-                cost.break_even_active_fraction(self.policy.safety_margin),
+                cost.break_even_active_fraction(
+                    self.policy.safety_margin,
+                    metadata_build_ms=metadata_build_ms,
+                ),
+                self.policy.max_gate1_active_threshold,
+            )
+        else:
+            active_threshold = (
+                self.policy.gate1_disable_threshold
+                if last_backend == "gate1"
+                else self.policy.gate1_active_threshold
             )
         if pred.active_frac_hat > active_threshold:
             self._last_backend[key] = "dense"
@@ -413,16 +470,25 @@ class StreamAttnRouter:
                 prediction=pred,
                 dense_ms=cost.dense_ms if cost else None,
                 predicted_gate1_ms=(
-                    cost.predict_gate1_ms(pred.active_frac_hat) if cost else None
+                    cost.predict_gate1_ms(
+                        pred.active_frac_hat,
+                        metadata_build_ms=metadata_build_ms,
+                    )
+                    if cost
+                    else None
                 ),
                 active_threshold=active_threshold,
             )
 
         if cost is not None:
-            predicted_gate1 = cost.predict_gate1_ms(pred.active_frac_hat)
+            predicted_gate1 = cost.predict_gate1_ms(
+                pred.active_frac_hat,
+                metadata_build_ms=metadata_build_ms,
+            )
             if not cost.profitable(
                 pred.active_frac_hat,
                 safety_margin=self.policy.safety_margin,
+                metadata_build_ms=metadata_build_ms,
             ):
                 self._last_backend[key] = "dense"
                 return BackendDecision(
@@ -464,6 +530,14 @@ class StreamAttnRouter:
         self._decision_count[key] = count
         period = max(1, round(1.0 / self.policy.exploration_rate))
         return count % period == 0
+
+    @staticmethod
+    def _metadata_build_ms(request: AttentionRouteRequest) -> Optional[float]:
+        if request.metadata_available:
+            return 0.0
+        if request.metadata_build_allowed and request.metadata_build_ms is not None:
+            return request.metadata_build_ms
+        return None
 
     def predict_with_aggregate_prior(self, request: AttentionRouteRequest) -> Prediction:
         """Use per-head history when confident, otherwise fall back to aggregate."""
