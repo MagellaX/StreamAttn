@@ -42,6 +42,14 @@ from .router import (
     StreamAttnPolicy,
     StreamAttnRouter,
 )
+from .gate1 import (
+    Gate1RunInfo,
+    Gate1Stats,
+    dense_attention_forward,
+    make_route_request,
+    stream_attn_gate1,
+    summarize_gate1_raw_stats,
+)
 
 # Utilities
 from .utils.memory import (
@@ -69,11 +77,17 @@ __all__ = [
     "Gate1CostModel",
     "StreamAttnPolicy",
     "StreamAttnRouter",
+    "Gate1RunInfo",
+    "Gate1Stats",
     # Factory functions
     "create_stream_attention",
     "create_fused_online_attention",
     "build_block_summaries",
     "certified_attention",
+    "dense_attention_forward",
+    "make_route_request",
+    "stream_attn_gate1",
+    "summarize_gate1_raw_stats",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",
