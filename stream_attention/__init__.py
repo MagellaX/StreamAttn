@@ -25,6 +25,13 @@ from .core.fused_online_attention import (
 from .core.attention import StreamAttention
 from .core.multihead_attention import StreamMultiheadAttention, create_stream_attention
 from .core.flashattention_v3 import FlashAttentionV3
+from .certified import (
+    BlockSummaries,
+    CertifiedAttentionOutput,
+    CertifiedAttentionStats,
+    build_block_summaries,
+    certified_attention,
+)
 
 # Utilities
 from .utils.memory import (
@@ -41,9 +48,14 @@ __all__ = [
     "FusedOnlineAttention",
     "StreamAttentionConfig",
     "FlashAttentionV3",
+    "BlockSummaries",
+    "CertifiedAttentionOutput",
+    "CertifiedAttentionStats",
     # Factory functions
     "create_stream_attention",
     "create_fused_online_attention",
+    "build_block_summaries",
+    "certified_attention",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",
