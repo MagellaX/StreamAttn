@@ -10,6 +10,13 @@ This repository provides:
 - Utilities for memory profiling and KV-cache compression
 - Optional integration helpers for Hugging Face models
 
+## Recent Updates
+
+- Added a single-sweep Triton backward path (streaming dQ/dK/dV using saved `lse`) that mirrors the forward pass, including masks, dropout, and ALiBi.
+- Triton forward now supports boolean/additive masks, dropout, deterministic Philox seeding, and ALiBi bias without SDPA fallback.
+- Expanded tests/docs covering mask/dropout/ALiBi parity plus deterministic mode usage.
+
+
 
 ## Installation
 
@@ -55,7 +62,7 @@ with torch.no_grad():
     y = attention(hidden_states=x)
 print(y.shape)
 
-# Explicit Q,K,V path (supports attn_mask and dropout natively with Triton, falling back to SDPA when required)
+# Explicit Q,K,V path (supports attn_mask/dropout/ALiBi in Triton, falling back to SDPA when needed)
 q = torch.randn(batch_size, seq_len, config.num_heads, config.head_dim, device=x.device, dtype=x.dtype)
 k = torch.randn_like(q)
 v = torch.randn_like(q)
@@ -63,7 +70,7 @@ with torch.no_grad():
     # Example boolean mask [B, S_k]
     key_padding_mask = torch.ones(batch_size, seq_len, dtype=torch.bool, device=x.device)
     key_padding_mask[:, -16:] = False  # mask out last 16 positions
-    y_qkv = attention(q, k, v, causal=True, attention_mask=key_padding_mask, dropout_p=0.0)
+    y_qkv = attention(q, k, v, causal=True, attention_mask=key_padding_mask)
 print(y_qkv.shape)
 ```
 
@@ -73,24 +80,30 @@ print(y_qkv.shape)
 ### StreamAttention
 - Purpose: High-level module. Accepts either `hidden_states` ([B, T, H*D]) or explicit `(query, key, value)` ([B, T, H, D]).
 - Signature (selected):
-  - `forward(hidden_states: Tensor, ..., use_cache: bool=False, causal: bool=True)` -> `Tensor` or `(Tensor, (k, v))` if `use_cache=True`
-  - `forward(query: Tensor, key: Tensor, value: Tensor, causal: bool=True, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0, alibi_slopes: Optional[Tensor]=None)` -> `Tensor`
-- Shapes: `[batch, seq, heads, dim]` for QKV mode.
-- Dtypes: fp16/bf16 (CUDA), fp32 (CPU by default). On CPU, inputs upcast to fp32 if required.
-
-### FusedOnlineAttention
-- Purpose: Low-level fused online softmax attention (Triton when available; SDPA fallback otherwise).
-- Signature (selected):
-  - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0, alibi_slopes: Optional[Tensor]=None)` -> `Tensor` (and `lse` if requested)
+  - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0, alibi_slopes: Optional[Tensor]=None, deterministic: Optional[bool]=None)` -> `Tensor` (and `lse` if requested)
   - `benchmark(seq_len: int, batch_size: int=1, warmup: int=10, iterations: int=100)` -> metrics dict
   - `set_deterministic(enabled: bool, seed: Optional[int]=None)` -> control deterministic dropout/mask behavior
-- Autograd: If gradients are required, the module automatically falls back to PyTorch SDPA to ensure correct backward support. The Triton path is intended for forward-critical inference/benchmarking.
+- Autograd: The Triton kernel now runs a single-sweep backward pass (streaming dQ/dK/dV using the saved `lse`) covering masks, dropout, and ALiBi. PyTorch SDPA is used only when Triton is unavailable.
+
+### Multihead-style wrapper
+Use `create_stream_attention` to obtain an attention layer with a familiar
+`nn.MultiheadAttention` interface. Triton kernels are used automatically when
+available, otherwise PyTorch's SDPA backend is selected:
+
+```python
+import torch
+from stream_attention import create_stream_attention
+
+mha = create_stream_attention(embed_dim=512, num_heads=8, batch_first=True)
+x = torch.randn(2, 16, 512)
+out, _ = mha(x, x, x)
+```
 
 ### FlashAttentionV3
 - Purpose: Baseline using PyTorch SDPA with the flash backend on CUDA, falling back gracefully on CPU.
 - Signature (selected):
-  - `forward(query, key, value, causal: bool=True)` -> `Tensor`
-  - `benchmark(...)` -> metrics dict
+  - `forward(query, key, value, causal: bool=True)` → `Tensor`
+  - `benchmark(...)` → metrics dict
 
 ### StreamAttentionConfig
 Selected fields (see source for full set):
@@ -118,7 +131,7 @@ stream-attention-test --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
 Behavior and methodology:
 - On CUDA, the baseline uses PyTorch SDPA with the flash backend (FlashAttention-3 path). On CPU, both implementations use SDPA in fp32.
 - Metrics reported: per-iteration latency, estimated TFLOPS, and approximate bandwidth based on tensor traffic. Measurements are averaged after warmup.
-- The fused kernel enables Triton only when available, running on CUDA, and autograd is not required. Otherwise, SDPA is used to ensure correctness, support for autograd/backward and training. Enable deterministic mode via `set_deterministic(True, seed)` to fix dropout RNG streams during benchmarking. When `dropout_p > 0`, the module currently routes to SDPA for backward compatibility.
+- The fused kernel uses Triton on CUDA for forward and single-sweep backward when the custom path is available. Mask, dropout, ALiBi, and deterministic replay are covered by the Triton path; SDPA remains the safety fallback when Triton or a requested shape/backend is unavailable.
 - For reproducibility, fix random seeds, pin CUDA clocks if applicable, and isolate runs. Actual performance depends on GPU architecture, drivers, and PyTorch/Triton versions.
 
 Example output (format):
@@ -155,7 +168,7 @@ The fused kernel streams over K/V tiles while maintaining per-query running stat
   - On CPU, fp16/bf16 inputs are upcast to fp32 where necessary.
 
 - Backward:
-  - The Triton path is presently forward-oriented. For training, the module selects PyTorch SDPA, which supports autograd.
+  - The Triton autograd path recomputes QK tiles using saved `lse`, streams dQ/dK/dV, and avoids materializing the attention matrix. PyTorch SDPA remains the fallback for unsupported environments.
 
 
 ## Distributed and Long-Context Variants
@@ -202,12 +215,12 @@ print(f"Replaced {num_replaced} attention modules")
 - PyTorch 2.0+
 - CUDA: fp16 and bf16 supported via SDPA (flash backend where available). Triton kernel requires CUDA.
 - CPU: falls back to SDPA with fp32 compute for correctness and stability.
-- Distributed: query sharding is supported in the fused module for multi-GPU; ring/star provide long-context strategies.
+- Distributed: query sharding is supported in the fused module for multi-GPU; ring/star provides long-context strategies.
 
 
 ## Roadmap
 
-- Backward implementation for the Triton fused kernel
+- Native RoPE / relative positional bias fusion in the Triton kernel (forward + backward)
 - Advanced pipelining (warp specialization, asynchronous staging) and Hopper-specific paths (WGMMA/TMA)
 - Extended autotune coverage across architectures and sequence regimes
 - Optional FP8 path with block-wise scaling
@@ -223,4 +236,4 @@ print(f"Replaced {num_replaced} attention modules")
 
 ## License
 
-MIT License. See `LICENSE` for details.
+Apache License. See `LICENSE` for details.
