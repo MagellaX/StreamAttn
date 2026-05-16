@@ -33,6 +33,15 @@ from .certified import (
     build_block_summaries,
     certified_attention,
 )
+from .router import (
+    AttentionRouteRequest,
+    BackendDecision,
+    CostEntry,
+    CostKey,
+    Gate1CostModel,
+    StreamAttnPolicy,
+    StreamAttnRouter,
+)
 
 # Utilities
 from .utils.memory import (
@@ -53,6 +62,13 @@ __all__ = [
     "CertifiedAttentionOutput",
     "CertifiedAttentionStats",
     "StreamAttnMetadataCache",
+    "AttentionRouteRequest",
+    "BackendDecision",
+    "CostEntry",
+    "CostKey",
+    "Gate1CostModel",
+    "StreamAttnPolicy",
+    "StreamAttnRouter",
     # Factory functions
     "create_stream_attention",
     "create_fused_online_attention",
