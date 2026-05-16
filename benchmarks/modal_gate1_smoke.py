@@ -28,18 +28,31 @@ def smoke():
     torch.manual_seed(0)
     device = torch.device("cuda")
 
-    def run_case(name, q, k, v, budget):
-        ref = certified_attention(
-            q,
-            k,
-            v,
-            causal=False,
-            error_budget=budget,
-            block_size=16,
-            enable_summary_gate=False,
-            enable_post_qk_gate=True,
-            skip_predicate="value_bound",
-        )
+    def summarize_stats(raw_stats):
+        totals = raw_stats.detach().sum(dim=(0, 1, 2)).cpu()
+        return {
+            "row_skips": int(totals[0].item()),
+            "row_computes": int(totals[1].item()),
+            "cta_tiles_total": int(totals[2].item()),
+            "cta_pv_skipped": int(totals[3].item()),
+            "cta_pv_executed": int(totals[4].item()),
+            "force_mode_sum": int(totals[5].item()),
+        }
+
+    def run_case(name, q, k, v, budget, force_mode=0, compare=True):
+        ref = None
+        if compare:
+            ref = certified_attention(
+                q,
+                k,
+                v,
+                causal=False,
+                error_budget=budget,
+                block_size=16,
+                enable_summary_gate=False,
+                enable_post_qk_gate=True,
+                skip_predicate="value_bound",
+            )
         out, raw_stats = gate1_attention_triton_forward(
             q,
             k,
@@ -49,14 +62,18 @@ def smoke():
             block_size=16,
             tile_size_q=16,
             skip_predicate="value_bound",
+            force_mode=force_mode,
             return_raw_stats=True,
         )
         torch.cuda.synchronize()
-        return {
+        result = {
             "name": name,
-            "max_abs_error": torch.max(torch.abs(out - ref)).item(),
-            "raw_stats": raw_stats.detach().cpu().tolist(),
+            "stats": summarize_stats(raw_stats),
+            "output_l2": torch.linalg.vector_norm(out.float()).item(),
         }
+        if ref is not None:
+            result["max_abs_error"] = torch.max(torch.abs(out - ref)).item()
+        return result
 
     q = torch.randn(1, 64, 2, 32, device=device, dtype=torch.float16)
     k = torch.randn(1, 64, 2, 32, device=device, dtype=torch.float16)
@@ -70,8 +87,17 @@ def smoke():
     k2[:, :16, :, 0] = 8.0
     k2[:, 16:, :, 0] = -8.0
     skip_case = run_case("peaked_gate1", q2, k2, v2, 1e-3)
+    forced_skip_case = run_case(
+        "peaked_force_all_skip_after_qk",
+        q2,
+        k2,
+        v2,
+        1e-3,
+        force_mode=2,
+        compare=False,
+    )
 
-    def time_gate1(q, k, v, budget, iters=20):
+    def time_gate1(q, k, v, budget, force_mode=0, iters=20):
         for _ in range(5):
             gate1_attention_triton_forward(
                 q,
@@ -82,6 +108,7 @@ def smoke():
                 block_size=64,
                 tile_size_q=64,
                 skip_predicate="value_bound",
+                force_mode=force_mode,
                 return_raw_stats=False,
             )
         torch.cuda.synchronize()
@@ -98,6 +125,7 @@ def smoke():
                 block_size=64,
                 tile_size_q=64,
                 skip_predicate="value_bound",
+                force_mode=force_mode,
                 return_raw_stats=False,
             )
         end.record()
@@ -110,18 +138,40 @@ def smoke():
     qb[..., 0] = 8.0
     kb[:, :64, :, 0] = 8.0
     kb[:, 64:, :, 0] = -8.0
-    exact_ms = time_gate1(qb, kb, vb, 0.0)
-    skip_ms = time_gate1(qb, kb, vb, 1e-3)
+    exact_ms = time_gate1(qb, kb, vb, 0.0, force_mode=0)
+    no_skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=1)
+    skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=0)
+    all_skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=2)
+    all_compute_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=3)
+
+    _, timing_stats = gate1_attention_triton_forward(
+        qb,
+        kb,
+        vb,
+        causal=False,
+        error_budget=1e-3,
+        block_size=64,
+        tile_size_q=64,
+        skip_predicate="value_bound",
+        force_mode=0,
+        return_raw_stats=True,
+    )
+    torch.cuda.synchronize()
 
     return {
         "torch": torch.__version__,
         "device": torch.cuda.get_device_name(0),
-        "cases": [exact_case, skip_case],
+        "cases": [exact_case, skip_case, forced_skip_case],
         "timing": {
             "shape": "B1_S1024_H4_D64",
             "exact_ms": exact_ms,
+            "no_skip_ms": no_skip_ms,
             "gate1_ms": skip_ms,
+            "force_all_skip_ms": all_skip_ms,
+            "force_all_compute_ms": all_compute_ms,
             "speedup": exact_ms / skip_ms,
+            "force_all_skip_speedup": exact_ms / all_skip_ms,
+            "normal_stats": summarize_stats(timing_stats),
         },
     }
 

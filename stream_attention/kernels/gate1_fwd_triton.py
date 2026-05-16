@@ -7,10 +7,11 @@ and skip V load/PV when the block is negligible for the whole query tile.
 This module deliberately does not use K summaries. Gate 0 summary routing should
 be implemented as a scheduler/worklist path, not as the first hot-kernel bet.
 
-Modal A10G smoke currently shows correct skip telemetry but little latency
-change, which likely means Triton's dynamic branch is not enough by itself for
-production speed. Keep this as a correctness/smoke kernel while developing a
-scheduler/worklist or CUDA/CuTe implementation for the hot path.
+Modal A10G smoke currently shows correct row-skip telemetry but little latency
+change, so this kernel exposes debug force modes and CTA-level counters to
+verify whether V load/PV work is actually elided. Keep this as a
+correctness/diagnostic kernel while developing scheduler/worklist or CUDA/CuTe
+implementations for the hot path.
 """
 
 import math
@@ -70,6 +71,7 @@ if TRITON_AVAILABLE:
         SCALE: tl.constexpr,
         ERROR_BUDGET: tl.constexpr,
         POST_QK_THRESHOLD: tl.constexpr,
+        FORCE_MODE: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
         VALUE_BOUND: tl.constexpr,
         HAS_STATS: tl.constexpr,
@@ -97,6 +99,9 @@ if TRITON_AVAILABLE:
 
         post_count = tl.zeros([], dtype=tl.int32)
         compute_count = tl.zeros([], dtype=tl.int32)
+        cta_total_count = tl.zeros([], dtype=tl.int32)
+        cta_skipped_count = tl.zeros([], dtype=tl.int32)
+        cta_pv_count = tl.zeros([], dtype=tl.int32)
 
         for block_idx in range(0, NUM_BLOCKS):
             start_n = block_idx * TILE_N
@@ -109,6 +114,8 @@ if TRITON_AVAILABLE:
                 valid_row = row_mask & (offs_m >= start_n)
             else:
                 valid_row = row_mask
+            cta_has_valid = tl.sum(valid_row.to(tl.int32), axis=0) > 0
+            cta_total_count += cta_has_valid.to(tl.int32)
 
             k_ptrs = (
                 K
@@ -146,10 +153,19 @@ if TRITON_AVAILABLE:
             else:
                 skip_row = can_skip & (den_bound <= ERROR_BUDGET * acc_den)
 
+            if FORCE_MODE == 1:
+                skip_row = tl.full([TILE_M], False, dtype=tl.int1)
+            elif FORCE_MODE == 2:
+                skip_row = valid_row
+            elif FORCE_MODE == 3:
+                skip_row = tl.full([TILE_M], False, dtype=tl.int1)
+
             compute_row = valid_row & ~skip_row
             post_count += tl.sum(skip_row.to(tl.int32), axis=0)
             compute_count += tl.sum(compute_row.to(tl.int32), axis=0)
             cta_needs_pv = tl.sum(compute_row.to(tl.int32), axis=0) > 0
+            cta_pv_count += cta_needs_pv.to(tl.int32)
+            cta_skipped_count += (cta_has_valid & ~cta_needs_pv).to(tl.int32)
 
             if cta_needs_pv:
                 qk = tl.where(compute_row[:, None], qk, -float("inf"))
@@ -191,9 +207,13 @@ if TRITON_AVAILABLE:
         tl.store(out_ptrs, out, mask=row_mask[:, None])
 
         if HAS_STATS:
-            stats_base = ((off_b * H + off_h) * ((M + TILE_M - 1) // TILE_M) + q_block) * 2
+            stats_base = ((off_b * H + off_h) * ((M + TILE_M - 1) // TILE_M) + q_block) * 6
             tl.store(RawStats + stats_base + 0, post_count)
             tl.store(RawStats + stats_base + 1, compute_count)
+            tl.store(RawStats + stats_base + 2, cta_total_count)
+            tl.store(RawStats + stats_base + 3, cta_skipped_count)
+            tl.store(RawStats + stats_base + 4, cta_pv_count)
+            tl.store(RawStats + stats_base + 5, tl.full([], FORCE_MODE, dtype=tl.int32))
 
 
 def gate1_attention_triton_forward(
@@ -208,12 +228,19 @@ def gate1_attention_triton_forward(
     value_norm_bounds: Optional[torch.Tensor] = None,
     skip_predicate: str = "value_bound",
     post_qk_threshold: float = 0.0,
+    force_mode: int = 0,
     return_raw_stats: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Run Gate-1 post-QK skip forward attention.
 
+    ``force_mode`` is for diagnostics:
+    ``0`` normal, ``1`` never skip, ``2`` force all valid rows to skip after
+    QK, and ``3`` force all valid rows to compute.
+
     Returns ``(output, raw_stats)``. ``raw_stats`` has shape
-    ``[batch, heads, q_blocks, 2]`` with post-skip and compute row-block counts.
+    ``[batch, heads, q_blocks, 6]``:
+    row skips, row computes, CTA tiles total, CTA PV skipped, CTA PV executed,
+    and force mode.
     """
 
     if not TRITON_AVAILABLE:
@@ -228,6 +255,8 @@ def gate1_attention_triton_forward(
         raise ValueError("restricted Gate-1 path requires matching batch, heads, and dim")
     if skip_predicate not in {"mass", "value_bound"}:
         raise ValueError("skip_predicate must be 'mass' or 'value_bound'")
+    if force_mode not in {0, 1, 2, 3}:
+        raise ValueError("force_mode must be 0, 1, 2, or 3")
 
     query = query.contiguous()
     key = key.contiguous()
@@ -242,7 +271,7 @@ def gate1_attention_triton_forward(
     output = torch.empty_like(query)
     q_blocks = triton.cdiv(seq_q, tile_size_q)
     raw_stats = (
-        torch.empty(batch, heads, q_blocks, 2, device=query.device, dtype=torch.int32)
+        torch.empty(batch, heads, q_blocks, 6, device=query.device, dtype=torch.int32)
         if return_raw_stats
         else torch.empty(1, device=query.device, dtype=torch.int32)
     )
@@ -265,6 +294,7 @@ def gate1_attention_triton_forward(
         SCALE=1.0 / math.sqrt(dim),
         ERROR_BUDGET=float(error_budget),
         POST_QK_THRESHOLD=float(post_qk_threshold),
+        FORCE_MODE=int(force_mode),
         IS_CAUSAL=bool(causal),
         VALUE_BOUND=skip_predicate == "value_bound",
         HAS_STATS=return_raw_stats,
