@@ -40,6 +40,7 @@ def simulate_grouped_heads(
     safety_margin: float,
     aggregate_threshold: float,
     gather_tax_ms: float = 0.0,
+    head_index_tax_ms: float = 0.0,
 ):
     heads = len(per_head_active)
     aggregate_active = sum(per_head_active) / heads
@@ -76,6 +77,8 @@ def simulate_grouped_heads(
         "aggregate_auto_ms": aggregate_auto_ms,
         "grouped_oracle_ms": grouped_oracle_ms,
         "grouped_oracle_with_tax_ms": grouped_oracle_ms + gather_tax_ms,
+        "grouped_oracle_with_head_index_tax_ms": grouped_oracle_ms
+        + head_index_tax_ms,
         "grouped_oracle_speedup_vs_dense": dense_all_ms / grouped_oracle_ms,
         "grouped_oracle_speedup_vs_aggregate_auto": aggregate_auto_ms
         / grouped_oracle_ms,
@@ -84,6 +87,11 @@ def simulate_grouped_heads(
         "grouped_oracle_with_tax_speedup_vs_aggregate_auto": aggregate_auto_ms
         / (grouped_oracle_ms + gather_tax_ms),
         "gather_tax_ms": gather_tax_ms,
+        "grouped_oracle_with_head_index_tax_speedup_vs_dense": dense_all_ms
+        / (grouped_oracle_ms + head_index_tax_ms),
+        "grouped_oracle_with_head_index_tax_speedup_vs_aggregate_auto": aggregate_auto_ms
+        / (grouped_oracle_ms + head_index_tax_ms),
+        "head_index_tax_ms": head_index_tax_ms,
         "sparse_heads": sparse_heads,
         "dense_heads": dense_heads,
         "num_sparse_heads": len(sparse_heads),
@@ -190,6 +198,7 @@ def _actual_raw_stats(args, entry: CostEntry, per_head_active: list[float]):
         safety_margin=args.safety_margin,
         aggregate_threshold=args.aggregate_threshold,
         gather_tax_ms=gather_tax_ms,
+        head_index_tax_ms=args.head_index_tax_ms,
     )
     if args.measure_gather_tax:
         gather_tax_ms = _measure_gather_scatter_tax(
@@ -207,6 +216,7 @@ def _actual_raw_stats(args, entry: CostEntry, per_head_active: list[float]):
             safety_margin=args.safety_margin,
             aggregate_threshold=args.aggregate_threshold,
             gather_tax_ms=gather_tax_ms,
+            head_index_tax_ms=args.head_index_tax_ms,
         )
 
     return {
@@ -239,6 +249,7 @@ def main():
     parser.add_argument("--safety-margin", type=float, default=1.10)
     parser.add_argument("--aggregate-threshold", type=float, default=0.30)
     parser.add_argument("--gather-tax-ms", type=float, default=0.0)
+    parser.add_argument("--head-index-tax-ms", type=float, default=0.0)
     parser.add_argument("--measure-gather-tax", action="store_true")
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--seq", type=int, default=1024)
@@ -269,6 +280,7 @@ def main():
             safety_margin=args.safety_margin,
             aggregate_threshold=args.aggregate_threshold,
             gather_tax_ms=args.gather_tax_ms,
+            head_index_tax_ms=args.head_index_tax_ms,
         )
         result["source"] = "manual"
     print(json.dumps(result, indent=2, sort_keys=True))
