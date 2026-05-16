@@ -29,10 +29,13 @@ class ActiveFractionKey:
     model_id: str
     layer_id: int
     head_id: int
+    kv_head_id: int
+    q_group_id: int
     phase: str
     seq_bucket: int
     dtype: str
     device: str
+    device_class: str
     tile_size_q: int
     block_size: int
     causal: bool

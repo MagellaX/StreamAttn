@@ -16,6 +16,7 @@ from stream_attention.kernels.gate1_fwd_triton import (
     build_value_norm_bounds,
     gate1_attention_triton_forward,
 )
+from stream_attention.router import AttentionRouteRequest, CostEntry, CostKey, Gate1CostModel
 
 
 def _make_tensors(args):
@@ -240,6 +241,35 @@ def _run_suite(args):
     }
 
 
+def _write_cost_model(args, result, path: str) -> None:
+    shape = result["shape"]
+    request = AttentionRouteRequest(
+        batch=shape["batch"],
+        seq_q=shape["seq_q"],
+        seq_k=shape["seq_k"],
+        heads=shape["heads"],
+        dim=shape["dim"],
+        dtype=shape["dtype"],
+        device=result["device"],
+        tile_size_q=result["tile_size_q"],
+        block_size=result["block_size"],
+        causal=args.causal,
+    )
+    entry = CostEntry(
+        dense_ms=result["dense_no_predicate_ms"],
+        qk_only_ms=result["qk_only_ms"],
+        gate1_no_skip_ms=result["predicate_no_skip_ms"],
+        gate1_all_skip_ms=result["qk_only_ms"],
+        measured_active_curve_error=abs(result["observed_over_predicted"] - 1.0)
+        if result["observed_over_predicted"] is not None
+        else None,
+        sample_count=1,
+    )
+    model = Gate1CostModel()
+    model.update(CostKey.from_request(request), entry)
+    model.to_json(path)
+
+
 def _parse_fraction_list(raw: str):
     values = []
     for item in raw.split(","):
@@ -271,6 +301,7 @@ def main():
     parser.add_argument("--return-stats", action="store_true")
     parser.add_argument("--suite", action="store_true")
     parser.add_argument("--sweep-active-fracs", default=None)
+    parser.add_argument("--cost-json-out", default=None)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
     args = parser.parse_args()
@@ -290,7 +321,11 @@ def main():
         return
 
     if args.suite:
-        print(json.dumps(_run_suite(args), indent=2, sort_keys=True))
+        result = _run_suite(args)
+        if args.cost_json_out:
+            _write_cost_model(args, result, args.cost_json_out)
+            result["cost_json_out"] = args.cost_json_out
+        print(json.dumps(result, indent=2, sort_keys=True))
         return
 
     query, key, value = _make_tensors(args)

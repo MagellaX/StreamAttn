@@ -6,6 +6,7 @@ from stream_attention.gate1 import (
     make_route_request,
     stream_attn_gate1,
     summarize_gate1_raw_stats,
+    summarize_gate1_raw_stats_per_head,
 )
 from stream_attention.router import CostEntry, CostKey, Gate1CostModel, StreamAttnPolicy, StreamAttnRouter
 from stream_attention.telemetry import Prediction
@@ -29,6 +30,12 @@ def test_summarize_gate1_raw_stats():
     assert stats.cta_pv_executed == 30
     assert stats.force_mode_sum == 36
     assert stats.active_pv_fraction == pytest.approx(30 / 18)
+
+    per_head = summarize_gate1_raw_stats_per_head(raw)
+    assert len(per_head) == 2
+    assert per_head[0].row_skips == 3
+    assert per_head[0].cta_tiles_total == 9
+    assert per_head[1].cta_pv_executed == 15
 
 
 def test_dense_attention_forward_matches_sdpa_layout():
@@ -121,3 +128,24 @@ def test_auto_runtime_uses_injected_prediction_for_router():
     )
 
     assert decision.backend == "gate1"
+
+
+def test_make_route_request_sets_device_class_and_future_gqa_fields():
+    q = torch.randn(1, 4, 2, 4)
+    k = torch.randn(1, 4, 2, 4)
+
+    request = make_route_request(
+        q,
+        k,
+        causal=False,
+        block_size=4,
+        tile_size_q=4,
+        head_id=-1,
+        kv_head_id=0,
+        q_group_id=3,
+    )
+
+    assert request.device_class == "cpu"
+    assert request.active_key().device_class == "cpu"
+    assert request.active_key().kv_head_id == 0
+    assert request.active_key().q_group_id == 3

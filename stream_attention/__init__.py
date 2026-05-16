@@ -41,7 +41,9 @@ from .router import (
     Gate1CostModel,
     StreamAttnPolicy,
     StreamAttnRouter,
+    normalize_device_class,
 )
+from .telemetry import ActiveFractionKey, ActiveFractionTelemetry, Prediction
 from .gate1 import (
     Gate1RunInfo,
     Gate1Stats,
@@ -49,6 +51,7 @@ from .gate1 import (
     make_route_request,
     stream_attn_gate1,
     summarize_gate1_raw_stats,
+    summarize_gate1_raw_stats_per_head,
 )
 
 # Utilities
@@ -77,6 +80,10 @@ __all__ = [
     "Gate1CostModel",
     "StreamAttnPolicy",
     "StreamAttnRouter",
+    "normalize_device_class",
+    "ActiveFractionKey",
+    "ActiveFractionTelemetry",
+    "Prediction",
     "Gate1RunInfo",
     "Gate1Stats",
     # Factory functions
@@ -88,6 +95,7 @@ __all__ = [
     "make_route_request",
     "stream_attn_gate1",
     "summarize_gate1_raw_stats",
+    "summarize_gate1_raw_stats_per_head",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",

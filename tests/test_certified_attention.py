@@ -170,3 +170,19 @@ def test_metadata_cache_builds_value_bounds():
     v_bh = v.permute(0, 2, 1, 3).contiguous()
     first_block_norm = torch.linalg.vector_norm(v_bh[:, :, :4, :], dim=-1).amax(dim=-1)
     torch.testing.assert_close(cache.value_norm_bounds[:, :, 0], first_block_norm)
+
+
+def test_metadata_cache_incrementally_updates_value_bounds():
+    v = torch.zeros(1, 8, 2, 4)
+    cache = StreamAttnMetadataCache.from_value(v, block_size=4)
+    new_v = torch.zeros(1, 3, 2, 4)
+    new_v[:, 0, :, 0] = 3.0
+    new_v[:, 1, :, 1] = 4.0
+    new_v[:, 2, :, 2] = 5.0
+
+    cache.update_value_bounds_(new_v, start_pos=3)
+
+    assert cache.value_norm_bounds[0, 0, 0].item() == 3.0
+    assert cache.value_norm_bounds[0, 0, 1].item() == 5.0
+    assert cache.value_norm_bounds[0, 1, 0].item() == 3.0
+    assert cache.value_norm_bounds[0, 1, 1].item() == 5.0

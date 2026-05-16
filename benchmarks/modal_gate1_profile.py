@@ -13,8 +13,7 @@ image = (
 )
 
 
-@app.function(image=image, gpu="A10G", timeout=900)
-def profile_active_curve():
+def _profile_active_curve():
     import sys
 
     sys.path.insert(0, "/root/StreamAttn")
@@ -42,6 +41,7 @@ def profile_active_curve():
         return_stats=True,
         suite=True,
         sweep_active_fracs=None,
+        cost_json_out=None,
         warmup=20,
         iters=80,
     )
@@ -54,6 +54,28 @@ def profile_active_curve():
     return results
 
 
+@app.function(image=image, gpu="A10G", timeout=900)
+def profile_active_curve_a10g():
+    return _profile_active_curve()
+
+
+@app.function(image=image, gpu="A100", timeout=900)
+def profile_active_curve_a100():
+    return _profile_active_curve()
+
+
+@app.function(image=image, gpu="H100", timeout=900)
+def profile_active_curve_h100():
+    return _profile_active_curve()
+
+
 @app.local_entrypoint()
-def main():
-    print(profile_active_curve.remote())
+def main(target: str = "a10g"):
+    if target == "a10g":
+        print(profile_active_curve_a10g.remote())
+    elif target == "a100":
+        print(profile_active_curve_a100.remote())
+    elif target == "h100":
+        print(profile_active_curve_h100.remote())
+    else:
+        raise ValueError("target must be a10g, a100, or h100")

@@ -6,6 +6,10 @@ from typing import Optional
 import torch
 
 from stream_attention.kernels.gate1_fwd_triton import build_value_norm_bounds
+from stream_attention.kernels.metadata_triton import (
+    TRITON_AVAILABLE as METADATA_TRITON_AVAILABLE,
+    build_value_norm_bounds_triton,
+)
 
 
 @dataclass
@@ -44,6 +48,7 @@ class StreamAttnMetadataCache:
         *,
         block_size: int,
         safety_margin: float = 1.0,
+        use_triton: Optional[bool] = None,
     ) -> "StreamAttnMetadataCache":
         """Build a cache containing conservative per-block value norm bounds."""
 
@@ -52,7 +57,12 @@ class StreamAttnMetadataCache:
         if value.dim() != 4:
             raise ValueError("value must have shape [batch, seq, heads, dim]")
 
-        bounds = build_value_norm_bounds(value, block_size=block_size)
+        if use_triton is None:
+            use_triton = bool(value.is_cuda and METADATA_TRITON_AVAILABLE)
+        if use_triton:
+            bounds = build_value_norm_bounds_triton(value, block_size=block_size)
+        else:
+            bounds = build_value_norm_bounds(value, block_size=block_size)
         if safety_margin != 1.0:
             bounds = bounds * float(safety_margin)
         return cls(
@@ -81,6 +91,50 @@ class StreamAttnMetadataCache:
             raise ValueError(
                 "value_norm_bounds shape does not match value tensor and block size"
             )
+
+    def update_value_bounds_(
+        self,
+        new_value: torch.Tensor,
+        *,
+        start_pos: int,
+    ) -> "StreamAttnMetadataCache":
+        """Incrementally update cached value bounds for appended KV-cache values."""
+
+        if self.value_norm_bounds is None:
+            raise ValueError("metadata cache does not contain value_norm_bounds")
+        if new_value.dim() != 4:
+            raise ValueError("new_value must have shape [batch, seq, heads, dim]")
+        if start_pos < 0:
+            raise ValueError("start_pos must be non-negative")
+
+        batch, new_seq, heads, _ = new_value.shape
+        if start_pos + new_seq > self.seq_len:
+            raise ValueError("new_value extends beyond metadata cache seq_len")
+        expected = (batch, heads, self.num_blocks)
+        if tuple(self.value_norm_bounds.shape) != expected:
+            raise ValueError(
+                "value_norm_bounds shape does not match new_value and block size"
+            )
+
+        value_bh = new_value.permute(0, 2, 1, 3).contiguous().float()
+        first_block = start_pos // self.block_size
+        last_block = (start_pos + new_seq - 1) // self.block_size
+        for block_idx in range(first_block, last_block + 1):
+            block_start = block_idx * self.block_size
+            block_end = min(block_start + self.block_size, self.seq_len)
+            local_start = max(0, block_start - start_pos)
+            local_end = min(new_seq, block_end - start_pos)
+            if local_start >= local_end:
+                continue
+            norms = torch.linalg.vector_norm(
+                value_bh[:, :, local_start:local_end, :],
+                dim=-1,
+            ).amax(dim=-1)
+            self.value_norm_bounds[:, :, block_idx] = torch.maximum(
+                self.value_norm_bounds[:, :, block_idx],
+                norms.to(self.value_norm_bounds.dtype),
+            )
+        return self
 
     def to(self, *args, **kwargs) -> "StreamAttnMetadataCache":
         """Return a copy with tensor metadata moved via ``Tensor.to``."""

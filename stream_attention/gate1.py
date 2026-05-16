@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Tuple, Union
 
 import torch
@@ -35,6 +35,7 @@ class Gate1RunInfo:
     decision: BackendDecision
     stats: Optional[Gate1Stats]
     request: AttentionRouteRequest
+    per_head_stats: Optional[Tuple[Gate1Stats, ...]] = None
 
     @property
     def active_pv_fraction(self) -> Optional[float]:
@@ -57,6 +58,25 @@ def summarize_gate1_raw_stats(raw_stats: torch.Tensor) -> Gate1Stats:
     )
 
 
+def summarize_gate1_raw_stats_per_head(raw_stats: torch.Tensor) -> Tuple[Gate1Stats, ...]:
+    """Summarize raw Gate-1 counters independently for each head."""
+
+    if raw_stats.dim() != 4 or raw_stats.shape[-1] != 6:
+        raise ValueError("raw_stats must have shape [batch, heads, q_blocks, 6]")
+    totals = raw_stats.detach().sum(dim=(0, 2)).cpu()
+    return tuple(
+        Gate1Stats(
+            row_skips=int(row[0].item()),
+            row_computes=int(row[1].item()),
+            cta_tiles_total=int(row[2].item()),
+            cta_pv_skipped=int(row[3].item()),
+            cta_pv_executed=int(row[4].item()),
+            force_mode_sum=int(row[5].item()),
+        )
+        for row in totals
+    )
+
+
 def _dtype_name(dtype: torch.dtype) -> str:
     if dtype is torch.float16:
         return "fp16"
@@ -73,6 +93,22 @@ def _device_name(tensor: torch.Tensor) -> str:
     return tensor.device.type
 
 
+def _device_class(tensor: torch.Tensor) -> str:
+    if tensor.is_cuda:
+        major, minor = torch.cuda.get_device_capability(tensor.device)
+        name = _device_name(tensor).lower()
+        if major == 9:
+            return "sm90_h100" if "h100" in name else "sm90"
+        if major == 8 and minor == 0:
+            return "sm80_a100" if "a100" in name else "sm80"
+        if major == 8 and minor == 6:
+            return "sm86_a10g" if "a10" in name else "sm86"
+        if major == 8 and minor == 9:
+            return "sm89_l4" if "l4" in name else "sm89"
+        return f"sm{major}{minor}"
+    return tensor.device.type
+
+
 def make_route_request(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -83,6 +119,8 @@ def make_route_request(
     model_id: str = "default",
     layer_id: int = 0,
     head_id: int = -1,
+    kv_head_id: int = -1,
+    q_group_id: int = -1,
     phase: str = "prefill",
 ) -> AttentionRouteRequest:
     """Build a router request from Q/K tensor metadata."""
@@ -97,12 +135,15 @@ def make_route_request(
         dim=query.shape[3],
         dtype=_dtype_name(query.dtype),
         device=_device_name(query),
+        device_class=_device_class(query),
         tile_size_q=tile_size_q,
         block_size=block_size,
         causal=causal,
         model_id=model_id,
         layer_id=layer_id,
         head_id=head_id,
+        kv_head_id=kv_head_id,
+        q_group_id=q_group_id,
         phase=phase,
     )
 
@@ -157,6 +198,8 @@ def stream_attn_gate1(
     model_id: str = "default",
     layer_id: int = 0,
     head_id: int = -1,
+    kv_head_id: int = -1,
+    q_group_id: int = -1,
     phase: str = "prefill",
     error_budget: float = 1e-3,
     block_size: int = 64,
@@ -190,6 +233,8 @@ def stream_attn_gate1(
             model_id=model_id,
             layer_id=layer_id,
             head_id=head_id,
+            kv_head_id=kv_head_id,
+            q_group_id=q_group_id,
             phase=phase,
         )
 
@@ -224,6 +269,7 @@ def stream_attn_gate1(
         )
 
     stats = None
+    per_head_stats = None
     if decision.backend == "dense":
         output = dense_attention_forward(query, key, value, causal=causal)
     else:
@@ -243,12 +289,26 @@ def stream_attn_gate1(
         )
         if raw_stats is not None:
             stats = summarize_gate1_raw_stats(raw_stats)
+            per_head_stats = summarize_gate1_raw_stats_per_head(raw_stats)
             if telemetry and router is not None and stats.cta_tiles_total > 0:
                 router.observe(
                     request,
                     cta_pv_executed=stats.cta_pv_executed,
                     cta_tiles_total=stats.cta_tiles_total,
                 )
+                for head_idx, head_stats in enumerate(per_head_stats):
+                    if head_stats.cta_tiles_total <= 0:
+                        continue
+                    router.observe(
+                        replace(request, head_id=head_idx),
+                        cta_pv_executed=head_stats.cta_pv_executed,
+                        cta_tiles_total=head_stats.cta_tiles_total,
+                    )
 
-    info = Gate1RunInfo(decision=decision, stats=stats, request=request)
+    info = Gate1RunInfo(
+        decision=decision,
+        stats=stats,
+        request=request,
+        per_head_stats=per_head_stats,
+    )
     return (output, info) if return_info else output
