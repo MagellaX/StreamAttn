@@ -29,6 +29,7 @@ from .certified import (
     BlockSummaries,
     CertifiedAttentionOutput,
     CertifiedAttentionStats,
+    StreamAttnMetadataCache,
     build_block_summaries,
     certified_attention,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "BlockSummaries",
     "CertifiedAttentionOutput",
     "CertifiedAttentionStats",
+    "StreamAttnMetadataCache",
     # Factory functions
     "create_stream_attention",
     "create_fused_online_attention",

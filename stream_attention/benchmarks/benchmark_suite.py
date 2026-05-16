@@ -56,12 +56,12 @@ def _benchmark_module(
     if device.type == "cuda":
         torch.cuda.synchronize()
 
-    start = time.time()
+    start = time.perf_counter()
     for _ in range(iterations):
         module(q, k, v, causal=True)
     if device.type == "cuda":
         torch.cuda.synchronize()
-    elapsed = (time.time() - start) / iterations
+    elapsed = max((time.perf_counter() - start) / iterations, 1e-12)
 
     flops = 4.0 * batch_size * nh * seq_len * seq_len * hd
     tflops = flops / elapsed / 1e12
@@ -112,12 +112,12 @@ def _streaming_benchmark_module(
     if device.type == "cuda":
         torch.cuda.synchronize()
 
-    start_t = time.time()
+    start_t = time.perf_counter()
     for _ in range(iterations):
         run_once()
     if device.type == "cuda":
         torch.cuda.synchronize()
-    elapsed = (time.time() - start_t) / iterations
+    elapsed = max((time.perf_counter() - start_t) / iterations, 1e-12)
 
     # Total FLOPS across all chunks: 4 * B * H * D * sum(q_chunk_len * kv_len)
     total_qk = 0

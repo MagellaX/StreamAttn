@@ -3,7 +3,11 @@ import math
 import torch
 import torch.nn.functional as F
 
-from stream_attention.certified import build_block_summaries, certified_attention
+from stream_attention.certified import (
+    StreamAttnMetadataCache,
+    build_block_summaries,
+    certified_attention,
+)
 from stream_attention.certified.bounds import block_score_upper_bound
 
 
@@ -150,3 +154,19 @@ def test_certified_attention_post_qk_gate_skips_when_summary_gate_disabled():
     assert result.stats.skipped_pre_k_row_blocks == 0
     assert result.stats.skipped_post_qk_row_blocks > 0
     assert torch.all(err <= result.stats.row_error_bound + 1e-5)
+
+
+def test_metadata_cache_builds_value_bounds():
+    torch.manual_seed(6)
+    v = torch.randn(2, 7, 3, 5)
+    cache = StreamAttnMetadataCache.from_value(v, block_size=4)
+
+    assert cache.block_size == 4
+    assert cache.seq_len == 7
+    assert cache.num_blocks == 2
+    assert cache.require_value_norm_bounds().shape == (2, 3, 2)
+    cache.validate_for_value(v)
+
+    v_bh = v.permute(0, 2, 1, 3).contiguous()
+    first_block_norm = torch.linalg.vector_norm(v_bh[:, :, :4, :], dim=-1).amax(dim=-1)
+    torch.testing.assert_close(cache.value_norm_bounds[:, :, 0], first_block_norm)
