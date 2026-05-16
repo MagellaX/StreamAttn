@@ -16,6 +16,9 @@ from stream_attention.kernels.gate1_fwd_triton import (
     build_value_norm_bounds,
     gate1_attention_triton_forward,
 )
+from stream_attention.kernels.gate1_mass_fwd_triton import (
+    gate1_mass_attention_triton_forward,
+)
 from stream_attention.kernels.metadata_triton import build_value_norm_bounds_triton
 from stream_attention.router import AttentionRouteRequest, CostEntry, CostKey, Gate1CostModel
 
@@ -81,6 +84,8 @@ def _summarize_stats(raw_stats: torch.Tensor):
 
 
 def _maybe_build_bounds(args, value) -> Optional[torch.Tensor]:
+    if args.kernel == "mass_specialized":
+        return None
     if not args.precompute_bounds:
         return None
     if args.skip_predicate != "value_bound":
@@ -105,6 +110,18 @@ def _run_gate1(
     value_norm_bounds: Optional[torch.Tensor] = None,
     return_raw_stats: bool = False,
 ):
+    if args.kernel == "mass_specialized":
+        return gate1_mass_attention_triton_forward(
+            query,
+            key,
+            value,
+            causal=args.causal,
+            error_budget=args.error_budget,
+            block_size=args.block_size,
+            tile_size_q=args.tile_size_q,
+            force_mode=force_mode,
+            return_raw_stats=return_raw_stats,
+        )
     return gate1_attention_triton_forward(
         query,
         key,
@@ -147,6 +164,8 @@ def _time_gate1(
 
 
 def _measure_bounds(args, value) -> Optional[float]:
+    if args.kernel == "mass_specialized":
+        return None
     if args.skip_predicate != "value_bound":
         return None
     return _time_cuda(
@@ -248,6 +267,7 @@ def _run_suite(args):
         "requested_active_blocks": args.active_blocks,
         "block_size": args.block_size,
         "tile_size_q": args.tile_size_q,
+        "kernel": args.kernel,
         "skip_predicate": args.skip_predicate,
         "precompute_bounds": args.precompute_bounds,
         "bounds_build_ms": bounds_build_ms,
@@ -349,6 +369,11 @@ def main():
     parser.add_argument("--error-budget", type=float, default=1e-3)
     parser.add_argument("--block-size", type=int, default=64)
     parser.add_argument("--tile-size-q", type=int, default=64)
+    parser.add_argument(
+        "--kernel",
+        choices=["generic", "mass_specialized"],
+        default="generic",
+    )
     parser.add_argument("--skip-predicate", choices=["mass", "value_bound"], default="value_bound")
     parser.add_argument("--bounds-builder", choices=["triton", "torch"], default="triton")
     parser.add_argument("--force-mode", type=int, default=0)
@@ -435,6 +460,7 @@ def main():
                 "requested_active_blocks": args.active_blocks,
                 "block_size": args.block_size,
                 "tile_size_q": args.tile_size_q,
+                "kernel": args.kernel,
                 "skip_predicate": args.skip_predicate,
                 "bounds_builder": args.bounds_builder,
                 "force_mode": args.force_mode,

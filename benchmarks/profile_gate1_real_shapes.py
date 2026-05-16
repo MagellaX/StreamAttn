@@ -10,6 +10,9 @@ import torch
 from stream_attention import StreamAttnMetadataCache
 from stream_attention.gate1 import dense_attention_forward
 from stream_attention.kernels.gate1_fwd_triton import gate1_attention_triton_forward
+from stream_attention.kernels.gate1_mass_fwd_triton import (
+    gate1_mass_attention_triton_forward,
+)
 
 
 def _parse_values(values: Iterable[str], cast):
@@ -101,6 +104,31 @@ def _run_gate1(
         tile_size_q=tile_size_q,
         value_norm_bounds=value_norm_bounds,
         skip_predicate=skip_predicate,
+        force_mode=force_mode,
+        return_raw_stats=return_raw_stats,
+    )
+
+
+def _run_gate1_mass_specialized(
+    q,
+    k,
+    v,
+    *,
+    block_size: int,
+    tile_size_q: int,
+    causal: bool,
+    force_mode: int,
+    error_budget: float = 1e-3,
+    return_raw_stats: bool = False,
+):
+    return gate1_mass_attention_triton_forward(
+        q,
+        k,
+        v,
+        causal=causal,
+        error_budget=error_budget,
+        block_size=block_size,
+        tile_size_q=tile_size_q,
         force_mode=force_mode,
         return_raw_stats=return_raw_stats,
     )
@@ -241,6 +269,34 @@ def _profile_one(
         warmup=args.warmup,
         iters=args.iters,
     )
+    gate1_mass_specialized_ms = _time_cuda(
+        lambda: _run_gate1_mass_specialized(
+            q,
+            k,
+            v,
+            block_size=block_size,
+            tile_size_q=args.tile_size_q,
+            causal=args.causal,
+            force_mode=0,
+            error_budget=args.error_budget,
+        ),
+        warmup=args.warmup,
+        iters=args.iters,
+    )
+    gate1_mass_specialized_dense_equiv_ms = _time_cuda(
+        lambda: _run_gate1_mass_specialized(
+            q,
+            k,
+            v,
+            block_size=block_size,
+            tile_size_q=args.tile_size_q,
+            causal=args.causal,
+            force_mode=5,
+            error_budget=args.error_budget,
+        ),
+        warmup=args.warmup,
+        iters=args.iters,
+    )
 
     _, raw_stats = _run_gate1(
         q,
@@ -267,9 +323,21 @@ def _profile_one(
         error_budget=args.error_budget,
         return_raw_stats=True,
     )
+    _, raw_stats_mass_specialized = _run_gate1_mass_specialized(
+        q,
+        k,
+        v,
+        block_size=block_size,
+        tile_size_q=args.tile_size_q,
+        causal=args.causal,
+        force_mode=0,
+        error_budget=args.error_budget,
+        return_raw_stats=True,
+    )
     torch.cuda.synchronize()
     stats = _summarize_stats(raw_stats)
     mass_stats = _summarize_stats(raw_stats_mass)
+    mass_specialized_stats = _summarize_stats(raw_stats_mass_specialized)
 
     return {
         "device": torch.cuda.get_device_name(0),
@@ -293,8 +361,15 @@ def _profile_one(
         "gate1_qk_exp_predicate_no_pv_ms": gate1_qk_exp_predicate_no_pv_ms,
         "gate1_value_bound_ms": gate1_low_active_ms,
         "gate1_mass_ms": gate1_mass_ms,
+        "gate1_mass_specialized_ms": gate1_mass_specialized_ms,
+        "gate1_mass_specialized_dense_equiv_ms": (
+            gate1_mass_specialized_dense_equiv_ms
+        ),
         "metadata_plus_gate1_value_bound_ms": metadata_build_ms + gate1_low_active_ms,
         "dense_equiv_ratio": gate1_dense_equiv_ms / sdpa_dense_ms,
+        "mass_specialized_dense_equiv_ratio": (
+            gate1_mass_specialized_dense_equiv_ms / sdpa_dense_ms
+        ),
         "true_qk_scan_ratio": gate1_true_qk_scan_ms / sdpa_dense_ms,
         "qk_log_predicate_no_pv_ratio": gate1_qk_log_predicate_no_pv_ms
         / sdpa_dense_ms,
@@ -302,6 +377,7 @@ def _profile_one(
         / sdpa_dense_ms,
         "gate1_value_bound_ratio": gate1_low_active_ms / sdpa_dense_ms,
         "gate1_mass_ratio": gate1_mass_ms / sdpa_dense_ms,
+        "gate1_mass_specialized_ratio": gate1_mass_specialized_ms / sdpa_dense_ms,
         "metadata_over_dense": metadata_build_ms / sdpa_dense_ms,
         "metadata_plus_gate1_value_bound_ratio": (
             metadata_build_ms + gate1_low_active_ms
@@ -309,6 +385,7 @@ def _profile_one(
         / sdpa_dense_ms,
         "value_bound_stats": stats,
         "mass_stats": mass_stats,
+        "mass_specialized_stats": mass_specialized_stats,
     }
 
 
