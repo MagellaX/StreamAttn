@@ -121,6 +121,8 @@ def _run_gate1(
             tile_size_q=args.tile_size_q,
             force_mode=force_mode,
             return_raw_stats=return_raw_stats,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
         )
     return gate1_attention_triton_forward(
         query,
@@ -134,6 +136,8 @@ def _run_gate1(
         skip_predicate=skip_predicate or args.skip_predicate,
         force_mode=force_mode,
         return_raw_stats=return_raw_stats,
+        num_warps=args.num_warps,
+        num_stages=args.num_stages,
     )
 
 
@@ -267,6 +271,8 @@ def _run_suite(args):
         "requested_active_blocks": args.active_blocks,
         "block_size": args.block_size,
         "tile_size_q": args.tile_size_q,
+        "num_warps": args.num_warps,
+        "num_stages": args.num_stages,
         "kernel": args.kernel,
         "skip_predicate": args.skip_predicate,
         "precompute_bounds": args.precompute_bounds,
@@ -369,6 +375,8 @@ def main():
     parser.add_argument("--error-budget", type=float, default=1e-3)
     parser.add_argument("--block-size", type=int, default=64)
     parser.add_argument("--tile-size-q", type=int, default=64)
+    parser.add_argument("--num-warps", type=int, default=4)
+    parser.add_argument("--num-stages", type=int, default=3)
     parser.add_argument(
         "--kernel",
         choices=["generic", "mass_specialized"],
@@ -460,6 +468,8 @@ def main():
                 "requested_active_blocks": args.active_blocks,
                 "block_size": args.block_size,
                 "tile_size_q": args.tile_size_q,
+                "num_warps": args.num_warps,
+                "num_stages": args.num_stages,
                 "kernel": args.kernel,
                 "skip_predicate": args.skip_predicate,
                 "bounds_builder": args.bounds_builder,

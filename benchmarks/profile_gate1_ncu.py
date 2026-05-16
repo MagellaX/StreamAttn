@@ -6,6 +6,8 @@ and H100 runs compare the same force modes and shape.
 """
 
 import argparse
+import csv
+import io
 import json
 import shutil
 import subprocess
@@ -79,6 +81,10 @@ def _build_command(args, force_mode: int):
         str(force_mode),
         "--skip-predicate",
         args.skip_predicate,
+        "--num-warps",
+        str(args.num_warps),
+        "--num-stages",
+        str(args.num_stages),
         "--warmup",
         str(args.warmup),
         "--iters",
@@ -89,6 +95,24 @@ def _build_command(args, force_mode: int):
     if args.precompute_bounds and args.kernel != "mass_specialized":
         cmd.append("--precompute-bounds")
     return cmd, output_base
+
+
+def _parse_ncu_csv(text: str):
+    rows = []
+    for row in csv.DictReader(io.StringIO(text)):
+        metric = row.get("Metric Name") or row.get("Metric")
+        value = row.get("Metric Value") or row.get("Value")
+        unit = row.get("Metric Unit") or row.get("Unit")
+        if metric:
+            rows.append({"metric": metric, "value": value, "unit": unit})
+    return rows
+
+
+def _import_csv(args, output_base: Path):
+    report = output_base.with_suffix(".ncu-rep")
+    cmd = [args.ncu_bin, "--import", str(report), "--csv"]
+    output = subprocess.check_output(cmd, text=True)
+    return _parse_ncu_csv(output)
 
 
 def main():
@@ -113,6 +137,9 @@ def main():
     parser.add_argument("--causal", action="store_true")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iters", type=int, default=20)
+    parser.add_argument("--num-warps", type=int, default=4)
+    parser.add_argument("--num-stages", type=int, default=3)
+    parser.add_argument("--summary-json-out", default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -131,6 +158,13 @@ def main():
         )
         if not args.dry_run:
             subprocess.run(cmd, check=True)
+            if args.summary_json_out:
+                run["metrics"] = _import_csv(args, output_base)
+    if args.summary_json_out and not args.dry_run:
+        Path(args.summary_json_out).write_text(
+            json.dumps({"runs": runs}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     print(json.dumps({"runs": runs}, indent=2, sort_keys=True))
 
 

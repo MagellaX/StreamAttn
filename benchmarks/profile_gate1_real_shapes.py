@@ -90,6 +90,8 @@ def _run_gate1(
     causal: bool,
     value_norm_bounds=None,
     force_mode: int,
+    num_warps: int,
+    num_stages: int,
     skip_predicate: str = "mass",
     error_budget: float = 1e-3,
     return_raw_stats: bool = False,
@@ -106,6 +108,8 @@ def _run_gate1(
         skip_predicate=skip_predicate,
         force_mode=force_mode,
         return_raw_stats=return_raw_stats,
+        num_warps=num_warps,
+        num_stages=num_stages,
     )
 
 
@@ -118,6 +122,8 @@ def _run_gate1_mass_specialized(
     tile_size_q: int,
     causal: bool,
     force_mode: int,
+    num_warps: int,
+    num_stages: int,
     error_budget: float = 1e-3,
     return_raw_stats: bool = False,
 ):
@@ -131,6 +137,8 @@ def _run_gate1_mass_specialized(
         tile_size_q=tile_size_q,
         force_mode=force_mode,
         return_raw_stats=return_raw_stats,
+        num_warps=num_warps,
+        num_stages=num_stages,
     )
 
 
@@ -141,6 +149,9 @@ def _profile_one(
     heads: int,
     dim: int,
     block_size: int,
+    tile_size_q: int,
+    num_warps: int,
+    num_stages: int,
     dtype_name: str,
     active_fraction: float,
 ):
@@ -184,9 +195,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=5,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -199,9 +212,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=7,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -214,9 +229,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=8,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -229,9 +246,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=9,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -244,10 +263,12 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             value_norm_bounds=value_norm_bounds,
             force_mode=0,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="value_bound",
             error_budget=args.error_budget,
         ),
@@ -260,9 +281,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=0,
+            num_warps=num_warps,
+            num_stages=num_stages,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -275,9 +298,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=0,
+            num_warps=num_warps,
+            num_stages=num_stages,
             error_budget=args.error_budget,
         ),
         warmup=args.warmup,
@@ -289,9 +314,11 @@ def _profile_one(
             k,
             v,
             block_size=block_size,
-            tile_size_q=args.tile_size_q,
+            tile_size_q=tile_size_q,
             causal=args.causal,
             force_mode=5,
+            num_warps=num_warps,
+            num_stages=num_stages,
             error_budget=args.error_budget,
         ),
         warmup=args.warmup,
@@ -303,10 +330,12 @@ def _profile_one(
         k,
         v,
         block_size=block_size,
-        tile_size_q=args.tile_size_q,
+        tile_size_q=tile_size_q,
         causal=args.causal,
         value_norm_bounds=value_norm_bounds,
         force_mode=0,
+        num_warps=num_warps,
+        num_stages=num_stages,
         skip_predicate="value_bound",
         error_budget=args.error_budget,
         return_raw_stats=True,
@@ -316,9 +345,11 @@ def _profile_one(
         k,
         v,
         block_size=block_size,
-        tile_size_q=args.tile_size_q,
+        tile_size_q=tile_size_q,
         causal=args.causal,
         force_mode=0,
+        num_warps=num_warps,
+        num_stages=num_stages,
         skip_predicate="mass",
         error_budget=args.error_budget,
         return_raw_stats=True,
@@ -328,9 +359,11 @@ def _profile_one(
         k,
         v,
         block_size=block_size,
-        tile_size_q=args.tile_size_q,
+        tile_size_q=tile_size_q,
         causal=args.causal,
         force_mode=0,
+        num_warps=num_warps,
+        num_stages=num_stages,
         error_budget=args.error_budget,
         return_raw_stats=True,
     )
@@ -349,7 +382,9 @@ def _profile_one(
             "dtype": dtype_name,
         },
         "block_size": block_size,
-        "tile_size_q": args.tile_size_q,
+        "tile_size_q": tile_size_q,
+        "num_warps": num_warps,
+        "num_stages": num_stages,
         "requested_active_fraction": active_fraction,
         "block_quantized_active_fraction": block_quantized_active,
         "actual_active_fraction": stats["active_pv_fraction"],
@@ -398,7 +433,9 @@ def main():
     parser.add_argument("--active-fraction", nargs="+", default=["0.0625", "1.0"])
     parser.add_argument("--dtype", nargs="+", choices=["fp16", "bf16"], default=["fp16"])
     parser.add_argument("--batch", type=int, default=1)
-    parser.add_argument("--tile-size-q", type=int, default=64)
+    parser.add_argument("--tile-size-q", nargs="+", default=["64"])
+    parser.add_argument("--num-warps", nargs="+", default=["4"])
+    parser.add_argument("--num-stages", nargs="+", default=["3"])
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--causal", action="store_true")
     parser.add_argument("--error-budget", type=float, default=1e-3)
@@ -417,14 +454,30 @@ def main():
     heads_values = _parse_values(args.heads, int)
     dims = _parse_values(args.dim, int)
     block_sizes = _parse_values(args.block_size, int)
+    tile_sizes_q = _parse_values(args.tile_size_q, int)
+    num_warps_values = _parse_values(args.num_warps, int)
+    num_stages_values = _parse_values(args.num_stages, int)
     active_fractions = _parse_values(args.active_fraction, float)
     dtypes = _parse_values(args.dtype, str)
 
-    for seq, heads, dim, block_size, dtype_name, active_fraction in itertools.product(
+    for (
+        seq,
+        heads,
+        dim,
+        block_size,
+        tile_size_q,
+        num_warps,
+        num_stages,
+        dtype_name,
+        active_fraction,
+    ) in itertools.product(
         seqs,
         heads_values,
         dims,
         block_sizes,
+        tile_sizes_q,
+        num_warps_values,
+        num_stages_values,
         dtypes,
         active_fractions,
     ):
@@ -436,6 +489,9 @@ def main():
                     heads=heads,
                     dim=dim,
                     block_size=block_size,
+                    tile_size_q=tile_size_q,
+                    num_warps=num_warps,
+                    num_stages=num_stages,
                     dtype_name=dtype_name,
                     active_fraction=active_fraction,
                 )
@@ -451,6 +507,9 @@ def main():
                         "dtype": dtype_name,
                     },
                     "block_size": block_size,
+                    "tile_size_q": tile_size_q,
+                    "num_warps": num_warps,
+                    "num_stages": num_stages,
                     "active_fraction": active_fraction,
                     "error": str(exc),
                 }

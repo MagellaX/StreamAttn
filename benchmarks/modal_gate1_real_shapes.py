@@ -16,22 +16,37 @@ image = (
 )
 
 
-def _profile(seqs: str, heads: str, dims: str, active_fractions: str, block_sizes: str):
+def _profile(
+    seqs: str,
+    heads: str,
+    dims: str,
+    active_fractions: str,
+    block_sizes: str,
+    tile_sizes_q: str,
+    num_warps: str,
+    num_stages: str,
+):
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
     cmd = [
         "python",
-        "/root/StreamAttn/benchmarks/profile_gate1_real_shapes.py",
-        "--seq",
-        *seqs.split(","),
+        "/root/StreamAttn/benchmarks/profile_gate1_autotune.py",
+        "--seqs",
+        seqs,
         "--heads",
-        *heads.split(","),
-        "--dim",
-        *dims.split(","),
-        "--active-fraction",
-        *active_fractions.split(","),
-        "--block-size",
-        *block_sizes.split(","),
+        heads,
+        "--dims",
+        dims,
+        "--active-fractions",
+        active_fractions,
+        "--block-sizes",
+        block_sizes,
+        "--tile-sizes-q",
+        tile_sizes_q,
+        "--num-warps",
+        num_warps,
+        "--num-stages",
+        num_stages,
         "--dtype",
         "fp16",
         "--warmup",
@@ -53,13 +68,49 @@ def _profile(seqs: str, heads: str, dims: str, active_fractions: str, block_size
 
 
 @app.function(image=image, gpu="A100", timeout=2400)
-def profile_a100(seqs: str, heads: str, dims: str, active_fractions: str, block_sizes: str):
-    return _profile(seqs, heads, dims, active_fractions, block_sizes)
+def profile_a100(
+    seqs: str,
+    heads: str,
+    dims: str,
+    active_fractions: str,
+    block_sizes: str,
+    tile_sizes_q: str,
+    num_warps: str,
+    num_stages: str,
+):
+    return _profile(
+        seqs,
+        heads,
+        dims,
+        active_fractions,
+        block_sizes,
+        tile_sizes_q,
+        num_warps,
+        num_stages,
+    )
 
 
 @app.function(image=image, gpu="H100", timeout=2400)
-def profile_h100(seqs: str, heads: str, dims: str, active_fractions: str, block_sizes: str):
-    return _profile(seqs, heads, dims, active_fractions, block_sizes)
+def profile_h100(
+    seqs: str,
+    heads: str,
+    dims: str,
+    active_fractions: str,
+    block_sizes: str,
+    tile_sizes_q: str,
+    num_warps: str,
+    num_stages: str,
+):
+    return _profile(
+        seqs,
+        heads,
+        dims,
+        active_fractions,
+        block_sizes,
+        tile_sizes_q,
+        num_warps,
+        num_stages,
+    )
 
 
 @app.local_entrypoint()
@@ -70,10 +121,35 @@ def main(
     dims: str = "128",
     active_fractions: str = "0.0625,1.0",
     block_sizes: str = "64",
+    tile_sizes_q: str = "64",
+    num_warps: str = "4",
+    num_stages: str = "3",
 ):
     if target == "a100":
-        print(profile_a100.remote(seqs, heads, dims, active_fractions, block_sizes))
+        print(
+            profile_a100.remote(
+                seqs,
+                heads,
+                dims,
+                active_fractions,
+                block_sizes,
+                tile_sizes_q,
+                num_warps,
+                num_stages,
+            )
+        )
     elif target == "h100":
-        print(profile_h100.remote(seqs, heads, dims, active_fractions, block_sizes))
+        print(
+            profile_h100.remote(
+                seqs,
+                heads,
+                dims,
+                active_fractions,
+                block_sizes,
+                tile_sizes_q,
+                num_warps,
+                num_stages,
+            )
+        )
     else:
         raise ValueError("target must be a100 or h100")

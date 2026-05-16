@@ -330,6 +330,8 @@ def gate1_attention_triton_forward(
     post_qk_threshold: float = 0.0,
     force_mode: int = 0,
     return_raw_stats: bool = False,
+    num_warps: int = 4,
+    num_stages: int = 3,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Run Gate-1 post-QK skip forward attention.
 
@@ -361,6 +363,10 @@ def gate1_attention_triton_forward(
         raise ValueError("skip_predicate must be 'mass' or 'value_bound'")
     if force_mode not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}:
         raise ValueError("force_mode must be an integer in [0, 9]")
+    if num_warps not in {1, 2, 4, 8}:
+        raise ValueError("num_warps must be one of 1, 2, 4, or 8")
+    if num_stages <= 0:
+        raise ValueError("num_stages must be positive")
 
     query = query.contiguous()
     key = key.contiguous()
@@ -412,7 +418,7 @@ def gate1_attention_triton_forward(
         VALUE_BOUND=uses_value_bound_in_kernel,
         PV_USE_BF16=value.dtype is torch.bfloat16,
         HAS_STATS=return_raw_stats,
-        num_warps=4,
-        num_stages=3,
+        num_warps=num_warps,
+        num_stages=num_stages,
     )
     return output, raw_stats if return_raw_stats else None
