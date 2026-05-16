@@ -921,6 +921,10 @@ class FusedOnlineAttention(nn.Module):
                 mask_supported = attention_mask.shape[0] == batch_size and attention_mask.shape[-1] == seq_len_k
             else:
                 mask_supported = False
+            # Until Triton kernel mask parity is validated on pre-SM80 GPUs (e.g., T4),
+            # fall back to PyTorch SDPA when a mask is supplied on those architectures.
+            if mask_supported and self.sm and self.sm < 80:
+                mask_supported = False
 
         use_triton = (
             TRITON_AVAILABLE
