@@ -197,7 +197,7 @@ def smoke():
         kb,
         vb,
         1e-3,
-        force_mode=6,
+        force_mode=7,
         skip_predicate="mass",
     )
     mass_normal_ms = time_gate1(

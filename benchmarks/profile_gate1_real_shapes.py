@@ -165,7 +165,7 @@ def _profile_one(
         warmup=args.warmup,
         iters=args.iters,
     )
-    gate1_qk_only_ms = _time_cuda(
+    gate1_true_qk_scan_ms = _time_cuda(
         lambda: _run_gate1(
             q,
             k,
@@ -173,7 +173,37 @@ def _profile_one(
             block_size=block_size,
             tile_size_q=args.tile_size_q,
             causal=args.causal,
-            force_mode=6,
+            force_mode=7,
+            skip_predicate="mass",
+            error_budget=args.error_budget,
+        ),
+        warmup=args.warmup,
+        iters=args.iters,
+    )
+    gate1_qk_log_predicate_no_pv_ms = _time_cuda(
+        lambda: _run_gate1(
+            q,
+            k,
+            v,
+            block_size=block_size,
+            tile_size_q=args.tile_size_q,
+            causal=args.causal,
+            force_mode=8,
+            skip_predicate="mass",
+            error_budget=args.error_budget,
+        ),
+        warmup=args.warmup,
+        iters=args.iters,
+    )
+    gate1_qk_exp_predicate_no_pv_ms = _time_cuda(
+        lambda: _run_gate1(
+            q,
+            k,
+            v,
+            block_size=block_size,
+            tile_size_q=args.tile_size_q,
+            causal=args.causal,
+            force_mode=9,
             skip_predicate="mass",
             error_budget=args.error_budget,
         ),
@@ -258,12 +288,18 @@ def _profile_one(
         "metadata_build_ms": metadata_build_ms,
         "sdpa_dense_ms": sdpa_dense_ms,
         "gate1_dense_equiv_ms": gate1_dense_equiv_ms,
-        "gate1_qk_only_ms": gate1_qk_only_ms,
+        "gate1_true_qk_scan_ms": gate1_true_qk_scan_ms,
+        "gate1_qk_log_predicate_no_pv_ms": gate1_qk_log_predicate_no_pv_ms,
+        "gate1_qk_exp_predicate_no_pv_ms": gate1_qk_exp_predicate_no_pv_ms,
         "gate1_value_bound_ms": gate1_low_active_ms,
         "gate1_mass_ms": gate1_mass_ms,
         "metadata_plus_gate1_value_bound_ms": metadata_build_ms + gate1_low_active_ms,
         "dense_equiv_ratio": gate1_dense_equiv_ms / sdpa_dense_ms,
-        "qk_ratio": gate1_qk_only_ms / sdpa_dense_ms,
+        "true_qk_scan_ratio": gate1_true_qk_scan_ms / sdpa_dense_ms,
+        "qk_log_predicate_no_pv_ratio": gate1_qk_log_predicate_no_pv_ms
+        / sdpa_dense_ms,
+        "qk_exp_predicate_no_pv_ratio": gate1_qk_exp_predicate_no_pv_ms
+        / sdpa_dense_ms,
         "gate1_value_bound_ratio": gate1_low_active_ms / sdpa_dense_ms,
         "gate1_mass_ratio": gate1_mass_ms / sdpa_dense_ms,
         "metadata_over_dense": metadata_build_ms / sdpa_dense_ms,

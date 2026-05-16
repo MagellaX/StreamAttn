@@ -176,7 +176,23 @@ def _run_suite(args):
         query,
         key,
         value,
-        force_mode=6,
+        force_mode=7,
+        skip_predicate="mass",
+    )
+    qk_log_predicate_no_pv_ms = _time_gate1(
+        args,
+        query,
+        key,
+        value,
+        force_mode=8,
+        skip_predicate="mass",
+    )
+    qk_exp_predicate_no_pv_ms = _time_gate1(
+        args,
+        query,
+        key,
+        value,
+        force_mode=9,
         skip_predicate="mass",
     )
     gate1_ms = _time_gate1(
@@ -237,6 +253,8 @@ def _run_suite(args):
         "bounds_build_ms": bounds_build_ms,
         "dense_no_predicate_ms": dense_ms,
         "qk_only_ms": qk_only_ms,
+        "qk_log_predicate_no_pv_ms": qk_log_predicate_no_pv_ms,
+        "qk_exp_predicate_no_pv_ms": qk_exp_predicate_no_pv_ms,
         "gate1_ms": gate1_ms,
         "predicate_no_skip_ms": predicate_no_skip_ms,
         "active_pv_fraction": active_frac,
