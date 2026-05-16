@@ -2,6 +2,7 @@ import pytest
 
 from stream_attention.router import (
     AttentionRouteRequest,
+    ActiveCurvePoint,
     CostEntry,
     CostKey,
     Gate1CostModel,
@@ -86,7 +87,55 @@ def test_router_rejects_gate1_when_cost_model_margin_fails():
     decision = router.choose(req)
 
     assert decision.backend == "dense"
-    assert decision.reason == "not_profitable_with_margin"
+    assert decision.reason in {
+        "active_fraction_above_threshold",
+        "not_profitable_with_margin",
+    }
+
+
+def test_cost_entry_fits_curve_overhead_and_break_even():
+    entry = CostEntry.from_active_fraction_curve(
+        dense_ms=0.10,
+        qk_only_ms=0.04,
+        observations=[
+            (0.0, 0.045),
+            (0.5, 0.080),
+            (1.0, 0.125),
+        ],
+        residual_percentile=90.0,
+    )
+
+    assert entry.sample_count == 3
+    assert isinstance(entry.curve[0], ActiveCurvePoint)
+    assert entry.predicate_overhead_ms > 0.0
+    assert 0.0 < entry.break_even_active_fraction(1.10) < 1.0
+
+
+def test_router_uses_cost_derived_threshold():
+    req = _request()
+    cost_model = Gate1CostModel()
+    cost_model.update(
+        CostKey.from_request(req),
+        CostEntry(dense_ms=0.10, qk_only_ms=0.04, predicate_overhead_ms=0.04),
+    )
+    router = StreamAttnRouter(
+        policy=StreamAttnPolicy(
+            min_confidence=0.0,
+            gate1_active_threshold=0.90,
+            gate1_disable_threshold=0.95,
+            safety_margin=1.10,
+        ),
+        cost_model=cost_model,
+    )
+
+    decision = router.choose(
+        req,
+        prediction=Prediction(active_frac_hat=0.50, confidence=1.0, source="test"),
+    )
+
+    assert decision.backend == "dense"
+    assert decision.reason == "active_fraction_above_threshold"
+    assert decision.active_threshold < 0.90
 
 
 def test_router_hysteresis_keeps_gate1_until_disable_threshold():
@@ -120,6 +169,29 @@ def test_router_hysteresis_keeps_gate1_until_disable_threshold():
     assert first.backend == "gate1"
     assert second.backend == "gate1"
     assert third.backend == "dense"
+
+
+def test_router_uses_aggregate_prior_for_cold_per_head():
+    router, base_req = _router_with_cost()
+    aggregate_req = AttentionRouteRequest(
+        **{
+            **base_req.__dict__,
+            "head_id": -1,
+        }
+    )
+    for _ in range(4):
+        router.observe(aggregate_req, cta_pv_executed=8, cta_tiles_total=100)
+    head_req = AttentionRouteRequest(
+        **{
+            **aggregate_req.__dict__,
+            "head_id": 1,
+        }
+    )
+
+    pred = router.predict_with_aggregate_prior(head_req)
+
+    assert pred.source == "aggregate_prior"
+    assert pred.active_frac_hat == 0.08
 
 
 def test_router_regret_reports_oracle_gap():

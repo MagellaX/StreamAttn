@@ -36,6 +36,7 @@ from .certified import (
 from .router import (
     AttentionRouteRequest,
     BackendDecision,
+    ActiveCurvePoint,
     CostEntry,
     CostKey,
     Gate1CostModel,
@@ -75,6 +76,7 @@ __all__ = [
     "StreamAttnMetadataCache",
     "AttentionRouteRequest",
     "BackendDecision",
+    "ActiveCurvePoint",
     "CostEntry",
     "CostKey",
     "Gate1CostModel",

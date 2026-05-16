@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Iterable, Optional, Tuple, Union
 
 from .telemetry import ActiveFractionKey, ActiveFractionTelemetry, Prediction, seq_bucket
 
@@ -139,6 +139,39 @@ class CostKey:
 
 
 @dataclass(frozen=True)
+class ActiveCurvePoint:
+    """One measured point from a Gate-1 active-fraction curve."""
+
+    active_fraction: float
+    observed_ms: float
+    predicted_ms: float
+    residual_ms: float
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.active_fraction <= 1.0:
+            raise ValueError("active_fraction must be in [0, 1]")
+        if self.observed_ms <= 0.0:
+            raise ValueError("observed_ms must be positive")
+        if self.predicted_ms <= 0.0:
+            raise ValueError("predicted_ms must be positive")
+
+
+def _percentile(values: Iterable[float], percentile: float) -> float:
+    values_sorted = sorted(float(v) for v in values)
+    if not values_sorted:
+        return 0.0
+    if percentile <= 0.0:
+        return values_sorted[0]
+    if percentile >= 100.0:
+        return values_sorted[-1]
+    pos = (len(values_sorted) - 1) * percentile / 100.0
+    lo = int(pos)
+    hi = min(lo + 1, len(values_sorted) - 1)
+    weight = pos - lo
+    return values_sorted[lo] * (1.0 - weight) + values_sorted[hi] * weight
+
+
+@dataclass(frozen=True)
 class CostEntry:
     """Measured cost model entry for one shape/device/tile config."""
 
@@ -150,6 +183,7 @@ class CostEntry:
     measured_active_curve_error: Optional[float] = None
     sample_count: int = 0
     last_updated: Optional[str] = None
+    curve: Tuple[ActiveCurvePoint, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.dense_ms <= 0.0:
@@ -173,6 +207,67 @@ class CostEntry:
 
     def profitable(self, active_fraction: float, *, safety_margin: float) -> bool:
         return self.predict_gate1_ms(active_fraction) * safety_margin < self.dense_ms
+
+    def break_even_active_fraction(self, safety_margin: float) -> float:
+        """Largest active fraction that remains profitable with margin."""
+
+        if safety_margin < 1.0:
+            raise ValueError("safety_margin must be >= 1")
+        if self.pv_ms <= 0.0:
+            return 1.0 if self.qk_only_ms + self.predicate_overhead_ms < self.dense_ms else 0.0
+        threshold = (
+            self.dense_ms / safety_margin
+            - self.qk_only_ms
+            - self.predicate_overhead_ms
+        ) / self.pv_ms
+        return min(1.0, max(0.0, threshold))
+
+    @classmethod
+    def from_active_fraction_curve(
+        cls,
+        *,
+        dense_ms: float,
+        qk_only_ms: float,
+        observations: Iterable[Tuple[float, float]],
+        residual_percentile: float = 90.0,
+        gate1_no_skip_ms: Optional[float] = None,
+        gate1_all_skip_ms: Optional[float] = None,
+        last_updated: Optional[str] = None,
+    ) -> "CostEntry":
+        """Fit conservative overhead from ``(active_fraction, gate1_ms)`` points."""
+
+        pv_ms = max(0.0, dense_ms - qk_only_ms)
+        points = []
+        residuals = []
+        relative_errors = []
+        for active_fraction, observed_ms in observations:
+            active_fraction = min(1.0, max(0.0, float(active_fraction)))
+            predicted_ms = qk_only_ms + active_fraction * pv_ms
+            residual_ms = observed_ms - predicted_ms
+            residuals.append(max(0.0, residual_ms))
+            if predicted_ms > 0.0:
+                relative_errors.append(abs(observed_ms / predicted_ms - 1.0))
+            points.append(
+                ActiveCurvePoint(
+                    active_fraction=active_fraction,
+                    observed_ms=float(observed_ms),
+                    predicted_ms=predicted_ms,
+                    residual_ms=residual_ms,
+                )
+            )
+        overhead = _percentile(residuals, residual_percentile)
+        curve_error = _percentile(relative_errors, residual_percentile)
+        return cls(
+            dense_ms=dense_ms,
+            qk_only_ms=qk_only_ms,
+            predicate_overhead_ms=overhead,
+            gate1_no_skip_ms=gate1_no_skip_ms,
+            gate1_all_skip_ms=gate1_all_skip_ms,
+            measured_active_curve_error=curve_error,
+            sample_count=len(points),
+            last_updated=last_updated,
+            curve=tuple(points),
+        )
 
 
 class Gate1CostModel:
@@ -203,8 +298,14 @@ class Gate1CostModel:
     def from_dict(cls, payload: Dict[str, object]) -> "Gate1CostModel":
         model = cls()
         for item in payload.get("entries", []):
-            key_data = item["key"]
-            entry_data = item["entry"]
+            key_data = dict(item["key"])
+            if "device" in key_data and "device_class" not in key_data:
+                key_data["device_class"] = normalize_device_class(key_data.pop("device"))
+            entry_data = dict(item["entry"])
+            if "curve" in entry_data:
+                entry_data["curve"] = tuple(
+                    ActiveCurvePoint(**point) for point in entry_data["curve"]
+                )
             model.update(CostKey(**key_data), CostEntry(**entry_data))
         return model
 
@@ -267,7 +368,7 @@ class StreamAttnRouter:
         prediction: Optional[Prediction] = None,
     ) -> BackendDecision:
         key = request.active_key()
-        pred = prediction or self.telemetry.predict(key, use_p90=True)
+        pred = prediction or self.predict_with_aggregate_prior(request)
         cost = self.cost_model.lookup(request)
 
         if pred.confidence < self.policy.min_confidence:
@@ -299,6 +400,11 @@ class StreamAttnRouter:
             if last_backend == "gate1"
             else self.policy.gate1_active_threshold
         )
+        if cost is not None:
+            active_threshold = min(
+                active_threshold,
+                cost.break_even_active_fraction(self.policy.safety_margin),
+            )
         if pred.active_frac_hat > active_threshold:
             self._last_backend[key] = "dense"
             return BackendDecision(
@@ -358,6 +464,24 @@ class StreamAttnRouter:
         self._decision_count[key] = count
         period = max(1, round(1.0 / self.policy.exploration_rate))
         return count % period == 0
+
+    def predict_with_aggregate_prior(self, request: AttentionRouteRequest) -> Prediction:
+        """Use per-head history when confident, otherwise fall back to aggregate."""
+
+        head_pred = self.telemetry.predict(request.active_key(), use_p90=True)
+        if request.head_id == -1 or head_pred.confidence >= self.policy.min_confidence:
+            return head_pred
+
+        aggregate_request = replace(request, head_id=-1)
+        aggregate_pred = self.telemetry.predict(aggregate_request.active_key(), use_p90=True)
+        if aggregate_pred.confidence > head_pred.confidence:
+            return Prediction(
+                active_frac_hat=aggregate_pred.active_frac_hat,
+                confidence=aggregate_pred.confidence,
+                source="aggregate_prior",
+                upper_bound=aggregate_pred.upper_bound,
+            )
+        return head_pred
 
 
 def router_regret(

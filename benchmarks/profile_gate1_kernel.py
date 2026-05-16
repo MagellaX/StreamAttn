@@ -16,6 +16,7 @@ from stream_attention.kernels.gate1_fwd_triton import (
     build_value_norm_bounds,
     gate1_attention_triton_forward,
 )
+from stream_attention.kernels.metadata_triton import build_value_norm_bounds_triton
 from stream_attention.router import AttentionRouteRequest, CostEntry, CostKey, Gate1CostModel
 
 
@@ -84,6 +85,12 @@ def _maybe_build_bounds(args, value) -> Optional[torch.Tensor]:
         return None
     if args.skip_predicate != "value_bound":
         return None
+    return _build_bounds(args, value)
+
+
+def _build_bounds(args, value) -> torch.Tensor:
+    if args.bounds_builder == "triton":
+        return build_value_norm_bounds_triton(value, block_size=args.block_size)
     return build_value_norm_bounds(value, block_size=args.block_size)
 
 
@@ -143,7 +150,7 @@ def _measure_bounds(args, value) -> Optional[float]:
     if args.skip_predicate != "value_bound":
         return None
     return _time_cuda(
-        lambda: build_value_norm_bounds(value, block_size=args.block_size),
+        lambda: _build_bounds(args, value),
         warmup=max(1, args.warmup // 10),
         iters=max(1, args.iters // 10),
     )
@@ -255,15 +262,44 @@ def _write_cost_model(args, result, path: str) -> None:
         block_size=result["block_size"],
         causal=args.causal,
     )
-    entry = CostEntry(
+    entry = CostEntry.from_active_fraction_curve(
         dense_ms=result["dense_no_predicate_ms"],
         qk_only_ms=result["qk_only_ms"],
+        observations=[(result["active_pv_fraction"], result["gate1_ms"])],
         gate1_no_skip_ms=result["predicate_no_skip_ms"],
         gate1_all_skip_ms=result["qk_only_ms"],
-        measured_active_curve_error=abs(result["observed_over_predicted"] - 1.0)
-        if result["observed_over_predicted"] is not None
-        else None,
-        sample_count=1,
+    )
+    model = Gate1CostModel()
+    model.update(CostKey.from_request(request), entry)
+    model.to_json(path)
+
+
+def _write_curve_cost_model(args, results, path: str) -> None:
+    first = results[0]
+    shape = first["shape"]
+    dense_ms = sorted(row["dense_no_predicate_ms"] for row in results)[len(results) // 2]
+    qk_only_ms = sorted(row["qk_only_ms"] for row in results)[len(results) // 2]
+    request = AttentionRouteRequest(
+        batch=shape["batch"],
+        seq_q=shape["seq_q"],
+        seq_k=shape["seq_k"],
+        heads=shape["heads"],
+        dim=shape["dim"],
+        dtype=shape["dtype"],
+        device=first["device"],
+        tile_size_q=first["tile_size_q"],
+        block_size=first["block_size"],
+        causal=args.causal,
+    )
+    entry = CostEntry.from_active_fraction_curve(
+        dense_ms=dense_ms,
+        qk_only_ms=qk_only_ms,
+        observations=[
+            (row["active_pv_fraction"], row["gate1_ms"])
+            for row in results
+        ],
+        gate1_no_skip_ms=max(row["predicate_no_skip_ms"] for row in results),
+        gate1_all_skip_ms=min(row["qk_only_ms"] for row in results),
     )
     model = Gate1CostModel()
     model.update(CostKey.from_request(request), entry)
@@ -296,6 +332,7 @@ def main():
     parser.add_argument("--block-size", type=int, default=64)
     parser.add_argument("--tile-size-q", type=int, default=64)
     parser.add_argument("--skip-predicate", choices=["mass", "value_bound"], default="value_bound")
+    parser.add_argument("--bounds-builder", choices=["triton", "torch"], default="triton")
     parser.add_argument("--force-mode", type=int, default=0)
     parser.add_argument("--precompute-bounds", action="store_true")
     parser.add_argument("--return-stats", action="store_true")
@@ -317,7 +354,11 @@ def main():
             sweep_args.active_fraction = frac
             sweep_args.active_blocks = None
             rows.append(_run_suite(sweep_args))
-        print(json.dumps({"sweep": rows}, indent=2, sort_keys=True))
+        payload = {"sweep": rows}
+        if args.cost_json_out:
+            _write_curve_cost_model(args, rows, args.cost_json_out)
+            payload["cost_json_out"] = args.cost_json_out
+        print(json.dumps(payload, indent=2, sort_keys=True))
         return
 
     if args.suite:
@@ -377,6 +418,7 @@ def main():
                 "block_size": args.block_size,
                 "tile_size_q": args.tile_size_q,
                 "skip_predicate": args.skip_predicate,
+                "bounds_builder": args.bounds_builder,
                 "force_mode": args.force_mode,
                 "precompute_bounds": args.precompute_bounds,
                 "bounds_build_ms": bounds_build_ms,

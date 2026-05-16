@@ -36,6 +36,7 @@ def _profile_active_curve():
         block_size=64,
         tile_size_q=64,
         skip_predicate="value_bound",
+        bounds_builder="triton",
         force_mode=0,
         precompute_bounds=True,
         return_stats=True,
