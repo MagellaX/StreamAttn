@@ -9,9 +9,10 @@ be implemented as a scheduler/worklist path, not as the first hot-kernel bet.
 
 Modal A10G smoke currently shows correct row-skip telemetry but little latency
 change, so this kernel exposes debug force modes and CTA-level counters to
-verify whether V load/PV work is actually elided. Keep this as a
-correctness/diagnostic kernel while developing scheduler/worklist or CUDA/CuTe
-implementations for the hot path.
+verify whether V load/PV work is actually elided. The early force modes bypass
+the Gate-1 predicate machinery so timing can isolate QK-only versus dense
+compute. Keep this as a correctness/diagnostic kernel while developing
+scheduler/worklist or CUDA/CuTe implementations for the hot path.
 """
 
 import math
@@ -115,7 +116,8 @@ if TRITON_AVAILABLE:
             else:
                 valid_row = row_mask
             cta_has_valid = tl.sum(valid_row.to(tl.int32), axis=0) > 0
-            cta_total_count += cta_has_valid.to(tl.int32)
+            if HAS_STATS:
+                cta_total_count += cta_has_valid.to(tl.int32)
 
             k_ptrs = (
                 K
@@ -131,69 +133,86 @@ if TRITON_AVAILABLE:
                 qk = tl.where(offs_m[:, None] >= offs_n[None, :], qk, -float("inf"))
             qk = tl.where(valid_row[:, None], qk, -float("inf"))
 
-            tile_max = tl.max(qk, axis=1)
-            has_state = acc_den > 0.0
-            can_skip = (
-                valid_row
-                & has_state
-                & (tile_max <= running_max - POST_QK_THRESHOLD)
-                & (ERROR_BUDGET > 0.0)
-            )
-
-            den_bound = block_len * tl.exp(tile_max - running_max)
-            den_bound = tl.where(can_skip, den_bound, 0.0)
-            if VALUE_BOUND:
-                max_v_norm = tl.load(
-                    MaxVNorm + off_b * H * NUM_BLOCKS + off_h * NUM_BLOCKS + block_idx
-                ).to(tl.float32)
-                current_out = acc_num / tl.maximum(acc_den, 1.0)[:, None]
-                out_norm = tl.sqrt(tl.sum(current_out * current_out, axis=1))
-                rho = den_bound / (acc_den + den_bound)
-                skip_row = can_skip & (rho * (max_v_norm + out_norm) <= ERROR_BUDGET)
+            if FORCE_MODE == 4 or FORCE_MODE == 6:
+                if HAS_STATS:
+                    post_count += tl.sum(valid_row.to(tl.int32), axis=0)
+                    cta_skipped_count += cta_has_valid.to(tl.int32)
             else:
-                skip_row = can_skip & (den_bound <= ERROR_BUDGET * acc_den)
+                if FORCE_MODE == 5:
+                    skip_row = tl.full([TILE_M], False, dtype=tl.int1)
+                else:
+                    tile_max = tl.max(qk, axis=1)
+                    has_state = acc_den > 0.0
+                    can_skip = (
+                        valid_row
+                        & has_state
+                        & (tile_max <= running_max - POST_QK_THRESHOLD)
+                        & (ERROR_BUDGET > 0.0)
+                    )
 
-            if FORCE_MODE == 1:
-                skip_row = tl.full([TILE_M], False, dtype=tl.int1)
-            elif FORCE_MODE == 2:
-                skip_row = valid_row
-            elif FORCE_MODE == 3:
-                skip_row = tl.full([TILE_M], False, dtype=tl.int1)
+                    den_bound = block_len * tl.exp(tile_max - running_max)
+                    den_bound = tl.where(can_skip, den_bound, 0.0)
+                    if VALUE_BOUND:
+                        max_v_norm = tl.load(
+                            MaxVNorm
+                            + off_b * H * NUM_BLOCKS
+                            + off_h * NUM_BLOCKS
+                            + block_idx
+                        ).to(tl.float32)
+                        current_out = acc_num / tl.maximum(acc_den, 1.0)[:, None]
+                        out_norm = tl.sqrt(tl.sum(current_out * current_out, axis=1))
+                        rho = den_bound / (acc_den + den_bound)
+                        skip_row = can_skip & (
+                            rho * (max_v_norm + out_norm) <= ERROR_BUDGET
+                        )
+                    else:
+                        skip_row = can_skip & (den_bound <= ERROR_BUDGET * acc_den)
 
-            compute_row = valid_row & ~skip_row
-            post_count += tl.sum(skip_row.to(tl.int32), axis=0)
-            compute_count += tl.sum(compute_row.to(tl.int32), axis=0)
-            cta_needs_pv = tl.sum(compute_row.to(tl.int32), axis=0) > 0
-            cta_pv_count += cta_needs_pv.to(tl.int32)
-            cta_skipped_count += (cta_has_valid & ~cta_needs_pv).to(tl.int32)
+                    if FORCE_MODE == 1:
+                        skip_row = tl.full([TILE_M], False, dtype=tl.int1)
+                    elif FORCE_MODE == 2:
+                        skip_row = valid_row
+                    elif FORCE_MODE == 3:
+                        skip_row = tl.full([TILE_M], False, dtype=tl.int1)
 
-            if cta_needs_pv:
-                qk = tl.where(compute_row[:, None], qk, -float("inf"))
-                tile_max = tl.max(qk, axis=1)
-                tile_valid = tile_max > -float("inf")
-                prev_valid = acc_den > 0.0
-                new_valid = prev_valid | tile_valid
-                new_max = tl.maximum(running_max, tile_max)
-                safe_new_max = tl.where(new_valid, new_max, 0.0)
-                correction = tl.where(
-                    prev_valid,
-                    tl.exp(running_max - safe_new_max),
-                    0.0,
-                )
-                p = tl.exp(qk - safe_new_max[:, None])
-                p = tl.where(qk > -float("inf"), p, 0.0)
+                compute_row = valid_row & ~skip_row
+                if HAS_STATS:
+                    post_count += tl.sum(skip_row.to(tl.int32), axis=0)
+                    compute_count += tl.sum(compute_row.to(tl.int32), axis=0)
+                cta_needs_pv = tl.sum(compute_row.to(tl.int32), axis=0) > 0
+                if HAS_STATS:
+                    cta_pv_count += cta_needs_pv.to(tl.int32)
+                    cta_skipped_count += (cta_has_valid & ~cta_needs_pv).to(tl.int32)
 
-                v_ptrs = (
-                    V
-                    + off_b * N * H * D
-                    + offs_n[:, None] * H * D
-                    + off_h * D
-                    + offs_d[None, :]
-                )
-                v_tile = tl.load(v_ptrs, mask=col_mask[:, None], other=0.0).to(tl.float32)
-                acc_num = acc_num * correction[:, None] + tl.dot(p, v_tile)
-                acc_den = acc_den * correction + tl.sum(p, axis=1)
-                running_max = tl.where(new_valid, new_max, running_max)
+                if cta_needs_pv:
+                    qk = tl.where(compute_row[:, None], qk, -float("inf"))
+                    tile_max = tl.max(qk, axis=1)
+                    tile_valid = tile_max > -float("inf")
+                    prev_valid = acc_den > 0.0
+                    new_valid = prev_valid | tile_valid
+                    new_max = tl.maximum(running_max, tile_max)
+                    safe_new_max = tl.where(new_valid, new_max, 0.0)
+                    correction = tl.where(
+                        prev_valid,
+                        tl.exp(running_max - safe_new_max),
+                        0.0,
+                    )
+                    p = tl.exp(qk - safe_new_max[:, None])
+                    p = tl.where(qk > -float("inf"), p, 0.0)
+
+                    v_ptrs = (
+                        V
+                        + off_b * N * H * D
+                        + offs_n[:, None] * H * D
+                        + off_h * D
+                        + offs_d[None, :]
+                    )
+                    v_tile = tl.load(v_ptrs, mask=col_mask[:, None], other=0.0).to(
+                        tl.float32
+                    )
+                    acc_num = acc_num * correction[:, None] + tl.dot(p, v_tile)
+                    acc_den = acc_den * correction + tl.sum(p, axis=1)
+                    running_max = tl.where(new_valid, new_max, running_max)
 
         out = acc_num / acc_den[:, None]
         out = tl.where(acc_den[:, None] > 0.0, out, 0.0)
@@ -234,8 +253,10 @@ def gate1_attention_triton_forward(
     """Run Gate-1 post-QK skip forward attention.
 
     ``force_mode`` is for diagnostics:
-    ``0`` normal, ``1`` never skip, ``2`` force all valid rows to skip after
-    QK, and ``3`` force all valid rows to compute.
+    ``0`` normal, ``1`` never skip after predicate, ``2`` force all valid rows
+    to skip after predicate, ``3`` force all valid rows to compute after
+    predicate, ``4`` early all-skip after QK, ``5`` dense compute without
+    Gate-1 predicate overhead, and ``6`` QK-only diagnostic alias for ``4``.
 
     Returns ``(output, raw_stats)``. ``raw_stats`` has shape
     ``[batch, heads, q_blocks, 6]``:
@@ -255,8 +276,8 @@ def gate1_attention_triton_forward(
         raise ValueError("restricted Gate-1 path requires matching batch, heads, and dim")
     if skip_predicate not in {"mass", "value_bound"}:
         raise ValueError("skip_predicate must be 'mass' or 'value_bound'")
-    if force_mode not in {0, 1, 2, 3}:
-        raise ValueError("force_mode must be 0, 1, 2, or 3")
+    if force_mode not in {0, 1, 2, 3, 4, 5, 6}:
+        raise ValueError("force_mode must be an integer in [0, 6]")
 
     query = query.contiguous()
     key = key.contiguous()
@@ -264,8 +285,16 @@ def gate1_attention_triton_forward(
     batch, seq_q, heads, dim = query.shape
     seq_k = key.shape[1]
 
-    if value_norm_bounds is None:
+    uses_value_bound_in_kernel = (
+        skip_predicate == "value_bound"
+        and error_budget > 0.0
+        and force_mode not in {4, 5, 6}
+    )
+    needs_value_norm_bounds = uses_value_bound_in_kernel
+    if value_norm_bounds is None and needs_value_norm_bounds:
         value_norm_bounds = build_value_norm_bounds(value, block_size=block_size)
+    elif value_norm_bounds is None:
+        value_norm_bounds = torch.empty(1, device=value.device, dtype=torch.float32)
     value_norm_bounds = value_norm_bounds.contiguous()
 
     output = torch.empty_like(query)
@@ -296,7 +325,7 @@ def gate1_attention_triton_forward(
         POST_QK_THRESHOLD=float(post_qk_threshold),
         FORCE_MODE=int(force_mode),
         IS_CAUSAL=bool(causal),
-        VALUE_BOUND=skip_predicate == "value_bound",
+        VALUE_BOUND=uses_value_bound_in_kernel,
         HAS_STATS=return_raw_stats,
         num_warps=4,
         num_stages=3,

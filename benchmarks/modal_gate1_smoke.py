@@ -22,6 +22,7 @@ def smoke():
 
     from stream_attention.certified import certified_attention
     from stream_attention.kernels.gate1_fwd_triton import (
+        build_value_norm_bounds,
         gate1_attention_triton_forward,
     )
 
@@ -53,6 +54,7 @@ def smoke():
                 enable_post_qk_gate=True,
                 skip_predicate="value_bound",
             )
+        bounds = build_value_norm_bounds(v, block_size=16)
         out, raw_stats = gate1_attention_triton_forward(
             q,
             k,
@@ -61,6 +63,7 @@ def smoke():
             error_budget=budget,
             block_size=16,
             tile_size_q=16,
+            value_norm_bounds=bounds,
             skip_predicate="value_bound",
             force_mode=force_mode,
             return_raw_stats=True,
@@ -88,7 +91,7 @@ def smoke():
     k2[:, 16:, :, 0] = -8.0
     skip_case = run_case("peaked_gate1", q2, k2, v2, 1e-3)
     forced_skip_case = run_case(
-        "peaked_force_all_skip_after_qk",
+        "peaked_late_force_all_skip_after_predicate",
         q2,
         k2,
         v2,
@@ -96,8 +99,39 @@ def smoke():
         force_mode=2,
         compare=False,
     )
+    early_skip_case = run_case(
+        "peaked_early_force_all_skip_after_qk",
+        q2,
+        k2,
+        v2,
+        1e-3,
+        force_mode=4,
+        compare=False,
+    )
 
-    def time_gate1(q, k, v, budget, force_mode=0, iters=20):
+    def time_bounds(v, block_size, iters=20):
+        for _ in range(3):
+            build_value_norm_bounds(v, block_size=block_size)
+        torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        for _ in range(iters):
+            build_value_norm_bounds(v, block_size=block_size)
+        end.record()
+        torch.cuda.synchronize()
+        return start.elapsed_time(end) / iters
+
+    def time_gate1(
+        q,
+        k,
+        v,
+        budget,
+        force_mode=0,
+        value_norm_bounds=None,
+        skip_predicate="value_bound",
+        iters=20,
+    ):
         for _ in range(5):
             gate1_attention_triton_forward(
                 q,
@@ -107,7 +141,8 @@ def smoke():
                 error_budget=budget,
                 block_size=64,
                 tile_size_q=64,
-                skip_predicate="value_bound",
+                value_norm_bounds=value_norm_bounds,
+                skip_predicate=skip_predicate,
                 force_mode=force_mode,
                 return_raw_stats=False,
             )
@@ -124,7 +159,8 @@ def smoke():
                 error_budget=budget,
                 block_size=64,
                 tile_size_q=64,
-                skip_predicate="value_bound",
+                value_norm_bounds=value_norm_bounds,
+                skip_predicate=skip_predicate,
                 force_mode=force_mode,
                 return_raw_stats=False,
             )
@@ -138,11 +174,40 @@ def smoke():
     qb[..., 0] = 8.0
     kb[:, :64, :, 0] = 8.0
     kb[:, 64:, :, 0] = -8.0
-    exact_ms = time_gate1(qb, kb, vb, 0.0, force_mode=0)
-    no_skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=1)
-    skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=0)
-    all_skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=2)
-    all_compute_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=3)
+    bounds_build_ms = time_bounds(vb, block_size=64)
+    bounds = build_value_norm_bounds(vb, block_size=64)
+    torch.cuda.synchronize()
+
+    contaminated_wrapper_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=0)
+    exact_ms = time_gate1(qb, kb, vb, 0.0, force_mode=0, value_norm_bounds=bounds)
+    pred_no_skip_ms = time_gate1(
+        qb, kb, vb, 1e-3, force_mode=1, value_norm_bounds=bounds
+    )
+    skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=0, value_norm_bounds=bounds)
+    late_all_skip_ms = time_gate1(
+        qb, kb, vb, 1e-3, force_mode=2, value_norm_bounds=bounds
+    )
+    late_all_compute_ms = time_gate1(
+        qb, kb, vb, 1e-3, force_mode=3, value_norm_bounds=bounds
+    )
+    early_all_skip_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=4)
+    dense_no_predicate_ms = time_gate1(qb, kb, vb, 1e-3, force_mode=5)
+    qk_only_ms = time_gate1(
+        qb,
+        kb,
+        vb,
+        1e-3,
+        force_mode=6,
+        skip_predicate="mass",
+    )
+    mass_normal_ms = time_gate1(
+        qb,
+        kb,
+        vb,
+        1e-3,
+        force_mode=0,
+        skip_predicate="mass",
+    )
 
     _, timing_stats = gate1_attention_triton_forward(
         qb,
@@ -152,6 +217,7 @@ def smoke():
         error_budget=1e-3,
         block_size=64,
         tile_size_q=64,
+        value_norm_bounds=bounds,
         skip_predicate="value_bound",
         force_mode=0,
         return_raw_stats=True,
@@ -161,16 +227,23 @@ def smoke():
     return {
         "torch": torch.__version__,
         "device": torch.cuda.get_device_name(0),
-        "cases": [exact_case, skip_case, forced_skip_case],
+        "cases": [exact_case, skip_case, forced_skip_case, early_skip_case],
         "timing": {
             "shape": "B1_S1024_H4_D64",
+            "bounds_build_ms": bounds_build_ms,
+            "contaminated_wrapper_ms": contaminated_wrapper_ms,
             "exact_ms": exact_ms,
-            "no_skip_ms": no_skip_ms,
+            "predicate_no_skip_ms": pred_no_skip_ms,
             "gate1_ms": skip_ms,
-            "force_all_skip_ms": all_skip_ms,
-            "force_all_compute_ms": all_compute_ms,
+            "late_force_all_skip_ms": late_all_skip_ms,
+            "late_force_all_compute_ms": late_all_compute_ms,
+            "early_force_all_skip_ms": early_all_skip_ms,
+            "dense_no_predicate_ms": dense_no_predicate_ms,
+            "qk_only_mass_ms": qk_only_ms,
+            "mass_normal_ms": mass_normal_ms,
             "speedup": exact_ms / skip_ms,
-            "force_all_skip_speedup": exact_ms / all_skip_ms,
+            "early_force_all_skip_speedup": dense_no_predicate_ms / early_all_skip_ms,
+            "qk_only_speedup": dense_no_predicate_ms / qk_only_ms,
             "normal_stats": summarize_stats(timing_stats),
         },
     }
