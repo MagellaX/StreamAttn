@@ -10,6 +10,10 @@ from stream_attention.kernels.metadata_triton import (
     TRITON_AVAILABLE as METADATA_TRITON_AVAILABLE,
     build_value_norm_bounds_triton,
 )
+from stream_attention.kernels.metadata_update_triton import (
+    TRITON_AVAILABLE as METADATA_UPDATE_TRITON_AVAILABLE,
+    update_value_norm_bounds_triton_,
+)
 
 
 @dataclass
@@ -97,6 +101,7 @@ class StreamAttnMetadataCache:
         new_value: torch.Tensor,
         *,
         start_pos: int,
+        use_triton: Optional[bool] = None,
     ) -> "StreamAttnMetadataCache":
         """Incrementally update cached value bounds for appended KV-cache values."""
 
@@ -115,6 +120,24 @@ class StreamAttnMetadataCache:
             raise ValueError(
                 "value_norm_bounds shape does not match new_value and block size"
             )
+        if new_seq == 0:
+            return self
+
+        if use_triton is None:
+            use_triton = bool(
+                new_value.is_cuda
+                and self.value_norm_bounds.is_cuda
+                and METADATA_UPDATE_TRITON_AVAILABLE
+            )
+        if use_triton:
+            update_value_norm_bounds_triton_(
+                self.value_norm_bounds,
+                new_value,
+                start_pos=start_pos,
+                total_seq_len=self.seq_len,
+                block_size=self.block_size,
+            )
+            return self
 
         value_bh = new_value.permute(0, 2, 1, 3).contiguous().float()
         first_block = start_pos // self.block_size
@@ -135,6 +158,22 @@ class StreamAttnMetadataCache:
                 norms.to(self.value_norm_bounds.dtype),
             )
         return self
+
+    def clone(self) -> "StreamAttnMetadataCache":
+        """Return a deep tensor copy of this metadata cache."""
+
+        def clone_tensor(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+            return None if tensor is None else tensor.clone()
+
+        return StreamAttnMetadataCache(
+            block_size=self.block_size,
+            seq_len=self.seq_len,
+            value_norm_bounds=clone_tensor(self.value_norm_bounds),
+            key_centroids=clone_tensor(self.key_centroids),
+            key_radii=clone_tensor(self.key_radii),
+            outlier_keys=clone_tensor(self.outlier_keys),
+            valid_blocks=clone_tensor(self.valid_blocks),
+        )
 
     def to(self, *args, **kwargs) -> "StreamAttnMetadataCache":
         """Return a copy with tensor metadata moved via ``Tensor.to``."""

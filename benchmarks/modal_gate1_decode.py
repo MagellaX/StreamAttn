@@ -44,6 +44,7 @@ def _profile(
     iters: int,
     metadata_warmup: int,
     metadata_iters: int,
+    metadata_update_backend: str,
 ):
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
@@ -100,6 +101,8 @@ def _profile(
         str(metadata_warmup),
         "--metadata-iters",
         str(metadata_iters),
+        "--metadata-update-backend",
+        metadata_update_backend,
     ]
     output = subprocess.check_output(
         cmd,
@@ -148,6 +151,7 @@ def main(
     iters: int = 10,
     metadata_warmup: int = 3,
     metadata_iters: int = 8,
+    metadata_update_backend: str = "auto",
     output_json: str = "",
 ):
     kwargs = {
@@ -176,6 +180,7 @@ def main(
         "iters": iters,
         "metadata_warmup": metadata_warmup,
         "metadata_iters": metadata_iters,
+        "metadata_update_backend": metadata_update_backend,
     }
     if target == "a100":
         result = profile_a100.remote(**kwargs)

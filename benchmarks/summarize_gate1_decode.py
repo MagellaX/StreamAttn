@@ -90,6 +90,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "gate1_dense_equiv_ms": row.get("gate1_dense_equiv_ms"),
         "gate1_qk_scan_ms": row.get("gate1_qk_scan_ms"),
         "metadata_full_build_ms": row.get("metadata_full_build_ms"),
+        "metadata_update_backend": row.get("metadata_update_backend"),
         "metadata_update_wall_ms": row.get("metadata_update_wall_ms"),
         "metadata_update_cuda_ms": row.get("metadata_update_cuda_ms"),
         "mass_dense_ratio": _ratio(row.get("gate1_mass_ms"), row.get("dense_decode_ms")),

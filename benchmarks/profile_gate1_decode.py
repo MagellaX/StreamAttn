@@ -219,6 +219,12 @@ def _run_gate1_force(
     )
 
 
+def _metadata_update_uses_triton(backend: str) -> Optional[bool]:
+    if backend == "auto":
+        return None
+    return backend == "triton"
+
+
 def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int, active_fraction: float) -> dict:
     if args.causal_mode != "none":
         raise NotImplementedError("decode profiler v1 supports only causal-mode=none")
@@ -249,12 +255,20 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
     new_v = v[:, kv_len - update_tokens : kv_len, :, :].contiguous()
     update_start = kv_len - update_tokens
     metadata_update_cuda_ms = _time_cuda(
-        lambda: metadata.update_value_bounds_(new_v, start_pos=update_start),
+        lambda: metadata.update_value_bounds_(
+            new_v,
+            start_pos=update_start,
+            use_triton=_metadata_update_uses_triton(args.metadata_update_backend),
+        ),
         warmup=args.metadata_warmup,
         iters=args.metadata_iters,
     )
     metadata_update_wall_ms = _time_wall_cuda(
-        lambda: metadata.update_value_bounds_(new_v, start_pos=update_start),
+        lambda: metadata.update_value_bounds_(
+            new_v,
+            start_pos=update_start,
+            use_triton=_metadata_update_uses_triton(args.metadata_update_backend),
+        ),
         warmup=args.metadata_warmup,
         iters=args.metadata_iters,
     )
@@ -472,6 +486,7 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
         "block_quantized_active_fraction": block_active,
         "causal_mode": args.causal_mode,
         "metadata_full_build_ms": metadata_full_build_ms,
+        "metadata_update_backend": args.metadata_update_backend,
         "metadata_update_cuda_ms": metadata_update_cuda_ms,
         "metadata_update_wall_ms": metadata_update_wall_ms,
         "metadata_full_build_over_dense": metadata_full_build_ms / dense_decode_ms,
@@ -548,6 +563,11 @@ def main():
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument("--metadata-warmup", type=int, default=5)
     parser.add_argument("--metadata-iters", type=int, default=20)
+    parser.add_argument(
+        "--metadata-update-backend",
+        choices=["auto", "triton", "torch"],
+        default="auto",
+    )
     parser.add_argument("--summary-json-out", default="")
     args = parser.parse_args()
 

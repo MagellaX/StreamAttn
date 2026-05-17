@@ -1,5 +1,6 @@
 import math
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -9,6 +10,9 @@ from stream_attention.certified import (
     certified_attention,
 )
 from stream_attention.certified.bounds import block_score_upper_bound
+from stream_attention.kernels.metadata_update_triton import (
+    TRITON_AVAILABLE as METADATA_UPDATE_TRITON_AVAILABLE,
+)
 
 
 def _sdpa_reference(q, k, v, *, causal):
@@ -186,3 +190,31 @@ def test_metadata_cache_incrementally_updates_value_bounds():
     assert cache.value_norm_bounds[0, 0, 1].item() == 5.0
     assert cache.value_norm_bounds[0, 1, 0].item() == 3.0
     assert cache.value_norm_bounds[0, 1, 1].item() == 5.0
+
+
+def test_metadata_cache_clone_copies_tensors():
+    v = torch.randn(1, 8, 2, 4, generator=torch.Generator().manual_seed(7))
+    cache = StreamAttnMetadataCache.from_value(v, block_size=4)
+    clone = cache.clone()
+
+    assert clone is not cache
+    assert clone.value_norm_bounds is not cache.value_norm_bounds
+    torch.testing.assert_close(clone.value_norm_bounds, cache.value_norm_bounds)
+    clone.value_norm_bounds.zero_()
+    assert torch.any(cache.value_norm_bounds != 0)
+
+
+def test_metadata_cache_triton_incremental_update_matches_reference():
+    if not (torch.cuda.is_available() and METADATA_UPDATE_TRITON_AVAILABLE):
+        pytest.skip("CUDA + Triton required for metadata update kernel")
+
+    torch.manual_seed(8)
+    v = torch.randn(2, 17, 3, 32, device="cuda", dtype=torch.float16)
+    new_v = torch.randn(2, 5, 3, 32, device="cuda", dtype=torch.float16)
+    ref = StreamAttnMetadataCache.from_value(v, block_size=4, use_triton=True)
+    got = ref.clone()
+    ref.update_value_bounds_(new_v, start_pos=3, use_triton=False)
+    got.update_value_bounds_(new_v, start_pos=3, use_triton=True)
+    torch.cuda.synchronize()
+
+    torch.testing.assert_close(got.value_norm_bounds, ref.value_norm_bounds)
