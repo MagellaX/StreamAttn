@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import modal
 
@@ -135,7 +136,8 @@ def profile_h100(
 def main(
     target: str = "h100",
     model: str = "HuggingFaceTB/SmolLM2-135M",
-    prompt: str = "attention kernels need hardware aligned sparse routing " * 32,
+    prompt: str = "attention kernels need hardware aligned sparse routing ",
+    prompt_repeat: int = 256,
     layers: str = "0",
     max_seq: int = 256,
     min_seq: int = 1,
@@ -145,7 +147,9 @@ def main(
     no_rope: bool = False,
     use_safetensors: bool = True,
     trust_remote_code: bool = False,
+    output_json: str = "",
 ):
+    prompt = prompt * max(1, prompt_repeat)
     kwargs = {
         "model": model,
         "prompt": prompt,
@@ -160,8 +164,12 @@ def main(
         "trust_remote_code": trust_remote_code,
     }
     if target == "a100":
-        print(profile_a100.remote(**kwargs))
+        result = profile_a100.remote(**kwargs)
     elif target == "h100":
-        print(profile_h100.remote(**kwargs))
+        result = profile_h100.remote(**kwargs)
     else:
         raise ValueError("target must be a100 or h100")
+    text = json.dumps(result, indent=2, sort_keys=True)
+    if output_json:
+        Path(output_json).write_text(text + "\n", encoding="utf-8")
+    print(text)
