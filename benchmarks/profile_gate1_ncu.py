@@ -143,6 +143,8 @@ def _build_ncu_command(args, force_mode: int):
         "--force-overwrite",
         "--export",
         str(output_base),
+        "--replay-mode",
+        args.replay_mode,
         "--metrics",
         ",".join(args.metrics),
         sys.executable,
@@ -305,6 +307,11 @@ def main():
     parser.add_argument("--metric-preset", choices=["basic", "anatomy"], default="basic")
     parser.add_argument("--metrics", nargs="+", default=None)
     parser.add_argument("--ncu-bin", default="ncu")
+    parser.add_argument(
+        "--replay-mode",
+        choices=["kernel", "application", "range"],
+        default="kernel",
+    )
     parser.add_argument("--output-dir", default="artifacts/ncu")
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--seq-q", type=int, default=4096)
@@ -324,6 +331,7 @@ def main():
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=3)
     parser.add_argument("--collect-stats", action="store_true")
+    parser.add_argument("--continue-on-ncu-error", action="store_true")
     parser.add_argument("--summary-json-out", default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -354,8 +362,23 @@ def main():
                 text=True,
             )
             run["benchmark"] = _parse_benchmark_output(benchmark_output)
-            subprocess.run(ncu_cmd, check=True)
-            if args.summary_json_out:
+            ncu_result = subprocess.run(
+                ncu_cmd,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            run["ncu_returncode"] = ncu_result.returncode
+            run["ncu_stdout_tail"] = ncu_result.stdout[-8000:]
+            if ncu_result.returncode != 0:
+                if not args.continue_on_ncu_error:
+                    raise subprocess.CalledProcessError(
+                        ncu_result.returncode,
+                        ncu_cmd,
+                        output=ncu_result.stdout,
+                    )
+            elif args.summary_json_out:
                 run["metrics"] = _import_csv(args, output_base)
         runs.append(run)
 
