@@ -9,6 +9,7 @@ wrong when ``query_len << kv_len``.
 import argparse
 import itertools
 import json
+import math
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
@@ -173,6 +174,14 @@ def _make_decode_tensors(args, *, query_len: int, kv_len: int, heads: int, kv_he
     return q, k.repeat_interleave(group, dim=2), v.repeat_interleave(group, dim=2), logical_kv_heads, block_active
 
 
+def _make_step_queries(args, *, steps: int, heads: int, dtype: torch.dtype) -> torch.Tensor:
+    if args.pattern == "random":
+        return torch.randn(args.batch, steps, heads, args.dim, device="cuda", dtype=dtype)
+    q = torch.zeros(args.batch, steps, heads, args.dim, device="cuda", dtype=dtype)
+    q[..., 0] = args.peak
+    return q
+
+
 def _stats_dict(info) -> Tuple[Optional[float], List[float]]:
     if info.stats is None:
         return None, []
@@ -219,10 +228,272 @@ def _run_gate1_force(
     )
 
 
+def _step_timing_args(args) -> dict:
+    return {
+        "warmup": args.decode_step_warmup,
+        "iters": args.decode_step_iters,
+    }
+
+
 def _metadata_update_uses_triton(backend: str) -> Optional[bool]:
     if backend == "auto":
         return None
     return backend == "triton"
+
+
+def _profile_decode_steps(
+    args,
+    *,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    metadata: StreamAttnMetadataCache,
+    heads: int,
+) -> Optional[dict]:
+    if args.decode_steps <= 0:
+        return None
+
+    dtype = _dtype(args.dtype)
+    q_steps = _make_step_queries(
+        args,
+        steps=args.decode_steps,
+        heads=heads,
+        dtype=dtype,
+    )
+    q0 = q_steps[:, 0:1, :, :]
+    request = make_route_request(
+        q0,
+        k,
+        causal=False,
+        block_size=args.block_size,
+        tile_size_q=args.tile_size_q,
+        model_id="decode-profile-steps",
+        layer_id=0,
+        head_id=-1,
+        phase="decode",
+        metadata_available=True,
+    )
+    step_timing = _step_timing_args(args)
+    dense_cost_ms = _time_cuda(
+        lambda: stream_attn_gate1(q0, k, v, causal=False, mode="dense", telemetry=False),
+        **step_timing,
+    )
+    qk_cost_ms = _time_cuda(
+        lambda: _run_gate1_force(q0, k, v, args=args, force_mode=7),
+        **step_timing,
+    )
+    cost_model = Gate1CostModel()
+    cost_model.update(
+        CostKey.from_request(request),
+        CostEntry(dense_ms=dense_cost_ms, qk_only_ms=min(qk_cost_ms, dense_cost_ms)),
+    )
+    router = StreamAttnRouter(
+        policy=StreamAttnPolicy(
+            min_confidence=args.decode_router_min_confidence,
+            history_min_observations=args.decode_router_min_observations,
+        ),
+        telemetry=ActiveFractionTelemetry(
+            min_observations=args.decode_router_min_observations,
+        ),
+        cost_model=cost_model,
+    )
+
+    run_value_bound = args.skip_predicate in {"value_bound", "both"} or args.mode == "auto"
+    rows = []
+    previous_actual = None
+    for step in range(args.decode_steps):
+        q_step = q_steps[:, step : step + 1, :, :]
+        dense_ms = _time_cuda(
+            lambda: stream_attn_gate1(
+                q_step,
+                k,
+                v,
+                causal=False,
+                mode="dense",
+                telemetry=False,
+            ),
+            **step_timing,
+        )
+        mass_ms = _time_cuda(
+            lambda: stream_attn_gate1(
+                q_step,
+                k,
+                v,
+                causal=False,
+                mode="gate1",
+                skip_predicate="mass",
+                error_budget=args.error_budget,
+                block_size=args.block_size,
+                tile_size_q=args.tile_size_q,
+                telemetry=False,
+            ),
+            **step_timing,
+        )
+        _, mass_info = stream_attn_gate1(
+            q_step,
+            k,
+            v,
+            causal=False,
+            mode="gate1",
+            skip_predicate="mass",
+            error_budget=args.error_budget,
+            block_size=args.block_size,
+            tile_size_q=args.tile_size_q,
+            telemetry=False,
+            return_info=True,
+        )
+        value_ms = None
+        if run_value_bound:
+            value_ms = _time_cuda(
+                lambda: stream_attn_gate1(
+                    q_step,
+                    k,
+                    v,
+                    causal=False,
+                    mode="gate1",
+                    metadata=metadata,
+                    skip_predicate="value_bound",
+                    error_budget=args.error_budget,
+                    block_size=args.block_size,
+                    tile_size_q=args.tile_size_q,
+                    telemetry=False,
+                ),
+                **step_timing,
+            )
+
+        auto_ms = _time_cuda(
+            lambda: stream_attn_gate1(
+                q_step,
+                k,
+                v,
+                causal=False,
+                mode="auto",
+                router=router,
+                metadata=metadata if args.auto_skip_predicate == "value_bound" else None,
+                request=request,
+                skip_predicate=args.auto_skip_predicate,
+                error_budget=args.error_budget,
+                block_size=args.block_size,
+                tile_size_q=args.tile_size_q,
+                telemetry=False,
+            ),
+            **step_timing,
+        )
+        _, auto_info = stream_attn_gate1(
+            q_step,
+            k,
+            v,
+            causal=False,
+            mode="auto",
+            router=router,
+            metadata=metadata if args.auto_skip_predicate == "value_bound" else None,
+            request=request,
+            skip_predicate=args.auto_skip_predicate,
+            error_budget=args.error_budget,
+            block_size=args.block_size,
+            tile_size_q=args.tile_size_q,
+            telemetry=False,
+            return_info=True,
+        )
+
+        candidates = {"dense": dense_ms, "mass": mass_ms}
+        if value_ms is not None:
+            candidates["value_bound"] = value_ms
+        oracle_backend, oracle_ms = min(candidates.items(), key=lambda item: item[1])
+        regret_raw = auto_ms - oracle_ms
+        regret_ms = max(0.0, regret_raw)
+        active_actual = (
+            mass_info.stats.active_pv_fraction
+            if mass_info is not None and mass_info.stats is not None
+            else None
+        )
+        prediction = auto_info.decision.prediction if auto_info is not None else None
+        prediction_error = (
+            abs(prediction.active_frac_hat - active_actual)
+            if prediction is not None and active_actual is not None
+            else None
+        )
+        previous_token_error = (
+            abs(previous_actual - active_actual)
+            if previous_actual is not None and active_actual is not None
+            else None
+        )
+        rows.append(
+            {
+                "step": step,
+                "dense_ms": dense_ms,
+                "gate1_mass_ms": mass_ms,
+                "gate1_value_bound_ms": value_ms,
+                "router_auto_ms": auto_ms,
+                "router_backend": auto_info.decision.backend if auto_info is not None else None,
+                "router_reason": auto_info.decision.reason if auto_info is not None else None,
+                "router_prediction_active_frac": (
+                    prediction.active_frac_hat if prediction is not None else None
+                ),
+                "router_prediction_confidence": (
+                    prediction.confidence if prediction is not None else None
+                ),
+                "actual_active_pv_fraction": active_actual,
+                "prediction_abs_error": prediction_error,
+                "previous_token_abs_error": previous_token_error,
+                "oracle_backend": oracle_backend,
+                "oracle_ms": oracle_ms,
+                "router_regret_raw_ms": regret_raw,
+                "router_regret_ms": regret_ms,
+                "router_regret_pct": regret_ms / oracle_ms if oracle_ms > 0.0 else None,
+            }
+        )
+        if mass_info is not None and mass_info.stats is not None:
+            router.observe(
+                request,
+                cta_pv_executed=mass_info.stats.cta_pv_executed,
+                cta_tiles_total=mass_info.stats.cta_tiles_total,
+            )
+            previous_actual = active_actual
+
+    regrets = [
+        row["router_regret_pct"]
+        for row in rows
+        if row.get("router_regret_pct") is not None
+        and not math.isnan(float(row["router_regret_pct"]))
+    ]
+    pred_errors = [
+        row["prediction_abs_error"]
+        for row in rows
+        if row.get("prediction_abs_error") is not None
+        and not math.isnan(float(row["prediction_abs_error"]))
+    ]
+    prev_errors = [
+        row["previous_token_abs_error"]
+        for row in rows
+        if row.get("previous_token_abs_error") is not None
+        and not math.isnan(float(row["previous_token_abs_error"]))
+    ]
+    actuals = [
+        row["actual_active_pv_fraction"]
+        for row in rows
+        if row.get("actual_active_pv_fraction") is not None
+    ]
+    return {
+        "steps": rows,
+        "decode_steps": args.decode_steps,
+        "decode_step_warmup": args.decode_step_warmup,
+        "decode_step_iters": args.decode_step_iters,
+        "decode_router_min_observations": args.decode_router_min_observations,
+        "decode_router_min_confidence": args.decode_router_min_confidence,
+        "step_cost_dense_ms": dense_cost_ms,
+        "step_cost_qk_scan_ms": qk_cost_ms,
+        "mean_router_regret_pct": (
+            sum(regrets) / len(regrets) if regrets else None
+        ),
+        "max_router_regret_pct": max(regrets) if regrets else None,
+        "mean_prediction_abs_error": (
+            sum(pred_errors) / len(pred_errors) if pred_errors else None
+        ),
+        "mean_previous_token_abs_error": (
+            sum(prev_errors) / len(prev_errors) if prev_errors else None
+        ),
+        "active_pv_fraction_by_step": actuals,
+    }
 
 
 def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int, active_fraction: float) -> dict:
@@ -531,6 +802,13 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
             _error_metrics(value_out, dense_out) if value_out is not None else None
         ),
     }
+    row["decode_step_routing"] = _profile_decode_steps(
+        args,
+        k=k,
+        v=v,
+        metadata=metadata,
+        heads=heads,
+    )
     torch.cuda.empty_cache()
     return row
 
@@ -568,6 +846,11 @@ def main():
         choices=["auto", "triton", "torch"],
         default="auto",
     )
+    parser.add_argument("--decode-steps", type=int, default=0)
+    parser.add_argument("--decode-step-warmup", type=int, default=1)
+    parser.add_argument("--decode-step-iters", type=int, default=3)
+    parser.add_argument("--decode-router-min-observations", type=int, default=1)
+    parser.add_argument("--decode-router-min-confidence", type=float, default=0.7)
     parser.add_argument("--summary-json-out", default="")
     args = parser.parse_args()
 

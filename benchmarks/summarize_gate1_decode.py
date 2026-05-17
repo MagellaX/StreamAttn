@@ -66,6 +66,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
     shape = row["shape"]
     winner, winner_ms = _winner(row)
+    step_routing = row.get("decode_step_routing") or {}
     return {
         "source": row.get("_source"),
         "device": row.get("device"),
@@ -114,6 +115,18 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "router_backend": row.get("router_backend"),
         "router_reason": row.get("router_reason"),
         "router_regret_pct": row.get("router_regret_pct"),
+        "decode_step_mean_router_regret_pct": step_routing.get(
+            "mean_router_regret_pct"
+        ),
+        "decode_step_max_router_regret_pct": step_routing.get(
+            "max_router_regret_pct"
+        ),
+        "decode_step_mean_prediction_abs_error": step_routing.get(
+            "mean_prediction_abs_error"
+        ),
+        "decode_step_mean_previous_token_abs_error": step_routing.get(
+            "mean_previous_token_abs_error"
+        ),
         "winner_backend": winner,
         "winner_ms": winner_ms,
     }
@@ -191,6 +204,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "winner",
         "router",
         "regret",
+        "step_rg",
     ]
     print(" ".join(f"{header:>9}" for header in headers))
     for row in rows[:limit]:
@@ -210,6 +224,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
                         f"{'error':>9}",
+                        f"{'n/a':>9}",
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
                     ]
@@ -233,6 +248,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('winner_backend')):>9}",
                     f"{_fmt(row.get('router_backend')):>9}",
                     f"{_fmt(row.get('router_regret_pct')):>9}",
+                    f"{_fmt(row.get('decode_step_mean_router_regret_pct')):>9}",
                 ]
             )
         )

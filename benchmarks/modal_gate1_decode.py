@@ -45,6 +45,11 @@ def _profile(
     metadata_warmup: int,
     metadata_iters: int,
     metadata_update_backend: str,
+    decode_steps: int,
+    decode_step_warmup: int,
+    decode_step_iters: int,
+    decode_router_min_observations: int,
+    decode_router_min_confidence: float,
 ):
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
@@ -103,6 +108,16 @@ def _profile(
         str(metadata_iters),
         "--metadata-update-backend",
         metadata_update_backend,
+        "--decode-steps",
+        str(decode_steps),
+        "--decode-step-warmup",
+        str(decode_step_warmup),
+        "--decode-step-iters",
+        str(decode_step_iters),
+        "--decode-router-min-observations",
+        str(decode_router_min_observations),
+        "--decode-router-min-confidence",
+        str(decode_router_min_confidence),
     ]
     output = subprocess.check_output(
         cmd,
@@ -152,6 +167,11 @@ def main(
     metadata_warmup: int = 3,
     metadata_iters: int = 8,
     metadata_update_backend: str = "auto",
+    decode_steps: int = 0,
+    decode_step_warmup: int = 1,
+    decode_step_iters: int = 3,
+    decode_router_min_observations: int = 1,
+    decode_router_min_confidence: float = 0.7,
     output_json: str = "",
 ):
     kwargs = {
@@ -181,6 +201,11 @@ def main(
         "metadata_warmup": metadata_warmup,
         "metadata_iters": metadata_iters,
         "metadata_update_backend": metadata_update_backend,
+        "decode_steps": decode_steps,
+        "decode_step_warmup": decode_step_warmup,
+        "decode_step_iters": decode_step_iters,
+        "decode_router_min_observations": decode_router_min_observations,
+        "decode_router_min_confidence": decode_router_min_confidence,
     }
     if target == "a100":
         result = profile_a100.remote(**kwargs)
