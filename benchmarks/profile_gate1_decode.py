@@ -11,7 +11,7 @@ import itertools
 import json
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import torch
 
@@ -22,7 +22,13 @@ from stream_attention.gate1 import (
     stream_attn_gate1,
 )
 from stream_attention.kernels.gate1_fwd_triton import gate1_attention_triton_forward
-from stream_attention.router import CostEntry, CostKey, Gate1CostModel, StreamAttnPolicy, StreamAttnRouter
+from stream_attention.router import (
+    CostEntry,
+    CostKey,
+    Gate1CostModel,
+    StreamAttnPolicy,
+    StreamAttnRouter,
+)
 from stream_attention.telemetry import ActiveFractionTelemetry
 
 
@@ -530,10 +536,10 @@ def main():
     parser.add_argument("--auto-skip-predicate", choices=["mass", "value_bound"], default="mass")
     parser.add_argument("--mode", choices=["dense", "gate1", "auto", "all"], default="all")
     parser.add_argument("--causal-mode", choices=["none", "bottom_right_reference"], default="none")
-    parser.add_argument("--block-size", type=int, default=64)
-    parser.add_argument("--tile-size-q", type=int, default=64)
-    parser.add_argument("--num-warps", type=int, default=4)
-    parser.add_argument("--num-stages", type=int, default=3)
+    parser.add_argument("--block-size", nargs="+", default=["64"])
+    parser.add_argument("--tile-size-q", nargs="+", default=["64"])
+    parser.add_argument("--num-warps", nargs="+", default=["4"])
+    parser.add_argument("--num-stages", nargs="+", default=["3"])
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
     parser.add_argument("--recent-blocks", type=int, default=2)
@@ -553,27 +559,77 @@ def main():
     heads_values = _parse_values(args.heads, int)
     kv_head_values = _parse_values(args.kv_heads, int)
     active_fractions = _parse_values(args.active_fraction, float)
+    block_sizes = _parse_values(args.block_size, int)
+    tile_sizes_q = _parse_values(args.tile_size_q, int)
+    num_warps_values = _parse_values(args.num_warps, int)
+    num_stages_values = _parse_values(args.num_stages, int)
 
     rows = []
-    for query_len, kv_len, heads, kv_heads, active_fraction in itertools.product(
+    for (
+        query_len,
+        kv_len,
+        heads,
+        kv_heads,
+        active_fraction,
+        block_size,
+        tile_size_q,
+        num_warps,
+        num_stages,
+    ) in itertools.product(
         query_lens,
         kv_lens,
         heads_values,
         kv_head_values,
         active_fractions,
+        block_sizes,
+        tile_sizes_q,
+        num_warps_values,
+        num_stages_values,
     ):
         if query_len > kv_len:
             continue
-        rows.append(
-            _profile_one(
-                args,
-                query_len=query_len,
-                kv_len=kv_len,
-                heads=heads,
-                kv_heads=kv_heads,
-                active_fraction=active_fraction,
+        run_args = argparse.Namespace(**vars(args))
+        run_args.block_size = block_size
+        run_args.tile_size_q = tile_size_q
+        run_args.num_warps = num_warps
+        run_args.num_stages = num_stages
+        try:
+            rows.append(
+                _profile_one(
+                    run_args,
+                    query_len=query_len,
+                    kv_len=kv_len,
+                    heads=heads,
+                    kv_heads=kv_heads,
+                    active_fraction=active_fraction,
+                )
             )
-        )
+        except Exception as exc:
+            rows.append(
+                {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "shape": {
+                        "batch": args.batch,
+                        "query_len": query_len,
+                        "kv_len": kv_len,
+                        "heads": heads,
+                        "kv_heads": kv_heads,
+                        "dim": args.dim,
+                        "dtype": args.dtype,
+                        "attention_type": args.attention_type,
+                    },
+                    "block_size": block_size,
+                    "tile_size_q": tile_size_q,
+                    "num_warps": num_warps,
+                    "num_stages": num_stages,
+                    "pattern": args.pattern,
+                    "requested_active_fraction": active_fraction,
+                    "causal_mode": args.causal_mode,
+                }
+            )
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     payload = {"rows": rows}
     text = json.dumps(payload, indent=2, sort_keys=True)
