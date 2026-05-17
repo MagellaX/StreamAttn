@@ -52,6 +52,7 @@ cuda/multi_gpu_flash_attention
 # ----------------------------
 *.log
 *.tmp
+artifacts/
 temp/
 tmp/
 
