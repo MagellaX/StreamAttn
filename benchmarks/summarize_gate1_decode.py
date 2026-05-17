@@ -94,6 +94,8 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "metadata_update_backend": row.get("metadata_update_backend"),
         "metadata_update_wall_ms": row.get("metadata_update_wall_ms"),
         "metadata_update_cuda_ms": row.get("metadata_update_cuda_ms"),
+        "router_cost_calibration": row.get("router_cost_calibration"),
+        "router_predicate_overhead_ms": row.get("router_predicate_overhead_ms"),
         "mass_dense_ratio": _ratio(row.get("gate1_mass_ms"), row.get("dense_decode_ms")),
         "value_dense_ratio": _ratio(
             row.get("gate1_value_bound_ms"),

@@ -241,6 +241,25 @@ def _metadata_update_uses_triton(backend: str) -> Optional[bool]:
     return backend == "triton"
 
 
+def _fit_router_predicate_overhead_ms(
+    *,
+    dense_ms: float,
+    qk_ms: float,
+    gate1_mass_ms: Optional[float],
+    active_fraction: Optional[float],
+    calibration: str,
+) -> float:
+    if calibration == "none":
+        return 0.0
+    if calibration != "mass_point":
+        raise ValueError(f"unknown router cost calibration: {calibration}")
+    if gate1_mass_ms is None or active_fraction is None:
+        return 0.0
+    pv_ms = max(0.0, dense_ms - qk_ms)
+    predicted_without_overhead = qk_ms + max(0.0, min(1.0, active_fraction)) * pv_ms
+    return max(0.0, gate1_mass_ms - predicted_without_overhead)
+
+
 def _profile_decode_steps(
     args,
     *,
@@ -248,6 +267,7 @@ def _profile_decode_steps(
     v: torch.Tensor,
     metadata: StreamAttnMetadataCache,
     heads: int,
+    router_predicate_overhead_ms: float,
 ) -> Optional[dict]:
     if args.decode_steps <= 0:
         return None
@@ -284,7 +304,11 @@ def _profile_decode_steps(
     cost_model = Gate1CostModel()
     cost_model.update(
         CostKey.from_request(request),
-        CostEntry(dense_ms=dense_cost_ms, qk_only_ms=min(qk_cost_ms, dense_cost_ms)),
+        CostEntry(
+            dense_ms=dense_cost_ms,
+            qk_only_ms=min(qk_cost_ms, dense_cost_ms),
+            predicate_overhead_ms=router_predicate_overhead_ms,
+        ),
     )
     router = StreamAttnRouter(
         policy=StreamAttnPolicy(
@@ -642,6 +666,9 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
             return_info=True,
         )
 
+    active_mass, per_head_mass = _stats_dict(mass_info) if mass_info is not None else (None, [])
+    active_value, per_head_value = _stats_dict(value_info) if value_info is not None else (None, [])
+
     request = make_route_request(
         q,
         k,
@@ -656,9 +683,20 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
     )
     cost_model = Gate1CostModel()
     qk_for_cost = min(gate1_qk_scan_ms or dense_decode_ms, dense_decode_ms)
+    router_predicate_overhead_ms = _fit_router_predicate_overhead_ms(
+        dense_ms=dense_decode_ms,
+        qk_ms=qk_for_cost,
+        gate1_mass_ms=gate1_mass_ms,
+        active_fraction=active_mass,
+        calibration=args.router_cost_calibration,
+    )
     cost_model.update(
         CostKey.from_request(request),
-        CostEntry(dense_ms=dense_decode_ms, qk_only_ms=qk_for_cost),
+        CostEntry(
+            dense_ms=dense_decode_ms,
+            qk_only_ms=qk_for_cost,
+            predicate_overhead_ms=router_predicate_overhead_ms,
+        ),
     )
     router = StreamAttnRouter(
         policy=StreamAttnPolicy(min_confidence=0.7, history_min_observations=4),
@@ -732,8 +770,6 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
         else None
     )
 
-    active_mass, per_head_mass = _stats_dict(mass_info) if mass_info is not None else (None, [])
-    active_value, per_head_value = _stats_dict(value_info) if value_info is not None else (None, [])
     row = {
         "device": torch.cuda.get_device_name(0),
         "shape": {
@@ -760,6 +796,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
         "metadata_update_backend": args.metadata_update_backend,
         "metadata_update_cuda_ms": metadata_update_cuda_ms,
         "metadata_update_wall_ms": metadata_update_wall_ms,
+        "router_cost_calibration": args.router_cost_calibration,
+        "router_predicate_overhead_ms": router_predicate_overhead_ms,
         "metadata_full_build_over_dense": metadata_full_build_ms / dense_decode_ms,
         "metadata_update_wall_over_dense": metadata_update_wall_ms / dense_decode_ms,
         "dense_decode_ms": dense_decode_ms,
@@ -808,6 +846,7 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
         v=v,
         metadata=metadata,
         heads=heads,
+        router_predicate_overhead_ms=router_predicate_overhead_ms,
     )
     torch.cuda.empty_cache()
     return row
@@ -845,6 +884,11 @@ def main():
         "--metadata-update-backend",
         choices=["auto", "triton", "torch"],
         default="auto",
+    )
+    parser.add_argument(
+        "--router-cost-calibration",
+        choices=["none", "mass_point"],
+        default="none",
     )
     parser.add_argument("--decode-steps", type=int, default=0)
     parser.add_argument("--decode-step-warmup", type=int, default=1)
