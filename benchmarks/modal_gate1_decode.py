@@ -7,6 +7,8 @@ from pathlib import Path
 
 import modal
 
+from stream_attention.decode import decode_cost_model_from_profile_rows
+
 
 app = modal.App("streamattn-gate1-decode")
 
@@ -177,6 +179,7 @@ def main(
     decode_router_min_observations: int = 1,
     decode_router_min_confidence: float = 0.7,
     output_json: str = "",
+    decode_cost_json: str = "",
 ):
     kwargs = {
         "query_lens": query_lens,
@@ -224,4 +227,8 @@ def main(
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
+    if decode_cost_json:
+        path = Path(decode_cost_json)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        decode_cost_model_from_profile_rows(result.get("rows", [])).to_json(path)
     print(text)

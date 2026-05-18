@@ -54,6 +54,16 @@ from .gate1 import (
     summarize_gate1_raw_stats,
     summarize_gate1_raw_stats_per_head,
 )
+from .decode import (
+    DecodeCostEntry,
+    DecodeCostKey,
+    DecodeCostModel,
+    StreamAttnDecodePlan,
+    StreamAttnDecodePolicy,
+    decode_cost_model_from_profile_rows,
+    stream_attn_decode_plan,
+    stream_attn_decode_run,
+)
 
 # Utilities
 from .utils.memory import (
@@ -98,6 +108,14 @@ __all__ = [
     "stream_attn_gate1",
     "summarize_gate1_raw_stats",
     "summarize_gate1_raw_stats_per_head",
+    "DecodeCostEntry",
+    "DecodeCostKey",
+    "DecodeCostModel",
+    "StreamAttnDecodePlan",
+    "StreamAttnDecodePolicy",
+    "decode_cost_model_from_profile_rows",
+    "stream_attn_decode_plan",
+    "stream_attn_decode_run",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",

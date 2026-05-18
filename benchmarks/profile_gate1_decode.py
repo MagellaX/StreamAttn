@@ -17,6 +17,7 @@ from typing import Iterable, List, Optional, Tuple
 import torch
 
 from stream_attention import StreamAttnMetadataCache
+from stream_attention.decode import decode_cost_model_from_profile_rows
 from stream_attention.gate1 import (
     dense_attention_forward,
     make_route_request,
@@ -348,6 +349,8 @@ def _profile_decode_steps(
                 error_budget=args.error_budget,
                 block_size=args.block_size,
                 tile_size_q=args.tile_size_q,
+                num_warps=args.num_warps,
+                num_stages=args.num_stages,
                 telemetry=False,
             ),
             **step_timing,
@@ -362,6 +365,8 @@ def _profile_decode_steps(
             error_budget=args.error_budget,
             block_size=args.block_size,
             tile_size_q=args.tile_size_q,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
             telemetry=False,
             return_info=True,
         )
@@ -379,6 +384,8 @@ def _profile_decode_steps(
                     error_budget=args.error_budget,
                     block_size=args.block_size,
                     tile_size_q=args.tile_size_q,
+                    num_warps=args.num_warps,
+                    num_stages=args.num_stages,
                     telemetry=False,
                 ),
                 **step_timing,
@@ -398,6 +405,8 @@ def _profile_decode_steps(
                 error_budget=args.error_budget,
                 block_size=args.block_size,
                 tile_size_q=args.tile_size_q,
+                num_warps=args.num_warps,
+                num_stages=args.num_stages,
                 telemetry=False,
             ),
             **step_timing,
@@ -415,6 +424,8 @@ def _profile_decode_steps(
             error_budget=args.error_budget,
             block_size=args.block_size,
             tile_size_q=args.tile_size_q,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
             telemetry=False,
             return_info=True,
         )
@@ -615,6 +626,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
                 error_budget=args.error_budget,
                 block_size=args.block_size,
                 tile_size_q=args.tile_size_q,
+                num_warps=args.num_warps,
+                num_stages=args.num_stages,
                 telemetry=False,
             ),
             warmup=args.warmup,
@@ -630,6 +643,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
             error_budget=args.error_budget,
             block_size=args.block_size,
             tile_size_q=args.tile_size_q,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
             telemetry=False,
             return_info=True,
         )
@@ -646,6 +661,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
                 error_budget=args.error_budget,
                 block_size=args.block_size,
                 tile_size_q=args.tile_size_q,
+                num_warps=args.num_warps,
+                num_stages=args.num_stages,
                 telemetry=False,
             ),
             warmup=args.warmup,
@@ -662,6 +679,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
             error_budget=args.error_budget,
             block_size=args.block_size,
             tile_size_q=args.tile_size_q,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
             telemetry=False,
             return_info=True,
         )
@@ -730,6 +749,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
                 error_budget=args.error_budget,
                 block_size=args.block_size,
                 tile_size_q=args.tile_size_q,
+                num_warps=args.num_warps,
+                num_stages=args.num_stages,
                 telemetry=False,
             ),
             warmup=args.warmup,
@@ -748,6 +769,8 @@ def _profile_one(args, *, query_len: int, kv_len: int, heads: int, kv_heads: int
             error_budget=args.error_budget,
             block_size=args.block_size,
             tile_size_q=args.tile_size_q,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
             telemetry=False,
             return_info=True,
         )
@@ -896,6 +919,7 @@ def main():
     parser.add_argument("--decode-router-min-observations", type=int, default=1)
     parser.add_argument("--decode-router-min-confidence", type=float, default=0.7)
     parser.add_argument("--summary-json-out", default="")
+    parser.add_argument("--decode-cost-json-out", default="")
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -984,6 +1008,10 @@ def main():
         path = Path(args.summary_json_out)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
+    if args.decode_cost_json_out:
+        path = Path(args.decode_cost_json_out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        decode_cost_model_from_profile_rows(rows).to_json(path)
     print(text)
 
 

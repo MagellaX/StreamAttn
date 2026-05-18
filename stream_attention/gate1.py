@@ -215,6 +215,8 @@ def stream_attn_gate1(
     telemetry: bool = True,
     build_metadata_if_missing: bool = False,
     return_info: bool = False,
+    num_warps: int = 4,
+    num_stages: int = 3,
 ) -> Union[torch.Tensor, Tuple[torch.Tensor, Gate1RunInfo]]:
     """Run dense, Gate-1, or router-selected attention.
 
@@ -307,6 +309,8 @@ def stream_attn_gate1(
             post_qk_threshold=post_qk_threshold,
             force_mode=0,
             return_raw_stats=telemetry or return_info,
+            num_warps=num_warps,
+            num_stages=num_stages,
         )
         if raw_stats is not None:
             stats = summarize_gate1_raw_stats(raw_stats)
