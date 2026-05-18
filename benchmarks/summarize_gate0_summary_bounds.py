@@ -201,6 +201,7 @@ def _score(row: Dict[str, Any]) -> Tuple[float, float, float, float]:
 def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
     headers = [
         "src",
+        "layer",
         "head",
         "N",
         "H",
@@ -229,6 +230,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                 " ".join(
                     [
                         f"{_fmt(row.get('tensor_source')):>9}",
+                        f"{_fmt(row.get('layer_id')):>9}",
                         f"{_fmt(row.get('head_id')):>9}",
                         f"{_fmt(row.get('kv_len')):>9}",
                         f"{_fmt(row.get('heads')):>9}",
@@ -257,6 +259,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
             " ".join(
                 [
                     f"{_fmt(row.get('tensor_source')):>9}",
+                    f"{_fmt(row.get('layer_id')):>9}",
                     f"{_fmt(row.get('head_id')):>9}",
                     f"{_fmt(row.get('kv_len')):>9}",
                     f"{_fmt(row.get('heads')):>9}",
@@ -293,6 +296,16 @@ def _summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "zero_false_negative_rows": len(zero_fn),
         "max_predicted_skip_fraction": (
             max(float(row.get("predicted_skip_fraction") or 0.0) for row in valid)
+            if valid
+            else None
+        ),
+        "max_actual_skip_fraction": (
+            max(float(row.get("actual_gate1_skip_fraction") or 0.0) for row in valid)
+            if valid
+            else None
+        ),
+        "max_false_positive_rate": (
+            max(float(row.get("false_positive_rate") or 0.0) for row in valid)
             if valid
             else None
         ),
