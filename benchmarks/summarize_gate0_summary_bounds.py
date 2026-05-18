@@ -34,6 +34,12 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "source": row.get("_source"),
             "error": row.get("error"),
+            "tensor_source": row.get("tensor_source"),
+            "tensor_space": row.get("tensor_space"),
+            "model_id": row.get("model_id"),
+            "layer_id": row.get("layer_id"),
+            "head_id": row.get("head_id"),
+            "real_case": row.get("real_case"),
             "query_len": shape.get("query_len"),
             "kv_len": shape.get("kv_len"),
             "heads": shape.get("heads"),
@@ -48,6 +54,12 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "source": row.get("_source"),
         "device": row.get("device"),
+        "tensor_source": row.get("tensor_source"),
+        "tensor_space": row.get("tensor_space"),
+        "model_id": row.get("model_id"),
+        "layer_id": row.get("layer_id"),
+        "head_id": row.get("head_id"),
+        "real_case": row.get("real_case"),
         "query_len": shape.get("query_len"),
         "kv_len": shape.get("kv_len"),
         "heads": shape.get("heads"),
@@ -77,12 +89,19 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "full_qk_scan_ms": row.get("full_qk_scan_ms"),
         "summary_scan_over_qk": row.get("summary_scan_over_qk"),
         "estimated_gate0_speedup_vs_gate1": row.get("estimated_gate0_speedup_vs_gate1"),
+        "ordering_gain": row.get("ordering_gain"),
+        "speedup_gain": row.get("speedup_gain"),
         "gate0_promising": row.get("gate0_promising"),
     }
 
 
 def _case_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     return (
+        row.get("tensor_source"),
+        row.get("tensor_space"),
+        row.get("model_id"),
+        row.get("layer_id"),
+        row.get("head_id"),
         row.get("query_len"),
         row.get("kv_len"),
         row.get("heads"),
@@ -93,8 +112,55 @@ def _case_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     )
 
 
+def _ordering_baseline_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
+    return (
+        row.get("tensor_source"),
+        row.get("tensor_space"),
+        row.get("model_id"),
+        row.get("layer_id"),
+        row.get("head_id"),
+        row.get("query_len"),
+        row.get("kv_len"),
+        row.get("heads"),
+        row.get("dim"),
+        row.get("block_size"),
+        row.get("pattern"),
+        row.get("requested_active_fraction"),
+        row.get("num_summary_outliers"),
+        row.get("scan_backend"),
+        row.get("blocks_per_program"),
+    )
+
+
+def _add_ordering_metrics(rows: List[Dict[str, Any]]) -> None:
+    baselines: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for row in rows:
+        if row.get("error") or row.get("block_order") != "sequential":
+            continue
+        baselines[_ordering_baseline_key(row)] = row
+
+    for row in rows:
+        if row.get("error"):
+            continue
+        baseline = baselines.get(_ordering_baseline_key(row))
+        if baseline is None:
+            row["ordering_gain"] = None
+            row["speedup_gain"] = None
+            continue
+        row["ordering_gain"] = float(row.get("predicted_skip_fraction") or 0.0) - float(
+            baseline.get("predicted_skip_fraction") or 0.0
+        )
+        base_speedup = float(baseline.get("estimated_gate0_speedup_vs_gate1") or 0.0)
+        speedup = float(row.get("estimated_gate0_speedup_vs_gate1") or 0.0)
+        row["speedup_gain"] = speedup / base_speedup if base_speedup > 0.0 else None
+
+
 def _sort_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     return (
+        str(row.get("tensor_source")),
+        str(row.get("model_id")),
+        row.get("layer_id") if row.get("layer_id") is not None else -1,
+        row.get("head_id") if row.get("head_id") is not None else -9999,
         row.get("query_len") or -1,
         row.get("kv_len") or -1,
         row.get("heads") or -1,
@@ -134,6 +200,8 @@ def _score(row: Dict[str, Any]) -> Tuple[float, float, float, float]:
 
 def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
     headers = [
+        "src",
+        "head",
         "N",
         "H",
         "B",
@@ -150,6 +218,8 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "gap90",
         "scan/qk",
         "spd",
+        "ord_g",
+        "spd_g",
         "ok",
     ]
     print(" ".join(f"{header:>9}" for header in headers))
@@ -158,6 +228,8 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
             print(
                 " ".join(
                     [
+                        f"{_fmt(row.get('tensor_source')):>9}",
+                        f"{_fmt(row.get('head_id')):>9}",
                         f"{_fmt(row.get('kv_len')):>9}",
                         f"{_fmt(row.get('heads')):>9}",
                         f"{_fmt(row.get('block_size')):>9}",
@@ -174,6 +246,8 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
+                        f"{'n/a':>9}",
+                        f"{'n/a':>9}",
                         f"{'no':>9}",
                     ]
                 )
@@ -182,6 +256,8 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         print(
             " ".join(
                 [
+                    f"{_fmt(row.get('tensor_source')):>9}",
+                    f"{_fmt(row.get('head_id')):>9}",
                     f"{_fmt(row.get('kv_len')):>9}",
                     f"{_fmt(row.get('heads')):>9}",
                     f"{_fmt(row.get('block_size')):>9}",
@@ -198,6 +274,8 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('bound_gap_p90')):>9}",
                     f"{_fmt(row.get('summary_scan_over_qk')):>9}",
                     f"{_fmt(row.get('estimated_gate0_speedup_vs_gate1')):>9}",
+                    f"{_fmt(row.get('ordering_gain')):>9}",
+                    f"{_fmt(row.get('speedup_gain')):>9}",
                     f"{_fmt(row.get('gate0_promising')):>9}",
                 ]
             )
@@ -218,6 +296,15 @@ def _summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             if valid
             else None
         ),
+        "max_ordering_gain": (
+            max(
+                float(row.get("ordering_gain") or 0.0)
+                for row in valid
+                if row.get("ordering_gain") is not None
+            )
+            if any(row.get("ordering_gain") is not None for row in valid)
+            else None
+        ),
     }
 
 
@@ -230,6 +317,7 @@ def main() -> None:
     args = parser.parse_args()
 
     rows = sorted((_summary_row(row) for row in _load_rows(args.json_paths)), key=_sort_key)
+    _add_ordering_metrics(rows)
     best = _best_by_case(rows)
     payload = {
         "summary": _summary(rows),

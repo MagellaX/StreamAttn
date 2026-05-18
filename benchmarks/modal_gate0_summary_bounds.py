@@ -31,6 +31,14 @@ def _profile(
     scan_backend: str,
     blocks_per_program: str,
     block_order: str,
+    q_path: str,
+    k_path: str,
+    v_path: str,
+    tensor_space: str,
+    model_id: str,
+    layer_id: int,
+    per_head: bool,
+    head_indices: str,
     peak: float,
     sink_blocks: int,
     recent_blocks: int,
@@ -70,6 +78,8 @@ def _profile(
         blocks_per_program,
         "--block-order",
         block_order,
+        "--tensor-space",
+        tensor_space,
         "--peak",
         str(peak),
         "--sink-blocks",
@@ -89,6 +99,20 @@ def _profile(
         "--iters",
         str(iters),
     ]
+    if q_path:
+        cmd.extend(["--q-path", q_path])
+    if k_path:
+        cmd.extend(["--k-path", k_path])
+    if v_path:
+        cmd.extend(["--v-path", v_path])
+    if model_id:
+        cmd.extend(["--model-id", model_id])
+    if layer_id >= 0:
+        cmd.extend(["--layer-id", str(layer_id)])
+    if per_head:
+        cmd.append("--per-head")
+    if head_indices:
+        cmd.extend(["--head-indices", head_indices])
     output = subprocess.check_output(
         cmd,
         cwd="/root/StreamAttn",
@@ -123,6 +147,14 @@ def main(
     scan_backend: str = "torch",
     blocks_per_program: str = "32",
     block_order: str = "sequential",
+    q_path: str = "",
+    k_path: str = "",
+    v_path: str = "",
+    tensor_space: str = "synthetic",
+    model_id: str = "",
+    layer_id: int = -1,
+    per_head: bool = False,
+    head_indices: str = "",
     peak: float = 8.0,
     sink_blocks: int = 2,
     recent_blocks: int = 2,
@@ -147,6 +179,14 @@ def main(
         "scan_backend": scan_backend,
         "blocks_per_program": blocks_per_program,
         "block_order": block_order,
+        "q_path": q_path,
+        "k_path": k_path,
+        "v_path": v_path,
+        "tensor_space": tensor_space,
+        "model_id": model_id,
+        "layer_id": layer_id,
+        "per_head": per_head,
+        "head_indices": head_indices,
         "peak": peak,
         "sink_blocks": sink_blocks,
         "recent_blocks": recent_blocks,

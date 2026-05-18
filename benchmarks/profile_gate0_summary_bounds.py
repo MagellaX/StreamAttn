@@ -11,7 +11,7 @@ import json
 import math
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -36,6 +36,96 @@ def _parse_values(values: Iterable[str], cast):
 
 def _dtype(name: str) -> torch.dtype:
     return {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}[name]
+
+
+def _load_pt_tensor(path: str, candidate_keys: Iterable[str], *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    try:
+        payload = torch.load(path, map_location=device, weights_only=True)
+    except TypeError:
+        payload = torch.load(path, map_location=device)
+    if isinstance(payload, torch.Tensor):
+        tensor = payload
+    elif isinstance(payload, dict):
+        tensor = None
+        for key in candidate_keys:
+            value = payload.get(key)
+            if isinstance(value, torch.Tensor):
+                tensor = value
+                break
+        if tensor is None:
+            keys = ", ".join(str(key) for key in payload.keys())
+            raise ValueError(f"{path} does not contain one of {list(candidate_keys)}; found keys: {keys}")
+    else:
+        raise ValueError(f"{path} must contain a tensor or a tensor dictionary")
+    return tensor.to(device=device, dtype=dtype).contiguous()
+
+
+def _validate_qkv(q: torch.Tensor, k: torch.Tensor, v: Optional[torch.Tensor]) -> None:
+    if q.dim() != 4:
+        raise ValueError("q tensor must have shape [batch, query_len, heads, dim]")
+    if k.dim() != 4:
+        raise ValueError("k tensor must have shape [batch, kv_len, heads, dim]")
+    if q.shape[0] != k.shape[0]:
+        raise ValueError("q and k batch dimensions must match")
+    if q.shape[2:] != k.shape[2:]:
+        raise ValueError("q and k must have matching heads and dim")
+    if v is not None and v.shape != k.shape:
+        raise ValueError("v tensor must have the same shape as k")
+
+
+def _load_real_tensors(args, *, device: torch.device, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    if args.tensor_format != "pt":
+        raise ValueError(f"unsupported tensor format: {args.tensor_format}")
+    if not args.q_path or not args.k_path:
+        raise ValueError("--q-path and --k-path are required for real tensor profiling")
+    q = _load_pt_tensor(
+        args.q_path,
+        ("q", "query", "post_rope_q", "pre_rope_q"),
+        device=device,
+        dtype=dtype,
+    )
+    k = _load_pt_tensor(
+        args.k_path,
+        ("k", "key", "post_rope_k", "pre_rope_k"),
+        device=device,
+        dtype=dtype,
+    )
+    v = None
+    if args.v_path:
+        v = _load_pt_tensor(
+            args.v_path,
+            ("v", "value"),
+            device=device,
+            dtype=dtype,
+        )
+    _validate_qkv(q, k, v)
+    return q, k, v
+
+
+def _selected_head_indices(args, heads: int) -> List[int]:
+    if args.head_indices:
+        indices = _parse_values(args.head_indices, int)
+    elif args.per_head:
+        indices = list(range(heads))
+    else:
+        indices = []
+    for head_idx in indices:
+        if head_idx < 0 or head_idx >= heads:
+            raise ValueError(f"head index {head_idx} is outside [0, {heads})")
+    return indices
+
+
+def _real_tensor_cases(args, *, device: torch.device, dtype: torch.dtype) -> Iterator[Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], Dict[str, Any]]]:
+    q, k, v = _load_real_tensors(args, device=device, dtype=dtype)
+    head_indices = _selected_head_indices(args, q.shape[2])
+    if not head_indices:
+        yield q, k, v, {"head_id": -1, "real_case": "all_heads"}
+        return
+    for head_idx in head_indices:
+        q_h = q[:, :, head_idx : head_idx + 1, :].contiguous()
+        k_h = k[:, :, head_idx : head_idx + 1, :].contiguous()
+        v_h = None if v is None else v[:, :, head_idx : head_idx + 1, :].contiguous()
+        yield q_h, k_h, v_h, {"head_id": head_idx, "real_case": "single_head"}
 
 
 def _sync(device: torch.device) -> None:
@@ -228,8 +318,10 @@ def _resolve_block_order(
     args,
     *,
     q_bhsd: torch.Tensor,
+    k_bhnd: torch.Tensor,
     summaries,
     active_block_ids: List[int],
+    block_size: int,
     scale: float,
 ) -> List[int]:
     num_blocks = summaries.num_blocks
@@ -244,7 +336,15 @@ def _resolve_block_order(
         rest = list(range(num_blocks))
         return _dedup_order([*sink, *reversed(recent), *rest], num_blocks=num_blocks)
     if args.block_order == "oracle_active_first":
-        return _dedup_order([*active_block_ids, *range(num_blocks)], num_blocks=num_blocks)
+        if active_block_ids:
+            return _dedup_order([*active_block_ids, *range(num_blocks)], num_blocks=num_blocks)
+        scores = []
+        for block_idx in range(num_blocks):
+            start = block_idx * block_size
+            end = min(start + block_size, k_bhnd.shape[2])
+            qk = torch.einsum("bhsd,bhnd->bhsn", q_bhsd, k_bhnd[:, :, start:end, :]) * scale
+            scores.append((float(qk.amax(dim=-1).mean().item()), block_idx))
+        return [block_idx for _, block_idx in sorted(scores, reverse=True)]
     if args.block_order == "summary_desc":
         scores = []
         for block_idx in range(num_blocks):
@@ -365,25 +465,60 @@ def _analyze_bounds(
     }
 
 
-def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block_size: int, outliers: int) -> dict:
+def _profile_one(
+    args,
+    *,
+    kv_len: Optional[int],
+    heads: Optional[int],
+    active_fraction: Optional[float],
+    block_size: int,
+    outliers: int,
+    q_override: Optional[torch.Tensor] = None,
+    k_override: Optional[torch.Tensor] = None,
+    v_override: Optional[torch.Tensor] = None,
+    row_extra: Optional[Dict[str, Any]] = None,
+) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     dtype = _dtype(args.dtype)
-    q, k, v, block_active, active_block_ids = _make_pattern(
-        batch=args.batch,
-        query_len=args.query_len,
-        kv_len=kv_len,
-        heads=heads,
-        dim=args.dim,
-        dtype=dtype,
-        device=device,
-        pattern=args.pattern,
-        active_fraction=active_fraction,
-        block_size=block_size,
-        peak=args.peak,
-        sink_blocks=args.sink_blocks,
-        recent_blocks=args.recent_blocks,
-    )
-    scale = 1.0 / math.sqrt(args.dim)
+    tensor_source = "synthetic"
+    real_case = None
+    head_id = None
+    if q_override is None or k_override is None:
+        if kv_len is None or heads is None or active_fraction is None:
+            raise ValueError("synthetic profiling requires kv_len, heads, and active_fraction")
+        q, k, v, block_active, active_block_ids = _make_pattern(
+            batch=args.batch,
+            query_len=args.query_len,
+            kv_len=kv_len,
+            heads=heads,
+            dim=args.dim,
+            dtype=dtype,
+            device=device,
+            pattern=args.pattern,
+            active_fraction=active_fraction,
+            block_size=block_size,
+            peak=args.peak,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+        )
+        pattern = args.pattern
+    else:
+        q = q_override.to(device=device, dtype=dtype).contiguous()
+        k = k_override.to(device=device, dtype=dtype).contiguous()
+        v = None if v_override is None else v_override.to(device=device, dtype=dtype).contiguous()
+        _validate_qkv(q, k, v)
+        tensor_source = "tensor"
+        pattern = "real_k"
+        block_active = None
+        active_block_ids = []
+        active_fraction = None
+        if row_extra:
+            head_id = row_extra.get("head_id")
+            real_case = row_extra.get("real_case")
+
+    batch, query_len, actual_heads, dim = q.shape
+    actual_kv_len = k.shape[1]
+    scale = 1.0 / math.sqrt(dim)
     q_bhsd = q.permute(0, 2, 1, 3).contiguous().float()
     k_bhnd = k.permute(0, 2, 1, 3).contiguous().float()
 
@@ -404,8 +539,10 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
     block_order = _resolve_block_order(
         args,
         q_bhsd=q_bhsd,
+        k_bhnd=k_bhnd,
         summaries=summaries,
         active_block_ids=active_block_ids,
+        block_size=block_size,
         scale=scale,
     )
 
@@ -440,6 +577,9 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
     )
     summary_scan_over_qk = summary_scan_ms / full_qk_scan_ms if full_qk_scan_ms > 0.0 else None
     summary_type = "centroid_radius" if outliers == 0 else f"centroid_radius_outlier{outliers}"
+    tensor_space = args.tensor_space
+    if tensor_source == "tensor" and tensor_space == "synthetic":
+        tensor_space = "unknown"
     gate0_promising = (
         metrics["false_negative_rate"] <= args.max_false_negative_rate
         and metrics["predicted_skip_fraction"] >= args.min_predicted_skip_fraction
@@ -450,18 +590,24 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
     return {
         "device": torch.cuda.get_device_name(0) if device.type == "cuda" else "cpu",
         "torch_version": torch.__version__,
+        "tensor_source": tensor_source,
+        "tensor_space": tensor_space,
+        "model_id": args.model_id or None,
+        "layer_id": args.layer_id,
+        "head_id": head_id,
+        "real_case": real_case,
         "shape": {
-            "batch": args.batch,
-            "query_len": args.query_len,
-            "kv_len": kv_len,
-            "heads": heads,
-            "dim": args.dim,
+            "batch": batch,
+            "query_len": query_len,
+            "kv_len": actual_kv_len,
+            "heads": actual_heads,
+            "dim": dim,
             "dtype": args.dtype,
             "attention_type": "mha",
         },
         "block_size": block_size,
         "num_blocks": summaries.num_blocks,
-        "pattern": args.pattern,
+        "pattern": pattern,
         "block_order": args.block_order,
         "active_block_ids": active_block_ids,
         "requested_active_fraction": active_fraction,
@@ -505,6 +651,19 @@ def main() -> None:
         nargs="+",
         default=["sequential"],
     )
+    parser.add_argument("--q-path", default="", help="Optional saved Q tensor path for real-K profiling")
+    parser.add_argument("--k-path", default="", help="Optional saved K tensor path for real-K profiling")
+    parser.add_argument("--v-path", default="", help="Optional saved V tensor path for metadata/value-norm summaries")
+    parser.add_argument("--tensor-format", choices=["pt"], default="pt")
+    parser.add_argument(
+        "--tensor-space",
+        choices=["synthetic", "unknown", "pre_rope", "post_rope"],
+        default="synthetic",
+    )
+    parser.add_argument("--model-id", default="")
+    parser.add_argument("--layer-id", type=int, default=None)
+    parser.add_argument("--per-head", action="store_true")
+    parser.add_argument("--head-indices", nargs="+", default=[])
     parser.add_argument("--rope-mode", choices=["none"], default="none")
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
@@ -527,55 +686,141 @@ def main() -> None:
     outlier_values = _parse_values(args.summary_outliers, int)
     blocks_per_program_values = _parse_values(args.blocks_per_program, int)
     block_orders = _parse_values(args.block_order, str)
+    real_tensor_mode = bool(args.q_path or args.k_path)
 
     rows = []
-    for kv_len, heads, active_fraction, block_size, outliers, blocks_per_program, block_order in itertools.product(
-        kv_lens,
-        heads_values,
-        active_fractions,
-        block_sizes,
-        outlier_values,
-        blocks_per_program_values,
-        block_orders,
-    ):
-        run_args = argparse.Namespace(**vars(args))
-        run_args.blocks_per_program = blocks_per_program
-        run_args.block_order = block_order
+    if real_tensor_mode:
+        device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+        dtype = _dtype(args.dtype)
         try:
-            rows.append(
-                _profile_one(
-                    run_args,
-                    kv_len=kv_len,
-                    heads=heads,
-                    active_fraction=active_fraction,
-                    block_size=block_size,
-                    outliers=outliers,
-                )
-            )
+            cases = _real_tensor_cases(args, device=device, dtype=dtype)
+            for q, k, v, row_extra in cases:
+                for block_size, outliers, blocks_per_program, block_order in itertools.product(
+                    block_sizes,
+                    outlier_values,
+                    blocks_per_program_values,
+                    block_orders,
+                ):
+                    run_args = argparse.Namespace(**vars(args))
+                    run_args.blocks_per_program = blocks_per_program
+                    run_args.block_order = block_order
+                    try:
+                        rows.append(
+                            _profile_one(
+                                run_args,
+                                kv_len=None,
+                                heads=None,
+                                active_fraction=None,
+                                block_size=block_size,
+                                outliers=outliers,
+                                q_override=q,
+                                k_override=k,
+                                v_override=v,
+                                row_extra=row_extra,
+                            )
+                        )
+                    except Exception as exc:
+                        rows.append(
+                            {
+                                "error": f"{type(exc).__name__}: {exc}",
+                                "tensor_source": "tensor",
+                                "tensor_space": (
+                                    "unknown" if args.tensor_space == "synthetic" else args.tensor_space
+                                ),
+                                "model_id": args.model_id or None,
+                                "layer_id": args.layer_id,
+                                "head_id": row_extra.get("head_id"),
+                                "real_case": row_extra.get("real_case"),
+                                "shape": {
+                                    "batch": int(q.shape[0]),
+                                    "query_len": int(q.shape[1]),
+                                    "kv_len": int(k.shape[1]),
+                                    "heads": int(q.shape[2]),
+                                    "dim": int(q.shape[3]),
+                                    "dtype": args.dtype,
+                                    "attention_type": "mha",
+                                },
+                                "block_size": block_size,
+                                "blocks_per_program": blocks_per_program,
+                                "block_order": block_order,
+                                "pattern": "real_k",
+                                "requested_active_fraction": None,
+                                "num_summary_outliers": outliers,
+                            }
+                        )
+                    finally:
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
         except Exception as exc:
             rows.append(
                 {
                     "error": f"{type(exc).__name__}: {exc}",
+                    "tensor_source": "tensor",
+                    "tensor_space": "unknown" if args.tensor_space == "synthetic" else args.tensor_space,
+                    "model_id": args.model_id or None,
+                    "layer_id": args.layer_id,
                     "shape": {
-                        "batch": args.batch,
-                        "query_len": args.query_len,
-                        "kv_len": kv_len,
-                        "heads": heads,
-                        "dim": args.dim,
+                        "batch": None,
+                        "query_len": None,
+                        "kv_len": None,
+                        "heads": None,
+                        "dim": None,
                         "dtype": args.dtype,
                         "attention_type": "mha",
                     },
-                    "block_size": block_size,
-                    "blocks_per_program": blocks_per_program,
-                    "block_order": block_order,
-                    "pattern": args.pattern,
-                    "requested_active_fraction": active_fraction,
-                    "num_summary_outliers": outliers,
+                    "pattern": "real_k",
                 }
             )
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+    else:
+        for kv_len, heads, active_fraction, block_size, outliers, blocks_per_program, block_order in itertools.product(
+            kv_lens,
+            heads_values,
+            active_fractions,
+            block_sizes,
+            outlier_values,
+            blocks_per_program_values,
+            block_orders,
+        ):
+            run_args = argparse.Namespace(**vars(args))
+            run_args.blocks_per_program = blocks_per_program
+            run_args.block_order = block_order
+            try:
+                rows.append(
+                    _profile_one(
+                        run_args,
+                        kv_len=kv_len,
+                        heads=heads,
+                        active_fraction=active_fraction,
+                        block_size=block_size,
+                        outliers=outliers,
+                    )
+                )
+            except Exception as exc:
+                rows.append(
+                    {
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "tensor_source": "synthetic",
+                        "tensor_space": args.tensor_space,
+                        "shape": {
+                            "batch": args.batch,
+                            "query_len": args.query_len,
+                            "kv_len": kv_len,
+                            "heads": heads,
+                            "dim": args.dim,
+                            "dtype": args.dtype,
+                            "attention_type": "mha",
+                        },
+                        "block_size": block_size,
+                        "blocks_per_program": blocks_per_program,
+                        "block_order": block_order,
+                        "pattern": args.pattern,
+                        "requested_active_fraction": active_fraction,
+                        "num_summary_outliers": outliers,
+                    }
+                )
+            finally:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     payload = {"rows": rows}
     text = json.dumps(payload, indent=2, sort_keys=True)
