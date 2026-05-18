@@ -223,6 +223,35 @@ def _quantile(values: torch.Tensor, q: float) -> float:
     return float(torch.quantile(values.float(), q).item())
 
 
+def _tensor_stats(values: torch.Tensor, prefix: str) -> Dict[str, float]:
+    if values.numel() == 0:
+        return {
+            f"{prefix}_mean": 0.0,
+            f"{prefix}_p50": 0.0,
+            f"{prefix}_p90": 0.0,
+            f"{prefix}_p99": 0.0,
+            f"{prefix}_min": 0.0,
+            f"{prefix}_max": 0.0,
+        }
+    values = values.float()
+    return {
+        f"{prefix}_mean": float(values.mean().item()),
+        f"{prefix}_p50": _quantile(values, 0.50),
+        f"{prefix}_p90": _quantile(values, 0.90),
+        f"{prefix}_p99": _quantile(values, 0.99),
+        f"{prefix}_min": float(values.min().item()),
+        f"{prefix}_max": float(values.max().item()),
+    }
+
+
+def _region_for_block(block_idx: int, num_blocks: int, *, sink_blocks: int, recent_blocks: int) -> str:
+    if block_idx < min(sink_blocks, num_blocks):
+        return "sink"
+    if block_idx >= max(0, num_blocks - min(recent_blocks, num_blocks)):
+        return "recent"
+    return "middle"
+
+
 def _scan_summary(q_bhsd: torch.Tensor, summaries, *, scale: float) -> torch.Tensor:
     dot_centroid = torch.einsum("bhsd,bhkd->bhsk", q_bhsd, summaries.centroid)
     q_norm = torch.linalg.vector_norm(q_bhsd, dim=-1)
@@ -371,6 +400,8 @@ def _analyze_bounds(
     error_budget: float,
     bound_tolerance: float,
     block_order: List[int],
+    sink_blocks: int,
+    recent_blocks: int,
 ) -> dict:
     batch, query_len, heads, dim = q.shape
     seq_k = k.shape[1]
@@ -391,10 +422,27 @@ def _analyze_bounds(
     total = batch * heads * query_len * summaries.num_blocks
     actual_skip_count = 0
     predicted_skip_count = 0
+    recovered_skip_count = 0
     false_negative_count = 0
     false_positive_count = 0
     unsafe_bound_count = 0
     gap_values = []
+    actual_margin_values = []
+    summary_margin_values = []
+    missed_skip_gap_values = []
+    missed_actual_margin_values = []
+    missed_summary_margin_values = []
+    region_counts: Dict[str, Dict[str, int]] = {
+        region: {
+            "total": 0,
+            "actual": 0,
+            "predicted": 0,
+            "recovered": 0,
+            "false_negative": 0,
+            "false_positive": 0,
+        }
+        for region in ("sink", "middle", "recent")
+    }
 
     for block_idx in block_order:
         start = block_idx * block_size
@@ -419,11 +467,35 @@ def _analyze_bounds(
 
         actual_skip = has_state & (tile_max + log_block_len <= threshold)
         summary_skip = has_state & (upper + log_block_len <= threshold)
+        actual_margin = tile_max + log_block_len - threshold
+        summary_margin = upper + log_block_len - threshold
+        actual_margin = actual_margin.masked_fill(~has_state, float("inf"))
+        summary_margin = summary_margin.masked_fill(~has_state, float("inf"))
+        actual_margin_values.append(actual_margin.detach().flatten())
+        summary_margin_values.append(summary_margin.detach().flatten())
+        missed_skip = actual_skip & ~summary_skip
+        if bool(missed_skip.any()):
+            missed_skip_gap_values.append(gap[missed_skip].detach().flatten())
+            missed_actual_margin_values.append(actual_margin[missed_skip].detach().flatten())
+            missed_summary_margin_values.append(summary_margin[missed_skip].detach().flatten())
 
         actual_skip_count += int(actual_skip.sum().item())
         predicted_skip_count += int(summary_skip.sum().item())
+        recovered_skip_count += int((summary_skip & actual_skip).sum().item())
         false_negative_count += int((summary_skip & ~actual_skip).sum().item())
         false_positive_count += int((~summary_skip & actual_skip).sum().item())
+        region = _region_for_block(
+            block_idx,
+            summaries.num_blocks,
+            sink_blocks=sink_blocks,
+            recent_blocks=recent_blocks,
+        )
+        region_counts[region]["total"] += int(actual_skip.numel())
+        region_counts[region]["actual"] += int(actual_skip.sum().item())
+        region_counts[region]["predicted"] += int(summary_skip.sum().item())
+        region_counts[region]["recovered"] += int((summary_skip & actual_skip).sum().item())
+        region_counts[region]["false_negative"] += int((summary_skip & ~actual_skip).sum().item())
+        region_counts[region]["false_positive"] += int((~summary_skip & actual_skip).sum().item())
 
         compute_row = ~actual_skip
         if not bool(compute_row.any()):
@@ -447,19 +519,62 @@ def _analyze_bounds(
         acc_den = torch.where(compute_row, next_den, acc_den)
 
     gaps = torch.cat(gap_values) if gap_values else torch.empty(0, device=q.device)
+    actual_margins = (
+        torch.cat(actual_margin_values) if actual_margin_values else torch.empty(0, device=q.device)
+    )
+    summary_margins = (
+        torch.cat(summary_margin_values) if summary_margin_values else torch.empty(0, device=q.device)
+    )
+    actual_margins = actual_margins[torch.isfinite(actual_margins)]
+    summary_margins = summary_margins[torch.isfinite(summary_margins)]
+    missed_skip_gaps = (
+        torch.cat(missed_skip_gap_values) if missed_skip_gap_values else torch.empty(0, device=q.device)
+    )
+    missed_actual_margins = (
+        torch.cat(missed_actual_margin_values)
+        if missed_actual_margin_values
+        else torch.empty(0, device=q.device)
+    )
+    missed_summary_margins = (
+        torch.cat(missed_summary_margin_values)
+        if missed_summary_margin_values
+        else torch.empty(0, device=q.device)
+    )
     predicted_skip_fraction = predicted_skip_count / total if total else 0.0
     actual_skip_fraction = actual_skip_count / total if total else 0.0
     predicted_compute_fraction = 1.0 - predicted_skip_fraction
+    actual_skip_recovery = recovered_skip_count / actual_skip_count if actual_skip_count else 0.0
+    region_metrics = {}
+    for region, counts in region_counts.items():
+        total_region = counts["total"]
+        actual_region = counts["actual"]
+        region_metrics[f"{region}_actual_skip_fraction"] = (
+            counts["actual"] / total_region if total_region else 0.0
+        )
+        region_metrics[f"{region}_predicted_skip_fraction"] = (
+            counts["predicted"] / total_region if total_region else 0.0
+        )
+        region_metrics[f"{region}_actual_skip_recovery"] = (
+            counts["recovered"] / actual_region if actual_region else 0.0
+        )
+        region_metrics[f"{region}_false_negative_rate"] = (
+            counts["false_negative"] / total_region if total_region else 0.0
+        )
+        region_metrics[f"{region}_false_positive_rate"] = (
+            counts["false_positive"] / total_region if total_region else 0.0
+        )
     return {
         "total_row_blocks": total,
         "actual_skip_count": actual_skip_count,
         "predicted_skip_count": predicted_skip_count,
+        "recovered_skip_count": recovered_skip_count,
         "false_negative_count": false_negative_count,
         "false_positive_count": false_positive_count,
         "unsafe_bound_count": unsafe_bound_count,
         "predicted_skip_fraction": predicted_skip_fraction,
         "actual_gate1_skip_fraction": actual_skip_fraction,
         "actual_skip_fraction": actual_skip_fraction,
+        "actual_skip_recovery": actual_skip_recovery,
         "predicted_compute_fraction": predicted_compute_fraction,
         "false_negative_rate": false_negative_count / total if total else 0.0,
         "false_positive_rate": false_positive_count / total if total else 0.0,
@@ -470,6 +585,12 @@ def _analyze_bounds(
         "bound_gap_p99": _quantile(gaps, 0.99),
         "bound_gap_min": float(gaps.min().item()) if gaps.numel() else 0.0,
         "bound_gap_max": float(gaps.max().item()) if gaps.numel() else 0.0,
+        **_tensor_stats(actual_margins, "actual_margin"),
+        **_tensor_stats(summary_margins, "summary_margin"),
+        **_tensor_stats(missed_skip_gaps, "missed_skip_gap"),
+        **_tensor_stats(missed_actual_margins, "missed_actual_margin"),
+        **_tensor_stats(missed_summary_margins, "missed_summary_margin"),
+        **region_metrics,
     }
 
 
@@ -577,6 +698,8 @@ def _profile_one(
         error_budget=args.error_budget,
         bound_tolerance=args.bound_tolerance,
         block_order=block_order,
+        sink_blocks=args.sink_blocks,
+        recent_blocks=args.recent_blocks,
     )
 
     estimated_gate0_qk_ms = summary_scan_ms + metrics["predicted_compute_fraction"] * full_qk_scan_ms

@@ -77,6 +77,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "blocks_per_program": row.get("blocks_per_program"),
         "predicted_skip_fraction": row.get("predicted_skip_fraction"),
         "actual_gate1_skip_fraction": row.get("actual_gate1_skip_fraction"),
+        "actual_skip_recovery": row.get("actual_skip_recovery"),
         "false_negative_rate": row.get("false_negative_rate"),
         "false_positive_rate": row.get("false_positive_rate"),
         "unsafe_bound_rate": row.get("unsafe_bound_rate"),
@@ -84,6 +85,18 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "bound_gap_p50": row.get("bound_gap_p50"),
         "bound_gap_p90": row.get("bound_gap_p90"),
         "bound_gap_p99": row.get("bound_gap_p99"),
+        "actual_margin_p50": row.get("actual_margin_p50"),
+        "actual_margin_p90": row.get("actual_margin_p90"),
+        "actual_margin_p99": row.get("actual_margin_p99"),
+        "summary_margin_p50": row.get("summary_margin_p50"),
+        "summary_margin_p90": row.get("summary_margin_p90"),
+        "summary_margin_p99": row.get("summary_margin_p99"),
+        "missed_skip_gap_p50": row.get("missed_skip_gap_p50"),
+        "missed_skip_gap_p90": row.get("missed_skip_gap_p90"),
+        "missed_skip_gap_p99": row.get("missed_skip_gap_p99"),
+        "middle_actual_skip_fraction": row.get("middle_actual_skip_fraction"),
+        "middle_predicted_skip_fraction": row.get("middle_predicted_skip_fraction"),
+        "middle_actual_skip_recovery": row.get("middle_actual_skip_recovery"),
         "summary_build_ms": row.get("summary_build_ms"),
         "summary_scan_ms": row.get("summary_scan_ms"),
         "full_qk_scan_ms": row.get("full_qk_scan_ms"),
@@ -214,9 +227,13 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "bpp",
         "pred",
         "actual",
+        "recov",
         "fn",
         "fp",
         "gap90",
+        "miss90",
+        "mid_a",
+        "mid_p",
         "scan/qk",
         "spd",
         "ord_g",
@@ -250,6 +267,9 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
                         f"{'n/a':>9}",
+                        f"{'n/a':>9}",
+                        f"{'n/a':>9}",
+                        f"{'n/a':>9}",
                         f"{'no':>9}",
                     ]
                 )
@@ -272,9 +292,13 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('blocks_per_program')):>9}",
                     f"{_fmt(row.get('predicted_skip_fraction')):>9}",
                     f"{_fmt(row.get('actual_gate1_skip_fraction')):>9}",
+                    f"{_fmt(row.get('actual_skip_recovery')):>9}",
                     f"{_fmt(row.get('false_negative_rate')):>9}",
                     f"{_fmt(row.get('false_positive_rate')):>9}",
                     f"{_fmt(row.get('bound_gap_p90')):>9}",
+                    f"{_fmt(row.get('missed_skip_gap_p90')):>9}",
+                    f"{_fmt(row.get('middle_actual_skip_fraction')):>9}",
+                    f"{_fmt(row.get('middle_predicted_skip_fraction')):>9}",
                     f"{_fmt(row.get('summary_scan_over_qk')):>9}",
                     f"{_fmt(row.get('estimated_gate0_speedup_vs_gate1')):>9}",
                     f"{_fmt(row.get('ordering_gain')):>9}",
@@ -306,6 +330,21 @@ def _summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         "max_false_positive_rate": (
             max(float(row.get("false_positive_rate") or 0.0) for row in valid)
+            if valid
+            else None
+        ),
+        "max_actual_skip_recovery": (
+            max(float(row.get("actual_skip_recovery") or 0.0) for row in valid)
+            if valid
+            else None
+        ),
+        "max_middle_actual_skip_fraction": (
+            max(float(row.get("middle_actual_skip_fraction") or 0.0) for row in valid)
+            if valid
+            else None
+        ),
+        "max_middle_predicted_skip_fraction": (
+            max(float(row.get("middle_predicted_skip_fraction") or 0.0) for row in valid)
             if valid
             else None
         ),
