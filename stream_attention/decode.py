@@ -9,6 +9,7 @@ tokens.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
@@ -276,6 +277,145 @@ class DecodeCostModel:
     def from_json(cls, path: Union[str, Path]) -> "DecodeCostModel":
         with Path(path).open("r", encoding="utf-8") as handle:
             return cls.from_dict(json.load(handle))
+
+
+@dataclass
+class StreamAttnDecodeWorkspace:
+    """Reusable state for the planned contiguous-KV decode runtime."""
+
+    device: torch.device
+    max_batch: int
+    max_query_len: int
+    max_kv_len: int
+    max_heads: int
+    head_dim: int
+    block_size: int
+    raw_stats: Optional[torch.Tensor] = None
+    output: Optional[torch.Tensor] = None
+    metadata_update_scratch: Optional[torch.Tensor] = None
+    step_index: int = 0
+
+    @classmethod
+    def allocate(
+        cls,
+        *,
+        device: Union[str, torch.device],
+        max_batch: int,
+        max_query_len: int,
+        max_kv_len: int,
+        max_heads: int,
+        head_dim: int,
+        block_size: int,
+        dtype: torch.dtype = torch.float16,
+    ) -> "StreamAttnDecodeWorkspace":
+        device = torch.device(device)
+        for name, value in {
+            "max_batch": max_batch,
+            "max_query_len": max_query_len,
+            "max_kv_len": max_kv_len,
+            "max_heads": max_heads,
+            "head_dim": head_dim,
+            "block_size": block_size,
+        }.items():
+            if int(value) <= 0:
+                raise ValueError(f"{name} must be positive")
+
+        max_q_blocks = max(1, math.ceil(max_query_len / block_size))
+        max_kv_blocks = max(1, math.ceil(max_kv_len / block_size))
+        return cls(
+            device=device,
+            max_batch=int(max_batch),
+            max_query_len=int(max_query_len),
+            max_kv_len=int(max_kv_len),
+            max_heads=int(max_heads),
+            head_dim=int(head_dim),
+            block_size=int(block_size),
+            raw_stats=torch.zeros(
+                (max_batch, max_heads, max_q_blocks, 6),
+                device=device,
+                dtype=torch.int64,
+            ),
+            output=torch.empty(
+                (max_batch, max_query_len, max_heads, head_dim),
+                device=device,
+                dtype=dtype,
+            ),
+            metadata_update_scratch=torch.empty(
+                (max_batch, max_heads, max_kv_blocks),
+                device=device,
+                dtype=torch.float32,
+            ),
+        )
+
+    def validate(
+        self,
+        query: Optional[torch.Tensor] = None,
+        key: Optional[torch.Tensor] = None,
+        value: Optional[torch.Tensor] = None,
+        *,
+        batch: Optional[int] = None,
+        query_len: Optional[int] = None,
+        kv_len: Optional[int] = None,
+        heads: Optional[int] = None,
+        head_dim: Optional[int] = None,
+        device: Optional[Union[str, torch.device]] = None,
+    ) -> None:
+        """Validate that a decode call fits in this workspace."""
+
+        if query is not None:
+            if query.dim() != 4:
+                raise ValueError("query must have shape [batch, seq, heads, dim]")
+            batch = query.shape[0]
+            query_len = query.shape[1]
+            heads = query.shape[2]
+            head_dim = query.shape[3]
+            device = query.device
+        if key is not None:
+            if key.dim() != 4:
+                raise ValueError("key must have shape [batch, seq, heads, dim]")
+            if batch is not None and key.shape[0] != batch:
+                raise ValueError("query/key batch must match")
+            if head_dim is not None and key.shape[3] != head_dim:
+                raise ValueError("query/key head dim must match")
+            kv_len = key.shape[1]
+            heads = max(heads or 0, key.shape[2])
+            device = key.device if device is None else device
+        if value is not None:
+            if value.dim() != 4:
+                raise ValueError("value must have shape [batch, seq, heads, dim]")
+            if batch is not None and value.shape[0] != batch:
+                raise ValueError("query/value batch must match")
+            if kv_len is not None and value.shape[1] != kv_len:
+                raise ValueError("key/value sequence length must match")
+            if head_dim is not None and value.shape[3] != head_dim:
+                raise ValueError("query/value head dim must match")
+            heads = max(heads or 0, value.shape[2])
+            device = value.device if device is None else device
+
+        checks = {
+            "batch": (batch, self.max_batch),
+            "query_len": (query_len, self.max_query_len),
+            "kv_len": (kv_len, self.max_kv_len),
+            "heads": (heads, self.max_heads),
+            "head_dim": (head_dim, self.head_dim),
+        }
+        for name, (actual, limit) in checks.items():
+            if actual is None:
+                continue
+            if name == "head_dim":
+                if int(actual) != limit:
+                    raise ValueError(f"{name} {actual} does not match workspace {limit}")
+            elif int(actual) > limit:
+                raise ValueError(f"{name} {actual} exceeds workspace limit {limit}")
+        if device is not None and torch.device(device) != self.device:
+            raise ValueError(f"device {torch.device(device)} does not match workspace {self.device}")
+
+    def reset_step(self) -> None:
+        self.step_index = 0
+
+    def advance_step(self) -> int:
+        self.step_index += 1
+        return self.step_index
 
 
 def _mean(values: Iterable[float]) -> float:
@@ -630,3 +770,202 @@ def stream_attn_decode_run(
         num_warps=plan.num_warps,
         num_stages=plan.num_stages,
     )
+
+
+def _shape_tuple(shape_or_tensor) -> tuple:
+    if isinstance(shape_or_tensor, torch.Tensor):
+        return tuple(shape_or_tensor.shape)
+    return tuple(shape_or_tensor)
+
+
+class StreamAttnDecodeWrapper:
+    """Stateful planned decode wrapper for contiguous KV cache calls.
+
+    The wrapper owns runtime state such as step index and previous active
+    fraction. It delegates cost decisions and kernel launches to
+    ``stream_attn_decode_plan`` and ``stream_attn_decode_run``.
+    """
+
+    def __init__(
+        self,
+        workspace: StreamAttnDecodeWorkspace,
+        *,
+        policy: Optional[StreamAttnDecodePolicy] = None,
+        decode_cost_model: Optional[DecodeCostModel] = None,
+        router: Optional[StreamAttnRouter] = None,
+    ) -> None:
+        self.workspace = workspace
+        self.policy = policy or StreamAttnDecodePolicy()
+        self.decode_cost_model = decode_cost_model or DecodeCostModel()
+        self.router = router
+        self.last_active_fraction: Optional[float] = None
+        self.last_plan: Optional[StreamAttnDecodePlan] = None
+        self.last_info = None
+        self._static_plan: Optional[Dict[str, object]] = None
+        self._last_plan_metadata_available: Optional[bool] = None
+
+    def plan(
+        self,
+        *,
+        query_shape,
+        kv_shape,
+        attention_type: str = "mha",
+        kv_heads: Optional[int] = None,
+        block_size: Optional[int] = None,
+        tile_size_q: int = 16,
+        num_warps: int = 4,
+        num_stages: int = 3,
+        error_budget: float = 1.0e-3,
+    ) -> "StreamAttnDecodeWrapper":
+        """Store static shape/config state without launching kernels."""
+
+        query_shape = _shape_tuple(query_shape)
+        kv_shape = _shape_tuple(kv_shape)
+        if len(query_shape) != 4 or len(kv_shape) != 4:
+            raise ValueError("query_shape and kv_shape must be [batch, seq, heads, dim]")
+        if query_shape[0] != kv_shape[0] or query_shape[3] != kv_shape[3]:
+            raise ValueError("query/KV batch and dim must match")
+        block_size = int(block_size or self.workspace.block_size)
+        kv_heads = int(kv_heads if kv_heads is not None else kv_shape[2])
+        self.workspace.validate(
+            batch=int(query_shape[0]),
+            query_len=int(query_shape[1]),
+            kv_len=int(kv_shape[1]),
+            heads=max(int(query_shape[2]), int(kv_shape[2])),
+            head_dim=int(query_shape[3]),
+            device=self.workspace.device,
+        )
+        self._static_plan = {
+            "query_shape": query_shape,
+            "kv_shape": kv_shape,
+            "attention_type": attention_type,
+            "kv_heads": kv_heads,
+            "block_size": block_size,
+            "tile_size_q": int(tile_size_q),
+            "num_warps": int(num_warps),
+            "num_stages": int(num_stages),
+            "error_budget": float(error_budget),
+        }
+        self.last_plan = None
+        self.last_info = None
+        self.last_active_fraction = None
+        self._last_plan_metadata_available = None
+        self.workspace.reset_step()
+        return self
+
+    def observe_active_fraction(self, active_fraction: float) -> None:
+        self.last_active_fraction = min(1.0, max(0.0, float(active_fraction)))
+
+    def _require_plan(self) -> Dict[str, object]:
+        if self._static_plan is None:
+            raise RuntimeError("call plan(...) before run(...)")
+        return self._static_plan
+
+    def _check_static_tensors(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: Optional[torch.Tensor] = None,
+    ) -> None:
+        static = self._require_plan()
+        if tuple(query.shape) != tuple(static["query_shape"]):
+            raise ValueError("query shape does not match planned query_shape")
+        if tuple(key_cache.shape) != tuple(static["kv_shape"]):
+            raise ValueError("key_cache shape does not match planned kv_shape")
+        if value_cache is not None and tuple(value_cache.shape) != tuple(static["kv_shape"]):
+            raise ValueError("value_cache shape does not match planned kv_shape")
+        if query.device != self.workspace.device or key_cache.device != self.workspace.device:
+            raise ValueError("query/key device does not match workspace device")
+        if value_cache is not None and value_cache.device != self.workspace.device:
+            raise ValueError("value device does not match workspace device")
+
+    def plan_step(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        *,
+        metadata: Optional[StreamAttnMetadataCache] = None,
+        active_fraction_hint: Optional[float] = None,
+        _validated: bool = False,
+    ) -> StreamAttnDecodePlan:
+        """Build a per-step decode plan from stored static config."""
+
+        static = self._require_plan()
+        if not _validated:
+            self._check_static_tensors(query, key_cache)
+        hint = active_fraction_hint
+        if hint is None:
+            hint = self.last_active_fraction
+        metadata_available = metadata is not None and metadata.value_norm_bounds is not None
+        if (
+            self.policy.collect_telemetry_every == 0
+            and self.last_plan is not None
+            and hint is not None
+            and self._last_plan_metadata_available == metadata_available
+            and abs(self.last_plan.predicted_active_fraction - float(hint)) <= 1.0e-12
+        ):
+            return self.last_plan
+        plan = stream_attn_decode_plan(
+            query,
+            key_cache,
+            metadata=metadata,
+            router=self.router,
+            decode_cost_model=self.decode_cost_model,
+            policy=self.policy,
+            active_fraction_hint=hint,
+            attention_type=str(static["attention_type"]),
+            kv_heads=int(static["kv_heads"]),
+            block_size=int(static["block_size"]),
+            tile_size_q=int(static["tile_size_q"]),
+            num_warps=int(static["num_warps"]),
+            num_stages=int(static["num_stages"]),
+            error_budget=float(static["error_budget"]),
+            step_index=self.workspace.step_index,
+        )
+        self.last_plan = plan
+        self._last_plan_metadata_available = metadata_available
+        return plan
+
+    def run(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        metadata: Optional[StreamAttnMetadataCache] = None,
+        active_fraction_hint: Optional[float] = None,
+        return_info: bool = False,
+    ):
+        """Plan and execute one decode step."""
+
+        static = self._require_plan()
+        self._check_static_tensors(query, key_cache, value_cache)
+        plan = self.plan_step(
+            query,
+            key_cache,
+            metadata=metadata,
+            active_fraction_hint=active_fraction_hint,
+            _validated=True,
+        )
+        wants_info = return_info or (
+            plan.backend != "dense"
+            and (plan.collect_telemetry or self.last_active_fraction is None)
+        )
+        result = stream_attn_decode_run(
+            query,
+            key_cache,
+            value_cache,
+            plan=plan,
+            metadata=metadata,
+            error_budget=float(static["error_budget"]),
+            return_info=wants_info,
+        )
+        if wants_info:
+            output, info = result
+        else:
+            output, info = result, None
+        self.last_info = info
+        if info is not None and info.stats is not None:
+            self.last_active_fraction = float(info.stats.active_pv_fraction)
+        self.workspace.advance_step()
+        return (output, info) if return_info else output
