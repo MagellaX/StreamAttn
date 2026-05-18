@@ -18,6 +18,10 @@ import torch.nn.functional as F
 
 from stream_attention.certified.bounds import block_score_upper_bound
 from stream_attention.certified.summaries import build_block_summaries
+from stream_attention.kernels.gate0_summary_scan_triton import (
+    TRITON_AVAILABLE as GATE0_TRITON_AVAILABLE,
+    gate0_summary_scan_triton,
+)
 
 
 def _parse_values(values: Iterable[str], cast):
@@ -163,6 +167,51 @@ def _scan_full_qk(
         scores = F.pad(scores, (0, pad), value=-float("inf"))
     block_scores = scores.reshape(*scores.shape[:-1], -1, block_size)
     return block_scores.amax(dim=-1).sum()
+
+
+def _time_summary_scan(args, q: torch.Tensor, q_bhsd: torch.Tensor, summaries, *, scale: float, outliers: int, device: torch.device) -> Tuple[float, str]:
+    if args.scan_backend == "torch":
+        return (
+            _time_call(
+                lambda: _scan_summary(q_bhsd, summaries, scale=scale),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            ),
+            "torch",
+        )
+    if args.scan_backend != "triton":
+        raise ValueError(f"unknown scan backend: {args.scan_backend}")
+    if not GATE0_TRITON_AVAILABLE:
+        raise RuntimeError("Triton Gate-0 scan backend is not available")
+    if device.type != "cuda":
+        raise RuntimeError("Triton Gate-0 scan backend requires CUDA")
+    if outliers != 0:
+        raise ValueError("Triton Gate-0 scan backend currently supports only --summary-outliers 0")
+    output = torch.empty(
+        q.shape[0],
+        q.shape[2],
+        q.shape[1],
+        summaries.num_blocks,
+        device=q.device,
+        dtype=torch.float32,
+    )
+    return (
+        _time_call(
+            lambda: gate0_summary_scan_triton(
+                q,
+                summaries.centroid,
+                summaries.radius,
+                scale=scale,
+                blocks_per_program=args.blocks_per_program,
+                output=output,
+            ),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        ),
+        "triton",
+    )
 
 
 def _analyze_bounds(
@@ -312,11 +361,14 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
     summaries = build_fn()
     _sync(device)
 
-    summary_scan_ms = _time_call(
-        lambda: _scan_summary(q_bhsd, summaries, scale=scale),
+    summary_scan_ms, actual_scan_backend = _time_summary_scan(
+        args,
+        q,
+        q_bhsd,
+        summaries,
+        scale=scale,
+        outliers=outliers,
         device=device,
-        warmup=args.warmup,
-        iters=args.iters,
     )
     full_qk_scan_ms = _time_call(
         lambda: _scan_full_qk(q_bhsd, k_bhnd, block_size=block_size, scale=scale),
@@ -368,6 +420,9 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
         "rope_mode": args.rope_mode,
         "error_budget": args.error_budget,
         "summary_build_ms": summary_build_ms,
+        "requested_scan_backend": args.scan_backend,
+        "scan_backend": actual_scan_backend,
+        "blocks_per_program": args.blocks_per_program,
         "summary_scan_ms": summary_scan_ms,
         "full_qk_scan_ms": full_qk_scan_ms,
         "summary_scan_over_qk": summary_scan_over_qk,
@@ -392,6 +447,8 @@ def main() -> None:
     parser.add_argument("--active-fraction", nargs="+", default=["0.0625", "0.125", "0.25", "1.0"])
     parser.add_argument("--block-size", nargs="+", default=["64", "128"])
     parser.add_argument("--summary-outliers", nargs="+", default=["0", "1", "2", "4"])
+    parser.add_argument("--scan-backend", choices=["torch", "triton"], default="torch")
+    parser.add_argument("--blocks-per-program", nargs="+", default=["32"])
     parser.add_argument("--rope-mode", choices=["none"], default="none")
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
@@ -412,19 +469,23 @@ def main() -> None:
     active_fractions = _parse_values(args.active_fraction, float)
     block_sizes = _parse_values(args.block_size, int)
     outlier_values = _parse_values(args.summary_outliers, int)
+    blocks_per_program_values = _parse_values(args.blocks_per_program, int)
 
     rows = []
-    for kv_len, heads, active_fraction, block_size, outliers in itertools.product(
+    for kv_len, heads, active_fraction, block_size, outliers, blocks_per_program in itertools.product(
         kv_lens,
         heads_values,
         active_fractions,
         block_sizes,
         outlier_values,
+        blocks_per_program_values,
     ):
+        run_args = argparse.Namespace(**vars(args))
+        run_args.blocks_per_program = blocks_per_program
         try:
             rows.append(
                 _profile_one(
-                    args,
+                    run_args,
                     kv_len=kv_len,
                     heads=heads,
                     active_fraction=active_fraction,
@@ -446,6 +507,7 @@ def main() -> None:
                         "attention_type": "mha",
                     },
                     "block_size": block_size,
+                    "blocks_per_program": blocks_per_program,
                     "pattern": args.pattern,
                     "requested_active_fraction": active_fraction,
                     "num_summary_outliers": outliers,
