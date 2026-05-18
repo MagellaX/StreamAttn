@@ -37,6 +37,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "tensor_source": row.get("tensor_source"),
             "tensor_space": row.get("tensor_space"),
             "model_id": row.get("model_id"),
+            "prompt_type": row.get("prompt_type"),
             "layer_id": row.get("layer_id"),
             "head_id": row.get("head_id"),
             "real_case": row.get("real_case"),
@@ -58,6 +59,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "tensor_source": row.get("tensor_source"),
         "tensor_space": row.get("tensor_space"),
         "model_id": row.get("model_id"),
+        "prompt_type": row.get("prompt_type"),
         "layer_id": row.get("layer_id"),
         "head_id": row.get("head_id"),
         "real_case": row.get("real_case"),
@@ -115,6 +117,7 @@ def _case_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("tensor_source"),
         row.get("tensor_space"),
         row.get("model_id"),
+        row.get("prompt_type"),
         row.get("layer_id"),
         row.get("head_id"),
         row.get("query_len"),
@@ -133,6 +136,7 @@ def _ordering_baseline_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("tensor_source"),
         row.get("tensor_space"),
         row.get("model_id"),
+        row.get("prompt_type"),
         row.get("layer_id"),
         row.get("head_id"),
         row.get("query_len"),
@@ -176,6 +180,7 @@ def _sort_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     return (
         str(row.get("tensor_source")),
         str(row.get("model_id")),
+        str(row.get("prompt_type")),
         row.get("layer_id") if row.get("layer_id") is not None else -1,
         row.get("head_id") if row.get("head_id") is not None else -9999,
         row.get("query_len") or -1,
@@ -219,6 +224,7 @@ def _score(row: Dict[str, Any]) -> Tuple[float, float, float, float]:
 def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
     headers = [
         "src",
+        "prompt",
         "layer",
         "head",
         "N",
@@ -253,6 +259,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                 " ".join(
                     [
                         f"{_fmt(row.get('tensor_source')):>9}",
+                        f"{_fmt(row.get('prompt_type')):>9}",
                         f"{_fmt(row.get('layer_id')):>9}",
                         f"{_fmt(row.get('head_id')):>9}",
                         f"{_fmt(row.get('kv_len')):>9}",
@@ -286,6 +293,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
             " ".join(
                 [
                     f"{_fmt(row.get('tensor_source')):>9}",
+                    f"{_fmt(row.get('prompt_type')):>9}",
                     f"{_fmt(row.get('layer_id')):>9}",
                     f"{_fmt(row.get('head_id')):>9}",
                     f"{_fmt(row.get('kv_len')):>9}",

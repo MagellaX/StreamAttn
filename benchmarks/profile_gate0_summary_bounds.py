@@ -305,7 +305,7 @@ def _time_summary_scan(args, q: torch.Tensor, q_bhsd: torch.Tensor, summaries, *
         raise RuntimeError("Triton Gate-0 scan backend is not available")
     if device.type != "cuda":
         raise RuntimeError("Triton Gate-0 scan backend requires CUDA")
-    if outliers != 0:
+    if outliers not in (0, 2):
         return (
             _time_call(
                 lambda: _scan_summary(q_bhsd, summaries, scale=scale),
@@ -314,6 +314,35 @@ def _time_summary_scan(args, q: torch.Tensor, q_bhsd: torch.Tensor, summaries, *
                 iters=args.iters,
             ),
             "torch_outlier_fallback",
+        )
+    if outliers == 2:
+        if summaries.outlier_keys is None or summaries.outlier_mask is None:
+            raise RuntimeError("outlier2 summaries are missing outlier tensors")
+        output = torch.empty(
+            q.shape[0],
+            q.shape[2],
+            q.shape[1],
+            summaries.num_blocks,
+            device=q.device,
+            dtype=torch.float32,
+        )
+        return (
+            _time_call(
+                lambda: gate0_summary_scan_triton(
+                    q,
+                    summaries.centroid,
+                    summaries.radius,
+                    outlier_keys=summaries.outlier_keys,
+                    outlier_mask=summaries.outlier_mask,
+                    scale=scale,
+                    blocks_per_program=args.blocks_per_program,
+                    output=output,
+                ),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            ),
+            "triton_outlier2",
         )
     output = torch.empty(
         q.shape[0],

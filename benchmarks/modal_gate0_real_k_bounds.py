@@ -54,6 +54,7 @@ def _run(
     *,
     model: str,
     prompt: str,
+    prompt_type: str,
     layers: str,
     max_seq: int,
     kv_len: int,
@@ -66,6 +67,7 @@ def _run(
     block_size: str,
     summary_outliers: str,
     block_order: str,
+    head_indices: str,
     scan_backend: str,
     blocks_per_program: str,
     error_budget: str,
@@ -157,17 +159,22 @@ def _run(
                 "--iters",
                 str(iters),
             ]
+            if head_indices:
+                profile_cmd.extend(["--head-indices", head_indices])
             if captured.get("v_path"):
                 profile_cmd.extend(["--v-path", captured["v_path"]])
             try:
                 profile_payload = _json_from_cmd(profile_cmd, env=env)
-                rows.extend(profile_payload.get("rows", []))
+                for row in profile_payload.get("rows", []):
+                    row["prompt_type"] = prompt_type
+                    rows.append(row)
             except Exception as exc:
                 profile_errors.append(
                     {
                         "error": f"{type(exc).__name__}: {exc}",
                         "model_id": model,
                         "layer_id": captured.get("layer_id"),
+                        "prompt_type": prompt_type,
                         "error_budget": budget,
                         "q_path": captured.get("q_path"),
                         "k_path": captured.get("k_path"),
@@ -176,6 +183,7 @@ def _run(
 
     return {
         "model_id": model,
+        "prompt_type": prompt_type,
         "tensor_space": tensor_space,
         "capture": capture_payload,
         "profile_errors": profile_errors,
@@ -198,6 +206,8 @@ def main(
     target: str = "h100",
     model: str = "HuggingFaceTB/SmolLM2-135M-Instruct",
     prompt: str = "A long technical note about attention kernels, cached KV metadata, online softmax, block summaries, sparse decode routing, and retrieval over long documents. ",
+    prompt_file: str = "",
+    prompt_type: str = "default",
     prompt_repeat: int = 256,
     layers: str = "0,4,8,12",
     max_seq: int = 4096,
@@ -211,6 +221,7 @@ def main(
     block_size: str = "64,128",
     summary_outliers: str = "0,1,2,4",
     block_order: str = "sequential,recent_first,sink_recent_first,summary_desc",
+    head_indices: str = "",
     scan_backend: str = "triton",
     blocks_per_program: str = "16,32,64",
     error_budget: str = "1e-3",
@@ -219,10 +230,13 @@ def main(
     output_json: str = "",
     print_full_json: bool = False,
 ):
+    if prompt_file:
+        prompt = Path(prompt_file).read_text(encoding="utf-8")
     prompt = prompt * max(1, prompt_repeat)
     kwargs = {
         "model": model,
         "prompt": prompt,
+        "prompt_type": prompt_type,
         "layers": layers,
         "max_seq": max_seq,
         "kv_len": kv_len,
@@ -235,6 +249,7 @@ def main(
         "block_size": block_size,
         "summary_outliers": summary_outliers,
         "block_order": block_order,
+        "head_indices": head_indices,
         "scan_backend": scan_backend,
         "blocks_per_program": blocks_per_program,
         "error_budget": error_budget,
@@ -255,6 +270,7 @@ def main(
         path.write_text(text + "\n", encoding="utf-8")
     summary = {
         "model_id": result.get("model_id"),
+        "prompt_type": result.get("prompt_type"),
         "tensor_space": result.get("tensor_space"),
         "captured_layers": len(result.get("capture", {}).get("rows", [])),
         "rows": len(result.get("rows", [])),
