@@ -88,7 +88,7 @@ def _make_pattern(
     peak: float,
     sink_blocks: int,
     recent_blocks: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, List[int]]:
     q = torch.zeros(batch, query_len, heads, dim, device=device, dtype=dtype)
     k = torch.zeros(batch, kv_len, heads, dim, device=device, dtype=dtype)
     v = torch.randn(batch, kv_len, heads, dim, device=device, dtype=dtype)
@@ -97,7 +97,7 @@ def _make_pattern(
         q = torch.randn_like(q)
         k = torch.randn_like(k)
         _, num_blocks = _active_blocks(kv_len, block_size, active_fraction)
-        return q, k, v, 1.0 if num_blocks else 0.0
+        return q, k, v, 1.0 if num_blocks else 0.0, list(range(num_blocks))
 
     q[..., 0] = peak
     k[..., 0] = -peak
@@ -124,7 +124,7 @@ def _make_pattern(
             k[:, start:end, :, 0] = peak
 
     actual_active = len(set(active_block_ids)) / num_blocks if num_blocks else 0.0
-    return q, k, v, actual_active
+    return q, k, v, actual_active, sorted(set(active_block_ids))
 
 
 def _quantile(values: torch.Tensor, q: float) -> float:
@@ -214,6 +214,46 @@ def _time_summary_scan(args, q: torch.Tensor, q_bhsd: torch.Tensor, summaries, *
     )
 
 
+def _dedup_order(blocks: Iterable[int], *, num_blocks: int) -> List[int]:
+    seen = set()
+    order = []
+    for block_idx in blocks:
+        if 0 <= block_idx < num_blocks and block_idx not in seen:
+            seen.add(block_idx)
+            order.append(block_idx)
+    return order
+
+
+def _resolve_block_order(
+    args,
+    *,
+    q_bhsd: torch.Tensor,
+    summaries,
+    active_block_ids: List[int],
+    scale: float,
+) -> List[int]:
+    num_blocks = summaries.num_blocks
+    if args.block_order == "sequential":
+        return list(range(num_blocks))
+    if args.block_order == "recent_first":
+        return list(reversed(range(num_blocks)))
+    if args.block_order == "sink_recent_first":
+        sink = list(range(min(args.sink_blocks, num_blocks)))
+        recent_start = max(0, num_blocks - min(args.recent_blocks, num_blocks))
+        recent = list(range(recent_start, num_blocks))
+        rest = list(range(num_blocks))
+        return _dedup_order([*sink, *reversed(recent), *rest], num_blocks=num_blocks)
+    if args.block_order == "oracle_active_first":
+        return _dedup_order([*active_block_ids, *range(num_blocks)], num_blocks=num_blocks)
+    if args.block_order == "summary_desc":
+        scores = []
+        for block_idx in range(num_blocks):
+            upper = block_score_upper_bound(q_bhsd, summaries, block_idx, scale=scale)
+            scores.append((float(upper.mean().item()), block_idx))
+        return [block_idx for _, block_idx in sorted(scores, reverse=True)]
+    raise ValueError(f"unknown block order: {args.block_order}")
+
+
 def _analyze_bounds(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -222,6 +262,7 @@ def _analyze_bounds(
     block_size: int,
     error_budget: float,
     bound_tolerance: float,
+    block_order: List[int],
 ) -> dict:
     batch, query_len, heads, dim = q.shape
     seq_k = k.shape[1]
@@ -247,7 +288,7 @@ def _analyze_bounds(
     unsafe_bound_count = 0
     gap_values = []
 
-    for block_idx in range(summaries.num_blocks):
+    for block_idx in block_order:
         start = block_idx * block_size
         end = min(start + block_size, seq_k)
         block_len = int(summaries.block_lengths[block_idx].item())
@@ -327,7 +368,7 @@ def _analyze_bounds(
 def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block_size: int, outliers: int) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     dtype = _dtype(args.dtype)
-    q, k, v, block_active = _make_pattern(
+    q, k, v, block_active, active_block_ids = _make_pattern(
         batch=args.batch,
         query_len=args.query_len,
         kv_len=kv_len,
@@ -360,6 +401,13 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
     )
     summaries = build_fn()
     _sync(device)
+    block_order = _resolve_block_order(
+        args,
+        q_bhsd=q_bhsd,
+        summaries=summaries,
+        active_block_ids=active_block_ids,
+        scale=scale,
+    )
 
     summary_scan_ms, actual_scan_backend = _time_summary_scan(
         args,
@@ -383,6 +431,7 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
         block_size=block_size,
         error_budget=args.error_budget,
         bound_tolerance=args.bound_tolerance,
+        block_order=block_order,
     )
 
     estimated_gate0_qk_ms = summary_scan_ms + metrics["predicted_compute_fraction"] * full_qk_scan_ms
@@ -413,6 +462,8 @@ def _profile_one(args, *, kv_len: int, heads: int, active_fraction: float, block
         "block_size": block_size,
         "num_blocks": summaries.num_blocks,
         "pattern": args.pattern,
+        "block_order": args.block_order,
+        "active_block_ids": active_block_ids,
         "requested_active_fraction": active_fraction,
         "block_quantized_active_fraction": block_active,
         "summary_type": summary_type,
@@ -449,6 +500,11 @@ def main() -> None:
     parser.add_argument("--summary-outliers", nargs="+", default=["0", "1", "2", "4"])
     parser.add_argument("--scan-backend", choices=["torch", "triton"], default="torch")
     parser.add_argument("--blocks-per-program", nargs="+", default=["32"])
+    parser.add_argument(
+        "--block-order",
+        nargs="+",
+        default=["sequential"],
+    )
     parser.add_argument("--rope-mode", choices=["none"], default="none")
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
@@ -470,18 +526,21 @@ def main() -> None:
     block_sizes = _parse_values(args.block_size, int)
     outlier_values = _parse_values(args.summary_outliers, int)
     blocks_per_program_values = _parse_values(args.blocks_per_program, int)
+    block_orders = _parse_values(args.block_order, str)
 
     rows = []
-    for kv_len, heads, active_fraction, block_size, outliers, blocks_per_program in itertools.product(
+    for kv_len, heads, active_fraction, block_size, outliers, blocks_per_program, block_order in itertools.product(
         kv_lens,
         heads_values,
         active_fractions,
         block_sizes,
         outlier_values,
         blocks_per_program_values,
+        block_orders,
     ):
         run_args = argparse.Namespace(**vars(args))
         run_args.blocks_per_program = blocks_per_program
+        run_args.block_order = block_order
         try:
             rows.append(
                 _profile_one(
@@ -508,6 +567,7 @@ def main() -> None:
                     },
                     "block_size": block_size,
                     "blocks_per_program": blocks_per_program,
+                    "block_order": block_order,
                     "pattern": args.pattern,
                     "requested_active_fraction": active_fraction,
                     "num_summary_outliers": outliers,
