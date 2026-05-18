@@ -48,6 +48,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "block_order": row.get("block_order"),
             "pattern": row.get("pattern"),
             "requested_active_fraction": row.get("requested_active_fraction"),
+            "error_budget": row.get("error_budget"),
             "num_summary_outliers": row.get("num_summary_outliers"),
             "blocks_per_program": row.get("blocks_per_program"),
         }
@@ -70,6 +71,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "num_blocks": row.get("num_blocks"),
         "pattern": row.get("pattern"),
         "requested_active_fraction": row.get("requested_active_fraction"),
+        "error_budget": row.get("error_budget"),
         "block_quantized_active_fraction": row.get("block_quantized_active_fraction"),
         "summary_type": row.get("summary_type"),
         "num_summary_outliers": row.get("num_summary_outliers"),
@@ -122,6 +124,7 @@ def _case_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("block_size"),
         row.get("pattern"),
         row.get("requested_active_fraction"),
+        row.get("error_budget"),
     )
 
 
@@ -139,6 +142,7 @@ def _ordering_baseline_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("block_size"),
         row.get("pattern"),
         row.get("requested_active_fraction"),
+        row.get("error_budget"),
         row.get("num_summary_outliers"),
         row.get("scan_backend"),
         row.get("blocks_per_program"),
@@ -179,6 +183,7 @@ def _sort_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("heads") or -1,
         row.get("block_size") or -1,
         row.get("requested_active_fraction") or -1,
+        row.get("error_budget") or -1,
         row.get("blocks_per_program") or -1,
         str(row.get("pattern")),
         str(row.get("block_order")),
@@ -220,6 +225,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "H",
         "B",
         "a",
+        "eps",
         "pattern",
         "order",
         "out",
@@ -253,6 +259,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                         f"{_fmt(row.get('heads')):>9}",
                         f"{_fmt(row.get('block_size')):>9}",
                         f"{_fmt(row.get('requested_active_fraction')):>9}",
+                        f"{_fmt(row.get('error_budget')):>9}",
                         f"{_fmt(row.get('pattern')):>9}",
                         f"{_fmt(row.get('block_order')):>9}",
                         f"{_fmt(row.get('num_summary_outliers')):>9}",
@@ -285,6 +292,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('heads')):>9}",
                     f"{_fmt(row.get('block_size')):>9}",
                     f"{_fmt(row.get('requested_active_fraction')):>9}",
+                    f"{_fmt(row.get('error_budget')):>9}",
                     f"{_fmt(row.get('pattern')):>9}",
                     f"{_fmt(row.get('block_order')):>9}",
                     f"{_fmt(row.get('num_summary_outliers')):>9}",

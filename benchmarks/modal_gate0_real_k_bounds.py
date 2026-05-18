@@ -31,6 +31,15 @@ image = (
 )
 
 
+def _parse_csv(raw: str) -> list[str]:
+    values = []
+    for item in str(raw).split(","):
+        item = item.strip()
+        if item:
+            values.append(item)
+    return values
+
+
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict:
     output = subprocess.check_output(
         cmd,
@@ -59,6 +68,7 @@ def _run(
     block_order: str,
     scan_backend: str,
     blocks_per_program: str,
+    error_budget: str,
     warmup: int,
     iters: int,
 ):
@@ -111,54 +121,58 @@ def _run(
         if captured.get("skipped"):
             profile_errors.append(captured)
             continue
-        profile_cmd = [
-            "python",
-            "/root/StreamAttn/benchmarks/profile_gate0_summary_bounds.py",
-            "--q-path",
-            captured["q_path"],
-            "--k-path",
-            captured["k_path"],
-            "--tensor-format",
-            "pt",
-            "--tensor-space",
-            captured["tensor_space"],
-            "--model-id",
-            model,
-            "--layer-id",
-            str(captured["layer_id"]),
-            "--per-head",
-            "--block-size",
-            block_size,
-            "--summary-outliers",
-            summary_outliers,
-            "--block-order",
-            block_order,
-            "--scan-backend",
-            scan_backend,
-            "--blocks-per-program",
-            blocks_per_program,
-            "--dtype",
-            dtype,
-            "--warmup",
-            str(warmup),
-            "--iters",
-            str(iters),
-        ]
-        if captured.get("v_path"):
-            profile_cmd.extend(["--v-path", captured["v_path"]])
-        try:
-            profile_payload = _json_from_cmd(profile_cmd, env=env)
-            rows.extend(profile_payload.get("rows", []))
-        except Exception as exc:
-            profile_errors.append(
-                {
-                    "error": f"{type(exc).__name__}: {exc}",
-                    "model_id": model,
-                    "layer_id": captured.get("layer_id"),
-                    "q_path": captured.get("q_path"),
-                    "k_path": captured.get("k_path"),
-                }
-            )
+        for budget in _parse_csv(error_budget):
+            profile_cmd = [
+                "python",
+                "/root/StreamAttn/benchmarks/profile_gate0_summary_bounds.py",
+                "--q-path",
+                captured["q_path"],
+                "--k-path",
+                captured["k_path"],
+                "--tensor-format",
+                "pt",
+                "--tensor-space",
+                captured["tensor_space"],
+                "--model-id",
+                model,
+                "--layer-id",
+                str(captured["layer_id"]),
+                "--per-head",
+                "--block-size",
+                block_size,
+                "--summary-outliers",
+                summary_outliers,
+                "--block-order",
+                block_order,
+                "--scan-backend",
+                scan_backend,
+                "--blocks-per-program",
+                blocks_per_program,
+                "--dtype",
+                dtype,
+                "--error-budget",
+                budget,
+                "--warmup",
+                str(warmup),
+                "--iters",
+                str(iters),
+            ]
+            if captured.get("v_path"):
+                profile_cmd.extend(["--v-path", captured["v_path"]])
+            try:
+                profile_payload = _json_from_cmd(profile_cmd, env=env)
+                rows.extend(profile_payload.get("rows", []))
+            except Exception as exc:
+                profile_errors.append(
+                    {
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "model_id": model,
+                        "layer_id": captured.get("layer_id"),
+                        "error_budget": budget,
+                        "q_path": captured.get("q_path"),
+                        "k_path": captured.get("k_path"),
+                    }
+                )
 
     return {
         "model_id": model,
@@ -199,9 +213,11 @@ def main(
     block_order: str = "sequential,recent_first,sink_recent_first,summary_desc",
     scan_backend: str = "triton",
     blocks_per_program: str = "16,32,64",
+    error_budget: str = "1e-3",
     warmup: int = 1,
     iters: int = 3,
     output_json: str = "",
+    print_full_json: bool = False,
 ):
     prompt = prompt * max(1, prompt_repeat)
     kwargs = {
@@ -221,6 +237,7 @@ def main(
         "block_order": block_order,
         "scan_backend": scan_backend,
         "blocks_per_program": blocks_per_program,
+        "error_budget": error_budget,
         "warmup": warmup,
         "iters": iters,
     }
@@ -236,7 +253,15 @@ def main(
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-    print(text)
+    summary = {
+        "model_id": result.get("model_id"),
+        "tensor_space": result.get("tensor_space"),
+        "captured_layers": len(result.get("capture", {}).get("rows", [])),
+        "rows": len(result.get("rows", [])),
+        "profile_errors": len(result.get("profile_errors", [])),
+        "output_json": output_json or None,
+    }
+    print(json.dumps(result if print_full_json else summary, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
