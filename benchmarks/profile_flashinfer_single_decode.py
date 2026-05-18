@@ -335,6 +335,11 @@ def _profile_one(args, *, kv_len: int, heads: int, kv_heads: int, active_fractio
         if flashinfer_tc_ms is not None and flashinfer_tc_ms <= flashinfer_ms
         else "flashinfer_single"
     )
+    streamattn_oracle_wins = stream_oracle_ms < best_flashinfer_ms
+    streamattn_wrapper_wins = (
+        wrapper_ms is not None and wrapper_ms < best_flashinfer_ms
+    )
+    fair_mha_comparison = args.attention_type == "mha" and logical_kv_heads == heads
     return {
         "device": torch.cuda.get_device_name(0),
         "torch_version": torch.__version__,
@@ -378,9 +383,11 @@ def _profile_one(args, *, kv_len: int, heads: int, kv_heads: int, active_fractio
         "streamattn_wrapper_reason": wrapper_reason,
         "streamattn_oracle_backend": stream_oracle_backend,
         "streamattn_oracle_ms": stream_oracle_ms,
+        "streamattn_oracle_wins": streamattn_oracle_wins,
         "streamattn_oracle_vs_flashinfer_speedup": (
             best_flashinfer_ms / stream_oracle_ms if stream_oracle_ms > 0.0 else None
         ),
+        "streamattn_wrapper_wins": streamattn_wrapper_wins,
         "streamattn_wrapper_vs_flashinfer_speedup": (
             best_flashinfer_ms / wrapper_ms if wrapper_ms is not None and wrapper_ms > 0.0 else None
         ),
@@ -397,6 +404,12 @@ def _profile_one(args, *, kv_len: int, heads: int, kv_heads: int, active_fractio
             _error_metrics(flashinfer_tc_out, dense_out)
             if flashinfer_tc_out is not None
             else None
+        ),
+        "fair_mha_comparison": fair_mha_comparison,
+        "comparison_note": (
+            "fair_mha"
+            if fair_mha_comparison
+            else "gqa_mqa_not_fair_streamattn_expands_kv"
         ),
     }
 
@@ -456,8 +469,6 @@ def main() -> None:
         _parse_values(args.kv_heads, int),
         _parse_values(args.active_fraction, float),
     ):
-        if args.attention_type == "mha" and kv_heads != heads:
-            continue
         if args.attention_type == "mqa" and kv_heads != 1:
             continue
         try:
