@@ -99,6 +99,7 @@ def _summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
                 "chunk_anchor_blocks": row.get("chunk_anchor_blocks"),
                 "num_chunks": row.get("num_chunks"),
                 "splitk_ms": row.get("splitk_ms"),
+                "splitk_breakdown": row.get("splitk_breakdown"),
                 "splitk_vs_dense_speedup": row.get("splitk_vs_dense_speedup"),
                 "splitk_vs_serial_speedup": row.get("splitk_vs_serial_speedup"),
                 "projection_skip_fraction": projection_skip,
@@ -165,6 +166,7 @@ def _run(
     projection_seeds: str,
     projection_metadata_dtype: str,
     qproj_mode: str,
+    splitk_breakdown: bool,
     filter_margin: float,
     filter_margins: str,
     error_budget: float,
@@ -289,6 +291,8 @@ def _run(
                 "--iters",
                 str(iters),
             ]
+            if splitk_breakdown:
+                profile_cmd.append("--splitk-breakdown")
             if is_group:
                 profile_cmd.extend(["--head-indices", current_group])
             else:
@@ -336,6 +340,7 @@ def _run(
             "projection_seeds": projection_seeds,
             "projection_metadata_dtype": projection_metadata_dtype,
             "qproj_mode": qproj_mode,
+            "splitk_breakdown": splitk_breakdown,
         },
         "summary": _summarize_results(results),
         "results": results,
@@ -383,6 +388,7 @@ def main(
     projection_seeds: str = "0",
     projection_metadata_dtype: str = "fp16",
     qproj_mode: str = "fused",
+    splitk_breakdown: bool = False,
     filter_margin: float = 32.0,
     filter_margins: str = "",
     error_budget: float = 1e-2,
@@ -420,6 +426,7 @@ def main(
         "projection_seeds": projection_seeds,
         "projection_metadata_dtype": projection_metadata_dtype,
         "qproj_mode": qproj_mode,
+        "splitk_breakdown": splitk_breakdown,
         "filter_margin": filter_margin,
         "filter_margins": filter_margins,
         "error_budget": error_budget,

@@ -317,6 +317,7 @@ def _grouped_profiles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "max_abs_error": _max_error(row),
                 "mean_abs_error": _mean_error(row),
                 "splitk_total_ms": splitk_ms,
+                "splitk_breakdown": row.get("splitk_breakdown"),
                 "dense_ms": dense_ms,
                 "splitk_speedup_vs_dense": dense_ms / splitk_ms if splitk_ms > 0 else None,
             }
@@ -379,9 +380,10 @@ def _print_layers(rows: List[Dict[str, Any]], *, limit: int) -> None:
 def _print_groups(rows: List[Dict[str, Any]], *, limit: int) -> None:
     if not rows:
         return
-    headers = ["heads", "chunks", "margin", "skip", "err", "splitk", "dense", "speed"]
+    headers = ["heads", "chunks", "margin", "skip", "err", "splitk", "dense", "speed", "chunk", "merge"]
     print(" ".join(f"{header:>10}" for header in headers))
     for row in rows[:limit]:
+        breakdown = row.get("splitk_breakdown") or {}
         print(
             " ".join(
                 [
@@ -393,6 +395,8 @@ def _print_groups(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('splitk_total_ms')):>10}",
                     f"{_fmt(row.get('dense_ms')):>10}",
                     f"{_fmt(row.get('splitk_speedup_vs_dense')):>10}",
+                    f"{_fmt(breakdown.get('chunk_full_ms')):>10}",
+                    f"{_fmt(breakdown.get('merge_ms')):>10}",
                 ]
             )
         )

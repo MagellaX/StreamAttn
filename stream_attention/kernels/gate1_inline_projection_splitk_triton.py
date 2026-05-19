@@ -343,6 +343,7 @@ if TRITON_AVAILABLE:
         COMPUTE_QPROJ: tl.constexpr,
         PV_USE_BF16: tl.constexpr,
         HAS_STATS: tl.constexpr,
+        DEBUG_MODE: tl.constexpr,
     ):
         off_b = tl.program_id(0)
         off_h = tl.program_id(1)
@@ -429,7 +430,8 @@ if TRITON_AVAILABLE:
         pv_executed = tl.zeros([], dtype=tl.int32)
         middle_seen = tl.zeros([], dtype=tl.int32)
 
-        for local_idx in range(0, CHUNK_BLOCKS):
+        if DEBUG_MODE != 1:  # seed_only
+          for local_idx in range(0, CHUNK_BLOCKS):
             logical = off_c * CHUNK_BLOCKS + local_idx
             valid_block = logical < (RECENT_START - SINK_BLOCKS - MIDDLE_SEED_BLOCKS)
             if BLOCK_ORDER == 0:  # sequential
@@ -467,40 +469,11 @@ if TRITON_AVAILABLE:
             else:
                 if valid_block:
                     projection_computed += 1
-                offs_n = start_n + tl.arange(0, TILE_N)
-                col_mask = (tl.arange(0, TILE_N) < block_len_i) & valid_block
-                k_tile = tl.load(
-                    K
-                    + off_b * N * H * D
-                    + offs_n[:, None] * H * D
-                    + off_h * D
-                    + offs_d[None, :],
-                    mask=col_mask[:, None],
-                    other=0.0,
-                )
-                qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
-                qk = tl.where(col_mask, qk, -float("inf"))
-                tile_max = tl.max(qk, axis=0)
-                post_qk_skip = (
-                    valid_block
-                    & (~is_anchor)
-                    & (seed_den > 0.0)
-                    & (ERROR_BUDGET > 0.0)
-                    & (tile_max + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET)
-                )
-                if post_qk_skip:
-                    gate1_post_qk_skipped += 1
-                else:
-                    tile_valid = tile_max > -float("inf")
-                    prev_valid = acc_den > 0.0
-                    new_valid = prev_valid | tile_valid
-                    new_max = tl.maximum(running_max, tile_max)
-                    safe_new_max = tl.where(new_valid, new_max, 0.0)
-                    correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
-                    p = tl.exp(qk - safe_new_max)
-                    p = tl.where(qk > -float("inf"), p, 0.0)
-                    v_tile = tl.load(
-                        V
+                if DEBUG_MODE != 2:  # projection_only
+                    offs_n = start_n + tl.arange(0, TILE_N)
+                    col_mask = (tl.arange(0, TILE_N) < block_len_i) & valid_block
+                    k_tile = tl.load(
+                        K
                         + off_b * N * H * D
                         + offs_n[:, None] * H * D
                         + off_h * D
@@ -508,14 +481,47 @@ if TRITON_AVAILABLE:
                         mask=col_mask[:, None],
                         other=0.0,
                     )
-                    if PV_USE_BF16:
-                        weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+                    qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+                    qk = tl.where(col_mask, qk, -float("inf"))
+                    tile_max = tl.max(qk, axis=0)
+                    post_qk_skip = (
+                        valid_block
+                        & (~is_anchor)
+                        & (seed_den > 0.0)
+                        & (ERROR_BUDGET > 0.0)
+                        & (tile_max + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET)
+                    )
+                    if post_qk_skip:
+                        gate1_post_qk_skipped += 1
                     else:
-                        weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
-                    acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
-                    acc_den = acc_den * correction + tl.sum(p, axis=0)
-                    running_max = tl.where(new_valid, new_max, running_max)
-                    pv_executed += tl.where(valid_block, 1, 0)
+                        if DEBUG_MODE == 3:  # no_pv
+                            pv_executed += tl.where(valid_block, 1, 0)
+                        else:
+                            tile_valid = tile_max > -float("inf")
+                            prev_valid = acc_den > 0.0
+                            new_valid = prev_valid | tile_valid
+                            new_max = tl.maximum(running_max, tile_max)
+                            safe_new_max = tl.where(new_valid, new_max, 0.0)
+                            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+                            p = tl.exp(qk - safe_new_max)
+                            p = tl.where(qk > -float("inf"), p, 0.0)
+                            v_tile = tl.load(
+                                V
+                                + off_b * N * H * D
+                                + offs_n[:, None] * H * D
+                                + off_h * D
+                                + offs_d[None, :],
+                                mask=col_mask[:, None],
+                                other=0.0,
+                            )
+                            if PV_USE_BF16:
+                                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+                            else:
+                                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+                            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+                            acc_den = acc_den * correction + tl.sum(p, axis=0)
+                            running_max = tl.where(new_valid, new_max, running_max)
+                            pv_executed += tl.where(valid_block, 1, 0)
 
         chunk_state = state_base + off_c + 1
         tl.store(ChunkMax + chunk_state, running_max)
@@ -865,6 +871,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             COMPUTE_QPROJ=compute_qproj,
             PV_USE_BF16=value.dtype is torch.bfloat16,
             HAS_STATS=return_raw_stats,
+            DEBUG_MODE=0,
             num_warps=num_warps,
             num_stages=num_stages,
         )

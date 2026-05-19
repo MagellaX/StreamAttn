@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -35,6 +36,7 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
     SPLITK_PROJECTION_STATS,
     gate1_inline_projection_splitk_attention_triton_forward,
 )
+import stream_attention.kernels.gate1_inline_projection_splitk_triton as splitk_triton
 
 
 def _parse_head_indices(raw: str, *, heads: int) -> list[int]:
@@ -108,6 +110,121 @@ def _summarize_splitk_stats_per_head(raw_stats: Optional[torch.Tensor]):
     }
 
 
+def _time_recompute_seed_breakdown(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    q_proj: Optional[torch.Tensor],
+    projection: torch.Tensor,
+    proj_min: torch.Tensor,
+    proj_max: torch.Tensor,
+    args: argparse.Namespace,
+) -> Dict[str, float]:
+    if args.seed_strategy != "recompute_seed":
+        return {}
+    batch, _seq_q, heads, dim = q.shape
+    seq_k = k.shape[1]
+    rank = projection.shape[0] if args.qproj_mode == "fused" else q_proj.shape[3]  # type: ignore[union-attr]
+    num_blocks = math.ceil(seq_k / args.block_size)
+    if args.sink_blocks + args.recent_blocks > num_blocks:
+        return {}
+    middle_blocks = num_blocks - args.sink_blocks - args.recent_blocks
+    nonseed_middle = middle_blocks - args.middle_seed_blocks
+    if nonseed_middle < 0:
+        return {}
+
+    num_chunks = int(args.num_chunks)
+    total_states = num_chunks + 1
+    chunk_blocks = max(1, math.ceil(nonseed_middle / num_chunks))
+    chunk_anchor_blocks = min(int(args.chunk_anchor_blocks), int(chunk_blocks))
+    chunk_max = torch.empty(batch, heads, total_states, device=q.device, dtype=torch.float32)
+    chunk_den = torch.empty(batch, heads, total_states, device=q.device, dtype=torch.float32)
+    chunk_num = torch.empty(batch, heads, total_states, dim, device=q.device, dtype=torch.float32)
+    output = torch.empty_like(q)
+    raw_stats = torch.empty(1, device=q.device, dtype=torch.int32)
+    score_scale = 1.0 / math.sqrt(dim)
+    projection_score_scale = (float(dim) / float(rank)) * score_scale
+    recent_start = num_blocks - args.recent_blocks
+    q_proj_arg = q_proj if q_proj is not None else projection
+    projection_arg = projection
+    block_order_id = splitk_triton._block_order_id(args.block_order)
+
+    def run_chunk(debug_mode: int):
+        return splitk_triton._chunk_recompute_seed_kernel[(batch, heads, num_chunks)](
+            q,
+            k,
+            v,
+            q_proj_arg,
+            projection_arg,
+            proj_min,
+            proj_max,
+            chunk_max,
+            chunk_den,
+            chunk_num,
+            raw_stats,
+            N=seq_k,
+            H=heads,
+            D=dim,
+            RANK=rank,
+            NUM_BLOCKS=num_blocks,
+            NUM_CHUNKS=num_chunks,
+            CHUNK_BLOCKS=chunk_blocks,
+            TILE_N=args.block_size,
+            SCALE=score_scale,
+            PROJ_SCORE_SCALE=projection_score_scale,
+            ERROR_BUDGET=float(args.error_budget),
+            LOG_ERROR_BUDGET=math.log(max(float(args.error_budget), 1.0e-20)),
+            FILTER_MARGIN=float(args.filter_margin),
+            SINK_BLOCKS=int(args.sink_blocks),
+            RECENT_BLOCKS=int(args.recent_blocks),
+            RECENT_START=int(recent_start),
+            MIDDLE_SEED_BLOCKS=int(args.middle_seed_blocks),
+            CHUNK_ANCHOR_BLOCKS=int(chunk_anchor_blocks),
+            BLOCK_ORDER=block_order_id,
+            COMPUTE_QPROJ=args.qproj_mode == "fused",
+            PV_USE_BF16=v.dtype is torch.bfloat16,
+            HAS_STATS=False,
+            DEBUG_MODE=debug_mode,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )
+
+    def run_merge():
+        return splitk_triton._merge_states_kernel[(batch, heads)](
+            chunk_max,
+            chunk_den,
+            chunk_num,
+            output,
+            H=heads,
+            D=dim,
+            TOTAL_STATES=total_states,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )
+
+    # Populate valid chunk states before timing merge-only.
+    run_chunk(0)
+    _sync(q.device)
+    full_chunk_ms = _time_call(lambda: run_chunk(0), device=q.device, warmup=args.warmup, iters=args.iters)
+    seed_only_ms = _time_call(lambda: run_chunk(1), device=q.device, warmup=args.warmup, iters=args.iters)
+    projection_only_ms = _time_call(lambda: run_chunk(2), device=q.device, warmup=args.warmup, iters=args.iters)
+    no_pv_ms = _time_call(lambda: run_chunk(3), device=q.device, warmup=args.warmup, iters=args.iters)
+    run_chunk(0)
+    _sync(q.device)
+    merge_ms = _time_call(run_merge, device=q.device, warmup=args.warmup, iters=args.iters)
+    return {
+        "chunk_full_ms": full_chunk_ms,
+        "chunk_seed_only_ms": seed_only_ms,
+        "chunk_projection_only_ms": projection_only_ms,
+        "chunk_no_pv_ms": no_pv_ms,
+        "merge_ms": merge_ms,
+        "chunk_plus_merge_ms": full_chunk_ms + merge_ms,
+        "active_qk_pv_estimate_ms": max(0.0, full_chunk_ms - projection_only_ms),
+        "pv_estimate_ms": max(0.0, full_chunk_ms - no_pv_ms),
+        "projection_middle_estimate_ms": max(0.0, projection_only_ms - seed_only_ms),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--q-path", default="")
@@ -142,6 +259,7 @@ def main() -> None:
     parser.add_argument("--qproj-mode", choices=["precomputed", "fused"], default="fused")
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=3)
+    parser.add_argument("--splitk-breakdown", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=50)
@@ -246,6 +364,11 @@ def main() -> None:
             warmup=args.warmup,
             iters=args.iters,
         )
+        splitk_breakdown = (
+            _time_recompute_seed_breakdown(q, k, v, q_proj, projection, proj_min, proj_max, args)
+            if args.splitk_breakdown
+            else None
+        )
 
         dense_out = dense_attention_forward(q, k, v, causal=False)
         serial_out, serial_raw = gate1_inline_projection_attention_triton_forward(
@@ -332,6 +455,7 @@ def main() -> None:
         "serial_total_ms": serial_total_ms,
         "splitk_ms": splitk_ms,
         "splitk_total_ms": splitk_total_ms,
+        "splitk_breakdown": splitk_breakdown,
         "splitk_vs_dense_speedup": dense_ms / splitk_total_ms if splitk_total_ms > 0 else None,
         "splitk_vs_serial_speedup": serial_total_ms / splitk_total_ms if splitk_total_ms > 0 else None,
         "serial_vs_dense_speedup": dense_ms / serial_total_ms if serial_total_ms > 0 else None,
