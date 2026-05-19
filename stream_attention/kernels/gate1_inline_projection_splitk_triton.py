@@ -640,6 +640,56 @@ def _seed_strategy_id(seed_strategy: str) -> int:
     raise ValueError("seed_strategy must be 'separate' or 'recompute_seed'")
 
 
+def _workspace_tensor(
+    workspace: dict[str, torch.Tensor],
+    name: str,
+    shape: Tuple[int, ...],
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    tensor = workspace.get(name)
+    if tensor is None:
+        raise ValueError(f"split-K workspace is missing '{name}'")
+    if tuple(tensor.shape) != tuple(shape) or tensor.device != device or tensor.dtype != dtype:
+        raise ValueError(
+            f"split-K workspace tensor '{name}' has shape={tuple(tensor.shape)} "
+            f"dtype={tensor.dtype} device={tensor.device}; expected shape={shape} "
+            f"dtype={dtype} device={device}"
+        )
+    return tensor
+
+
+def make_splitk_workspace(
+    query: torch.Tensor,
+    *,
+    rank: int,
+    num_chunks: int,
+    seed_strategy: str = "recompute_seed",
+) -> dict[str, torch.Tensor]:
+    """Allocate reusable buffers for split-K inline projection decode."""
+
+    if query.dim() != 4 or query.shape[1] != 1:
+        raise ValueError("query must have shape [batch, 1, heads, dim]")
+    if num_chunks <= 0:
+        raise ValueError("num_chunks must be positive")
+    seed_strategy_id = _seed_strategy_id(seed_strategy)
+    batch, _seq_q, heads, dim = query.shape
+    total_states = num_chunks + 1 if seed_strategy_id == 1 else num_chunks
+    device = query.device
+    return {
+        "output": torch.empty_like(query),
+        "seed_max": torch.empty(batch, heads, device=device, dtype=torch.float32),
+        "seed_den": torch.empty(batch, heads, device=device, dtype=torch.float32),
+        "seed_num": torch.empty(batch, heads, dim, device=device, dtype=torch.float32),
+        "q_proj_out": torch.empty(batch, heads, rank, device=device, dtype=torch.float32),
+        "chunk_max": torch.empty(batch, heads, total_states, device=device, dtype=torch.float32),
+        "chunk_den": torch.empty(batch, heads, total_states, device=device, dtype=torch.float32),
+        "chunk_num": torch.empty(batch, heads, total_states, dim, device=device, dtype=torch.float32),
+        "raw_stats": torch.empty(batch, heads, num_chunks, 8, device=device, dtype=torch.int32),
+    }
+
+
 def gate1_inline_projection_splitk_attention_triton_forward(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -661,6 +711,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     block_order: str = "recent_first",
     seed_strategy: str = "separate",
     return_raw_stats: bool = False,
+    workspace: Optional[dict[str, torch.Tensor]] = None,
     num_warps: int = 4,
     num_stages: int = 3,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -735,20 +786,49 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     nonseed_middle = middle_blocks - middle_seed_blocks
     chunk_blocks = max(1, triton.cdiv(nonseed_middle, num_chunks))
     chunk_anchor_blocks = min(int(chunk_anchor_blocks), int(chunk_blocks))
-    output = torch.empty_like(query)
     total_states = num_chunks + 1 if seed_strategy_id == 1 else num_chunks
-    seed_max = torch.empty(batch, heads, device=query.device, dtype=torch.float32)
-    seed_den = torch.empty(batch, heads, device=query.device, dtype=torch.float32)
-    seed_num = torch.empty(batch, heads, dim, device=query.device, dtype=torch.float32)
-    q_proj_out = torch.empty(batch, heads, rank, device=query.device, dtype=torch.float32)
-    chunk_max = torch.empty(batch, heads, total_states, device=query.device, dtype=torch.float32)
-    chunk_den = torch.empty(batch, heads, total_states, device=query.device, dtype=torch.float32)
-    chunk_num = torch.empty(batch, heads, total_states, dim, device=query.device, dtype=torch.float32)
-    raw_stats = (
-        torch.empty(batch, heads, num_chunks, 8, device=query.device, dtype=torch.int32)
-        if return_raw_stats
-        else torch.empty(1, device=query.device, dtype=torch.int32)
-    )
+    if workspace is None:
+        output = torch.empty_like(query)
+        seed_max = torch.empty(batch, heads, device=query.device, dtype=torch.float32)
+        seed_den = torch.empty(batch, heads, device=query.device, dtype=torch.float32)
+        seed_num = torch.empty(batch, heads, dim, device=query.device, dtype=torch.float32)
+        q_proj_out = torch.empty(batch, heads, rank, device=query.device, dtype=torch.float32)
+        chunk_max = torch.empty(batch, heads, total_states, device=query.device, dtype=torch.float32)
+        chunk_den = torch.empty(batch, heads, total_states, device=query.device, dtype=torch.float32)
+        chunk_num = torch.empty(batch, heads, total_states, dim, device=query.device, dtype=torch.float32)
+        raw_stats = (
+            torch.empty(batch, heads, num_chunks, 8, device=query.device, dtype=torch.int32)
+            if return_raw_stats
+            else torch.empty(1, device=query.device, dtype=torch.int32)
+        )
+    else:
+        output = _workspace_tensor(
+            workspace, "output", tuple(query.shape), device=query.device, dtype=query.dtype
+        )
+        seed_max = _workspace_tensor(
+            workspace, "seed_max", (batch, heads), device=query.device, dtype=torch.float32
+        )
+        seed_den = _workspace_tensor(
+            workspace, "seed_den", (batch, heads), device=query.device, dtype=torch.float32
+        )
+        seed_num = _workspace_tensor(
+            workspace, "seed_num", (batch, heads, dim), device=query.device, dtype=torch.float32
+        )
+        q_proj_out = _workspace_tensor(
+            workspace, "q_proj_out", (batch, heads, rank), device=query.device, dtype=torch.float32
+        )
+        chunk_max = _workspace_tensor(
+            workspace, "chunk_max", (batch, heads, total_states), device=query.device, dtype=torch.float32
+        )
+        chunk_den = _workspace_tensor(
+            workspace, "chunk_den", (batch, heads, total_states), device=query.device, dtype=torch.float32
+        )
+        chunk_num = _workspace_tensor(
+            workspace, "chunk_num", (batch, heads, total_states, dim), device=query.device, dtype=torch.float32
+        )
+        raw_stats = _workspace_tensor(
+            workspace, "raw_stats", (batch, heads, num_chunks, 8), device=query.device, dtype=torch.int32
+        )
 
     score_scale = 1.0 / math.sqrt(dim)
     projection_score_scale = (float(dim) / float(rank)) * score_scale

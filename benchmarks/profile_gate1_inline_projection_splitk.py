@@ -35,6 +35,7 @@ from stream_attention.kernels.gate1_inline_projection_fwd_triton import (
 from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
     SPLITK_PROJECTION_STATS,
     gate1_inline_projection_splitk_attention_triton_forward,
+    make_splitk_workspace,
 )
 import stream_attention.kernels.gate1_inline_projection_splitk_triton as splitk_triton
 
@@ -257,6 +258,7 @@ def main() -> None:
     parser.add_argument("--projection-dim", type=int, default=8)
     parser.add_argument("--projection-metadata-dtype", choices=["fp32", "fp16", "bf16"], default="fp16")
     parser.add_argument("--qproj-mode", choices=["precomputed", "fused"], default="fused")
+    parser.add_argument("--splitk-workspace", choices=["none", "reuse"], default="none")
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=3)
     parser.add_argument("--splitk-breakdown", action="store_true")
@@ -303,6 +305,16 @@ def main() -> None:
         )
         q_projection_ms = 0.0 if args.qproj_mode == "fused" else q_projection_reference_ms
         q_proj = _project_query(q, projection) if args.qproj_mode == "precomputed" else None
+        splitk_workspace = (
+            make_splitk_workspace(
+                q,
+                rank=args.projection_dim,
+                num_chunks=args.num_chunks,
+                seed_strategy=args.seed_strategy,
+            )
+            if args.splitk_workspace == "reuse"
+            else None
+        )
 
         dense_ms = _time_call(
             lambda: dense_attention_forward(q, k, v, causal=False),
@@ -357,6 +369,7 @@ def main() -> None:
                 block_order=args.block_order,
                 seed_strategy=args.seed_strategy,
                 return_raw_stats=False,
+                workspace=splitk_workspace,
                 num_warps=args.num_warps,
                 num_stages=args.num_stages,
             )[0],
@@ -412,6 +425,7 @@ def main() -> None:
             block_order=args.block_order,
             seed_strategy=args.seed_strategy,
             return_raw_stats=True,
+            workspace=splitk_workspace,
             num_warps=args.num_warps,
             num_stages=args.num_stages,
         )
@@ -448,6 +462,7 @@ def main() -> None:
         "projection_seed": args.seed,
         "projection_metadata_dtype": args.projection_metadata_dtype,
         "qproj_mode": args.qproj_mode,
+        "splitk_workspace": args.splitk_workspace,
         "q_projection_ms": q_projection_ms,
         "q_projection_reference_ms": q_projection_reference_ms,
         "dense_ms": dense_ms,

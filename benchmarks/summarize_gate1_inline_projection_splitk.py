@@ -312,6 +312,7 @@ def _grouped_profiles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "num_chunks": row.get("num_chunks"),
                 "projection_dim": row.get("projection_dim"),
                 "projection_seed": row.get("projection_seed"),
+                "splitk_workspace": row.get("splitk_workspace"),
                 "projection_skip_fraction": _projection_skip(row),
                 "pv_executed_fraction": _pv_fraction(row),
                 "max_abs_error": _max_error(row),

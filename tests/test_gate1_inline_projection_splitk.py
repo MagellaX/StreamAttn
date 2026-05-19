@@ -12,6 +12,7 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
     _block_order_id,
     _seed_strategy_id,
     gate1_inline_projection_splitk_attention_triton_forward,
+    make_splitk_workspace,
 )
 from benchmarks.profile_gate1_inline_projection_splitk import _parse_head_indices
 
@@ -37,6 +38,16 @@ def test_splitk_profile_parse_head_indices():
     assert _parse_head_indices("-1", heads=4) == [0, 1, 2, 3]
     with pytest.raises(ValueError, match="outside"):
         _parse_head_indices("4", heads=4)
+
+
+def test_make_splitk_workspace_shapes_cpu():
+    q = torch.empty(1, 1, 3, 64)
+    workspace = make_splitk_workspace(q, rank=8, num_chunks=4, seed_strategy="recompute_seed")
+
+    assert workspace["output"].shape == q.shape
+    assert workspace["chunk_max"].shape == (1, 3, 5)
+    assert workspace["chunk_num"].shape == (1, 3, 5, 64)
+    assert workspace["raw_stats"].shape == (1, 3, 4, 8)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
@@ -112,6 +123,62 @@ def test_splitk_recompute_seed_matches_dense_when_skips_disabled():
     expected = dense_attention_forward(q, k, v, causal=False)
 
     torch.testing.assert_close(actual, expected, rtol=2e-2, atol=2e-2)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
+def test_splitk_workspace_matches_allocating_path_when_skips_disabled():
+    torch.manual_seed(6)
+    q = torch.randn(1, 1, 2, 64, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 256, 2, 64, device="cuda", dtype=torch.float16)
+    v = torch.randn(1, 256, 2, 64, device="cuda", dtype=torch.float16)
+    projection = _projection_matrix(
+        "random",
+        dim=64,
+        rank=8,
+        seed=6,
+        device=torch.device("cuda"),
+    )
+    proj_min, proj_max = _projection_metadata(k, block_size=16, projection=projection, metadata_dtype=torch.float16)
+    q_proj = _project_query(q, projection)
+    workspace = make_splitk_workspace(q, rank=8, num_chunks=4, seed_strategy="recompute_seed")
+
+    allocating, _ = gate1_inline_projection_splitk_attention_triton_forward(
+        q,
+        k,
+        v,
+        q_proj,
+        proj_min,
+        proj_max,
+        num_chunks=4,
+        error_budget=0.0,
+        filter_margin=-1.0e9,
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=2,
+        block_order="recent_first",
+        seed_strategy="recompute_seed",
+    )
+    workspace_out, _ = gate1_inline_projection_splitk_attention_triton_forward(
+        q,
+        k,
+        v,
+        q_proj,
+        proj_min,
+        proj_max,
+        num_chunks=4,
+        error_budget=0.0,
+        filter_margin=-1.0e9,
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=2,
+        block_order="recent_first",
+        seed_strategy="recompute_seed",
+        workspace=workspace,
+    )
+
+    torch.testing.assert_close(workspace_out, allocating, rtol=2e-2, atol=2e-2)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
