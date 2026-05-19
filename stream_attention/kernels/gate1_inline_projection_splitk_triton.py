@@ -19,6 +19,8 @@ Two seed strategies are exposed:
 ``recompute_seed``
     Two kernels: each chunk recomputes the small seed state for its threshold,
     chunk 0 also writes the seed state, then merge combines seed + chunks.
+    Optional chunk-local anchor blocks can be computed exactly before the
+    projection filter so each chunk can use stronger local online state.
 """
 
 from __future__ import annotations
@@ -336,6 +338,7 @@ if TRITON_AVAILABLE:
         RECENT_BLOCKS: tl.constexpr,
         RECENT_START: tl.constexpr,
         MIDDLE_SEED_BLOCKS: tl.constexpr,
+        CHUNK_ANCHOR_BLOCKS: tl.constexpr,
         BLOCK_ORDER: tl.constexpr,
         COMPUTE_QPROJ: tl.constexpr,
         PV_USE_BF16: tl.constexpr,
@@ -446,11 +449,17 @@ if TRITON_AVAILABLE:
                 other=0.0,
             ).to(tl.float32)
             proj_score = tl.sum(q_proj * chosen, axis=0) * PROJ_SCORE_SCALE
+            is_anchor = valid_block & (local_idx < CHUNK_ANCHOR_BLOCKS)
+            local_lse = running_max + tl.log(tl.maximum(acc_den, 1.0e-20))
+            lse_max = tl.maximum(seed_lse, local_lse)
+            combined_lse = lse_max + tl.log(tl.exp(seed_lse - lse_max) + tl.exp(local_lse - lse_max))
+            threshold_lse = tl.where(acc_den > 0.0, combined_lse, seed_lse)
             projection_skip = (
                 valid_block
+                & (~is_anchor)
                 & (seed_den > 0.0)
                 & (ERROR_BUDGET > 0.0)
-                & (proj_score + tl.log(block_len) <= seed_lse + LOG_ERROR_BUDGET + FILTER_MARGIN)
+                & (proj_score + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET + FILTER_MARGIN)
             )
 
             if projection_skip:
@@ -474,9 +483,10 @@ if TRITON_AVAILABLE:
                 tile_max = tl.max(qk, axis=0)
                 post_qk_skip = (
                     valid_block
+                    & (~is_anchor)
                     & (seed_den > 0.0)
                     & (ERROR_BUDGET > 0.0)
-                    & (tile_max + tl.log(block_len) <= seed_lse + LOG_ERROR_BUDGET)
+                    & (tile_max + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET)
                 )
                 if post_qk_skip:
                     gate1_post_qk_skipped += 1
@@ -641,6 +651,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     sink_blocks: int = 2,
     recent_blocks: int = 2,
     middle_seed_blocks: int = 0,
+    chunk_anchor_blocks: int = 0,
     block_order: str = "recent_first",
     seed_strategy: str = "separate",
     return_raw_stats: bool = False,
@@ -678,7 +689,11 @@ def gate1_inline_projection_splitk_attention_triton_forward(
         raise ValueError("sink_blocks and recent_blocks must be non-negative")
     if num_chunks <= 0:
         raise ValueError("num_chunks must be positive")
+    if chunk_anchor_blocks < 0:
+        raise ValueError("chunk_anchor_blocks must be non-negative")
     seed_strategy_id = _seed_strategy_id(seed_strategy)
+    if seed_strategy_id == 0 and chunk_anchor_blocks:
+        raise ValueError("chunk_anchor_blocks requires seed_strategy='recompute_seed'")
 
     query = query.contiguous()
     key = key.contiguous()
@@ -713,6 +728,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
 
     nonseed_middle = middle_blocks - middle_seed_blocks
     chunk_blocks = max(1, triton.cdiv(nonseed_middle, num_chunks))
+    chunk_anchor_blocks = min(int(chunk_anchor_blocks), int(chunk_blocks))
     output = torch.empty_like(query)
     total_states = num_chunks + 1 if seed_strategy_id == 1 else num_chunks
     seed_max = torch.empty(batch, heads, device=query.device, dtype=torch.float32)
@@ -844,6 +860,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             RECENT_BLOCKS=int(recent_blocks),
             RECENT_START=int(recent_start),
             MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+            CHUNK_ANCHOR_BLOCKS=int(chunk_anchor_blocks),
             BLOCK_ORDER=block_order_id,
             COMPUTE_QPROJ=compute_qproj,
             PV_USE_BF16=value.dtype is torch.bfloat16,

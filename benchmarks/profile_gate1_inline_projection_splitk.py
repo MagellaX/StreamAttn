@@ -116,6 +116,7 @@ def main() -> None:
     parser.add_argument("--block-order", choices=["sequential", "recent_first", "sink_recent_first"], default="recent_first")
     parser.add_argument("--num-chunks", type=int, default=4)
     parser.add_argument("--seed-strategy", choices=["separate", "recompute_seed"], default="recompute_seed")
+    parser.add_argument("--chunk-anchor-blocks", type=int, default=0)
     parser.add_argument("--error-budget", type=float, default=1e-2)
     parser.add_argument("--filter-margin", type=float, default=32.0)
     parser.add_argument("--post-qk-threshold", type=float, default=0.0)
@@ -210,6 +211,7 @@ def main() -> None:
                 sink_blocks=args.sink_blocks,
                 recent_blocks=args.recent_blocks,
                 middle_seed_blocks=args.middle_seed_blocks,
+                chunk_anchor_blocks=args.chunk_anchor_blocks,
                 block_order=args.block_order,
                 seed_strategy=args.seed_strategy,
                 return_raw_stats=False,
@@ -259,6 +261,7 @@ def main() -> None:
             sink_blocks=args.sink_blocks,
             recent_blocks=args.recent_blocks,
             middle_seed_blocks=args.middle_seed_blocks,
+            chunk_anchor_blocks=args.chunk_anchor_blocks,
             block_order=args.block_order,
             seed_strategy=args.seed_strategy,
             return_raw_stats=True,
@@ -285,6 +288,7 @@ def main() -> None:
         "sink_blocks": args.sink_blocks,
         "recent_blocks": args.recent_blocks,
         "middle_seed_blocks": args.middle_seed_blocks,
+        "chunk_anchor_blocks": args.chunk_anchor_blocks,
         "block_order": args.block_order,
         "num_chunks": args.num_chunks,
         "seed_strategy": args.seed_strategy,

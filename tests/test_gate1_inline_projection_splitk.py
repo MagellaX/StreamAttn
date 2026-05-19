@@ -106,6 +106,45 @@ def test_splitk_recompute_seed_matches_dense_when_skips_disabled():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
+def test_splitk_recompute_seed_with_chunk_anchors_matches_dense_when_skips_disabled():
+    torch.manual_seed(5)
+    q = torch.randn(1, 1, 2, 64, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 256, 2, 64, device="cuda", dtype=torch.float16)
+    v = torch.randn(1, 256, 2, 64, device="cuda", dtype=torch.float16)
+    projection = _projection_matrix(
+        "random",
+        dim=64,
+        rank=8,
+        seed=5,
+        device=torch.device("cuda"),
+    )
+    proj_min, proj_max = _projection_metadata(k, block_size=16, projection=projection, metadata_dtype=torch.float16)
+    q_proj = _project_query(q, projection)
+
+    actual, _ = gate1_inline_projection_splitk_attention_triton_forward(
+        q,
+        k,
+        v,
+        q_proj,
+        proj_min,
+        proj_max,
+        num_chunks=4,
+        error_budget=0.0,
+        filter_margin=-1.0e9,
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=2,
+        chunk_anchor_blocks=2,
+        block_order="recent_first",
+        seed_strategy="recompute_seed",
+    )
+    expected = dense_attention_forward(q, k, v, causal=False)
+
+    torch.testing.assert_close(actual, expected, rtol=2e-2, atol=2e-2)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
 def test_splitk_fused_qproj_matches_precomputed_when_skips_disabled():
     torch.manual_seed(3)
     q = torch.randn(1, 1, 2, 64, device="cuda", dtype=torch.float16)
