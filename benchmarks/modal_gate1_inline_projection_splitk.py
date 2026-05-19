@@ -46,6 +46,12 @@ def _head_values(raw: str, fallback: int, captured: dict[str, Any]) -> list[int]
     return sorted(set(expanded))
 
 
+def _head_groups(raw: str, fallback: int, captured: dict[str, Any]) -> list[str]:
+    if raw:
+        return [group.strip() for group in str(raw).split(";") if group.strip()]
+    return [str(value) for value in _head_values("", fallback, captured)]
+
+
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict:
     result = subprocess.run(
         cmd,
@@ -85,6 +91,8 @@ def _summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             {
                 "kv_len": row.get("kv_len"),
                 "head_index": row.get("head_index"),
+                "head_indices": row.get("head_indices"),
+                "selected_head_count": row.get("selected_head_count"),
                 "projection_dim": row.get("projection_dim"),
                 "projection_seed": row.get("projection_seed"),
                 "filter_margin": row.get("filter_margin"),
@@ -137,6 +145,7 @@ def _run(
     layers: str,
     head_index: int,
     head_indices: str,
+    head_groups: str,
     max_seq: int,
     kv_lens: str,
     dtype: str,
@@ -219,15 +228,21 @@ def _run(
         dim_values = _parse_values(projection_dims, int) if projection_dims else [int(projection_dim)]
         seed_values = _parse_values(projection_seeds, int)
         margin_values = _parse_values(filter_margins, float) if filter_margins else [float(filter_margin)]
-        head_values = _head_values(head_indices, head_index, captured)
-        for current_head, chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
-            head_values,
+        group_values = (
+            _head_groups(head_groups, head_index, captured)
+            if head_groups
+            else [str(value) for value in _head_values(head_indices, head_index, captured)]
+        )
+        for current_group, chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
+            group_values,
             chunk_values,
             anchor_values,
             dim_values,
             seed_values,
             margin_values,
         ):
+            group_heads = _head_values(current_group, -1, captured)
+            is_group = len(group_heads) != 1
             profile_cmd = [
                 "python",
                 "/root/StreamAttn/benchmarks/profile_gate1_inline_projection_splitk.py",
@@ -237,8 +252,6 @@ def _run(
                 captured["k_path"],
                 "--v-path",
                 captured["v_path"],
-                "--head-index",
-                str(current_head),
                 "--dtype",
                 dtype,
                 "--block-size",
@@ -276,13 +289,19 @@ def _run(
                 "--iters",
                 str(iters),
             ]
+            if is_group:
+                profile_cmd.extend(["--head-indices", current_group])
+            else:
+                profile_cmd.extend(["--head-index", str(group_heads[0])])
             profile = _json_from_cmd(profile_cmd, env=env)
             profile.update(
                 {
                     "model_id": model,
                     "prompt_type": prompt_type,
                     "layer_id": captured.get("layer_id"),
-                    "head_index": current_head,
+                    "head_index": None if is_group else group_heads[0],
+                    "head_indices": group_heads,
+                    "head_group": current_group,
                     "kv_len": kv_len,
                     "capture_shape": captured.get("shape"),
                     "profile_command": profile_cmd,
@@ -302,6 +321,7 @@ def _run(
             "kv_lens": kv_lens,
             "head_index": head_index,
             "head_indices": head_indices,
+            "head_groups": head_groups,
             "block_size": block_size,
             "middle_seed_blocks": middle_seed_blocks,
             "chunk_anchor_blocks": chunk_anchor_blocks,
@@ -343,6 +363,7 @@ def main(
     layers: str = "8",
     head_index: int = -1,
     head_indices: str = "",
+    head_groups: str = "",
     max_seq: int = 4096,
     kv_lens: str = "4096",
     dtype: str = "fp16",
@@ -379,6 +400,7 @@ def main(
         "layers": layers,
         "head_index": head_index,
         "head_indices": head_indices,
+        "head_groups": head_groups,
         "max_seq": max_seq,
         "kv_lens": kv_lens,
         "dtype": dtype,

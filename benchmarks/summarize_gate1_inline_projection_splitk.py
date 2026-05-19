@@ -291,6 +291,48 @@ def _layer_oracle(heads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     )
 
 
+def _grouped_profiles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: List[Dict[str, Any]] = []
+    for row in rows:
+        head_indices = row.get("head_indices") or row.get("selected_head_indices") or []
+        selected_count = int(row.get("selected_head_count") or len(head_indices) or 0)
+        if selected_count <= 1:
+            continue
+        dense_ms = _as_float(row, "dense_ms", 0.0)
+        splitk_ms = _as_float(row, "splitk_total_ms", 0.0)
+        grouped.append(
+            {
+                "model_id": row.get("model_id"),
+                "prompt_type": row.get("prompt_type"),
+                "layer_id": row.get("layer_id"),
+                "kv_len": _kv_len(row),
+                "head_indices": head_indices,
+                "selected_head_count": selected_count,
+                "filter_margin": row.get("filter_margin"),
+                "num_chunks": row.get("num_chunks"),
+                "projection_dim": row.get("projection_dim"),
+                "projection_seed": row.get("projection_seed"),
+                "projection_skip_fraction": _projection_skip(row),
+                "pv_executed_fraction": _pv_fraction(row),
+                "max_abs_error": _max_error(row),
+                "mean_abs_error": _mean_error(row),
+                "splitk_total_ms": splitk_ms,
+                "dense_ms": dense_ms,
+                "splitk_speedup_vs_dense": dense_ms / splitk_ms if splitk_ms > 0 else None,
+            }
+        )
+    return sorted(
+        grouped,
+        key=lambda row: (
+            str(row.get("model_id")),
+            str(row.get("prompt_type")),
+            row.get("layer_id") if row.get("layer_id") is not None else -1,
+            row.get("kv_len") if row.get("kv_len") is not None else -1,
+            -(row.get("splitk_speedup_vs_dense") or 0.0),
+        ),
+    )
+
+
 def _print_heads(rows: List[Dict[str, Any]], *, limit: int) -> None:
     headers = ["budget", "head", "safe", "rank", "seed", "margin", "skip", "err", "splitk", "dense"]
     print(" ".join(f"{header:>9}" for header in headers))
@@ -334,6 +376,28 @@ def _print_layers(rows: List[Dict[str, Any]], *, limit: int) -> None:
         )
 
 
+def _print_groups(rows: List[Dict[str, Any]], *, limit: int) -> None:
+    if not rows:
+        return
+    headers = ["heads", "chunks", "margin", "skip", "err", "splitk", "dense", "speed"]
+    print(" ".join(f"{header:>10}" for header in headers))
+    for row in rows[:limit]:
+        print(
+            " ".join(
+                [
+                    f"{_fmt(row.get('selected_head_count')):>10}",
+                    f"{_fmt(row.get('num_chunks')):>10}",
+                    f"{_fmt(row.get('filter_margin')):>10}",
+                    f"{_fmt(row.get('projection_skip_fraction')):>10}",
+                    f"{_fmt(row.get('max_abs_error')):>10}",
+                    f"{_fmt(row.get('splitk_total_ms')):>10}",
+                    f"{_fmt(row.get('dense_ms')):>10}",
+                    f"{_fmt(row.get('splitk_speedup_vs_dense')):>10}",
+                ]
+            )
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("json_paths", nargs="+")
@@ -365,11 +429,13 @@ def main() -> None:
             )
         )
     layers = _layer_oracle(heads)
+    groups = _grouped_profiles(rows)
     summary = {
         "rows": len(rows),
         "calibrated_heads": len(heads),
         "min_skip_fraction": args.min_skip_fraction,
         "budgets": budgets,
+        "grouped_profiles": len(groups),
     }
     for budget in budgets:
         name = str(budget["name"])
@@ -380,10 +446,12 @@ def main() -> None:
         "summary": summary,
         "heads": heads,
         "layer_selective_oracle": layers,
+        "grouped_profiles": groups,
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
     _print_heads(heads, limit=args.limit)
     _print_layers(layers, limit=args.limit)
+    _print_groups(groups, limit=args.limit)
     if args.output_json:
         path = Path(args.output_json)
         path.parent.mkdir(parents=True, exist_ok=True)

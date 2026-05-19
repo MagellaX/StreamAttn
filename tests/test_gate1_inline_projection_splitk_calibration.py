@@ -4,6 +4,7 @@ import pytest
 
 from benchmarks.summarize_gate1_inline_projection_splitk import (
     _calibrate_heads,
+    _grouped_profiles,
     _layer_oracle,
     _load_rows,
 )
@@ -92,3 +93,28 @@ def test_splitk_layer_oracle_uses_dense_for_unsafe_head():
     assert layers[0]["dense_unsafe_max_ms"] == pytest.approx(0.03)
     assert layers[0]["selective_head_parallel_lower_bound_ms"] == pytest.approx(0.03)
     assert layers[0]["selective_head_parallel_speedup_vs_dense_max"] == pytest.approx(1.0)
+
+
+def test_splitk_grouped_profiles_report_selected_head_speedup():
+    rows = [
+        {
+            "model_id": "m",
+            "prompt_type": "code",
+            "layer_id": 8,
+            "kv_len": 16384,
+            "head_indices": [2, 3, 4],
+            "selected_head_count": 3,
+            "num_chunks": 8,
+            "filter_margin": 64.0,
+            "splitk_total_ms": 0.12,
+            "dense_ms": 0.09,
+            "splitk_stats": {"projection_skip_fraction": 0.9, "pv_executed_fraction": 0.0},
+            "splitk_error_vs_dense": {"max_abs_error": 0.004, "mean_abs_error": 0.0005},
+        }
+    ]
+
+    groups = _grouped_profiles(rows)
+
+    assert len(groups) == 1
+    assert groups[0]["selected_head_count"] == 3
+    assert groups[0]["splitk_speedup_vs_dense"] == pytest.approx(0.75)

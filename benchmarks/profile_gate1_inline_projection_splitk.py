@@ -37,6 +37,21 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
 )
 
 
+def _parse_head_indices(raw: str, *, heads: int) -> list[int]:
+    if not raw:
+        return []
+    values = [int(item.strip()) for item in str(raw).split(",") if item.strip()]
+    expanded: list[int] = []
+    for value in values:
+        if value < 0:
+            expanded.extend(range(heads))
+        else:
+            if value >= heads:
+                raise ValueError(f"head index {value} is outside [0, {heads})")
+            expanded.append(value)
+    return sorted(set(expanded))
+
+
 def _summarize_splitk_stats(raw_stats: Optional[torch.Tensor]) -> Optional[Dict[str, Any]]:
     if raw_stats is None:
         return None
@@ -105,6 +120,7 @@ def main() -> None:
     parser.add_argument("--dim", type=int, default=128)
     parser.add_argument("--dtype", choices=["fp16", "bf16", "fp32"], default="fp16")
     parser.add_argument("--head-index", type=int, default=-1)
+    parser.add_argument("--head-indices", default="")
     parser.add_argument("--pattern", choices=["random", "peaked"], default="peaked")
     parser.add_argument("--active-fraction", type=float, default=0.0625)
     parser.add_argument("--peak", type=float, default=8.0)
@@ -135,7 +151,15 @@ def main() -> None:
         raise RuntimeError("CUDA is required")
 
     with torch.no_grad():
+        if args.head_indices:
+            args.head_index = -1
         q, k, v = _load_or_make_tensors(args)
+        selected_head_indices = _parse_head_indices(args.head_indices, heads=q.shape[2])
+        if selected_head_indices:
+            head_tensor = torch.tensor(selected_head_indices, device=q.device, dtype=torch.long)
+            q = q.index_select(2, head_tensor).contiguous()
+            k = k.index_select(2, head_tensor).contiguous()
+            v = v.index_select(2, head_tensor).contiguous()
         if q.shape[1] != 1:
             raise ValueError("split-K inline projection benchmark requires query_len == 1")
         dim = q.shape[-1]
@@ -283,6 +307,8 @@ def main() -> None:
             "dim": q.shape[3],
             "dtype": args.dtype,
         },
+        "selected_head_indices": selected_head_indices,
+        "selected_head_count": len(selected_head_indices) if selected_head_indices else q.shape[2],
         "block_size": args.block_size,
         "tile_size_q": args.tile_size_q,
         "sink_blocks": args.sink_blocks,

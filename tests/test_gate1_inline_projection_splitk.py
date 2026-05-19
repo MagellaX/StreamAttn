@@ -13,6 +13,7 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
     _seed_strategy_id,
     gate1_inline_projection_splitk_attention_triton_forward,
 )
+from benchmarks.profile_gate1_inline_projection_splitk import _parse_head_indices
 
 
 def test_splitk_block_order_ids():
@@ -28,6 +29,14 @@ def test_splitk_seed_strategy_ids():
     assert _seed_strategy_id("recompute_seed") == 1
     with pytest.raises(ValueError, match="seed_strategy"):
         _seed_strategy_id("bad")
+
+
+def test_splitk_profile_parse_head_indices():
+    assert _parse_head_indices("", heads=4) == []
+    assert _parse_head_indices("3,1,3", heads=4) == [1, 3]
+    assert _parse_head_indices("-1", heads=4) == [0, 1, 2, 3]
+    with pytest.raises(ValueError, match="outside"):
+        _parse_head_indices("4", heads=4)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
