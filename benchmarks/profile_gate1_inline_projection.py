@@ -98,6 +98,54 @@ def _summarize_inline_stats(raw_stats: Optional[torch.Tensor]) -> Optional[Dict[
     return result
 
 
+def _quantile(values, q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(float(value) for value in values)
+    index = min(len(ordered) - 1, max(0, round(q * (len(ordered) - 1))))
+    return ordered[index]
+
+
+def _summarize_inline_stats_per_head(raw_stats: Optional[torch.Tensor]):
+    if raw_stats is None:
+        return None
+    if raw_stats.dim() != 3 or raw_stats.shape[-1] != 8:
+        raise ValueError("inline raw stats must have shape [batch, heads, 8]")
+    rows = raw_stats.detach().sum(dim=0).cpu()
+    per_head = []
+    skip_fracs = []
+    pv_fracs = []
+    for head_idx, row in enumerate(rows):
+        middle = int(row[INLINE_PROJECTION_STATS["middle_blocks"]].item())
+        total = int(row[INLINE_PROJECTION_STATS["total_blocks"]].item())
+        skipped = int(row[INLINE_PROJECTION_STATS["projection_skipped_blocks"]].item())
+        pv = int(row[INLINE_PROJECTION_STATS["pv_executed_blocks"]].item())
+        skip_frac = skipped / middle if middle else 0.0
+        pv_frac = pv / total if total else 0.0
+        skip_fracs.append(skip_frac)
+        pv_fracs.append(pv_frac)
+        per_head.append(
+            {
+                "head": head_idx,
+                "projection_skipped_blocks": skipped,
+                "projection_skip_fraction": skip_frac,
+                "pv_executed_blocks": pv,
+                "pv_executed_fraction": pv_frac,
+                "middle_blocks": middle,
+                "total_blocks": total,
+            }
+        )
+    return {
+        "per_head": per_head,
+        "projection_skip_fraction_mean": sum(skip_fracs) / len(skip_fracs) if skip_fracs else 0.0,
+        "projection_skip_fraction_p50": _quantile(skip_fracs, 0.50),
+        "projection_skip_fraction_p90": _quantile(skip_fracs, 0.90),
+        "pv_executed_fraction_mean": sum(pv_fracs) / len(pv_fracs) if pv_fracs else 0.0,
+        "pv_executed_fraction_p50": _quantile(pv_fracs, 0.50),
+        "pv_executed_fraction_p90": _quantile(pv_fracs, 0.90),
+    }
+
+
 def _max_mean_error(actual: torch.Tensor, expected: torch.Tensor) -> Dict[str, float]:
     diff = (actual.float() - expected.float()).abs()
     return {
@@ -253,6 +301,8 @@ def main() -> None:
         _sync(q.device)
 
     stats = _summarize_inline_stats(raw_stats)
+    per_head_stats = _summarize_inline_stats_per_head(raw_stats)
+    inline_total_ms = q_projection_ms + inline_ms
     payload = {
         "device": torch.cuda.get_device_name(q.device),
         "torch": torch.__version__,
@@ -280,9 +330,13 @@ def main() -> None:
         "dense_ms": dense_ms,
         "gate1_mass_ms": gate1_mass_ms,
         "inline_projection_ms": inline_ms,
+        "inline_total_ms": inline_total_ms,
         "inline_vs_gate1_speedup": gate1_mass_ms / inline_ms if inline_ms > 0 else None,
         "inline_vs_dense_speedup": dense_ms / inline_ms if inline_ms > 0 else None,
+        "inline_total_vs_gate1_speedup": gate1_mass_ms / inline_total_ms if inline_total_ms > 0 else None,
+        "inline_total_vs_dense_speedup": dense_ms / inline_total_ms if inline_total_ms > 0 else None,
         "stats": stats,
+        "per_head_stats": per_head_stats,
         **_max_mean_error(inline_out, dense_out),
     }
     print(json.dumps(payload, indent=2, sort_keys=True))

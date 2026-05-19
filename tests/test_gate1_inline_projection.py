@@ -7,6 +7,7 @@ from benchmarks.profile_gate0_candidate_filters import (
     _projection_metadata,
 )
 from benchmarks.profile_gate1_inline_projection import _summarize_inline_stats
+from benchmarks.profile_gate1_inline_projection import _summarize_inline_stats_per_head
 from stream_attention.gate1 import dense_attention_forward
 from stream_attention.kernels.gate1_inline_projection_fwd_triton import (
     TRITON_AVAILABLE,
@@ -33,6 +34,11 @@ def test_inline_projection_stats_summary():
     assert stats["middle_blocks"] == 12
     assert stats["projection_skip_fraction"] == pytest.approx(4 / 12)
     assert stats["pv_executed_fraction"] == pytest.approx(12 / 16)
+
+    per_head = _summarize_inline_stats_per_head(raw)
+    assert per_head["projection_skip_fraction_mean"] == pytest.approx(((3 / 6) + (1 / 6)) / 2)
+    assert per_head["pv_executed_fraction_mean"] == pytest.approx(((5 / 8) + (7 / 8)) / 2)
+    assert len(per_head["per_head"]) == 2
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
