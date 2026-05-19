@@ -64,9 +64,8 @@ if TRITON_AVAILABLE:
             + offs_blocks[:, None] * RANK
             + offs_r[None, :]
         )
-        mins = tl.load(ProjMin + metadata_base, mask=block_mask[:, None], other=0.0).to(tl.float32)
-        maxs = tl.load(ProjMax + metadata_base, mask=block_mask[:, None], other=0.0).to(tl.float32)
-        chosen = tl.where(q_proj[None, :] >= 0.0, maxs, mins)
+        chosen_ptrs = tl.where(q_proj[None, :] >= 0.0, ProjMax + metadata_base, ProjMin + metadata_base)
+        chosen = tl.load(chosen_ptrs, mask=block_mask[:, None], other=0.0).to(tl.float32)
         scores = tl.sum(q_proj[None, :] * chosen, axis=1) * SCORE_SCALE
 
         out_ptrs = (

@@ -44,10 +44,12 @@ from stream_attention.kernels.gate0_projection_scan_triton import (
 from stream_attention.kernels.gate0_projection_mask_triton import (
     TRITON_AVAILABLE as PROJECTION_MASK_TRITON_AVAILABLE,
     gate0_projection_mask_triton,
+    gate0_projection_mask_static_threshold_triton,
 )
 from stream_attention.kernels.gate0_projection_bitmask_triton import (
     TRITON_AVAILABLE as PROJECTION_BITMASK_TRITON_AVAILABLE,
     gate0_projection_bitmask_triton,
+    gate0_projection_bitmask_static_threshold_triton,
 )
 
 
@@ -224,6 +226,70 @@ def _actual_skip_labels(
         acc_den = torch.where(compute_row, next_den, acc_den)
 
     return actual_skip, has_state_by_block, threshold_by_block, tile_max_by_block
+
+
+def _static_seed_threshold(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    error_budget: float,
+    sink_blocks: int,
+    recent_blocks: int,
+) -> torch.Tensor:
+    batch, query_len, heads, dim = q.shape
+    seq_k = k.shape[1]
+    num_blocks = (seq_k + block_size - 1) // block_size
+    scale = 1.0 / math.sqrt(dim)
+    log_eps = math.log(error_budget) if error_budget > 0.0 else -float("inf")
+
+    sink = list(range(min(sink_blocks, num_blocks)))
+    recent_start = max(0, num_blocks - min(recent_blocks, num_blocks))
+    recent = list(range(recent_start, num_blocks))
+    seed_order: List[int] = []
+    seen = set()
+    for block_idx in [*sink, *reversed(recent)]:
+        if block_idx not in seen:
+            seen.add(block_idx)
+            seed_order.append(block_idx)
+
+    q_bhsd = q.permute(0, 2, 1, 3).contiguous().float()
+    k_bhnd = k.permute(0, 2, 1, 3).contiguous().float()
+    running_max = torch.full(
+        (batch, heads, query_len),
+        -float("inf"),
+        device=q.device,
+        dtype=torch.float32,
+    )
+    acc_den = torch.zeros(batch, heads, query_len, device=q.device, dtype=torch.float32)
+    for block_idx in seed_order:
+        start = block_idx * block_size
+        end = min(start + block_size, seq_k)
+        scores = torch.einsum("bhsd,bhnd->bhsn", q_bhsd, k_bhnd[:, :, start:end, :]) * scale
+        tile_max = scores.amax(dim=-1)
+
+        tile_valid = torch.isfinite(tile_max)
+        prev_valid = torch.isfinite(running_max)
+        new_valid = prev_valid | tile_valid
+        new_max = torch.maximum(running_max, tile_max)
+        safe_new_max = torch.where(new_valid, new_max, torch.zeros_like(new_max))
+        correction = torch.where(
+            prev_valid,
+            torch.exp(running_max - safe_new_max),
+            torch.zeros_like(acc_den),
+        )
+        exp_scores = torch.exp(scores - safe_new_max[..., None])
+        exp_scores = torch.where(torch.isfinite(scores), exp_scores, torch.zeros_like(exp_scores))
+        acc_den = acc_den * correction + exp_scores.sum(dim=-1)
+        running_max = new_max
+
+    has_state = torch.isfinite(running_max) & (acc_den > 0)
+    lse = torch.where(
+        has_state,
+        running_max + torch.log(acc_den.clamp_min(1.0e-30)),
+        torch.full_like(running_max, -float("inf")),
+    )
+    return lse + log_eps
 
 
 def _hadamard_matrix(dim: int, *, device: torch.device) -> torch.Tensor:
@@ -459,6 +525,7 @@ def _profile_case(
     filter_mode: str,
     projection_dim: Optional[int],
     projection_metadata_dtype: str,
+    projection_threshold_mode: str,
     filter_margin: float,
     scan_region: str,
     block_order_name: str,
@@ -489,6 +556,18 @@ def _profile_case(
         error_budget=args.error_budget,
         block_order=order,
     )
+    if projection_threshold_mode not in ("dynamic", "static"):
+        raise ValueError(f"unsupported projection threshold mode: {projection_threshold_mode}")
+    static_thresholds = None
+    if projection_threshold_mode == "static":
+        static_thresholds = _static_seed_threshold(
+            q,
+            k,
+            block_size=block_size,
+            error_budget=args.error_budget,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+        )
     q_bhsd = q.permute(0, 2, 1, 3).contiguous().float()
     k_bhnd = k.permute(0, 2, 1, 3).contiguous().float()
     full_qk_scan_ms = _time_call(
@@ -558,6 +637,8 @@ def _profile_case(
                 iters=args.iters,
             )
             q_proj = _project_query(q, projection)
+            if projection_threshold_mode == "static" and args.projection_scan_backend == "triton":
+                raise ValueError("static threshold mode requires triton_mask or triton_bitmask backend")
             if args.projection_scan_backend == "triton":
                 output = torch.full(
                     (batch, heads, query_len, num_blocks),
@@ -584,23 +665,42 @@ def _profile_case(
                     dtype=torch.uint8,
                 )
                 block_log_lengths = block_lengths.float().clamp_min(1).log()
-                mask_fn = lambda: gate0_projection_mask_triton(
-                    q_proj,
-                    proj_min,
-                    proj_max,
-                    thresholds,
-                    has_state,
-                    block_log_lengths,
-                    dim=dim,
-                    filter_margin=filter_margin,
-                    scan_start=scan_start,
-                    scan_end=scan_end,
-                    blocks_per_program=args.blocks_per_program,
-                    output=mask_output,
-                    clear_output=False,
-                )
+                if projection_threshold_mode == "static":
+                    if static_thresholds is None:
+                        raise RuntimeError("static thresholds were not computed")
+                    mask_fn = lambda: gate0_projection_mask_static_threshold_triton(
+                        q_proj,
+                        proj_min,
+                        proj_max,
+                        static_thresholds,
+                        block_log_lengths,
+                        dim=dim,
+                        filter_margin=filter_margin,
+                        scan_start=scan_start,
+                        scan_end=scan_end,
+                        blocks_per_program=args.blocks_per_program,
+                        output=mask_output,
+                        clear_output=False,
+                    )
+                    candidate_scan_backend = "triton_projection_mask_static"
+                else:
+                    mask_fn = lambda: gate0_projection_mask_triton(
+                        q_proj,
+                        proj_min,
+                        proj_max,
+                        thresholds,
+                        has_state,
+                        block_log_lengths,
+                        dim=dim,
+                        filter_margin=filter_margin,
+                        scan_start=scan_start,
+                        scan_end=scan_end,
+                        blocks_per_program=args.blocks_per_program,
+                        output=mask_output,
+                        clear_output=False,
+                    )
+                    candidate_scan_backend = "triton_projection_mask"
                 scan_fn = mask_fn
-                candidate_scan_backend = "triton_projection_mask"
             else:
                 num_words = (num_blocks + 31) // 32
                 bitmask_output = torch.zeros(
@@ -609,23 +709,45 @@ def _profile_case(
                     dtype=torch.int32,
                 )
                 block_log_lengths = block_lengths.float().clamp_min(1).log()
-                bitmask_fn = lambda: gate0_projection_bitmask_triton(
-                    q_proj,
-                    proj_min,
-                    proj_max,
-                    thresholds,
-                    has_state,
-                    block_log_lengths,
-                    dim=dim,
-                    filter_margin=filter_margin,
-                    scan_start=scan_start,
-                    scan_end=scan_end,
-                    output=bitmask_output,
-                    clear_output=False,
-                )
+                if projection_threshold_mode == "static":
+                    if static_thresholds is None:
+                        raise RuntimeError("static thresholds were not computed")
+                    bitmask_fn = lambda: gate0_projection_bitmask_static_threshold_triton(
+                        q_proj,
+                        proj_min,
+                        proj_max,
+                        static_thresholds,
+                        block_log_lengths,
+                        dim=dim,
+                        filter_margin=filter_margin,
+                        scan_start=scan_start,
+                        scan_end=scan_end,
+                        words_per_program=args.words_per_program,
+                        output=bitmask_output,
+                        clear_output=False,
+                    )
+                    candidate_scan_backend = "triton_projection_bitmask_static"
+                else:
+                    bitmask_fn = lambda: gate0_projection_bitmask_triton(
+                        q_proj,
+                        proj_min,
+                        proj_max,
+                        thresholds,
+                        has_state,
+                        block_log_lengths,
+                        dim=dim,
+                        filter_margin=filter_margin,
+                        scan_start=scan_start,
+                        scan_end=scan_end,
+                        words_per_program=args.words_per_program,
+                        output=bitmask_output,
+                        clear_output=False,
+                    )
+                    candidate_scan_backend = "triton_projection_bitmask"
                 scan_fn = bitmask_fn
-                candidate_scan_backend = "triton_projection_bitmask"
         else:
+            if projection_threshold_mode != "dynamic":
+                raise ValueError("static threshold mode requires triton_mask or triton_bitmask backend")
             scan_fn = lambda: _projection_scores(
                 q,
                 projection=projection,
@@ -704,6 +826,7 @@ def _profile_case(
         "projection_kind": projection_kind,
         "projection_dim": projection_dim,
         "projection_metadata_dtype": projection_metadata_dtype if projection_kind else None,
+        "projection_threshold_mode": projection_threshold_mode if projection_kind else None,
         "projection_seed": args.seed if projection_kind else None,
         "filter_margin": filter_margin,
         "scan_region": scan_region,
@@ -713,6 +836,7 @@ def _profile_case(
         "num_blocks": num_blocks,
         "scan_block_count": len(selected_blocks),
         "scan_block_fraction": len(selected_blocks) / num_blocks if num_blocks else 0.0,
+        "words_per_program": args.words_per_program if candidate_scan_backend.startswith("triton_projection_bitmask") else None,
         "shape": {
             "batch": batch,
             "query_len": query_len,
@@ -807,6 +931,7 @@ def main() -> None:
     )
     parser.add_argument("--projection-dim", nargs="+", default=["8", "16", "32"])
     parser.add_argument("--projection-metadata-dtype", nargs="+", default=["fp32"])
+    parser.add_argument("--projection-threshold-mode", nargs="+", default=["dynamic"])
     parser.add_argument("--filter-margin", nargs="+", default=["0.0"])
     parser.add_argument("--scan-region", nargs="+", default=["all"])
     parser.add_argument("--block-order", nargs="+", default=["recent_first"])
@@ -816,6 +941,7 @@ def main() -> None:
         default="torch",
     )
     parser.add_argument("--blocks-per-program", type=int, default=32)
+    parser.add_argument("--words-per-program", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
@@ -842,15 +968,19 @@ def main() -> None:
             ):
                 projection_dims: List[Optional[int]]
                 projection_metadata_dtypes: List[str]
+                projection_threshold_modes: List[str]
                 if filter_mode.startswith("projection_"):
                     projection_dims = _parse_values(args.projection_dim, int)
                     projection_metadata_dtypes = _parse_str_values(args.projection_metadata_dtype)
+                    projection_threshold_modes = _parse_str_values(args.projection_threshold_mode)
                 else:
                     projection_dims = [None]
                     projection_metadata_dtypes = ["fp32"]
-                for projection_dim, projection_metadata_dtype in itertools.product(
+                    projection_threshold_modes = ["dynamic"]
+                for projection_dim, projection_metadata_dtype, projection_threshold_mode in itertools.product(
                     projection_dims,
                     projection_metadata_dtypes,
+                    projection_threshold_modes,
                 ):
                     try:
                         rows.append(
@@ -862,6 +992,7 @@ def main() -> None:
                                 filter_mode=filter_mode,
                                 projection_dim=projection_dim,
                                 projection_metadata_dtype=projection_metadata_dtype,
+                                projection_threshold_mode=projection_threshold_mode,
                                 filter_margin=margin,
                                 scan_region=scan_region,
                                 block_order_name=block_order_name,
@@ -875,6 +1006,7 @@ def main() -> None:
                                 "filter_mode": filter_mode,
                                 "projection_dim": projection_dim,
                                 "projection_metadata_dtype": projection_metadata_dtype,
+                                "projection_threshold_mode": projection_threshold_mode,
                                 "filter_margin": margin,
                                 "scan_region": scan_region,
                                 "block_order": block_order_name,
