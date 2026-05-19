@@ -31,6 +31,21 @@ def _parse_values(raw: str, cast):
     return [cast(item.strip()) for item in str(raw).split(",") if item.strip()]
 
 
+def _head_values(raw: str, fallback: int, captured: dict[str, Any]) -> list[int]:
+    if raw:
+        values = _parse_values(raw, int)
+    else:
+        values = [int(fallback)]
+    heads = ((captured.get("shape") or {}).get("heads")) or 0
+    expanded: list[int] = []
+    for value in values:
+        if value < 0:
+            expanded.extend(range(int(heads)))
+        else:
+            expanded.append(value)
+    return sorted(set(expanded))
+
+
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict:
     result = subprocess.run(
         cmd,
@@ -121,6 +136,7 @@ def _run(
     prompt_type: str,
     layers: str,
     head_index: int,
+    head_indices: str,
     max_seq: int,
     kv_lens: str,
     dtype: str,
@@ -203,7 +219,9 @@ def _run(
         dim_values = _parse_values(projection_dims, int) if projection_dims else [int(projection_dim)]
         seed_values = _parse_values(projection_seeds, int)
         margin_values = _parse_values(filter_margins, float) if filter_margins else [float(filter_margin)]
-        for chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
+        head_values = _head_values(head_indices, head_index, captured)
+        for current_head, chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
+            head_values,
             chunk_values,
             anchor_values,
             dim_values,
@@ -220,7 +238,7 @@ def _run(
                 "--v-path",
                 captured["v_path"],
                 "--head-index",
-                str(head_index),
+                str(current_head),
                 "--dtype",
                 dtype,
                 "--block-size",
@@ -264,7 +282,7 @@ def _run(
                     "model_id": model,
                     "prompt_type": prompt_type,
                     "layer_id": captured.get("layer_id"),
-                    "head_index": head_index,
+                    "head_index": current_head,
                     "kv_len": kv_len,
                     "capture_shape": captured.get("shape"),
                     "profile_command": profile_cmd,
@@ -283,6 +301,7 @@ def _run(
         "sweep": {
             "kv_lens": kv_lens,
             "head_index": head_index,
+            "head_indices": head_indices,
             "block_size": block_size,
             "middle_seed_blocks": middle_seed_blocks,
             "chunk_anchor_blocks": chunk_anchor_blocks,
@@ -323,6 +342,7 @@ def main(
     prompt_repeat: int = 512,
     layers: str = "8",
     head_index: int = -1,
+    head_indices: str = "",
     max_seq: int = 4096,
     kv_lens: str = "4096",
     dtype: str = "fp16",
@@ -358,6 +378,7 @@ def main(
         "prompt_type": prompt_type,
         "layers": layers,
         "head_index": head_index,
+        "head_indices": head_indices,
         "max_seq": max_seq,
         "kv_lens": kv_lens,
         "dtype": dtype,
