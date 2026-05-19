@@ -222,13 +222,14 @@ def main() -> None:
             projection=projection,
             metadata_dtype=metadata_dtype,
         )
-        q_projection_ms = _time_call(
+        q_projection_reference_ms = _time_call(
             lambda: _project_query(q, projection),
             device=q.device,
             warmup=args.warmup,
             iters=args.iters,
         )
-        q_proj = _project_query(q, projection)
+        q_projection_ms = 0.0 if args.qproj_mode == "fused" else q_projection_reference_ms
+        q_proj = _project_query(q, projection) if args.qproj_mode == "precomputed" else None
 
         dense_ms = _time_call(
             lambda: dense_attention_forward(q, k, v, causal=False),
@@ -307,7 +308,7 @@ def main() -> None:
 
     stats = _summarize_inline_stats(raw_stats)
     per_head_stats = _summarize_inline_stats_per_head(raw_stats)
-    inline_total_ms = inline_ms if args.qproj_mode == "fused" else q_projection_ms + inline_ms
+    inline_total_ms = q_projection_ms + inline_ms
     payload = {
         "device": torch.cuda.get_device_name(q.device),
         "torch": torch.__version__,
@@ -333,8 +334,10 @@ def main() -> None:
         "qproj_mode": args.qproj_mode,
         "metadata_build_ms": metadata_build_ms,
         "q_projection_ms": q_projection_ms,
+        "q_projection_reference_ms": q_projection_reference_ms,
         "dense_ms": dense_ms,
         "gate1_mass_ms": gate1_mass_ms,
+        "inline_kernel_ms": inline_ms,
         "inline_projection_ms": inline_ms,
         "inline_total_ms": inline_total_ms,
         "inline_vs_gate1_speedup": gate1_mass_ms / inline_ms if inline_ms > 0 else None,

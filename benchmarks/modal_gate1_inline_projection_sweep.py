@@ -78,6 +78,7 @@ def _run(
     head_indices: str,
     max_seq: int,
     kv_len: int,
+    kv_lens: str,
     dtype: str,
     tensor_space: str,
     block_size: str,
@@ -99,58 +100,64 @@ def _run(
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
 
-    capture_dir = "/tmp/streamattn_gate1_inline_projection_sweep_qk"
-    metadata_json = f"{capture_dir}/metadata.json"
     prompt_file = "/tmp/streamattn_gate1_inline_projection_sweep_prompt.txt"
     Path(prompt_file).parent.mkdir(parents=True, exist_ok=True)
     Path(prompt_file).write_text(prompt, encoding="utf-8")
-    capture_cmd = [
-        "python",
-        "/root/StreamAttn/benchmarks/capture_real_qk_decode.py",
-        "--model",
-        model,
-        "--prompt-file",
-        prompt_file,
-        "--layers",
-        layers,
-        "--device",
-        "cuda",
-        "--dtype",
-        dtype,
-        "--max-seq",
-        str(max_seq),
-        "--kv-len",
-        str(kv_len),
-        "--query-len",
-        "1",
-        "--tensor-space",
-        tensor_space,
-        "--save-v",
-        "--output-dir",
-        capture_dir,
-        "--metadata-json-out",
-        metadata_json,
-    ]
-    capture_payload, _capture_stdout, _capture_code = _json_from_cmd(capture_cmd, env=env)
-    rows = [row for row in (capture_payload or {}).get("rows", []) if not row.get("skipped")]
-    if not rows:
-        raise RuntimeError("capture produced no usable rows")
-
     results = []
-    cases = list(
-        itertools.product(
-            rows,
-            _parse_values(head_indices, int),
-            _parse_values(block_size, int),
-            _parse_values(middle_seed_blocks, int),
-            _parse_values(filter_margin, float),
-            _parse_str_values(block_order),
+    capture_summaries = []
+    all_cases = []
+    for current_kv_len in _parse_values(kv_lens or str(kv_len), int):
+        capture_dir = f"/tmp/streamattn_gate1_inline_projection_sweep_qk/kv{current_kv_len}"
+        metadata_json = f"{capture_dir}/metadata.json"
+        capture_cmd = [
+            "python",
+            "/root/StreamAttn/benchmarks/capture_real_qk_decode.py",
+            "--model",
+            model,
+            "--prompt-file",
+            prompt_file,
+            "--layers",
+            layers,
+            "--device",
+            "cuda",
+            "--dtype",
+            dtype,
+            "--max-seq",
+            str(max(max_seq, current_kv_len)),
+            "--kv-len",
+            str(current_kv_len),
+            "--query-len",
+            "1",
+            "--tensor-space",
+            tensor_space,
+            "--save-v",
+            "--output-dir",
+            capture_dir,
+            "--metadata-json-out",
+            metadata_json,
+        ]
+        capture_payload, _capture_stdout, _capture_code = _json_from_cmd(capture_cmd, env=env)
+        rows = [row for row in (capture_payload or {}).get("rows", []) if not row.get("skipped")]
+        if not rows:
+            raise RuntimeError(f"capture produced no usable rows for kv_len={current_kv_len}")
+        capture_summaries.append({"kv_len": current_kv_len, "row_count": len(rows)})
+        all_cases.extend(
+            itertools.product(
+                rows,
+                [current_kv_len],
+                _parse_values(head_indices, int),
+                _parse_values(block_size, int),
+                _parse_values(middle_seed_blocks, int),
+                _parse_values(filter_margin, float),
+                _parse_str_values(block_order),
+            )
         )
-    )
+
+    cases = list(all_cases)
     if max_cases > 0:
         cases = cases[:max_cases]
 
-    for captured, head_index, bs, seed_blocks, margin, order in cases:
+    for captured, current_kv_len, head_index, bs, seed_blocks, margin, order in cases:
         profile_cmd = [
             "python",
             "/root/StreamAttn/benchmarks/profile_gate1_inline_projection.py",
@@ -201,6 +208,7 @@ def _run(
             "prompt_type": prompt_type,
             "layer_id": captured.get("layer_id"),
             "head_index": head_index,
+            "kv_len": current_kv_len,
             "capture_shape": captured.get("shape"),
             "block_size": bs,
             "middle_seed_blocks": seed_blocks,
@@ -216,8 +224,10 @@ def _run(
                 {
                     "dense_ms": profile.get("dense_ms"),
                     "gate1_mass_ms": profile.get("gate1_mass_ms"),
+                    "inline_kernel_ms": profile.get("inline_kernel_ms"),
                     "inline_projection_ms": profile.get("inline_projection_ms"),
                     "q_projection_ms": profile.get("q_projection_ms"),
+                    "q_projection_reference_ms": profile.get("q_projection_reference_ms"),
                     "qproj_mode": profile.get("qproj_mode"),
                     "inline_total_ms": profile.get("inline_total_ms"),
                     "inline_vs_gate1_speedup": profile.get("inline_vs_gate1_speedup"),
@@ -252,9 +262,9 @@ def _run(
             "model_id": model,
             "prompt_type": prompt_type,
             "layers": layers,
-            "kv_len": kv_len,
+            "kv_lens": kv_lens or str(kv_len),
             "tensor_space": tensor_space,
-            "row_count": len(rows),
+            "captures": capture_summaries,
         },
         "sweep": {
             "block_size": block_size,
@@ -265,6 +275,7 @@ def _run(
             "projection_metadata_dtype": projection_metadata_dtype,
             "qproj_mode": qproj_mode,
             "head_indices": head_indices,
+            "kv_lens": kv_lens or str(kv_len),
         },
         "results": results,
         "best_inline_kernel": best_inline,
@@ -295,6 +306,7 @@ def main(
     head_indices: str = "",
     max_seq: int = 4096,
     kv_len: int = 4096,
+    kv_lens: str = "",
     dtype: str = "fp16",
     tensor_space: str = "post_rope",
     block_size: str = "16,32,64",
@@ -325,6 +337,7 @@ def main(
         "head_indices": head_indices or str(head_index),
         "max_seq": max_seq,
         "kv_len": kv_len,
+        "kv_lens": kv_lens,
         "dtype": dtype,
         "tensor_space": tensor_space,
         "block_size": block_size,
