@@ -45,6 +45,10 @@ from stream_attention.kernels.gate0_projection_mask_triton import (
     TRITON_AVAILABLE as PROJECTION_MASK_TRITON_AVAILABLE,
     gate0_projection_mask_triton,
 )
+from stream_attention.kernels.gate0_projection_bitmask_triton import (
+    TRITON_AVAILABLE as PROJECTION_BITMASK_TRITON_AVAILABLE,
+    gate0_projection_bitmask_triton,
+)
 
 
 def _block_lengths(seq_k: int, block_size: int, *, device: torch.device) -> torch.Tensor:
@@ -265,6 +269,7 @@ def _projection_metadata(
     *,
     block_size: int,
     projection: torch.Tensor,
+    metadata_dtype: torch.dtype = torch.float32,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     k_bhnd = k.permute(0, 2, 1, 3).contiguous().float()
     k_proj = torch.einsum("bhnd,rd->bhnr", k_bhnd, projection)
@@ -278,7 +283,17 @@ def _projection_metadata(
         block = k_proj[:, :, start:end, :]
         mins[:, :, block_idx, :] = block.amin(dim=2)
         maxs[:, :, block_idx, :] = block.amax(dim=2)
-    return mins, maxs
+    return mins.to(dtype=metadata_dtype), maxs.to(dtype=metadata_dtype)
+
+
+def _projection_metadata_dtype(name: str) -> torch.dtype:
+    if name == "fp32":
+        return torch.float32
+    if name == "fp16":
+        return torch.float16
+    if name == "bf16":
+        return torch.bfloat16
+    raise ValueError(f"unsupported projection metadata dtype: {name}")
 
 
 def _projection_scores(
@@ -316,6 +331,15 @@ def _projection_scores(
 def _project_query(q: torch.Tensor, projection: torch.Tensor) -> torch.Tensor:
     q_bhsd = q.permute(0, 2, 1, 3).contiguous().float()
     return torch.einsum("bhsd,rd->bhsr", q_bhsd, projection)
+
+
+def _unpack_bitmask(packed: torch.Tensor, *, num_blocks: int) -> torch.Tensor:
+    if packed.dim() != 4:
+        raise ValueError("packed bitmask must have shape [batch, heads, query_len, words]")
+    bits = torch.arange(32, device=packed.device, dtype=torch.int64)
+    unpacked = ((packed.to(torch.int64).unsqueeze(-1) >> bits) & 1).bool()
+    batch, heads, query_len, words, _bits = unpacked.shape
+    return unpacked.reshape(batch, heads, query_len, words * 32)[..., :num_blocks]
 
 
 def _certified_scores(
@@ -434,6 +458,7 @@ def _profile_case(
     block_size: int,
     filter_mode: str,
     projection_dim: Optional[int],
+    projection_metadata_dtype: str,
     filter_margin: float,
     scan_region: str,
     block_order_name: str,
@@ -478,8 +503,10 @@ def _profile_case(
     q_projection_ms = 0.0
     projection_score_scan_ms = None
     projection_mask_scan_ms = None
+    projection_bitmask_scan_ms = None
     candidate_scan_backend = args.projection_scan_backend if filter_mode.startswith("projection_") else "torch"
     mask_fn = None
+    bitmask_fn = None
     if filter_mode in ("projection_random", "projection_hadamard"):
         if projection_dim is None:
             raise ValueError("projection_dim is required for projection filters")
@@ -491,18 +518,31 @@ def _profile_case(
             seed=args.seed,
             device=device,
         )
+        metadata_dtype = _projection_metadata_dtype(projection_metadata_dtype)
         metadata_build_ms = _time_call(
-            lambda: _projection_metadata(k, block_size=block_size, projection=projection),
+            lambda: _projection_metadata(
+                k,
+                block_size=block_size,
+                projection=projection,
+                metadata_dtype=metadata_dtype,
+            ),
             device=device,
             warmup=args.warmup,
             iters=args.iters,
         )
-        proj_min, proj_max = _projection_metadata(k, block_size=block_size, projection=projection)
-        if args.projection_scan_backend in ("triton", "triton_mask"):
+        proj_min, proj_max = _projection_metadata(
+            k,
+            block_size=block_size,
+            projection=projection,
+            metadata_dtype=metadata_dtype,
+        )
+        if args.projection_scan_backend in ("triton", "triton_mask", "triton_bitmask"):
             if args.projection_scan_backend == "triton" and not PROJECTION_TRITON_AVAILABLE:
                 raise RuntimeError("Triton projection score scan backend is not available")
             if args.projection_scan_backend == "triton_mask" and not PROJECTION_MASK_TRITON_AVAILABLE:
                 raise RuntimeError("Triton projection mask scan backend is not available")
+            if args.projection_scan_backend == "triton_bitmask" and not PROJECTION_BITMASK_TRITON_AVAILABLE:
+                raise RuntimeError("Triton projection bitmask scan backend is not available")
             if device.type != "cuda":
                 raise RuntimeError("Triton projection scan backend requires CUDA")
             scan_start, scan_end = _scan_block_range(
@@ -537,7 +577,7 @@ def _profile_case(
                     clear_output=False,
                 )
                 candidate_scan_backend = "triton_projection"
-            else:
+            elif args.projection_scan_backend == "triton_mask":
                 mask_output = torch.zeros(
                     (batch, heads, query_len, num_blocks),
                     device=device,
@@ -561,6 +601,30 @@ def _profile_case(
                 )
                 scan_fn = mask_fn
                 candidate_scan_backend = "triton_projection_mask"
+            else:
+                num_words = (num_blocks + 31) // 32
+                bitmask_output = torch.zeros(
+                    (batch, heads, query_len, num_words),
+                    device=device,
+                    dtype=torch.int32,
+                )
+                block_log_lengths = block_lengths.float().clamp_min(1).log()
+                bitmask_fn = lambda: gate0_projection_bitmask_triton(
+                    q_proj,
+                    proj_min,
+                    proj_max,
+                    thresholds,
+                    has_state,
+                    block_log_lengths,
+                    dim=dim,
+                    filter_margin=filter_margin,
+                    scan_start=scan_start,
+                    scan_end=scan_end,
+                    output=bitmask_output,
+                    clear_output=False,
+                )
+                scan_fn = bitmask_fn
+                candidate_scan_backend = "triton_projection_bitmask"
         else:
             scan_fn = lambda: _projection_scores(
                 q,
@@ -591,6 +655,15 @@ def _profile_case(
     if filter_mode.startswith("projection_") and args.projection_scan_backend == "triton_mask":
         projection_mask_scan_ms = candidate_scan_ms
         predicted = scan_fn().bool()
+        metrics = _candidate_metrics_from_prediction(
+            predicted=predicted,
+            actual_skip=actual_skip,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+        )
+    elif filter_mode.startswith("projection_") and args.projection_scan_backend == "triton_bitmask":
+        projection_bitmask_scan_ms = candidate_scan_ms
+        predicted = _unpack_bitmask(scan_fn(), num_blocks=num_blocks)
         metrics = _candidate_metrics_from_prediction(
             predicted=predicted,
             actual_skip=actual_skip,
@@ -630,6 +703,7 @@ def _profile_case(
         "filter_mode": filter_mode,
         "projection_kind": projection_kind,
         "projection_dim": projection_dim,
+        "projection_metadata_dtype": projection_metadata_dtype if projection_kind else None,
         "projection_seed": args.seed if projection_kind else None,
         "filter_margin": filter_margin,
         "scan_region": scan_region,
@@ -652,6 +726,7 @@ def _profile_case(
         "q_projection_ms": q_projection_ms,
         "projection_score_scan_ms": projection_score_scan_ms,
         "projection_mask_scan_ms": projection_mask_scan_ms,
+        "projection_bitmask_scan_ms": projection_bitmask_scan_ms,
         "candidate_scan_ms": candidate_scan_ms,
         "full_qk_scan_ms": full_qk_scan_ms,
         "scan_over_qk": scan_over_qk,
@@ -731,10 +806,15 @@ def main() -> None:
         default=["projection_random"],
     )
     parser.add_argument("--projection-dim", nargs="+", default=["8", "16", "32"])
+    parser.add_argument("--projection-metadata-dtype", nargs="+", default=["fp32"])
     parser.add_argument("--filter-margin", nargs="+", default=["0.0"])
     parser.add_argument("--scan-region", nargs="+", default=["all"])
     parser.add_argument("--block-order", nargs="+", default=["recent_first"])
-    parser.add_argument("--projection-scan-backend", choices=["torch", "triton", "triton_mask"], default="torch")
+    parser.add_argument(
+        "--projection-scan-backend",
+        choices=["torch", "triton", "triton_mask", "triton_bitmask"],
+        default="torch",
+    )
     parser.add_argument("--blocks-per-program", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--peak", type=float, default=8.0)
@@ -761,11 +841,17 @@ def main() -> None:
                 _parse_str_values(args.block_order),
             ):
                 projection_dims: List[Optional[int]]
+                projection_metadata_dtypes: List[str]
                 if filter_mode.startswith("projection_"):
                     projection_dims = _parse_values(args.projection_dim, int)
+                    projection_metadata_dtypes = _parse_str_values(args.projection_metadata_dtype)
                 else:
                     projection_dims = [None]
-                for projection_dim in projection_dims:
+                    projection_metadata_dtypes = ["fp32"]
+                for projection_dim, projection_metadata_dtype in itertools.product(
+                    projection_dims,
+                    projection_metadata_dtypes,
+                ):
                     try:
                         rows.append(
                             _profile_case(
@@ -775,6 +861,7 @@ def main() -> None:
                                 block_size=block_size,
                                 filter_mode=filter_mode,
                                 projection_dim=projection_dim,
+                                projection_metadata_dtype=projection_metadata_dtype,
                                 filter_margin=margin,
                                 scan_region=scan_region,
                                 block_order_name=block_order_name,
@@ -787,6 +874,7 @@ def main() -> None:
                                 "error": f"{type(exc).__name__}: {exc}",
                                 "filter_mode": filter_mode,
                                 "projection_dim": projection_dim,
+                                "projection_metadata_dtype": projection_metadata_dtype,
                                 "filter_margin": margin,
                                 "scan_region": scan_region,
                                 "block_order": block_order_name,

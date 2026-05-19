@@ -4,7 +4,10 @@ from benchmarks.profile_gate0_candidate_filters import (
     _candidate_metrics,
     _parse_str_values,
     _projection_matrix,
+    _projection_metadata,
+    _projection_metadata_dtype,
     _scan_blocks,
+    _unpack_bitmask,
 )
 
 
@@ -39,6 +42,33 @@ def test_projection_matrix_shapes():
 
     assert random_projection.shape == (4, 16)
     assert hadamard_projection.shape == (4, 16)
+
+
+def test_projection_metadata_dtype_selection():
+    assert _projection_metadata_dtype("fp32") == torch.float32
+    assert _projection_metadata_dtype("fp16") == torch.float16
+
+    k = torch.randn(1, 32, 2, 16)
+    projection = _projection_matrix("random", dim=16, rank=4, seed=0, device=torch.device("cpu"))
+    proj_min, proj_max = _projection_metadata(
+        k,
+        block_size=16,
+        projection=projection,
+        metadata_dtype=torch.float16,
+    )
+    assert proj_min.dtype == torch.float16
+    assert proj_max.dtype == torch.float16
+
+
+def test_unpack_bitmask_handles_signed_high_bit():
+    packed = torch.tensor([[[[5, -2147483648]]]], dtype=torch.int32)
+    unpacked = _unpack_bitmask(packed, num_blocks=64)
+
+    assert unpacked.shape == (1, 1, 1, 64)
+    assert unpacked[0, 0, 0, 0]
+    assert not unpacked[0, 0, 0, 1]
+    assert unpacked[0, 0, 0, 2]
+    assert unpacked[0, 0, 0, 63]
 
 
 def test_candidate_metrics_reports_false_skip_rate():

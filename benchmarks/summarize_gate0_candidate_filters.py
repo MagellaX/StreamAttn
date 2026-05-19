@@ -44,6 +44,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "filter_mode": row.get("filter_mode"),
         "projection_kind": row.get("projection_kind"),
         "projection_dim": row.get("projection_dim"),
+        "projection_metadata_dtype": row.get("projection_metadata_dtype"),
         "filter_margin": row.get("filter_margin"),
         "scan_region": row.get("scan_region"),
         "candidate_scan_backend": row.get("candidate_scan_backend"),
@@ -67,6 +68,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "q_projection_ms": row.get("q_projection_ms"),
         "projection_score_scan_ms": row.get("projection_score_scan_ms"),
         "projection_mask_scan_ms": row.get("projection_mask_scan_ms"),
+        "projection_bitmask_scan_ms": row.get("projection_bitmask_scan_ms"),
         "candidate_scan_ms": row.get("candidate_scan_ms"),
         "full_qk_scan_ms": row.get("full_qk_scan_ms"),
         "scan_over_qk": row.get("scan_over_qk"),
@@ -124,6 +126,7 @@ def _sort_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
         row.get("block_size") or -1,
         str(row.get("filter_mode")),
         row.get("projection_dim") or -1,
+        str(row.get("projection_metadata_dtype")),
         row.get("filter_margin") or -1,
     )
 
@@ -182,6 +185,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "B",
         "mode",
         "R",
+        "mdtype",
         "margin",
         "region",
         "backend",
@@ -194,6 +198,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "scan/qk",
         "qproj",
         "mask",
+        "bitmask",
         "speed",
         "ok",
     ]
@@ -210,6 +215,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('block_size')):>10}",
                     f"{_fmt(row.get('filter_mode')):>10}",
                     f"{_fmt(row.get('projection_dim')):>10}",
+                    f"{_fmt(row.get('projection_metadata_dtype')):>10}",
                     f"{_fmt(row.get('filter_margin')):>10}",
                     f"{_fmt(row.get('scan_region')):>10}",
                     f"{_fmt(row.get('candidate_scan_backend')):>10}",
@@ -222,6 +228,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('scan_over_qk')):>10}",
                     f"{_fmt(row.get('q_projection_ms')):>10}",
                     f"{_fmt(row.get('projection_mask_scan_ms')):>10}",
+                    f"{_fmt(row.get('projection_bitmask_scan_ms')):>10}",
                     f"{_fmt(row.get('estimated_speedup_vs_qk')):>10}",
                     f"{_fmt(row.get('candidate_promising')):>10}",
                 ]
