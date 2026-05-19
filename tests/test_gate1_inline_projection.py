@@ -79,3 +79,53 @@ def test_inline_projection_matches_dense_when_skips_disabled():
     stats = _summarize_inline_stats(raw_stats)
     assert stats["projection_skipped_blocks"] == 0
     assert stats["gate1_post_qk_skipped_blocks"] == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
+def test_inline_projection_fused_qproj_matches_precomputed_when_skips_disabled():
+    torch.manual_seed(1)
+    q = torch.randn(1, 1, 2, 64, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 128, 2, 64, device="cuda", dtype=torch.float16)
+    v = torch.randn(1, 128, 2, 64, device="cuda", dtype=torch.float16)
+    projection = _projection_matrix(
+        "random",
+        dim=64,
+        rank=8,
+        seed=1,
+        device=torch.device("cuda"),
+    )
+    proj_min, proj_max = _projection_metadata(k, block_size=16, projection=projection, metadata_dtype=torch.float16)
+    q_proj = _project_query(q, projection)
+
+    precomputed, _ = gate1_inline_projection_attention_triton_forward(
+        q,
+        k,
+        v,
+        q_proj,
+        proj_min,
+        proj_max,
+        error_budget=0.0,
+        filter_margin=-1.0e9,
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        block_order="sink_recent_first",
+    )
+    fused, _ = gate1_inline_projection_attention_triton_forward(
+        q,
+        k,
+        v,
+        None,
+        proj_min,
+        proj_max,
+        projection=projection,
+        compute_qproj=True,
+        error_budget=0.0,
+        filter_margin=-1.0e9,
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        block_order="sink_recent_first",
+    )
+
+    torch.testing.assert_close(fused, precomputed, rtol=2e-2, atol=2e-2)

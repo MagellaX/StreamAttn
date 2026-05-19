@@ -42,6 +42,7 @@ if TRITON_AVAILABLE:
         K,
         V,
         QProj,
+        Projection,
         ProjMin,
         ProjMax,
         Out,
@@ -63,6 +64,7 @@ if TRITON_AVAILABLE:
         RECENT_START: tl.constexpr,
         MIDDLE_SEED_BLOCKS: tl.constexpr,
         BLOCK_ORDER: tl.constexpr,
+        COMPUTE_QPROJ: tl.constexpr,
         PV_USE_BF16: tl.constexpr,
         HAS_STATS: tl.constexpr,
     ):
@@ -74,8 +76,13 @@ if TRITON_AVAILABLE:
         q = tl.load(q_ptrs)
 
         offs_r = tl.arange(0, RANK)
-        q_proj_ptrs = QProj + off_b * H * RANK + off_h * RANK + offs_r
-        q_proj = tl.load(q_proj_ptrs).to(tl.float32)
+        if COMPUTE_QPROJ:
+            projection_ptrs = Projection + offs_r[:, None] * D + offs_d[None, :]
+            projection_tile = tl.load(projection_ptrs).to(tl.float32)
+            q_proj = tl.sum(projection_tile * q[None, :].to(tl.float32), axis=1)
+        else:
+            q_proj_ptrs = QProj + off_b * H * RANK + off_h * RANK + offs_r
+            q_proj = tl.load(q_proj_ptrs).to(tl.float32)
 
         running_max = tl.full([], -float("inf"), dtype=tl.float32)
         running_lse = tl.full([], -float("inf"), dtype=tl.float32)
@@ -240,10 +247,12 @@ def gate1_inline_projection_attention_triton_forward(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    q_proj: torch.Tensor,
+    q_proj: Optional[torch.Tensor],
     proj_min: torch.Tensor,
     proj_max: torch.Tensor,
     *,
+    projection: Optional[torch.Tensor] = None,
+    compute_qproj: bool = False,
     error_budget: float = 1e-3,
     filter_margin: float = 0.0,
     block_size: int = 16,
@@ -259,13 +268,25 @@ def gate1_inline_projection_attention_triton_forward(
     """Run the inline calibrated projection + Gate-1 prototype.
 
     The prototype only supports ``query_len == 1`` and matching MHA-shaped
-    ``query/key/value`` tensors. ``q_proj`` must be precomputed from the query
-    and ``proj_min/proj_max`` must contain projection metadata over K blocks.
+    ``query/key/value`` tensors. By default ``q_proj`` must be precomputed from
+    the query. If ``compute_qproj`` is set, ``projection`` must be a
+    ``[rank, dim]`` projection matrix and q-projection is fused into the
+    inline kernel. ``proj_min/proj_max`` must contain projection metadata over
+    K blocks.
     """
 
     if not TRITON_AVAILABLE:
         raise RuntimeError("Triton is not available")
-    if not all(t.is_cuda for t in (query, key, value, q_proj, proj_min, proj_max)):
+    cuda_tensors = [query, key, value, proj_min, proj_max]
+    if compute_qproj:
+        if projection is None:
+            raise ValueError("projection must be provided when compute_qproj=True")
+        cuda_tensors.append(projection)
+    else:
+        if q_proj is None:
+            raise ValueError("q_proj must be provided when compute_qproj=False")
+        cuda_tensors.append(q_proj)
+    if not all(t.is_cuda for t in cuda_tensors):
         raise RuntimeError("gate1_inline_projection_attention_triton_forward requires CUDA tensors")
     if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
         raise ValueError("query, key, and value must be [batch, seq, heads, dim]")
@@ -275,8 +296,10 @@ def gate1_inline_projection_attention_triton_forward(
         raise ValueError("key and value must have the same shape")
     if query.shape[0] != key.shape[0] or query.shape[2:] != key.shape[2:]:
         raise ValueError("query/key/value must have matching batch, heads, and dim")
-    if q_proj.dim() != 4:
+    if not compute_qproj and q_proj is not None and q_proj.dim() != 4:
         raise ValueError("q_proj must have shape [batch, heads, 1, rank]")
+    if compute_qproj and projection is not None and projection.dim() != 2:
+        raise ValueError("projection must have shape [rank, dim]")
     if proj_min.dim() != 4 or proj_max.dim() != 4 or proj_min.shape != proj_max.shape:
         raise ValueError("projection metadata must have matching [batch, heads, blocks, rank] shapes")
     if block_size <= 0:
@@ -291,16 +314,26 @@ def gate1_inline_projection_attention_triton_forward(
     query = query.contiguous()
     key = key.contiguous()
     value = value.contiguous()
-    q_proj = q_proj.contiguous()
+    if q_proj is not None:
+        q_proj = q_proj.contiguous()
+    if projection is not None:
+        projection = projection.contiguous()
     proj_min = proj_min.contiguous()
     proj_max = proj_max.contiguous()
 
     batch, _seq_q, heads, dim = query.shape
     seq_k = key.shape[1]
     num_blocks = triton.cdiv(seq_k, block_size)
-    rank = q_proj.shape[3]
-    if q_proj.shape[:3] != (batch, heads, 1):
-        raise ValueError("q_proj shape does not match query batch/head/query dimensions")
+    if compute_qproj:
+        assert projection is not None
+        rank = projection.shape[0]
+        if projection.shape[1] != dim:
+            raise ValueError("projection shape does not match query dim")
+    else:
+        assert q_proj is not None
+        rank = q_proj.shape[3]
+        if q_proj.shape[:3] != (batch, heads, 1):
+            raise ValueError("q_proj shape does not match query batch/head/query dimensions")
     if proj_min.shape != (batch, heads, num_blocks, rank):
         raise ValueError("projection metadata shape does not match key block layout")
     if sink_blocks + recent_blocks > num_blocks:
@@ -320,11 +353,16 @@ def gate1_inline_projection_attention_triton_forward(
     projection_score_scale = (float(dim) / float(rank)) * score_scale
     recent_start = num_blocks - recent_blocks
     grid = (batch, heads)
+    q_proj_arg = q_proj if q_proj is not None else projection
+    projection_arg = projection if projection is not None else q_proj_arg
+    assert q_proj_arg is not None
+    assert projection_arg is not None
     _gate1_inline_projection_fwd_kernel[grid](
         query,
         key,
         value,
-        q_proj,
+        q_proj_arg,
+        projection_arg,
         proj_min,
         proj_max,
         output,
@@ -346,6 +384,7 @@ def gate1_inline_projection_attention_triton_forward(
         RECENT_START=int(recent_start),
         MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
         BLOCK_ORDER=_block_order_id(block_order),
+        COMPUTE_QPROJ=compute_qproj,
         PV_USE_BF16=value.dtype is torch.bfloat16,
         HAS_STATS=return_raw_stats,
         num_warps=num_warps,

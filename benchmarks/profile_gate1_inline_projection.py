@@ -181,6 +181,7 @@ def main() -> None:
     parser.add_argument("--projection-kind", choices=["random", "hadamard"], default="random")
     parser.add_argument("--projection-dim", type=int, default=8)
     parser.add_argument("--projection-metadata-dtype", choices=["fp32", "fp16", "bf16"], default="fp16")
+    parser.add_argument("--qproj-mode", choices=["precomputed", "fused"], default="precomputed")
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
@@ -258,9 +259,11 @@ def main() -> None:
                 q,
                 k,
                 v,
-                q_proj,
+                q_proj if args.qproj_mode == "precomputed" else None,
                 proj_min,
                 proj_max,
+                projection=projection if args.qproj_mode == "fused" else None,
+                compute_qproj=args.qproj_mode == "fused",
                 error_budget=args.error_budget,
                 filter_margin=args.filter_margin,
                 block_size=args.block_size,
@@ -283,9 +286,11 @@ def main() -> None:
             q,
             k,
             v,
-            q_proj,
+            q_proj if args.qproj_mode == "precomputed" else None,
             proj_min,
             proj_max,
+            projection=projection if args.qproj_mode == "fused" else None,
+            compute_qproj=args.qproj_mode == "fused",
             error_budget=args.error_budget,
             filter_margin=args.filter_margin,
             block_size=args.block_size,
@@ -302,7 +307,7 @@ def main() -> None:
 
     stats = _summarize_inline_stats(raw_stats)
     per_head_stats = _summarize_inline_stats_per_head(raw_stats)
-    inline_total_ms = q_projection_ms + inline_ms
+    inline_total_ms = inline_ms if args.qproj_mode == "fused" else q_projection_ms + inline_ms
     payload = {
         "device": torch.cuda.get_device_name(q.device),
         "torch": torch.__version__,
@@ -325,6 +330,7 @@ def main() -> None:
         "projection_kind": args.projection_kind,
         "projection_dim": args.projection_dim,
         "projection_metadata_dtype": args.projection_metadata_dtype,
+        "qproj_mode": args.qproj_mode,
         "metadata_build_ms": metadata_build_ms,
         "q_projection_ms": q_projection_ms,
         "dense_ms": dense_ms,

@@ -75,7 +75,7 @@ def _run(
     prompt: str,
     prompt_type: str,
     layers: str,
-    head_index: int,
+    head_indices: str,
     max_seq: int,
     kv_len: int,
     dtype: str,
@@ -88,6 +88,7 @@ def _run(
     block_order: str,
     projection_dim: int,
     projection_metadata_dtype: str,
+    qproj_mode: str,
     filter_margin: str,
     error_budget: float,
     warmup: int,
@@ -139,6 +140,7 @@ def _run(
     cases = list(
         itertools.product(
             rows,
+            _parse_values(head_indices, int),
             _parse_values(block_size, int),
             _parse_values(middle_seed_blocks, int),
             _parse_values(filter_margin, float),
@@ -148,7 +150,7 @@ def _run(
     if max_cases > 0:
         cases = cases[:max_cases]
 
-    for captured, bs, seed_blocks, margin, order in cases:
+    for captured, head_index, bs, seed_blocks, margin, order in cases:
         profile_cmd = [
             "python",
             "/root/StreamAttn/benchmarks/profile_gate1_inline_projection.py",
@@ -178,6 +180,8 @@ def _run(
             str(projection_dim),
             "--projection-metadata-dtype",
             projection_metadata_dtype,
+            "--qproj-mode",
+            qproj_mode,
             "--filter-margin",
             str(margin),
             "--error-budget",
@@ -214,6 +218,7 @@ def _run(
                     "gate1_mass_ms": profile.get("gate1_mass_ms"),
                     "inline_projection_ms": profile.get("inline_projection_ms"),
                     "q_projection_ms": profile.get("q_projection_ms"),
+                    "qproj_mode": profile.get("qproj_mode"),
                     "inline_total_ms": profile.get("inline_total_ms"),
                     "inline_vs_gate1_speedup": profile.get("inline_vs_gate1_speedup"),
                     "inline_total_vs_gate1_speedup": profile.get("inline_total_vs_gate1_speedup"),
@@ -258,7 +263,8 @@ def _run(
             "block_order": block_order,
             "projection_dim": projection_dim,
             "projection_metadata_dtype": projection_metadata_dtype,
-            "head_index": head_index,
+            "qproj_mode": qproj_mode,
+            "head_indices": head_indices,
         },
         "results": results,
         "best_inline_kernel": best_inline,
@@ -286,6 +292,7 @@ def main(
     prompt_repeat: int = 512,
     layers: str = "8",
     head_index: int = 3,
+    head_indices: str = "",
     max_seq: int = 4096,
     kv_len: int = 4096,
     dtype: str = "fp16",
@@ -298,6 +305,7 @@ def main(
     block_order: str = "recent_first,sink_recent_first",
     projection_dim: int = 8,
     projection_metadata_dtype: str = "fp16",
+    qproj_mode: str = "precomputed",
     filter_margin: str = "8,16,24,32,48",
     error_budget: float = 1e-2,
     warmup: int = 3,
@@ -314,7 +322,7 @@ def main(
         "prompt": prompt,
         "prompt_type": prompt_type,
         "layers": layers,
-        "head_index": head_index,
+        "head_indices": head_indices or str(head_index),
         "max_seq": max_seq,
         "kv_len": kv_len,
         "dtype": dtype,
@@ -327,6 +335,7 @@ def main(
         "block_order": block_order,
         "projection_dim": projection_dim,
         "projection_metadata_dtype": projection_metadata_dtype,
+        "qproj_mode": qproj_mode,
         "filter_margin": filter_margin,
         "error_budget": error_budget,
         "warmup": warmup,
@@ -341,4 +350,3 @@ def main(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
     print(text)
-
