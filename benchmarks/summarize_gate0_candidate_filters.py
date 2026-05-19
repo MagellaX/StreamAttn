@@ -66,6 +66,7 @@ def _summary_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "scan_block_fraction": row.get("scan_block_fraction"),
         "q_projection_ms": row.get("q_projection_ms"),
         "projection_score_scan_ms": row.get("projection_score_scan_ms"),
+        "projection_mask_scan_ms": row.get("projection_mask_scan_ms"),
         "candidate_scan_ms": row.get("candidate_scan_ms"),
         "full_qk_scan_ms": row.get("full_qk_scan_ms"),
         "scan_over_qk": row.get("scan_over_qk"),
@@ -192,6 +193,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
         "mid_rec",
         "scan/qk",
         "qproj",
+        "mask",
         "speed",
         "ok",
     ]
@@ -219,6 +221,7 @@ def _print_table(rows: List[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(row.get('middle_actual_skip_recovery')):>10}",
                     f"{_fmt(row.get('scan_over_qk')):>10}",
                     f"{_fmt(row.get('q_projection_ms')):>10}",
+                    f"{_fmt(row.get('projection_mask_scan_ms')):>10}",
                     f"{_fmt(row.get('estimated_speedup_vs_qk')):>10}",
                     f"{_fmt(row.get('candidate_promising')):>10}",
                 ]

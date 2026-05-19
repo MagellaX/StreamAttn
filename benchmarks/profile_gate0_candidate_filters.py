@@ -41,6 +41,10 @@ from stream_attention.kernels.gate0_projection_scan_triton import (
     TRITON_AVAILABLE as PROJECTION_TRITON_AVAILABLE,
     gate0_projection_scan_triton,
 )
+from stream_attention.kernels.gate0_projection_mask_triton import (
+    TRITON_AVAILABLE as PROJECTION_MASK_TRITON_AVAILABLE,
+    gate0_projection_mask_triton,
+)
 
 
 def _block_lengths(seq_k: int, block_size: int, *, device: torch.device) -> torch.Tensor:
@@ -348,6 +352,23 @@ def _candidate_metrics(
     batch, heads, query_len, num_blocks = scores.shape
     log_lengths = block_lengths.float().clamp_min(1).log().view(1, 1, 1, num_blocks)
     predicted = has_state & torch.isfinite(scores) & (scores + log_lengths <= thresholds + filter_margin)
+    return _candidate_metrics_from_prediction(
+        predicted=predicted,
+        actual_skip=actual_skip,
+        sink_blocks=sink_blocks,
+        recent_blocks=recent_blocks,
+    )
+
+
+def _candidate_metrics_from_prediction(
+    *,
+    predicted: torch.Tensor,
+    actual_skip: torch.Tensor,
+    sink_blocks: int,
+    recent_blocks: int,
+) -> Dict[str, Any]:
+    batch, heads, query_len, num_blocks = predicted.shape
+    predicted = predicted.bool()
     recovered = predicted & actual_skip
     false_skip = predicted & ~actual_skip
     total = int(predicted.numel())
@@ -357,7 +378,7 @@ def _candidate_metrics(
     false_skip_count = int(false_skip.sum().item())
     region_metrics: Dict[str, float] = {}
     for region in ("sink", "middle", "recent"):
-        mask = torch.zeros(num_blocks, device=scores.device, dtype=torch.bool)
+        mask = torch.zeros(num_blocks, device=predicted.device, dtype=torch.bool)
         for block_idx in range(num_blocks):
             if _region_for_block(
                 block_idx,
@@ -456,7 +477,9 @@ def _profile_case(
     metadata_build_ms = 0.0
     q_projection_ms = 0.0
     projection_score_scan_ms = None
+    projection_mask_scan_ms = None
     candidate_scan_backend = args.projection_scan_backend if filter_mode.startswith("projection_") else "torch"
+    mask_fn = None
     if filter_mode in ("projection_random", "projection_hadamard"):
         if projection_dim is None:
             raise ValueError("projection_dim is required for projection filters")
@@ -475,9 +498,11 @@ def _profile_case(
             iters=args.iters,
         )
         proj_min, proj_max = _projection_metadata(k, block_size=block_size, projection=projection)
-        if args.projection_scan_backend == "triton":
-            if not PROJECTION_TRITON_AVAILABLE:
-                raise RuntimeError("Triton projection scan backend is not available")
+        if args.projection_scan_backend in ("triton", "triton_mask"):
+            if args.projection_scan_backend == "triton" and not PROJECTION_TRITON_AVAILABLE:
+                raise RuntimeError("Triton projection score scan backend is not available")
+            if args.projection_scan_backend == "triton_mask" and not PROJECTION_MASK_TRITON_AVAILABLE:
+                raise RuntimeError("Triton projection mask scan backend is not available")
             if device.type != "cuda":
                 raise RuntimeError("Triton projection scan backend requires CUDA")
             scan_start, scan_end = _scan_block_range(
@@ -493,24 +518,49 @@ def _profile_case(
                 iters=args.iters,
             )
             q_proj = _project_query(q, projection)
-            output = torch.full(
-                (batch, heads, query_len, num_blocks),
-                float("inf"),
-                device=device,
-                dtype=torch.float32,
-            )
-            scan_fn = lambda: gate0_projection_scan_triton(
-                q_proj,
-                proj_min,
-                proj_max,
-                dim=dim,
-                scan_start=scan_start,
-                scan_end=scan_end,
-                blocks_per_program=args.blocks_per_program,
-                output=output,
-                clear_output=False,
-            )
-            candidate_scan_backend = "triton_projection"
+            if args.projection_scan_backend == "triton":
+                output = torch.full(
+                    (batch, heads, query_len, num_blocks),
+                    float("inf"),
+                    device=device,
+                    dtype=torch.float32,
+                )
+                scan_fn = lambda: gate0_projection_scan_triton(
+                    q_proj,
+                    proj_min,
+                    proj_max,
+                    dim=dim,
+                    scan_start=scan_start,
+                    scan_end=scan_end,
+                    blocks_per_program=args.blocks_per_program,
+                    output=output,
+                    clear_output=False,
+                )
+                candidate_scan_backend = "triton_projection"
+            else:
+                mask_output = torch.zeros(
+                    (batch, heads, query_len, num_blocks),
+                    device=device,
+                    dtype=torch.uint8,
+                )
+                block_log_lengths = block_lengths.float().clamp_min(1).log()
+                mask_fn = lambda: gate0_projection_mask_triton(
+                    q_proj,
+                    proj_min,
+                    proj_max,
+                    thresholds,
+                    has_state,
+                    block_log_lengths,
+                    dim=dim,
+                    filter_margin=filter_margin,
+                    scan_start=scan_start,
+                    scan_end=scan_end,
+                    blocks_per_program=args.blocks_per_program,
+                    output=mask_output,
+                    clear_output=False,
+                )
+                scan_fn = mask_fn
+                candidate_scan_backend = "triton_projection_mask"
         else:
             scan_fn = lambda: _projection_scores(
                 q,
@@ -538,18 +588,28 @@ def _profile_case(
         warmup=args.warmup,
         iters=args.iters,
     )
-    projection_score_scan_ms = candidate_scan_ms if filter_mode.startswith("projection_") else None
-    scores = scan_fn()
-    metrics = _candidate_metrics(
-        scores=scores,
-        actual_skip=actual_skip,
-        has_state=has_state,
-        thresholds=thresholds,
-        block_lengths=block_lengths,
-        filter_margin=filter_margin,
-        sink_blocks=args.sink_blocks,
-        recent_blocks=args.recent_blocks,
-    )
+    if filter_mode.startswith("projection_") and args.projection_scan_backend == "triton_mask":
+        projection_mask_scan_ms = candidate_scan_ms
+        predicted = scan_fn().bool()
+        metrics = _candidate_metrics_from_prediction(
+            predicted=predicted,
+            actual_skip=actual_skip,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+        )
+    else:
+        projection_score_scan_ms = candidate_scan_ms if filter_mode.startswith("projection_") else None
+        scores = scan_fn()
+        metrics = _candidate_metrics(
+            scores=scores,
+            actual_skip=actual_skip,
+            has_state=has_state,
+            thresholds=thresholds,
+            block_lengths=block_lengths,
+            filter_margin=filter_margin,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+        )
     predicted_compute_fraction = 1.0 - float(metrics["predicted_skip_fraction"])
     estimated_qk_path_ms = q_projection_ms + candidate_scan_ms + predicted_compute_fraction * full_qk_scan_ms
     scan_over_qk = candidate_scan_ms / full_qk_scan_ms if full_qk_scan_ms > 0.0 else None
@@ -591,6 +651,7 @@ def _profile_case(
         "metadata_build_ms": metadata_build_ms,
         "q_projection_ms": q_projection_ms,
         "projection_score_scan_ms": projection_score_scan_ms,
+        "projection_mask_scan_ms": projection_mask_scan_ms,
         "candidate_scan_ms": candidate_scan_ms,
         "full_qk_scan_ms": full_qk_scan_ms,
         "scan_over_qk": scan_over_qk,
@@ -673,7 +734,7 @@ def main() -> None:
     parser.add_argument("--filter-margin", nargs="+", default=["0.0"])
     parser.add_argument("--scan-region", nargs="+", default=["all"])
     parser.add_argument("--block-order", nargs="+", default=["recent_first"])
-    parser.add_argument("--projection-scan-backend", choices=["torch", "triton"], default="torch")
+    parser.add_argument("--projection-scan-backend", choices=["torch", "triton", "triton_mask"], default="torch")
     parser.add_argument("--blocks-per-program", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--peak", type=float, default=8.0)

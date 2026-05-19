@@ -226,7 +226,7 @@ def main(
     filter_margin: str = "0,2,4,8",
     scan_region: str = "all,middle_only",
     block_order: str = "recent_first",
-    projection_scan_backend: str = "triton",
+    projection_scan_backend: str = "triton_mask",
     blocks_per_program: int = 32,
     head_indices: str = "",
     seed: int = 0,
