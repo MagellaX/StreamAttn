@@ -296,6 +296,7 @@ def main() -> None:
         "filter_margin": args.filter_margin,
         "projection_kind": args.projection_kind,
         "projection_dim": args.projection_dim,
+        "projection_seed": args.seed,
         "projection_metadata_dtype": args.projection_metadata_dtype,
         "qproj_mode": args.qproj_mode,
         "q_projection_ms": q_projection_ms,

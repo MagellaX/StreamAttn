@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import modal
 
@@ -58,6 +59,61 @@ def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict:
     raise RuntimeError(f"could not parse JSON from command output:\n{output[-4000:]}")
 
 
+def _summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = []
+    for row in results:
+        stats = row.get("splitk_stats") or {}
+        error = row.get("splitk_error_vs_dense") or {}
+        projection_skip = float(stats.get("projection_skip_fraction") or 0.0)
+        max_error = float(error.get("max_abs_error") or 0.0)
+        rows.append(
+            {
+                "kv_len": row.get("kv_len"),
+                "head_index": row.get("head_index"),
+                "projection_dim": row.get("projection_dim"),
+                "projection_seed": row.get("projection_seed"),
+                "filter_margin": row.get("filter_margin"),
+                "chunk_anchor_blocks": row.get("chunk_anchor_blocks"),
+                "num_chunks": row.get("num_chunks"),
+                "splitk_ms": row.get("splitk_ms"),
+                "splitk_vs_dense_speedup": row.get("splitk_vs_dense_speedup"),
+                "splitk_vs_serial_speedup": row.get("splitk_vs_serial_speedup"),
+                "projection_skip_fraction": projection_skip,
+                "pv_executed_fraction": float(stats.get("pv_executed_fraction") or 0.0),
+                "gate1_post_qk_skipped_blocks": stats.get("gate1_post_qk_skipped_blocks"),
+                "max_abs_error": max_error,
+                "mean_abs_error": float(error.get("mean_abs_error") or 0.0),
+            }
+        )
+    zero_error = [row for row in rows if row["max_abs_error"] == 0.0]
+    strict = [row for row in rows if row["max_abs_error"] <= 1.0e-3]
+    moderate = [row for row in rows if row["max_abs_error"] <= 1.0e-2]
+    by_projection_skip = sorted(
+        rows,
+        key=lambda row: (
+            row["projection_skip_fraction"],
+            -(row["max_abs_error"]),
+            row["splitk_vs_dense_speedup"] or 0.0,
+        ),
+        reverse=True,
+    )
+    strict_by_projection_skip = sorted(
+        strict,
+        key=lambda row: (row["projection_skip_fraction"], row["splitk_vs_dense_speedup"] or 0.0),
+        reverse=True,
+    )
+    return {
+        "row_count": len(rows),
+        "zero_error_count": len(zero_error),
+        "strict_count": len(strict),
+        "moderate_count": len(moderate),
+        "max_projection_skip_fraction": by_projection_skip[0]["projection_skip_fraction"] if by_projection_skip else 0.0,
+        "max_strict_projection_skip_fraction": strict_by_projection_skip[0]["projection_skip_fraction"] if strict_by_projection_skip else 0.0,
+        "top_projection_skip_rows": by_projection_skip[:8],
+        "top_strict_projection_skip_rows": strict_by_projection_skip[:8],
+    }
+
+
 def _run(
     *,
     model: str,
@@ -75,13 +131,17 @@ def _run(
     recent_blocks: int,
     middle_seed_blocks: int,
     chunk_anchor_blocks: int,
+    chunk_anchor_blocks_values: str,
     block_order: str,
     num_chunks: str,
     seed_strategy: str,
     projection_dim: int,
+    projection_dims: str,
+    projection_seeds: str,
     projection_metadata_dtype: str,
     qproj_mode: str,
     filter_margin: float,
+    filter_margins: str,
     error_budget: float,
     warmup: int,
     iters: int,
@@ -134,7 +194,22 @@ def _run(
             )
         captured = rows[0]
         captures.append({"kv_len": kv_len, "row_count": len(rows), "shape": captured.get("shape")})
-        for chunks in _parse_values(num_chunks, int):
+        chunk_values = _parse_values(num_chunks, int)
+        anchor_values = (
+            _parse_values(chunk_anchor_blocks_values, int)
+            if chunk_anchor_blocks_values
+            else [int(chunk_anchor_blocks)]
+        )
+        dim_values = _parse_values(projection_dims, int) if projection_dims else [int(projection_dim)]
+        seed_values = _parse_values(projection_seeds, int)
+        margin_values = _parse_values(filter_margins, float) if filter_margins else [float(filter_margin)]
+        for chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
+            chunk_values,
+            anchor_values,
+            dim_values,
+            seed_values,
+            margin_values,
+        ):
             profile_cmd = [
                 "python",
                 "/root/StreamAttn/benchmarks/profile_gate1_inline_projection_splitk.py",
@@ -159,7 +234,7 @@ def _run(
                 "--middle-seed-blocks",
                 str(middle_seed_blocks),
                 "--chunk-anchor-blocks",
-                str(chunk_anchor_blocks),
+                str(anchors),
                 "--block-order",
                 block_order,
                 "--num-chunks",
@@ -167,15 +242,17 @@ def _run(
                 "--seed-strategy",
                 seed_strategy,
                 "--projection-dim",
-                str(projection_dim),
+                str(proj_dim),
                 "--projection-metadata-dtype",
                 projection_metadata_dtype,
                 "--qproj-mode",
                 qproj_mode,
                 "--filter-margin",
-                str(filter_margin),
+                str(margin),
                 "--error-budget",
                 str(error_budget),
+                "--seed",
+                str(proj_seed),
                 "--warmup",
                 str(warmup),
                 "--iters",
@@ -209,14 +286,19 @@ def _run(
             "block_size": block_size,
             "middle_seed_blocks": middle_seed_blocks,
             "chunk_anchor_blocks": chunk_anchor_blocks,
+            "chunk_anchor_blocks_values": chunk_anchor_blocks_values,
             "filter_margin": filter_margin,
+            "filter_margins": filter_margins,
             "block_order": block_order,
             "num_chunks": num_chunks,
             "seed_strategy": seed_strategy,
             "projection_dim": projection_dim,
+            "projection_dims": projection_dims,
+            "projection_seeds": projection_seeds,
             "projection_metadata_dtype": projection_metadata_dtype,
             "qproj_mode": qproj_mode,
         },
+        "summary": _summarize_results(results),
         "results": results,
     }
 
@@ -251,13 +333,17 @@ def main(
     recent_blocks: int = 2,
     middle_seed_blocks: int = 8,
     chunk_anchor_blocks: int = 0,
+    chunk_anchor_blocks_values: str = "",
     block_order: str = "recent_first",
     num_chunks: str = "2,4,8,16",
     seed_strategy: str = "recompute_seed",
     projection_dim: int = 8,
+    projection_dims: str = "",
+    projection_seeds: str = "0",
     projection_metadata_dtype: str = "fp16",
     qproj_mode: str = "fused",
     filter_margin: float = 32.0,
+    filter_margins: str = "",
     error_budget: float = 1e-2,
     warmup: int = 2,
     iters: int = 10,
@@ -282,13 +368,17 @@ def main(
         "recent_blocks": recent_blocks,
         "middle_seed_blocks": middle_seed_blocks,
         "chunk_anchor_blocks": chunk_anchor_blocks,
+        "chunk_anchor_blocks_values": chunk_anchor_blocks_values,
         "block_order": block_order,
         "num_chunks": num_chunks,
         "seed_strategy": seed_strategy,
         "projection_dim": projection_dim,
+        "projection_dims": projection_dims,
+        "projection_seeds": projection_seeds,
         "projection_metadata_dtype": projection_metadata_dtype,
         "qproj_mode": qproj_mode,
         "filter_margin": filter_margin,
+        "filter_margins": filter_margins,
         "error_budget": error_budget,
         "warmup": warmup,
         "iters": iters,
