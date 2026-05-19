@@ -37,6 +37,10 @@ from benchmarks.profile_gate0_summary_bounds import (
 )
 from stream_attention.certified.bounds import block_score_upper_bound
 from stream_attention.certified.summaries import build_block_summaries
+from stream_attention.kernels.gate0_projection_scan_triton import (
+    TRITON_AVAILABLE as PROJECTION_TRITON_AVAILABLE,
+    gate0_projection_scan_triton,
+)
 
 
 def _block_lengths(seq_k: int, block_size: int, *, device: torch.device) -> torch.Tensor:
@@ -117,6 +121,22 @@ def _scan_blocks(
             )
             != "recent"
         ]
+    raise ValueError(f"unknown scan region: {scan_region}")
+
+
+def _scan_block_range(
+    scan_region: str,
+    *,
+    num_blocks: int,
+    sink_blocks: int,
+    recent_blocks: int,
+) -> Tuple[int, int]:
+    if scan_region == "all":
+        return 0, num_blocks
+    if scan_region == "middle_only":
+        return min(sink_blocks, num_blocks), max(0, num_blocks - min(recent_blocks, num_blocks))
+    if scan_region == "middle_plus_old":
+        return 0, max(0, num_blocks - min(recent_blocks, num_blocks))
     raise ValueError(f"unknown scan region: {scan_region}")
 
 
@@ -289,6 +309,11 @@ def _projection_scores(
     return scores
 
 
+def _project_query(q: torch.Tensor, projection: torch.Tensor) -> torch.Tensor:
+    q_bhsd = q.permute(0, 2, 1, 3).contiguous().float()
+    return torch.einsum("bhsd,rd->bhsr", q_bhsd, projection)
+
+
 def _certified_scores(
     q: torch.Tensor,
     summaries,
@@ -429,6 +454,9 @@ def _profile_case(
 
     projection_kind = None
     metadata_build_ms = 0.0
+    q_projection_ms = 0.0
+    projection_score_scan_ms = None
+    candidate_scan_backend = args.projection_scan_backend if filter_mode.startswith("projection_") else "torch"
     if filter_mode in ("projection_random", "projection_hadamard"):
         if projection_dim is None:
             raise ValueError("projection_dim is required for projection filters")
@@ -447,13 +475,50 @@ def _profile_case(
             iters=args.iters,
         )
         proj_min, proj_max = _projection_metadata(k, block_size=block_size, projection=projection)
-        scan_fn = lambda: _projection_scores(
-            q,
-            projection=projection,
-            proj_min=proj_min,
-            proj_max=proj_max,
-            selected_blocks=selected_blocks,
-        )
+        if args.projection_scan_backend == "triton":
+            if not PROJECTION_TRITON_AVAILABLE:
+                raise RuntimeError("Triton projection scan backend is not available")
+            if device.type != "cuda":
+                raise RuntimeError("Triton projection scan backend requires CUDA")
+            scan_start, scan_end = _scan_block_range(
+                scan_region,
+                num_blocks=num_blocks,
+                sink_blocks=args.sink_blocks,
+                recent_blocks=args.recent_blocks,
+            )
+            q_projection_ms = _time_call(
+                lambda: _project_query(q, projection),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            q_proj = _project_query(q, projection)
+            output = torch.full(
+                (batch, heads, query_len, num_blocks),
+                float("inf"),
+                device=device,
+                dtype=torch.float32,
+            )
+            scan_fn = lambda: gate0_projection_scan_triton(
+                q_proj,
+                proj_min,
+                proj_max,
+                dim=dim,
+                scan_start=scan_start,
+                scan_end=scan_end,
+                blocks_per_program=args.blocks_per_program,
+                output=output,
+                clear_output=False,
+            )
+            candidate_scan_backend = "triton_projection"
+        else:
+            scan_fn = lambda: _projection_scores(
+                q,
+                projection=projection,
+                proj_min=proj_min,
+                proj_max=proj_max,
+                selected_blocks=selected_blocks,
+            )
     elif filter_mode in ("certified_centroid", "certified_outlier2"):
         num_outliers = 0 if filter_mode == "certified_centroid" else 2
         metadata_build_ms = _time_call(
@@ -468,11 +533,12 @@ def _profile_case(
         raise ValueError(f"unknown filter mode: {filter_mode}")
 
     candidate_scan_ms = _time_call(
-        lambda: scan_fn().sum(),
+        lambda: scan_fn(),
         device=device,
         warmup=args.warmup,
         iters=args.iters,
     )
+    projection_score_scan_ms = candidate_scan_ms if filter_mode.startswith("projection_") else None
     scores = scan_fn()
     metrics = _candidate_metrics(
         scores=scores,
@@ -485,7 +551,7 @@ def _profile_case(
         recent_blocks=args.recent_blocks,
     )
     predicted_compute_fraction = 1.0 - float(metrics["predicted_skip_fraction"])
-    estimated_qk_path_ms = candidate_scan_ms + predicted_compute_fraction * full_qk_scan_ms
+    estimated_qk_path_ms = q_projection_ms + candidate_scan_ms + predicted_compute_fraction * full_qk_scan_ms
     scan_over_qk = candidate_scan_ms / full_qk_scan_ms if full_qk_scan_ms > 0.0 else None
     estimated_speedup = full_qk_scan_ms / estimated_qk_path_ms if estimated_qk_path_ms > 0.0 else None
     promising = (
@@ -507,6 +573,7 @@ def _profile_case(
         "projection_seed": args.seed if projection_kind else None,
         "filter_margin": filter_margin,
         "scan_region": scan_region,
+        "candidate_scan_backend": candidate_scan_backend,
         "block_order": block_order_name,
         "block_size": block_size,
         "num_blocks": num_blocks,
@@ -522,6 +589,8 @@ def _profile_case(
         },
         "error_budget": args.error_budget,
         "metadata_build_ms": metadata_build_ms,
+        "q_projection_ms": q_projection_ms,
+        "projection_score_scan_ms": projection_score_scan_ms,
         "candidate_scan_ms": candidate_scan_ms,
         "full_qk_scan_ms": full_qk_scan_ms,
         "scan_over_qk": scan_over_qk,
@@ -604,6 +673,8 @@ def main() -> None:
     parser.add_argument("--filter-margin", nargs="+", default=["0.0"])
     parser.add_argument("--scan-region", nargs="+", default=["all"])
     parser.add_argument("--block-order", nargs="+", default=["recent_first"])
+    parser.add_argument("--projection-scan-backend", choices=["torch", "triton"], default="torch")
+    parser.add_argument("--blocks-per-program", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--peak", type=float, default=8.0)
     parser.add_argument("--sink-blocks", type=int, default=2)
