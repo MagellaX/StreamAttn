@@ -148,7 +148,12 @@ def _run(
         capture_payload, _capture_stdout, _capture_code = _json_from_cmd(capture_cmd, env=env)
         rows = [row for row in (capture_payload or {}).get("rows", []) if not row.get("skipped")]
         if not rows:
-            raise RuntimeError(f"capture produced no usable rows for kv_len={current_kv_len}")
+            skipped_rows = (capture_payload or {}).get("rows", [])
+            errors = (capture_payload or {}).get("errors", [])
+            raise RuntimeError(
+                f"capture produced no usable rows for kv_len={current_kv_len}. "
+                f"skipped_rows={skipped_rows[:4]} errors={errors[:4]}"
+            )
         capture_summaries.append({"kv_len": current_kv_len, "row_count": len(rows)})
         all_cases.extend(
             (
