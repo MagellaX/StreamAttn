@@ -39,6 +39,15 @@ def _parse_str_values(raw: str):
     return [item.strip() for item in str(raw).split(",") if item.strip()]
 
 
+def _head_values(raw: str, captured: dict) -> list[int]:
+    if str(raw).strip().lower() == "all":
+        heads = int((captured.get("shape") or {}).get("heads") or 0)
+        if heads <= 0:
+            raise ValueError("head_indices=all requires captured shape metadata with a positive head count")
+        return list(range(heads))
+    return _parse_values(raw, int)
+
+
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str], check: bool = True) -> tuple[dict | None, str, int]:
     result = subprocess.run(
         cmd,
@@ -142,14 +151,16 @@ def _run(
             raise RuntimeError(f"capture produced no usable rows for kv_len={current_kv_len}")
         capture_summaries.append({"kv_len": current_kv_len, "row_count": len(rows)})
         all_cases.extend(
-            itertools.product(
-                rows,
-                [current_kv_len],
-                _parse_values(head_indices, int),
-                _parse_values(block_size, int),
-                _parse_values(middle_seed_blocks, int),
-                _parse_values(filter_margin, float),
-                _parse_str_values(block_order),
+            (
+                (row, current_kv_len, head_index, bs, seed_blocks, margin, order)
+                for row in rows
+                for head_index in _head_values(head_indices, row)
+                for bs, seed_blocks, margin, order in itertools.product(
+                    _parse_values(block_size, int),
+                    _parse_values(middle_seed_blocks, int),
+                    _parse_values(filter_margin, float),
+                    _parse_str_values(block_order),
+                )
             )
         )
 

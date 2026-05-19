@@ -265,6 +265,11 @@ def _layer_oracle(heads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "heads": len(rows),
                 "safe_sparse_heads": safe_heads,
                 "unsafe_heads": unsafe_heads,
+                "safe_head_count": len(safe_heads),
+                "unsafe_head_count": len(unsafe_heads),
+                "safe_head_fraction": len(safe_heads) / len(rows) if rows else 0.0,
+                "dense_all_ms": dense_sum,
+                "gate1_all_ms": gate1_sum,
                 "dense_all_sum_ms": dense_sum,
                 "gate1_all_sum_ms": gate1_sum,
                 "inline_safe_sum_ms": inline_safe_sum,
@@ -277,6 +282,10 @@ def _layer_oracle(heads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "selective_lower_bound_speedup_vs_dense_sum": (
                     dense_sum / group_max_lower_bound if group_max_lower_bound > 0 else None
                 ),
+                "selective_group_max_speedup_vs_dense_all": (
+                    dense_sum / group_max_lower_bound if group_max_lower_bound > 0 else None
+                ),
+                "selective_serial_speedup_vs_dense_all": dense_sum / selected_sum if selected_sum > 0 else None,
             }
         )
     return sorted(
@@ -286,6 +295,75 @@ def _layer_oracle(heads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             str(row.get("prompt_type")),
             row.get("layer_id") if row.get("layer_id") is not None else -1,
             row.get("kv_len") if row.get("kv_len") is not None else -1,
+            str(row.get("safety_budget")),
+        ),
+    )
+
+
+def _kv_trends(layer_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    grouped: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+    for row in layer_rows:
+        grouped.setdefault(
+            (
+                row.get("model_id"),
+                row.get("prompt_type"),
+                row.get("layer_id"),
+                row.get("safety_budget"),
+            ),
+            [],
+        ).append(row)
+
+    trends: List[Dict[str, Any]] = []
+    for key, rows in grouped.items():
+        points = sorted(
+            [
+                {
+                    "kv_len": row.get("kv_len"),
+                    "heads": row.get("heads"),
+                    "safe_head_count": row.get("safe_head_count"),
+                    "safe_head_fraction": row.get("safe_head_fraction"),
+                    "dense_all_ms": row.get("dense_all_ms"),
+                    "selective_serial_sum_ms": row.get("selective_serial_sum_ms"),
+                    "selective_group_max_lower_bound_ms": row.get("selective_group_max_lower_bound_ms"),
+                    "selective_serial_speedup_vs_dense_all": row.get("selective_serial_speedup_vs_dense_all"),
+                    "selective_group_max_speedup_vs_dense_all": row.get(
+                        "selective_group_max_speedup_vs_dense_all"
+                    ),
+                    "safe_sparse_heads": row.get("safe_sparse_heads"),
+                    "unsafe_heads": row.get("unsafe_heads"),
+                }
+                for row in rows
+            ],
+            key=lambda point: point.get("kv_len") if point.get("kv_len") is not None else -1,
+        )
+        group_speedups = [
+            float(point["selective_group_max_speedup_vs_dense_all"])
+            for point in points
+            if point.get("selective_group_max_speedup_vs_dense_all") is not None
+        ]
+        serial_speedups = [
+            float(point["selective_serial_speedup_vs_dense_all"])
+            for point in points
+            if point.get("selective_serial_speedup_vs_dense_all") is not None
+        ]
+        trends.append(
+            {
+                "model_id": key[0],
+                "prompt_type": key[1],
+                "layer_id": key[2],
+                "safety_budget": key[3],
+                "kv_points": points,
+                "max_selective_group_max_speedup_vs_dense_all": max(group_speedups) if group_speedups else None,
+                "max_selective_serial_speedup_vs_dense_all": max(serial_speedups) if serial_speedups else None,
+                "max_safe_head_count": max((int(point.get("safe_head_count") or 0) for point in points), default=0),
+            }
+        )
+    return sorted(
+        trends,
+        key=lambda row: (
+            str(row.get("model_id")),
+            str(row.get("prompt_type")),
+            row.get("layer_id") if row.get("layer_id") is not None else -1,
             str(row.get("safety_budget")),
         ),
     )
@@ -334,6 +412,44 @@ def _print_heads(rows: List[Dict[str, Any]], *, limit: int) -> None:
         )
 
 
+def _print_kv_trends(rows: List[Dict[str, Any]], *, limit: int) -> None:
+    headers = [
+        "budget",
+        "prompt",
+        "layer",
+        "kv",
+        "safe",
+        "heads",
+        "gmax_spd",
+        "serial_spd",
+        "dense",
+        "gmax_ms",
+    ]
+    print(" ".join(f"{header:>10}" for header in headers))
+    printed = 0
+    for trend in rows:
+        for point in trend.get("kv_points") or []:
+            if printed >= limit:
+                return
+            print(
+                " ".join(
+                    [
+                        f"{_fmt(trend.get('safety_budget')):>10}",
+                        f"{_fmt(trend.get('prompt_type')):>10}",
+                        f"{_fmt(trend.get('layer_id')):>10}",
+                        f"{_fmt(point.get('kv_len')):>10}",
+                        f"{_fmt(point.get('safe_head_count')):>10}",
+                        f"{_fmt(point.get('heads')):>10}",
+                        f"{_fmt(point.get('selective_group_max_speedup_vs_dense_all')):>10}",
+                        f"{_fmt(point.get('selective_serial_speedup_vs_dense_all')):>10}",
+                        f"{_fmt(point.get('dense_all_ms')):>10}",
+                        f"{_fmt(point.get('selective_group_max_lower_bound_ms')):>10}",
+                    ]
+                )
+            )
+            printed += 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("json_paths", nargs="+")
@@ -344,6 +460,7 @@ def main() -> None:
     parser.add_argument("--min-skip-fraction", type=float, default=0.25)
     parser.add_argument("--output-json", default="")
     parser.add_argument("--table", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--trend-table", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--limit", type=int, default=80)
     args = parser.parse_args()
 
@@ -366,6 +483,7 @@ def main() -> None:
             )
         )
     layers = _layer_oracle(heads)
+    kv_trends = _kv_trends(layers)
     summary = {
         "rows": len(rows),
         "calibrated_heads": len(heads),
@@ -381,10 +499,13 @@ def main() -> None:
         "summary": summary,
         "heads": heads,
         "layer_selective_oracle": layers,
+        "kv_trends": kv_trends,
     }
     print(json.dumps(payload["summary"], indent=2, sort_keys=True))
     if args.table:
         _print_heads(heads, limit=args.limit)
+    if args.trend_table:
+        _print_kv_trends(kv_trends, limit=args.limit)
     if args.output_json:
         path = Path(args.output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
