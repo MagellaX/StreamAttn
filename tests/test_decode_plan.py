@@ -12,6 +12,8 @@ from stream_attention.decode import (
     stream_attn_decode_plan,
     stream_attn_decode_run,
 )
+from stream_attention.gate0_fused_hybrid import Gate0FusedHybridPolicy
+from stream_attention.gate1 import dense_attention_forward
 
 
 def _tensors(kv_len: int = 4096):
@@ -329,3 +331,118 @@ def test_decode_wrapper_reuses_last_active_fraction_for_step_plan():
 
     assert plan.backend == "gate1_mass"
     assert plan.predicted_active_fraction == 0.0625
+
+
+def _gate0_policy(q, k, *, speedup: float = 1.4, error: float = 0.005):
+    dense_ms = 1.0
+    return Gate0FusedHybridPolicy(
+        head_modes=tuple(0 if head == 1 else 1 for head in range(q.shape[2])),
+        trusted_sparse_heads=(1,),
+        exact_heads=tuple(head for head in range(q.shape[2]) if head != 1),
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        num_chunks=2,
+        seed_strategy="recompute_seed",
+        filter_margin=32.0,
+        error_budget=0.01,
+        projection_dim=2,
+        projection_metadata_dtype="fp16",
+        expected_dense_ms=dense_ms,
+        expected_fused_hybrid_ms=dense_ms / speedup,
+        expected_speedup_vs_dense=speedup,
+        expected_max_abs_error=error,
+        expected_mean_abs_error=error / 10,
+        kv_len_bucket=k.shape[1],
+    )
+
+
+def test_decode_plan_chooses_gate0_fused_hybrid_from_policy_without_cost_model():
+    q, k, _ = _tensors(kv_len=32768)
+    gate0_policy = _gate0_policy(q, k, speedup=1.45, error=0.005)
+
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_fused_hybrid_policy=gate0_policy,
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+        error_budget=0.01,
+    )
+
+    assert plan.backend == "gate0_fused_hybrid"
+    assert plan.reason == "calibrated_gate0_fused_hybrid_policy"
+    assert plan.gate0_fused_hybrid_policy is gate0_policy
+    assert plan.projection_metadata_required is True
+    assert plan.metadata_update_required is True
+
+
+def test_decode_plan_rejects_gate0_when_policy_error_exceeds_budget():
+    q, k, _ = _tensors(kv_len=32768)
+    gate0_policy = _gate0_policy(q, k, speedup=1.45, error=0.02)
+
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_fused_hybrid_policy=gate0_policy,
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+        error_budget=0.01,
+    )
+
+    assert plan.backend == "dense"
+    assert plan.reason == "missing_decode_cost"
+
+
+def test_decode_run_gate0_plan_uses_dense_fallback_on_cpu():
+    q, k, v = _tensors(kv_len=32768)
+    gate0_policy = _gate0_policy(q, k, speedup=1.45, error=0.005)
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_fused_hybrid_policy=gate0_policy,
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+        error_budget=0.01,
+    )
+
+    out, info = stream_attn_decode_run(q, k, v, plan=plan, return_info=True)
+    expected = dense_attention_forward(q, k, v, causal=False)
+
+    torch.testing.assert_close(out, expected)
+    assert info.stats is None
+
+
+def test_decode_wrapper_can_plan_gate0_fused_hybrid_backend():
+    q, k, v = _tensors(kv_len=32768)
+    gate0_policy = _gate0_policy(q, k, speedup=1.45, error=0.005)
+    workspace = StreamAttnDecodeWorkspace.allocate(
+        device="cpu",
+        max_batch=1,
+        max_query_len=1,
+        max_kv_len=32768,
+        max_heads=2,
+        head_dim=8,
+        block_size=16,
+        dtype=q.dtype,
+    )
+    wrapper = StreamAttnDecodeWrapper(
+        workspace,
+        gate0_fused_hybrid_policy=gate0_policy,
+    )
+    wrapper.plan(
+        query_shape=q.shape,
+        kv_shape=k.shape,
+        block_size=16,
+        tile_size_q=16,
+        error_budget=0.01,
+    )
+
+    out = wrapper.run(q, k, v, active_fraction_hint=1.0)
+
+    assert out.shape == q.shape
+    assert wrapper.last_plan.backend == "gate0_fused_hybrid"

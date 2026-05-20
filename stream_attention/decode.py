@@ -17,6 +17,12 @@ from typing import Dict, Iterable, List, Optional, Union
 import torch
 
 from .certified import StreamAttnMetadataCache
+from .gate0_fused_hybrid import (
+    Gate0FusedHybridPolicy,
+    Gate0ProjectionMetadata,
+    build_gate0_projection_metadata,
+    stream_attn_gate0_fused_hybrid,
+)
 from .gate1 import dense_attention_forward, make_route_request, stream_attn_gate1
 from .router import StreamAttnRouter, normalize_device_class
 from .telemetry import Prediction, seq_bucket
@@ -37,6 +43,8 @@ class StreamAttnDecodePolicy:
     max_active_fraction_value_bound: float = 0.30
     min_confidence: float = 0.70
     require_metadata_for_value_bound: bool = True
+    allow_gate0_fused_hybrid: bool = True
+    min_kv_len_for_gate0: int = 16384
 
     def __post_init__(self) -> None:
         if self.max_router_regret_pct < 0.0:
@@ -49,6 +57,8 @@ class StreamAttnDecodePolicy:
             raise ValueError("collect_telemetry_every must be non-negative")
         if self.min_kv_len_for_gate1 <= 0:
             raise ValueError("min_kv_len_for_gate1 must be positive")
+        if self.min_kv_len_for_gate0 <= 0:
+            raise ValueError("min_kv_len_for_gate0 must be positive")
         for name in ("max_active_fraction_mass", "max_active_fraction_value_bound"):
             value = getattr(self, name)
             if not 0.0 <= value <= 1.0:
@@ -561,6 +571,8 @@ class StreamAttnDecodePlan:
     collect_telemetry: bool
     skip_predicate: Optional[str] = None
     active_threshold: Optional[float] = None
+    projection_metadata_required: bool = False
+    gate0_fused_hybrid_policy: Optional[Gate0FusedHybridPolicy] = None
 
 
 def _predict_active_fraction(
@@ -585,6 +597,8 @@ def stream_attn_decode_plan(
     key: torch.Tensor,
     *,
     metadata: Optional[StreamAttnMetadataCache] = None,
+    gate0_fused_hybrid_policy: Optional[Gate0FusedHybridPolicy] = None,
+    gate0_projection_metadata: Optional[Gate0ProjectionMetadata] = None,
     router: Optional[StreamAttnRouter] = None,
     decode_cost_model: Optional[DecodeCostModel] = None,
     policy: Optional[StreamAttnDecodePolicy] = None,
@@ -640,7 +654,50 @@ def stream_attn_decode_plan(
         and step_index % policy.collect_telemetry_every == 0
     )
 
-    if cost is None:
+    dense_ms = cost.dense_ms if cost is not None else 0.0
+    if dense_ms <= 0.0 and gate0_fused_hybrid_policy is not None:
+        dense_ms = float(gate0_fused_hybrid_policy.expected_dense_ms or 0.0)
+    candidates = {"dense": dense_ms}
+    reasons = {"dense": "dense_fallback"}
+    metadata_available = metadata is not None and metadata.value_norm_bounds is not None
+    active_threshold = (
+        cost.break_even_active_fraction(safety_margin=policy.safety_margin)
+        if cost is not None
+        else None
+    )
+
+    if gate0_fused_hybrid_policy is not None and policy.allow_gate0_fused_hybrid:
+        gate0 = gate0_fused_hybrid_policy
+        gate0_bucket_ok = (
+            gate0.kv_len_bucket is None
+            or seq_bucket(key.shape[1]) == seq_bucket(int(gate0.kv_len_bucket))
+        )
+        gate0_shape_ok = query.shape[1] == 1 and gate0.heads == query.shape[2] == key.shape[2]
+        gate0_ms = gate0.expected_fused_hybrid_ms
+        if gate0_ms is None and gate0.expected_speedup_vs_dense and dense_ms > 0.0:
+            gate0_ms = dense_ms / float(gate0.expected_speedup_vs_dense)
+        gate0_speedup = gate0.expected_speedup_vs_dense
+        if gate0_speedup is None and gate0_ms is not None and dense_ms > 0.0:
+            gate0_speedup = dense_ms / gate0_ms
+        gate0_error_ok = (
+            gate0.expected_max_abs_error is None
+            or gate0.expected_max_abs_error <= error_budget
+        )
+        if (
+            gate0_shape_ok
+            and gate0_bucket_ok
+            and key.shape[1] >= policy.min_kv_len_for_gate0
+            and gate0_ms is not None
+            and gate0_ms > 0.0
+            and dense_ms > 0.0
+            and gate0_speedup is not None
+            and gate0_speedup >= policy.safety_margin
+            and gate0_error_ok
+        ):
+            candidates["gate0_fused_hybrid"] = float(gate0_ms)
+            reasons["gate0_fused_hybrid"] = "calibrated_gate0_fused_hybrid_policy"
+
+    if cost is None and "gate0_fused_hybrid" not in candidates:
         return StreamAttnDecodePlan(
             backend="dense",
             reason="missing_decode_cost",
@@ -663,16 +720,10 @@ def stream_attn_decode_plan(
             collect_telemetry=collect_telemetry,
         )
 
-    dense_ms = cost.dense_ms
-    candidates = {"dense": dense_ms}
-    reasons = {"dense": "dense_fallback"}
-    metadata_available = metadata is not None and metadata.value_norm_bounds is not None
-    active_threshold = cost.break_even_active_fraction(
-        safety_margin=policy.safety_margin,
-    )
-
     if (
-        policy.allow_mass
+        cost is not None
+        and active_threshold is not None
+        and policy.allow_mass
         and key.shape[1] >= policy.min_kv_len_for_gate1
         and prediction.confidence >= policy.min_confidence
         and active <= min(policy.max_active_fraction_mass, active_threshold)
@@ -683,7 +734,9 @@ def stream_attn_decode_plan(
             reasons["gate1_mass"] = "calibrated_mass_profitable"
 
     if (
-        policy.allow_value_bound
+        cost is not None
+        and active_threshold is not None
+        and policy.allow_value_bound
         and key.shape[1] >= policy.min_kv_len_for_gate1
         and prediction.confidence >= policy.min_confidence
         and active <= min(policy.max_active_fraction_value_bound, active_threshold)
@@ -718,7 +771,9 @@ def stream_attn_decode_plan(
         num_warps=num_warps,
         num_stages=num_stages,
         metadata_required=backend == "gate1_value_bound",
-        metadata_update_required=False,
+        metadata_update_required=(
+            backend == "gate0_fused_hybrid" and gate0_projection_metadata is None
+        ),
         predicted_active_fraction=active,
         predicted_ms=predicted_ms,
         dense_ms=dense_ms,
@@ -732,6 +787,10 @@ def stream_attn_decode_plan(
             else None
         ),
         active_threshold=active_threshold,
+        projection_metadata_required=backend == "gate0_fused_hybrid",
+        gate0_fused_hybrid_policy=(
+            gate0_fused_hybrid_policy if backend == "gate0_fused_hybrid" else None
+        ),
     )
 
 
@@ -742,6 +801,9 @@ def stream_attn_decode_run(
     *,
     plan: StreamAttnDecodePlan,
     metadata: Optional[StreamAttnMetadataCache] = None,
+    gate0_projection_metadata: Optional[Gate0ProjectionMetadata] = None,
+    gate0_workspace: Optional[Dict[str, torch.Tensor]] = None,
+    build_gate0_metadata_if_missing: bool = True,
     error_budget: float = 1.0e-3,
     return_info: bool = False,
 ):
@@ -750,6 +812,22 @@ def stream_attn_decode_run(
     if plan.backend == "dense":
         output = dense_attention_forward(query, key, value, causal=False)
         return (output, None) if return_info else output
+    if plan.backend == "gate0_fused_hybrid":
+        if plan.gate0_fused_hybrid_policy is None:
+            raise ValueError("gate0_fused_hybrid plan is missing its policy")
+        return stream_attn_gate0_fused_hybrid(
+            query,
+            key,
+            value,
+            policy=plan.gate0_fused_hybrid_policy,
+            metadata=gate0_projection_metadata,
+            build_metadata_if_missing=build_gate0_metadata_if_missing,
+            return_info=return_info,
+            workspace=gate0_workspace,
+            fallback="dense",
+            num_warps=plan.num_warps,
+            num_stages=plan.num_stages,
+        )
     if plan.backend not in {"gate1_mass", "gate1_value_bound"}:
         raise ValueError(f"unknown decode backend: {plan.backend}")
     if plan.backend == "gate1_value_bound" and metadata is None:
@@ -793,11 +871,16 @@ class StreamAttnDecodeWrapper:
         policy: Optional[StreamAttnDecodePolicy] = None,
         decode_cost_model: Optional[DecodeCostModel] = None,
         router: Optional[StreamAttnRouter] = None,
+        gate0_fused_hybrid_policy: Optional[Gate0FusedHybridPolicy] = None,
+        gate0_projection_metadata: Optional[Gate0ProjectionMetadata] = None,
     ) -> None:
         self.workspace = workspace
         self.policy = policy or StreamAttnDecodePolicy()
         self.decode_cost_model = decode_cost_model or DecodeCostModel()
         self.router = router
+        self.gate0_fused_hybrid_policy = gate0_fused_hybrid_policy
+        self.gate0_projection_metadata = gate0_projection_metadata
+        self.gate0_workspace: Optional[Dict[str, torch.Tensor]] = None
         self.last_active_fraction: Optional[float] = None
         self.last_plan: Optional[StreamAttnDecodePlan] = None
         self.last_info = None
@@ -909,6 +992,8 @@ class StreamAttnDecodeWrapper:
             query,
             key_cache,
             metadata=metadata,
+            gate0_fused_hybrid_policy=self.gate0_fused_hybrid_policy,
+            gate0_projection_metadata=self.gate0_projection_metadata,
             router=self.router,
             decode_cost_model=self.decode_cost_model,
             policy=self.policy,
@@ -951,12 +1036,23 @@ class StreamAttnDecodeWrapper:
             plan.backend != "dense"
             and (plan.collect_telemetry or self.last_active_fraction is None)
         )
+        gate0_metadata = self.gate0_projection_metadata
+        if plan.backend == "gate0_fused_hybrid" and gate0_metadata is None:
+            if self.gate0_fused_hybrid_policy is None:
+                raise ValueError("gate0_fused_hybrid plan requires a policy")
+            gate0_metadata = build_gate0_projection_metadata(
+                key_cache,
+                self.gate0_fused_hybrid_policy,
+            )
+            self.gate0_projection_metadata = gate0_metadata
         result = stream_attn_decode_run(
             query,
             key_cache,
             value_cache,
             plan=plan,
             metadata=metadata,
+            gate0_projection_metadata=gate0_metadata,
+            gate0_workspace=self.gate0_workspace,
             error_budget=float(static["error_budget"]),
             return_info=wants_info,
         )
@@ -966,6 +1062,9 @@ class StreamAttnDecodeWrapper:
             output, info = result, None
         self.last_info = info
         if info is not None and info.stats is not None:
-            self.last_active_fraction = float(info.stats.active_pv_fraction)
+            if hasattr(info.stats, "active_pv_fraction"):
+                self.last_active_fraction = float(info.stats.active_pv_fraction)
+            elif hasattr(info.stats, "pv_executed_fraction"):
+                self.last_active_fraction = float(info.stats.pv_executed_fraction)
         self.workspace.advance_step()
         return (output, info) if return_info else output

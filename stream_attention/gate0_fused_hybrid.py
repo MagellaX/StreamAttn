@@ -47,6 +47,11 @@ class Gate0FusedHybridPolicy:
     model_id: str = "unknown"
     layer_id: int = -1
     kv_len_bucket: Optional[int] = None
+    expected_dense_ms: Optional[float] = None
+    expected_fused_hybrid_ms: Optional[float] = None
+    expected_speedup_vs_dense: Optional[float] = None
+    expected_max_abs_error: Optional[float] = None
+    expected_mean_abs_error: Optional[float] = None
 
     @property
     def heads(self) -> int:
@@ -58,6 +63,7 @@ class Gate0FusedHybridPolicy:
 
         runtime = dict(entry.get("runtime") or {})
         budget = dict(entry.get("safety_budget") or {})
+        quality = dict(entry.get("quality") or {})
         head_modes = tuple(int(item) for item in runtime.get("head_modes") or ())
         if not head_modes:
             trusted = set(int(item) for item in runtime.get("trusted_sparse_heads") or ())
@@ -93,6 +99,31 @@ class Gate0FusedHybridPolicy:
             kv_len_bucket=(
                 int(entry["kv_len_bucket"])
                 if entry.get("kv_len_bucket") is not None
+                else None
+            ),
+            expected_dense_ms=(
+                float(quality["dense_all_ms"])
+                if quality.get("dense_all_ms") is not None
+                else None
+            ),
+            expected_fused_hybrid_ms=(
+                float(quality["fused_hybrid_ms"])
+                if quality.get("fused_hybrid_ms") is not None
+                else None
+            ),
+            expected_speedup_vs_dense=(
+                float(quality["speedup_vs_dense_all"])
+                if quality.get("speedup_vs_dense_all") is not None
+                else None
+            ),
+            expected_max_abs_error=(
+                float(quality["max_abs_error"])
+                if quality.get("max_abs_error") is not None
+                else None
+            ),
+            expected_mean_abs_error=(
+                float(quality["mean_abs_error"])
+                if quality.get("mean_abs_error") is not None
                 else None
             ),
         )
