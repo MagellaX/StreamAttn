@@ -53,6 +53,7 @@ def _head_groups(raw: str, fallback: int, captured: dict[str, Any]) -> list[str]
 
 
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict:
+    print(f"[modal-splitk] running: {' '.join(cmd[:4])} ...", flush=True)
     result = subprocess.run(
         cmd,
         cwd="/root/StreamAttn",
@@ -222,6 +223,11 @@ def _run(
                 f"rows={capture_payload.get('rows', [])[:4]} errors={capture_payload.get('errors', [])[:4]}"
             )
         captured = rows[0]
+        print(
+            f"[modal-splitk] captured kv_len={kv_len} rows={len(rows)} "
+            f"shape={captured.get('shape')}",
+            flush=True,
+        )
         captures.append({"kv_len": kv_len, "row_count": len(rows), "shape": captured.get("shape")})
         chunk_values = _parse_values(num_chunks, int)
         anchor_values = (
@@ -237,16 +243,31 @@ def _run(
             if head_groups
             else [str(value) for value in _head_values(head_indices, head_index, captured)]
         )
-        for current_group, chunks, anchors, proj_dim, proj_seed, margin in itertools.product(
-            group_values,
-            chunk_values,
-            anchor_values,
-            dim_values,
-            seed_values,
-            margin_values,
+        profile_cases = list(
+            itertools.product(
+                group_values,
+                chunk_values,
+                anchor_values,
+                dim_values,
+                seed_values,
+                margin_values,
+            )
+        )
+        print(
+            f"[modal-splitk] kv_len={kv_len} profile_cases={len(profile_cases)} "
+            f"groups={group_values} chunks={chunk_values} margins={margin_values}",
+            flush=True,
+        )
+        for case_index, (current_group, chunks, anchors, proj_dim, proj_seed, margin) in enumerate(
+            profile_cases, start=1
         ):
             group_heads = _head_values(current_group, -1, captured)
             is_group = len(group_heads) != 1
+            print(
+                f"[modal-splitk] profile {case_index}/{len(profile_cases)} "
+                f"kv_len={kv_len} heads={current_group} chunks={chunks} margin={margin}",
+                flush=True,
+            )
             profile_cmd = [
                 "python",
                 "/root/StreamAttn/benchmarks/profile_gate1_inline_projection_splitk.py",
@@ -316,6 +337,13 @@ def _run(
                 }
             )
             results.append(profile)
+            print(
+                f"[modal-splitk] done {case_index}/{len(profile_cases)} "
+                f"splitk_ms={profile.get('splitk_total_ms')} dense_ms={profile.get('dense_ms')} "
+                f"speedup={profile.get('splitk_vs_dense_speedup')} "
+                f"max_err={(profile.get('splitk_error_vs_dense') or {}).get('max_abs_error')}",
+                flush=True,
+            )
 
     return {
         "capture": {
