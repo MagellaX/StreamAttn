@@ -86,6 +86,12 @@ def _run(
     group_iters: int,
     metadata_warmup: int,
     metadata_iters: int,
+    seed_strategy_override: str,
+    block_size_override: int,
+    num_chunks_override: int,
+    middle_seed_blocks_override: int,
+    chunk_anchor_blocks_override: int,
+    filter_margin_override: float,
 ):
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
@@ -171,6 +177,18 @@ def _run(
         ]
         if trusted_heads:
             profile_cmd.extend(["--trusted-heads", trusted_heads])
+        if seed_strategy_override:
+            profile_cmd.extend(["--seed-strategy-override", seed_strategy_override])
+        if block_size_override > 0:
+            profile_cmd.extend(["--block-size-override", str(block_size_override)])
+        if num_chunks_override > 0:
+            profile_cmd.extend(["--num-chunks-override", str(num_chunks_override)])
+        if middle_seed_blocks_override >= 0:
+            profile_cmd.extend(["--middle-seed-blocks-override", str(middle_seed_blocks_override)])
+        if chunk_anchor_blocks_override >= 0:
+            profile_cmd.extend(["--chunk-anchor-blocks-override", str(chunk_anchor_blocks_override)])
+        if filter_margin_override >= 0.0:
+            profile_cmd.extend(["--filter-margin-override", str(filter_margin_override)])
         profile = _json_from_cmd(profile_cmd, env=env)
         profile.update(
             {
@@ -229,6 +247,12 @@ def main(
     group_iters: int = 8,
     metadata_warmup: int = 1,
     metadata_iters: int = 2,
+    seed_strategy_override: str = "",
+    block_size_override: int = 0,
+    num_chunks_override: int = 0,
+    middle_seed_blocks_override: int = -1,
+    chunk_anchor_blocks_override: int = -1,
+    filter_margin_override: float = -1.0,
     output_json: str = "",
 ):
     if prompt_file:
@@ -252,6 +276,12 @@ def main(
         "group_iters": group_iters,
         "metadata_warmup": metadata_warmup,
         "metadata_iters": metadata_iters,
+        "seed_strategy_override": seed_strategy_override,
+        "block_size_override": block_size_override,
+        "num_chunks_override": num_chunks_override,
+        "middle_seed_blocks_override": middle_seed_blocks_override,
+        "chunk_anchor_blocks_override": chunk_anchor_blocks_override,
+        "filter_margin_override": filter_margin_override,
     }
     result = profile_a100.remote(**kwargs) if target == "a100" else profile_h100.remote(**kwargs)
     text = json.dumps(result, indent=2, sort_keys=True)

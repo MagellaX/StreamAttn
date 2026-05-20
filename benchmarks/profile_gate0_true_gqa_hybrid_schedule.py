@@ -114,6 +114,28 @@ def _safe_div(num: float, den: float) -> float | None:
     return None if den <= 0 else num / den
 
 
+def _override_policy(policy: Gate0FusedHybridPolicy, args: argparse.Namespace) -> Gate0FusedHybridPolicy:
+    updates: Dict[str, Any] = {}
+    for arg_name, field_name in (
+        ("block_size_override", "block_size"),
+        ("sink_blocks_override", "sink_blocks"),
+        ("recent_blocks_override", "recent_blocks"),
+        ("middle_seed_blocks_override", "middle_seed_blocks"),
+        ("chunk_anchor_blocks_override", "chunk_anchor_blocks"),
+        ("num_chunks_override", "num_chunks"),
+        ("filter_margin_override", "filter_margin"),
+        ("error_budget_override", "error_budget"),
+    ):
+        value = getattr(args, arg_name)
+        if value is not None:
+            updates[field_name] = value
+    if args.block_order_override:
+        updates["block_order"] = args.block_order_override
+    if args.seed_strategy_override:
+        updates["seed_strategy"] = args.seed_strategy_override
+    return replace(policy, **updates) if updates else policy
+
+
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is required")
@@ -126,6 +148,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         section=args.policy_section,
         entry_index=args.policy_entry_index,
     )
+    policy = _override_policy(policy, args)
     true_policy = replace(policy, kv_heads=args.true_kv_heads)
     q = _load_tensor(args.q_path, key="q", device=device, dtype=dtype)
     k_expanded = _load_tensor(args.k_path, key="k", device=device, dtype=dtype)
@@ -363,8 +386,15 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 for item in sparse_group_items
             ],
             "block_size": true_policy.block_size,
+            "sink_blocks": true_policy.sink_blocks,
+            "recent_blocks": true_policy.recent_blocks,
+            "middle_seed_blocks": true_policy.middle_seed_blocks,
+            "chunk_anchor_blocks": true_policy.chunk_anchor_blocks,
+            "block_order": true_policy.block_order,
             "num_chunks": true_policy.num_chunks,
+            "seed_strategy": true_policy.seed_strategy,
             "filter_margin": true_policy.filter_margin,
+            "error_budget": true_policy.error_budget,
             "projection_dim": true_policy.projection_dim,
             "projection_metadata_dtype": true_policy.projection_metadata_dtype,
             "true_policy_kv_heads": true_policy.kv_heads,
@@ -432,6 +462,20 @@ def main() -> None:
     parser.add_argument("--group-iters", type=int, default=10)
     parser.add_argument("--metadata-warmup", type=int, default=1)
     parser.add_argument("--metadata-iters", type=int, default=2)
+    parser.add_argument("--block-size-override", type=int, default=None)
+    parser.add_argument("--sink-blocks-override", type=int, default=None)
+    parser.add_argument("--recent-blocks-override", type=int, default=None)
+    parser.add_argument("--middle-seed-blocks-override", type=int, default=None)
+    parser.add_argument("--chunk-anchor-blocks-override", type=int, default=None)
+    parser.add_argument("--num-chunks-override", type=int, default=None)
+    parser.add_argument("--filter-margin-override", type=float, default=None)
+    parser.add_argument("--error-budget-override", type=float, default=None)
+    parser.add_argument(
+        "--block-order-override",
+        choices=["", "sequential", "recent_first", "sink_recent_first"],
+        default="",
+    )
+    parser.add_argument("--seed-strategy-override", choices=["", "separate", "recompute_seed"], default="")
     parser.add_argument("--summary-json-out", default="")
     args = parser.parse_args()
 

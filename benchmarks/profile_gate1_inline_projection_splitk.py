@@ -174,6 +174,7 @@ def _time_recompute_seed_breakdown(
     chunk_num = torch.empty(batch, heads, total_states, dim, device=q.device, dtype=torch.float32)
     output = torch.empty_like(q)
     raw_stats = torch.empty(1, device=q.device, dtype=torch.int32)
+    head_modes = torch.empty(1, device=q.device, dtype=torch.int32)
     score_scale = 1.0 / math.sqrt(dim)
     projection_score_scale = (float(dim) / float(rank)) * score_scale
     recent_start = num_blocks - args.recent_blocks
@@ -190,12 +191,15 @@ def _time_recompute_seed_breakdown(
             projection_arg,
             proj_min,
             proj_max,
+            head_modes,
             chunk_max,
             chunk_den,
             chunk_num,
             raw_stats,
             N=seq_k,
             H=heads,
+            H_KV=heads,
+            GROUP_SIZE=1,
             D=dim,
             RANK=rank,
             NUM_BLOCKS=num_blocks,
@@ -214,6 +218,7 @@ def _time_recompute_seed_breakdown(
             CHUNK_ANCHOR_BLOCKS=int(chunk_anchor_blocks),
             BLOCK_ORDER=block_order_id,
             COMPUTE_QPROJ=args.qproj_mode == "fused",
+            HAS_HEAD_MODES=False,
             PV_USE_BF16=v.dtype is torch.bfloat16,
             HAS_STATS=False,
             DEBUG_MODE=debug_mode,
