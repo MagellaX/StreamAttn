@@ -21,6 +21,7 @@ from .gate0_fused_hybrid import (
     Gate0FusedHybridPolicy,
     Gate0ProjectionMetadata,
     build_gate0_projection_metadata,
+    make_gate0_fused_hybrid_workspace,
     stream_attn_gate0_fused_hybrid,
 )
 from .gate1 import dense_attention_forward, make_route_request, stream_attn_gate1
@@ -319,6 +320,8 @@ class StreamAttnDecodeWorkspace:
         dtype: torch.dtype = torch.float16,
     ) -> "StreamAttnDecodeWorkspace":
         device = torch.device(device)
+        if device.type == "cuda" and device.index is None and torch.cuda.is_available():
+            device = torch.device("cuda", torch.cuda.current_device())
         for name, value in {
             "max_batch": max_batch,
             "max_query_len": max_query_len,
@@ -1045,6 +1048,16 @@ class StreamAttnDecodeWrapper:
                 self.gate0_fused_hybrid_policy,
             )
             self.gate0_projection_metadata = gate0_metadata
+        if (
+            plan.backend == "gate0_fused_hybrid"
+            and self.gate0_workspace is None
+            and self.gate0_fused_hybrid_policy is not None
+            and query.is_cuda
+        ):
+            self.gate0_workspace = make_gate0_fused_hybrid_workspace(
+                query,
+                self.gate0_fused_hybrid_policy,
+            )
         result = stream_attn_decode_run(
             query,
             key_cache,

@@ -42,7 +42,13 @@ def _entry():
 
 
 def test_policy_loads_from_fused_hybrid_entry():
-    policy = Gate0FusedHybridPolicy.from_entry(_entry())
+    entry = _entry()
+    entry["robustness"] = {
+        "min_speedup_vs_dense_all": 1.25,
+        "max_abs_error_seen": 0.007,
+        "max_mean_error_seen": 0.0005,
+    }
+    policy = Gate0FusedHybridPolicy.from_entry(entry)
 
     assert policy.head_modes == (1, 0, 1)
     assert policy.trusted_sparse_heads == (1,)
@@ -50,6 +56,9 @@ def test_policy_loads_from_fused_hybrid_entry():
     assert policy.block_size == 4
     assert policy.projection_dim == 2
     assert policy.safety_budget_name == "moderate"
+    assert policy.expected_speedup_vs_dense == 1.25
+    assert policy.expected_max_abs_error == 0.007
+    assert policy.expected_mean_abs_error == 0.0005
 
 
 def test_projection_matrix_is_deterministic():

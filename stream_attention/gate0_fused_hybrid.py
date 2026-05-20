@@ -64,6 +64,7 @@ class Gate0FusedHybridPolicy:
         runtime = dict(entry.get("runtime") or {})
         budget = dict(entry.get("safety_budget") or {})
         quality = dict(entry.get("quality") or {})
+        robustness = dict(entry.get("robustness") or {})
         head_modes = tuple(int(item) for item in runtime.get("head_modes") or ())
         if not head_modes:
             trusted = set(int(item) for item in runtime.get("trusted_sparse_heads") or ())
@@ -114,16 +115,22 @@ class Gate0FusedHybridPolicy:
             expected_speedup_vs_dense=(
                 float(quality["speedup_vs_dense_all"])
                 if quality.get("speedup_vs_dense_all") is not None
+                else float(robustness["min_speedup_vs_dense_all"])
+                if robustness.get("min_speedup_vs_dense_all") is not None
                 else None
             ),
             expected_max_abs_error=(
                 float(quality["max_abs_error"])
                 if quality.get("max_abs_error") is not None
+                else float(robustness["max_abs_error_seen"])
+                if robustness.get("max_abs_error_seen") is not None
                 else None
             ),
             expected_mean_abs_error=(
                 float(quality["mean_abs_error"])
                 if quality.get("mean_abs_error") is not None
+                else float(robustness["max_mean_error_seen"])
+                if robustness.get("max_mean_error_seen") is not None
                 else None
             ),
         )
@@ -352,12 +359,14 @@ def make_gate0_fused_hybrid_workspace(
 ) -> Dict[str, torch.Tensor]:
     """Allocate reusable fused-hybrid split-K workspace buffers."""
 
-    return make_splitk_workspace(
+    workspace = make_splitk_workspace(
         query,
         rank=policy.projection_dim,
         num_chunks=policy.num_chunks,
         seed_strategy=policy.seed_strategy,
     )
+    workspace["head_modes"] = policy.head_modes_tensor(query.device)
+    return workspace
 
 
 def stream_attn_gate0_fused_hybrid(
@@ -409,6 +418,12 @@ def stream_attn_gate0_fused_hybrid(
         metadata = build_gate0_projection_metadata(key, policy)
     metadata.validate_for(key, policy)
 
+    head_modes = None
+    if workspace is not None:
+        head_modes = workspace.get("head_modes")
+    if head_modes is None:
+        head_modes = policy.head_modes_tensor(query.device)
+
     output, raw_stats = gate1_inline_projection_splitk_attention_triton_forward(
         query,
         key,
@@ -428,7 +443,7 @@ def stream_attn_gate0_fused_hybrid(
         chunk_anchor_blocks=policy.chunk_anchor_blocks,
         block_order=policy.block_order,
         seed_strategy=policy.seed_strategy,
-        head_modes=policy.head_modes_tensor(query.device),
+        head_modes=head_modes,
         return_raw_stats=return_info,
         workspace=workspace,
         num_warps=num_warps,
