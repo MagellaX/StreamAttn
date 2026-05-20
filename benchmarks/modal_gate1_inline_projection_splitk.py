@@ -31,6 +31,21 @@ def _parse_values(raw: str, cast):
     return [cast(item.strip()) for item in str(raw).split(",") if item.strip()]
 
 
+def _read_prompt_file(path: str) -> str:
+    """Read a prompt fixture as one prompt, even when the file has line breaks.
+
+    The capture script treats non-jsonl prompt files as one prompt per line.  If
+    this runner repeats a newline-terminated file verbatim, only the first line
+    gets captured.  Collapse text fixtures here so prompt_repeat actually
+    creates a long single prompt.
+    """
+    return " ".join(
+        line.strip()
+        for line in Path(path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+
+
 def _head_values(raw: str, fallback: int, captured: dict[str, Any]) -> list[int]:
     if raw:
         values = _parse_values(raw, int)
@@ -433,7 +448,7 @@ def main(
     output_json: str = "",
 ):
     if prompt_file:
-        prompt = Path(prompt_file).read_text(encoding="utf-8")
+        prompt = _read_prompt_file(prompt_file)
     prompt = prompt * max(1, prompt_repeat)
     kwargs = {
         "model": model,
