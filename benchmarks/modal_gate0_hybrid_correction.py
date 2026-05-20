@@ -87,8 +87,10 @@ def _summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
                 "dense_exact_ms": timing.get("dense_exact_ms"),
                 "serial_corrected_ms": timing.get("serial_corrected_ms"),
                 "oracle_max_ms": timing.get("oracle_max_ms"),
+                "fused_hybrid_ms": timing.get("fused_hybrid_ms"),
                 "parallel_stream_ms": timing.get("parallel_stream_ms"),
                 "oracle_max_speedup_vs_dense_all": timing.get("oracle_max_speedup_vs_dense_all"),
+                "fused_hybrid_speedup_vs_dense_all": timing.get("fused_hybrid_speedup_vs_dense_all"),
                 "parallel_stream_speedup_vs_dense_all": timing.get("parallel_stream_speedup_vs_dense_all"),
                 "corrected_max_abs_error": corrected.get("max_abs_error"),
                 "corrected_mean_abs_error": corrected.get("mean_abs_error"),
@@ -104,9 +106,15 @@ def _summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         key=lambda item: item.get("parallel_stream_speedup_vs_dense_all") or 0.0,
         reverse=True,
     )
+    by_fused = sorted(
+        rows,
+        key=lambda item: item.get("fused_hybrid_speedup_vs_dense_all") or 0.0,
+        reverse=True,
+    )
     return {
         "row_count": len(rows),
         "best_oracle": by_oracle[0] if by_oracle else None,
+        "best_fused": by_fused[0] if by_fused else None,
         "best_parallel": by_parallel[0] if by_parallel else None,
         "rows": rows,
     }
@@ -272,6 +280,7 @@ def _run(
                 f"[modal-hybrid] done {case_index}/{len(group_values)} "
                 f"dense_all={timing.get('dense_all_ms')} sparse={timing.get('sparse_union_ms')} "
                 f"exact={timing.get('dense_exact_ms')} oracle_speed={timing.get('oracle_max_speedup_vs_dense_all')} "
+                f"fused_speed={timing.get('fused_hybrid_speedup_vs_dense_all')} "
                 f"parallel_speed={timing.get('parallel_stream_speedup_vs_dense_all')} "
                 f"corrected_err={corrected.get('max_abs_error')}",
                 flush=True,

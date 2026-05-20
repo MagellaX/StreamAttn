@@ -317,6 +317,7 @@ if TRITON_AVAILABLE:
         Projection,
         ProjMin,
         ProjMax,
+        HeadModes,
         ChunkMax,
         ChunkDen,
         ChunkNum,
@@ -341,6 +342,7 @@ if TRITON_AVAILABLE:
         CHUNK_ANCHOR_BLOCKS: tl.constexpr,
         BLOCK_ORDER: tl.constexpr,
         COMPUTE_QPROJ: tl.constexpr,
+        HAS_HEAD_MODES: tl.constexpr,
         PV_USE_BF16: tl.constexpr,
         HAS_STATS: tl.constexpr,
         DEBUG_MODE: tl.constexpr,
@@ -356,6 +358,8 @@ if TRITON_AVAILABLE:
             q_proj = tl.sum(projection_tile * q[None, :].to(tl.float32), axis=1)
         else:
             q_proj = tl.load(QProj + off_b * H * RANK + off_h * RANK + offs_r).to(tl.float32)
+        head_mode = tl.load(HeadModes + off_h, mask=HAS_HEAD_MODES, other=0)
+        is_exact_head = HAS_HEAD_MODES & (head_mode == 1)
 
         seed_max = tl.full([], -float("inf"), dtype=tl.float32)
         seed_den = tl.zeros([], dtype=tl.float32)
@@ -444,25 +448,28 @@ if TRITON_AVAILABLE:
             block_len = tl.full([], block_len_i, dtype=tl.float32)
             middle_seen += tl.where(valid_block, 1, 0)
 
-            metadata_offset = off_b * H * NUM_BLOCKS * RANK + off_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
-            chosen = tl.load(
-                tl.where(q_proj >= 0.0, ProjMax + metadata_offset, ProjMin + metadata_offset),
-                mask=valid_block,
-                other=0.0,
-            ).to(tl.float32)
-            proj_score = tl.sum(q_proj * chosen, axis=0) * PROJ_SCORE_SCALE
             is_anchor = valid_block & (local_idx < CHUNK_ANCHOR_BLOCKS)
             local_lse = running_max + tl.log(tl.maximum(acc_den, 1.0e-20))
             lse_max = tl.maximum(seed_lse, local_lse)
             combined_lse = lse_max + tl.log(tl.exp(seed_lse - lse_max) + tl.exp(local_lse - lse_max))
             threshold_lse = tl.where(acc_den > 0.0, combined_lse, seed_lse)
-            projection_skip = (
-                valid_block
-                & (~is_anchor)
-                & (seed_den > 0.0)
-                & (ERROR_BUDGET > 0.0)
-                & (proj_score + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET + FILTER_MARGIN)
-            )
+            if is_exact_head:
+                projection_skip = valid_block & False
+            else:
+                metadata_offset = off_b * H * NUM_BLOCKS * RANK + off_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
+                chosen = tl.load(
+                    tl.where(q_proj >= 0.0, ProjMax + metadata_offset, ProjMin + metadata_offset),
+                    mask=valid_block,
+                    other=0.0,
+                ).to(tl.float32)
+                proj_score = tl.sum(q_proj * chosen, axis=0) * PROJ_SCORE_SCALE
+                projection_skip = (
+                    valid_block
+                    & (~is_anchor)
+                    & (seed_den > 0.0)
+                    & (ERROR_BUDGET > 0.0)
+                    & (proj_score + tl.log(block_len) <= threshold_lse + LOG_ERROR_BUDGET + FILTER_MARGIN)
+                )
 
             if projection_skip:
                 projection_skipped += 1
@@ -486,6 +493,7 @@ if TRITON_AVAILABLE:
                     tile_max = tl.max(qk, axis=0)
                     post_qk_skip = (
                         valid_block
+                        & (~is_exact_head)
                         & (~is_anchor)
                         & (seed_den > 0.0)
                         & (ERROR_BUDGET > 0.0)
@@ -540,7 +548,7 @@ if TRITON_AVAILABLE:
                 tl.full([], SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS, dtype=tl.int32),
             )
             tl.store(RawStats + stats_base + 6, tl.full([], NUM_CHUNKS, dtype=tl.int32))
-            tl.store(RawStats + stats_base + 7, tl.full([], 2, dtype=tl.int32))
+            tl.store(RawStats + stats_base + 7, tl.where(is_exact_head, 3, 2))
 
     @triton.jit
     def _merge_kernel(
@@ -710,6 +718,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     chunk_anchor_blocks: int = 0,
     block_order: str = "recent_first",
     seed_strategy: str = "separate",
+    head_modes: Optional[torch.Tensor] = None,
     return_raw_stats: bool = False,
     workspace: Optional[dict[str, torch.Tensor]] = None,
     num_warps: int = 4,
@@ -728,6 +737,8 @@ def gate1_inline_projection_splitk_attention_triton_forward(
         if q_proj is None:
             raise ValueError("q_proj must be provided when compute_qproj=False")
         cuda_tensors.append(q_proj)
+    if head_modes is not None:
+        cuda_tensors.append(head_modes)
     if not all(t.is_cuda for t in cuda_tensors):
         raise RuntimeError("gate1_inline_projection_splitk_attention_triton_forward requires CUDA tensors")
     if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
@@ -782,6 +793,15 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     middle_blocks = num_blocks - sink_blocks - recent_blocks
     if middle_seed_blocks < 0 or middle_seed_blocks > middle_blocks:
         raise ValueError("middle_seed_blocks must be within the middle block count")
+    has_head_modes = head_modes is not None
+    if head_modes is not None:
+        if head_modes.dim() != 1 or head_modes.shape[0] != heads:
+            raise ValueError("head_modes must have shape [heads]")
+        if head_modes.dtype != torch.int32:
+            raise ValueError("head_modes must use torch.int32 dtype")
+        head_modes = head_modes.contiguous()
+    else:
+        head_modes = torch.empty(1, device=query.device, dtype=torch.int32)
 
     nonseed_middle = middle_blocks - middle_seed_blocks
     chunk_blocks = max(1, triton.cdiv(nonseed_middle, num_chunks))
@@ -925,6 +945,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             projection_arg,
             proj_min,
             proj_max,
+            head_modes,
             chunk_max,
             chunk_den,
             chunk_num,
@@ -949,6 +970,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             CHUNK_ANCHOR_BLOCKS=int(chunk_anchor_blocks),
             BLOCK_ORDER=block_order_id,
             COMPUTE_QPROJ=compute_qproj,
+            HAS_HEAD_MODES=has_head_modes,
             PV_USE_BF16=value.dtype is torch.bfloat16,
             HAS_STATS=return_raw_stats,
             DEBUG_MODE=0,

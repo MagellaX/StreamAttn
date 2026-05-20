@@ -167,6 +167,7 @@ def _splitk_projection(
     proj_max: torch.Tensor,
     args: argparse.Namespace,
     workspace: Dict[str, torch.Tensor] | None,
+    head_modes: torch.Tensor | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor | None]:
     return gate1_inline_projection_splitk_attention_triton_forward(
         q,
@@ -187,6 +188,7 @@ def _splitk_projection(
         chunk_anchor_blocks=args.chunk_anchor_blocks,
         block_order=args.block_order,
         seed_strategy=args.seed_strategy,
+        head_modes=head_modes,
         return_raw_stats=True,
         workspace=workspace,
         num_warps=args.num_warps,
@@ -249,6 +251,32 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
             if args.splitk_workspace == "reuse"
             else None
         )
+        hybrid_projection = _projection_matrix(
+            args.projection_kind,
+            dim=q.shape[-1],
+            rank=args.projection_dim,
+            seed=args.seed,
+            device=q.device,
+        )
+        hybrid_proj_min, hybrid_proj_max = _projection_metadata(
+            k,
+            block_size=args.block_size,
+            projection=hybrid_projection,
+            metadata_dtype=_projection_metadata_dtype(args.projection_metadata_dtype),
+        )
+        hybrid_workspace = (
+            make_splitk_workspace(
+                q,
+                rank=args.projection_dim,
+                num_chunks=args.num_chunks,
+                seed_strategy=args.seed_strategy,
+            )
+            if args.splitk_workspace == "reuse"
+            else None
+        )
+        head_modes = torch.ones(total_heads, device=q.device, dtype=torch.int32)
+        for head in trusted_heads:
+            head_modes[int(head)] = 0
 
         def sparse_fn():
             return _splitk_projection(
@@ -265,6 +293,19 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
         def exact_fn():
             return dense_attention_forward(q_exact, k_exact, v_exact, causal=False)
 
+        def fused_hybrid_fn():
+            return _splitk_projection(
+                q,
+                k,
+                v,
+                projection=hybrid_projection,
+                proj_min=hybrid_proj_min,
+                proj_max=hybrid_proj_max,
+                args=args,
+                workspace=hybrid_workspace,
+                head_modes=head_modes,
+            )[0]
+
         dense_all_ms = _time_call(
             lambda: dense_attention_forward(q, k, v, causal=False),
             device=device,
@@ -273,6 +314,12 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
         )
         dense_exact_ms = _time_call(exact_fn, device=device, warmup=args.warmup, iters=args.iters)
         sparse_union_ms = _time_call(sparse_fn, device=device, warmup=args.warmup, iters=args.iters)
+        fused_hybrid_ms = _time_call(
+            fused_hybrid_fn,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
         parallel_stream_ms = (
             _time_parallel(sparse_fn, exact_fn, device=device, warmup=args.warmup, iters=args.iters)
             if args.measure_parallel_streams
@@ -290,6 +337,17 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
             proj_max=proj_max,
             args=args,
             workspace=workspace,
+        )
+        fused_hybrid_out, fused_raw = _splitk_projection(
+            q,
+            k,
+            v,
+            projection=hybrid_projection,
+            proj_min=hybrid_proj_min,
+            proj_max=hybrid_proj_max,
+            args=args,
+            workspace=hybrid_workspace,
+            head_modes=head_modes,
         )
         corrected_out = _assemble_corrected_output(
             total_heads=total_heads,
@@ -348,9 +406,11 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
             "serial_corrected_ms": serial_corrected_ms,
             "oracle_max_ms": oracle_max_ms,
             "parallel_stream_ms": parallel_stream_ms,
+            "fused_hybrid_ms": fused_hybrid_ms,
             "sparse_union_speedup_vs_dense_all": dense_all_ms / sparse_union_ms if sparse_union_ms > 0 else None,
             "serial_corrected_speedup_vs_dense_all": dense_all_ms / serial_corrected_ms if serial_corrected_ms > 0 else None,
             "oracle_max_speedup_vs_dense_all": dense_all_ms / oracle_max_ms if oracle_max_ms > 0 else None,
+            "fused_hybrid_speedup_vs_dense_all": dense_all_ms / fused_hybrid_ms if fused_hybrid_ms > 0 else None,
             "parallel_stream_speedup_vs_dense_all": (
                 dense_all_ms / parallel_stream_ms
                 if parallel_stream_ms is not None and parallel_stream_ms > 0
@@ -366,6 +426,10 @@ def profile_hybrid(args: argparse.Namespace) -> Dict[str, Any]:
             ),
             "corrected_error_vs_dense_all": _max_mean_error(corrected_out, dense_all_out),
             "corrected_error_vs_dense_all_per_head": _per_head_error(corrected_out, dense_all_out),
+            "fused_hybrid_error_vs_dense_all": _max_mean_error(fused_hybrid_out, dense_all_out),
+            "fused_hybrid_error_vs_dense_all_per_head": _per_head_error(fused_hybrid_out, dense_all_out),
+            "fused_hybrid_stats": _summarize_splitk_stats(fused_raw),
+            "fused_hybrid_per_head_stats": _summarize_splitk_stats_per_head(fused_raw),
             "sparse_union_stats": _summarize_splitk_stats(sparse_raw),
             "sparse_union_per_head_stats": _summarize_splitk_stats_per_head(sparse_raw),
         },
