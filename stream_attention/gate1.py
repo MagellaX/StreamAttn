@@ -166,6 +166,12 @@ def dense_attention_forward(
     q_bh = query.permute(0, 2, 1, 3).contiguous()
     k_bh = key.permute(0, 2, 1, 3).contiguous()
     v_bh = value.permute(0, 2, 1, 3).contiguous()
+    if q_bh.shape[1] != k_bh.shape[1]:
+        if q_bh.shape[1] % k_bh.shape[1] != 0:
+            raise ValueError("query heads must be a multiple of KV heads")
+        group_size = q_bh.shape[1] // k_bh.shape[1]
+        k_bh = k_bh.repeat_interleave(group_size, dim=1)
+        v_bh = v_bh.repeat_interleave(group_size, dim=1)
     out = F.scaled_dot_product_attention(
         q_bh,
         k_bh,

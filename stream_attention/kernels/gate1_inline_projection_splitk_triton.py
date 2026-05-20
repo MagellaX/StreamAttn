@@ -66,6 +66,8 @@ if TRITON_AVAILABLE:
         QProjOut,
         N: tl.constexpr,
         H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
         D: tl.constexpr,
         RANK: tl.constexpr,
         NUM_BLOCKS: tl.constexpr,
@@ -81,6 +83,7 @@ if TRITON_AVAILABLE:
     ):
         off_b = tl.program_id(0)
         off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
         offs_d = tl.arange(0, D)
         q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
 
@@ -114,9 +117,9 @@ if TRITON_AVAILABLE:
             col_mask = tl.arange(0, TILE_N) < block_len_i
             k_tile = tl.load(
                 K
-                + off_b * N * H * D
-                + offs_n[:, None] * H * D
-                + off_h * D
+                + off_b * N * H_KV * D
+                + offs_n[:, None] * H_KV * D
+                + off_kv_h * D
                 + offs_d[None, :],
                 mask=col_mask[:, None],
                 other=0.0,
@@ -134,9 +137,9 @@ if TRITON_AVAILABLE:
             p = tl.where(qk > -float("inf"), p, 0.0)
             v_tile = tl.load(
                 V
-                + off_b * N * H * D
-                + offs_n[:, None] * H * D
-                + off_h * D
+                + off_b * N * H_KV * D
+                + offs_n[:, None] * H_KV * D
+                + off_kv_h * D
                 + offs_d[None, :],
                 mask=col_mask[:, None],
                 other=0.0,
@@ -170,6 +173,8 @@ if TRITON_AVAILABLE:
         RawStats,
         N: tl.constexpr,
         H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
         D: tl.constexpr,
         RANK: tl.constexpr,
         NUM_BLOCKS: tl.constexpr,
@@ -191,6 +196,7 @@ if TRITON_AVAILABLE:
         off_b = tl.program_id(0)
         off_h = tl.program_id(1)
         off_c = tl.program_id(2)
+        off_kv_h = off_h // GROUP_SIZE
         offs_d = tl.arange(0, D)
         offs_r = tl.arange(0, RANK)
         q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
@@ -221,7 +227,7 @@ if TRITON_AVAILABLE:
             block_len = tl.full([], block_len_i, dtype=tl.float32)
             middle_seen += tl.where(valid_block, 1, 0)
 
-            metadata_offset = off_b * H * NUM_BLOCKS * RANK + off_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
+            metadata_offset = off_b * H_KV * NUM_BLOCKS * RANK + off_kv_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
             chosen = tl.load(
                 tl.where(q_proj >= 0.0, ProjMax + metadata_offset, ProjMin + metadata_offset),
                 mask=valid_block,
@@ -244,9 +250,9 @@ if TRITON_AVAILABLE:
                 col_mask = (tl.arange(0, TILE_N) < block_len_i) & valid_block
                 k_tile = tl.load(
                     K
-                    + off_b * N * H * D
-                    + offs_n[:, None] * H * D
-                    + off_h * D
+                    + off_b * N * H_KV * D
+                    + offs_n[:, None] * H_KV * D
+                    + off_kv_h * D
                     + offs_d[None, :],
                     mask=col_mask[:, None],
                     other=0.0,
@@ -273,9 +279,9 @@ if TRITON_AVAILABLE:
                     p = tl.where(qk > -float("inf"), p, 0.0)
                     v_tile = tl.load(
                         V
-                        + off_b * N * H * D
-                        + offs_n[:, None] * H * D
-                        + off_h * D
+                        + off_b * N * H_KV * D
+                        + offs_n[:, None] * H_KV * D
+                        + off_kv_h * D
                         + offs_d[None, :],
                         mask=col_mask[:, None],
                         other=0.0,
@@ -324,6 +330,8 @@ if TRITON_AVAILABLE:
         RawStats,
         N: tl.constexpr,
         H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
         D: tl.constexpr,
         RANK: tl.constexpr,
         NUM_BLOCKS: tl.constexpr,
@@ -350,6 +358,7 @@ if TRITON_AVAILABLE:
         off_b = tl.program_id(0)
         off_h = tl.program_id(1)
         off_c = tl.program_id(2)
+        off_kv_h = off_h // GROUP_SIZE
         offs_d = tl.arange(0, D)
         offs_r = tl.arange(0, RANK)
         head_mode = tl.load(HeadModes + off_h, mask=HAS_HEAD_MODES, other=0)
@@ -391,9 +400,9 @@ if TRITON_AVAILABLE:
                 col_mask = tl.arange(0, TILE_N) < block_len_i
                 k_tile = tl.load(
                     K
-                    + off_b * N * H * D
-                    + offs_n[:, None] * H * D
-                    + off_h * D
+                    + off_b * N * H_KV * D
+                    + offs_n[:, None] * H_KV * D
+                    + off_kv_h * D
                     + offs_d[None, :],
                     mask=col_mask[:, None],
                     other=0.0,
@@ -411,9 +420,9 @@ if TRITON_AVAILABLE:
                 p = tl.where(qk > -float("inf"), p, 0.0)
                 v_tile = tl.load(
                     V
-                    + off_b * N * H * D
-                    + offs_n[:, None] * H * D
-                    + off_h * D
+                    + off_b * N * H_KV * D
+                    + offs_n[:, None] * H_KV * D
+                    + off_kv_h * D
                     + offs_d[None, :],
                     mask=col_mask[:, None],
                     other=0.0,
@@ -464,7 +473,7 @@ if TRITON_AVAILABLE:
             if is_exact_head:
                 projection_skip = valid_block & False
             else:
-                metadata_offset = off_b * H * NUM_BLOCKS * RANK + off_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
+                metadata_offset = off_b * H_KV * NUM_BLOCKS * RANK + off_kv_h * NUM_BLOCKS * RANK + block_idx * RANK + offs_r
                 chosen = tl.load(
                     tl.where(q_proj >= 0.0, ProjMax + metadata_offset, ProjMin + metadata_offset),
                     mask=valid_block,
@@ -489,9 +498,9 @@ if TRITON_AVAILABLE:
                     col_mask = (tl.arange(0, TILE_N) < block_len_i) & valid_block
                     k_tile = tl.load(
                         K
-                        + off_b * N * H * D
-                        + offs_n[:, None] * H * D
-                        + off_h * D
+                        + off_b * N * H_KV * D
+                        + offs_n[:, None] * H_KV * D
+                        + off_kv_h * D
                         + offs_d[None, :],
                         mask=col_mask[:, None],
                         other=0.0,
@@ -523,9 +532,9 @@ if TRITON_AVAILABLE:
                             p = tl.where(qk > -float("inf"), p, 0.0)
                             v_tile = tl.load(
                                 V
-                                + off_b * N * H * D
-                                + offs_n[:, None] * H * D
-                                + off_h * D
+                                + off_b * N * H_KV * D
+                                + offs_n[:, None] * H_KV * D
+                                + off_kv_h * D
                                 + offs_d[None, :],
                                 mask=col_mask[:, None],
                                 other=0.0,
@@ -755,8 +764,8 @@ def gate1_inline_projection_splitk_attention_triton_forward(
         raise ValueError("split-K inline projection prototype only supports query_len == 1")
     if key.shape != value.shape:
         raise ValueError("key and value must have the same shape")
-    if query.shape[0] != key.shape[0] or query.shape[2:] != key.shape[2:]:
-        raise ValueError("query/key/value must have matching batch, heads, and dim")
+    if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
     if proj_min.dim() != 4 or proj_max.dim() != 4 or proj_min.shape != proj_max.shape:
         raise ValueError("projection metadata must have matching [batch, heads, blocks, rank] shapes")
     if block_size <= 0:
@@ -782,6 +791,10 @@ def gate1_inline_projection_splitk_attention_triton_forward(
     proj_max = proj_max.contiguous()
 
     batch, _seq_q, heads, dim = query.shape
+    kv_heads = key.shape[2]
+    if kv_heads <= 0 or heads % kv_heads != 0:
+        raise ValueError("query heads must be a positive multiple of KV heads")
+    group_size = heads // kv_heads
     seq_k = key.shape[1]
     num_blocks = triton.cdiv(seq_k, block_size)
     if compute_qproj:
@@ -794,7 +807,7 @@ def gate1_inline_projection_splitk_attention_triton_forward(
         rank = q_proj.shape[3]
         if q_proj.shape[:3] != (batch, heads, 1):
             raise ValueError("q_proj shape does not match query batch/head/query dimensions")
-    if proj_min.shape != (batch, heads, num_blocks, rank):
+    if proj_min.shape != (batch, kv_heads, num_blocks, rank):
         raise ValueError("projection metadata shape does not match key block layout")
     if sink_blocks + recent_blocks > num_blocks:
         raise ValueError("sink_blocks + recent_blocks must not exceed the number of K blocks")
@@ -880,6 +893,8 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             q_proj_out,
             N=seq_k,
             H=heads,
+            H_KV=kv_heads,
+            GROUP_SIZE=group_size,
             D=dim,
             RANK=rank,
             NUM_BLOCKS=num_blocks,
@@ -910,6 +925,8 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             raw_stats,
             N=seq_k,
             H=heads,
+            H_KV=kv_heads,
+            GROUP_SIZE=group_size,
             D=dim,
             RANK=rank,
             NUM_BLOCKS=num_blocks,
@@ -960,6 +977,8 @@ def gate1_inline_projection_splitk_attention_triton_forward(
             raw_stats,
             N=seq_k,
             H=heads,
+            H_KV=kv_heads,
+            GROUP_SIZE=group_size,
             D=dim,
             RANK=rank,
             NUM_BLOCKS=num_blocks,

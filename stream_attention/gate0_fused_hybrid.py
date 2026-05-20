@@ -47,6 +47,7 @@ class Gate0FusedHybridPolicy:
     model_id: str = "unknown"
     layer_id: int = -1
     kv_len_bucket: Optional[int] = None
+    kv_heads: Optional[int] = None
     expected_dense_ms: Optional[float] = None
     expected_fused_hybrid_ms: Optional[float] = None
     expected_speedup_vs_dense: Optional[float] = None
@@ -101,6 +102,13 @@ class Gate0FusedHybridPolicy:
                 int(entry["kv_len_bucket"])
                 if entry.get("kv_len_bucket") is not None
                 else None
+            ),
+            kv_heads=(
+                int(runtime["kv_heads"])
+                if runtime.get("kv_heads") is not None
+                else int(entry["kv_heads"])
+                if entry.get("kv_heads") is not None
+                else len(head_modes)
             ),
             expected_dense_ms=(
                 float(quality["dense_all_ms"])
@@ -177,6 +185,8 @@ class Gate0ProjectionMetadata:
         if key.dim() != 4:
             raise ValueError("key must have shape [batch, kv_len, heads, dim]")
         batch, seq_k, heads, dim = key.shape
+        if policy.heads % heads != 0:
+            raise ValueError("policy Q-head count must be a multiple of key heads")
         expected_blocks = (seq_k + policy.block_size - 1) // policy.block_size
         if self.projection.shape != (policy.projection_dim, dim):
             raise ValueError("projection shape does not match key dim/policy rank")
@@ -273,8 +283,10 @@ def build_gate0_projection_metadata(
 
     if key.dim() != 4:
         raise ValueError("key must have shape [batch, kv_len, heads, dim]")
-    if key.shape[2] != policy.heads:
-        raise ValueError("key head count does not match policy head modes")
+    if policy.kv_heads is not None and key.shape[2] != policy.kv_heads:
+        raise ValueError("key head count does not match policy KV-head calibration")
+    if policy.heads % key.shape[2] != 0:
+        raise ValueError("policy Q-head count must be a multiple of key heads")
     projection = (
         projection
         if projection is not None
@@ -399,10 +411,14 @@ def stream_attn_gate0_fused_hybrid(
         raise ValueError("query, key, and value must have shape [batch, seq, heads, dim]")
     if query.shape[1] != 1:
         raise ValueError("fused-hybrid Gate-0 only supports query_len == 1")
-    if key.shape != value.shape or query.shape[0] != key.shape[0] or query.shape[2:] != key.shape[2:]:
-        raise ValueError("query/key/value must have matching batch, heads, and dim")
+    if key.shape != value.shape or query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
     if query.shape[2] != policy.heads:
         raise ValueError("query head count does not match policy head modes")
+    if policy.kv_heads is not None and key.shape[2] != policy.kv_heads:
+        raise ValueError("key head count does not match policy KV-head calibration")
+    if query.shape[2] % key.shape[2] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
     if not query.is_cuda:
         if fallback == "dense":
             output = dense_attention_forward(query, key, value, causal=False)

@@ -675,7 +675,13 @@ def stream_attn_decode_plan(
             gate0.kv_len_bucket is None
             or seq_bucket(key.shape[1]) == seq_bucket(int(gate0.kv_len_bucket))
         )
-        gate0_shape_ok = query.shape[1] == 1 and gate0.heads == query.shape[2] == key.shape[2]
+        gate0_shape_ok = (
+            query.shape[1] == 1
+            and gate0.heads == query.shape[2]
+            and key.shape[2] > 0
+            and query.shape[2] % key.shape[2] == 0
+            and (gate0.kv_heads is None or gate0.kv_heads == key.shape[2])
+        )
         gate0_ms = gate0.expected_fused_hybrid_ms
         if gate0_ms is None and gate0.expected_speedup_vs_dense and dense_ms > 0.0:
             gate0_ms = dense_ms / float(gate0.expected_speedup_vs_dense)

@@ -56,6 +56,7 @@ def test_policy_loads_from_fused_hybrid_entry():
     assert policy.block_size == 4
     assert policy.projection_dim == 2
     assert policy.safety_budget_name == "moderate"
+    assert policy.kv_heads == 3
     assert policy.expected_speedup_vs_dense == 1.25
     assert policy.expected_max_abs_error == 0.007
     assert policy.expected_mean_abs_error == 0.0005
@@ -85,6 +86,40 @@ def test_projection_metadata_shapes_and_values():
     torch.testing.assert_close(metadata.proj_max[0, 0, 0].float(), torch.tensor([36.0, 37.0]))
 
 
+def test_projection_metadata_allows_true_gqa_kv_heads():
+    policy = Gate0FusedHybridPolicy(
+        head_modes=(1, 0, 1, 1),
+        trusted_sparse_heads=(1,),
+        exact_heads=(0, 2, 3),
+        kv_heads=2,
+        block_size=4,
+        projection_dim=2,
+        projection_metadata_dtype="fp16",
+    )
+    k = torch.randn(1, 8, 2, 4)
+    projection = torch.eye(2, 4)
+
+    metadata = build_gate0_projection_metadata(k, policy, projection=projection)
+
+    assert metadata.proj_min.shape == (1, 2, 2, 2)
+    metadata.validate_for(k, policy)
+
+
+def test_projection_metadata_rejects_wrong_policy_kv_heads():
+    policy = Gate0FusedHybridPolicy(
+        head_modes=(1, 0, 1, 1),
+        trusted_sparse_heads=(1,),
+        exact_heads=(0, 2, 3),
+        kv_heads=4,
+        block_size=4,
+        projection_dim=2,
+    )
+    k = torch.randn(1, 8, 2, 4)
+
+    with pytest.raises(ValueError, match="KV-head calibration"):
+        build_gate0_projection_metadata(k, policy)
+
+
 def test_cpu_dense_fallback_matches_dense_attention():
     policy = Gate0FusedHybridPolicy.from_entry(_entry())
     q = torch.randn(1, 1, 3, 4)
@@ -104,6 +139,33 @@ def test_cpu_dense_fallback_matches_dense_attention():
     torch.testing.assert_close(actual, expected)
     assert info.stats is None
     assert info.policy is policy
+
+
+def test_cpu_dense_fallback_matches_dense_attention_true_gqa():
+    policy = Gate0FusedHybridPolicy(
+        head_modes=(1, 0, 1, 1),
+        trusted_sparse_heads=(1,),
+        exact_heads=(0, 2, 3),
+        kv_heads=2,
+        block_size=4,
+        projection_dim=2,
+    )
+    q = torch.randn(1, 1, 4, 4)
+    k = torch.randn(1, 8, 2, 4)
+    v = torch.randn(1, 8, 2, 4)
+
+    actual, info = stream_attn_gate0_fused_hybrid(
+        q,
+        k,
+        v,
+        policy=policy,
+        fallback="dense",
+        return_info=True,
+    )
+    expected = dense_attention_forward(q, k, v, causal=False)
+
+    torch.testing.assert_close(actual, expected)
+    assert info.stats is None
 
 
 def test_raw_stats_summary_uses_splitk_counter_layout():
@@ -147,3 +209,42 @@ def test_cuda_runtime_wrapper_dispatches_fused_kernel_with_telemetry():
     assert info.stats is not None
     assert info.per_head_stats is not None
     assert len(info.per_head_stats) == 3
+
+
+@pytest.mark.skipif(not torch.cuda.is_available() or not TRITON_AVAILABLE, reason="CUDA/Triton required")
+def test_cuda_runtime_supports_true_gqa_metadata_layout():
+    policy = Gate0FusedHybridPolicy(
+        head_modes=(1, 0, 1, 1),
+        trusted_sparse_heads=(1,),
+        exact_heads=(0, 2, 3),
+        kv_heads=2,
+        block_size=4,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        num_chunks=2,
+        seed_strategy="recompute_seed",
+        filter_margin=16.0,
+        error_budget=0.01,
+        projection_dim=2,
+        projection_metadata_dtype="fp16",
+    )
+    q = torch.randn(1, 1, 4, 4, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 64, 2, 4, device="cuda", dtype=torch.float16)
+    v = torch.randn(1, 64, 2, 4, device="cuda", dtype=torch.float16)
+
+    out, info = stream_attn_gate0_fused_hybrid(
+        q,
+        k,
+        v,
+        policy=policy,
+        return_info=True,
+    )
+
+    expected = dense_attention_forward(q, k, v, causal=False)
+    assert out.shape == q.shape
+    assert info.stats is not None
+    assert info.per_head_stats is not None
+    assert len(info.per_head_stats) == 4
+    assert torch.isfinite(out).all()
+    assert torch.isfinite(expected).all()
