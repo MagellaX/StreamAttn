@@ -86,6 +86,7 @@ def _summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     for row in results:
         stats = row.get("splitk_stats") or {}
         error = row.get("splitk_error_vs_dense") or {}
+        per_head_error = row.get("splitk_error_vs_dense_per_head") or {}
         projection_skip = float(stats.get("projection_skip_fraction") or 0.0)
         max_error = float(error.get("max_abs_error") or 0.0)
         rows.append(
@@ -109,6 +110,7 @@ def _summarize_results(results: list[dict[str, Any]]) -> dict[str, Any]:
                 "gate1_post_qk_skipped_blocks": stats.get("gate1_post_qk_skipped_blocks"),
                 "max_abs_error": max_error,
                 "mean_abs_error": float(error.get("mean_abs_error") or 0.0),
+                "worst_error_head": per_head_error.get("worst_head"),
             }
         )
     zero_error = [row for row in rows if row["max_abs_error"] == 0.0]

@@ -14,7 +14,7 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (
     gate1_inline_projection_splitk_attention_triton_forward,
     make_splitk_workspace,
 )
-from benchmarks.profile_gate1_inline_projection_splitk import _parse_head_indices
+from benchmarks.profile_gate1_inline_projection_splitk import _parse_head_indices, _per_head_error
 
 
 def test_splitk_block_order_ids():
@@ -38,6 +38,20 @@ def test_splitk_profile_parse_head_indices():
     assert _parse_head_indices("-1", heads=4) == [0, 1, 2, 3]
     with pytest.raises(ValueError, match="outside"):
         _parse_head_indices("4", heads=4)
+
+
+def test_splitk_profile_reports_per_head_error():
+    expected = torch.zeros((1, 1, 3, 2), dtype=torch.float32)
+    actual = expected.clone()
+    actual[:, :, 1, 0] = 0.5
+    actual[:, :, 2, :] = 0.25
+
+    payload = _per_head_error(actual, expected)
+
+    assert payload["worst_head"] == 1
+    assert payload["per_head"][0]["max_abs_error"] == 0.0
+    assert payload["per_head"][1]["max_abs_error"] == 0.5
+    assert payload["per_head"][2]["mean_abs_error"] == 0.25
 
 
 def test_make_splitk_workspace_shapes_cpu():

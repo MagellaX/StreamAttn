@@ -111,6 +111,37 @@ def _summarize_splitk_stats_per_head(raw_stats: Optional[torch.Tensor]):
     }
 
 
+def _per_head_error(actual: torch.Tensor, expected: torch.Tensor) -> Dict[str, Any]:
+    if actual.shape != expected.shape:
+        raise ValueError(f"shape mismatch: actual={tuple(actual.shape)} expected={tuple(expected.shape)}")
+    if actual.dim() != 4:
+        raise ValueError("attention outputs must have shape [batch, query_len, heads, dim]")
+    diff = (actual - expected).detach().abs().float()
+    rows = []
+    max_values = []
+    mean_values = []
+    for head_idx in range(diff.shape[2]):
+        head_diff = diff[:, :, head_idx, :]
+        max_error = float(head_diff.max().item())
+        mean_error = float(head_diff.mean().item())
+        max_values.append(max_error)
+        mean_values.append(mean_error)
+        rows.append(
+            {
+                "head": head_idx,
+                "max_abs_error": max_error,
+                "mean_abs_error": mean_error,
+            }
+        )
+    worst_idx = max(range(len(max_values)), key=lambda idx: max_values[idx]) if max_values else None
+    return {
+        "per_head": rows,
+        "worst_head": worst_idx,
+        "max_abs_error": max(max_values) if max_values else 0.0,
+        "mean_abs_error": sum(mean_values) / len(mean_values) if mean_values else 0.0,
+    }
+
+
 def _time_recompute_seed_breakdown(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -479,8 +510,11 @@ def main() -> None:
         "splitk_stats": _summarize_splitk_stats(splitk_raw),
         "splitk_per_head_stats": _summarize_splitk_stats_per_head(splitk_raw),
         "splitk_error_vs_dense": _max_mean_error(splitk_out, dense_out),
+        "splitk_error_vs_dense_per_head": _per_head_error(splitk_out, dense_out),
         "serial_error_vs_dense": _max_mean_error(serial_out, dense_out),
+        "serial_error_vs_dense_per_head": _per_head_error(serial_out, dense_out),
         "splitk_error_vs_serial": _max_mean_error(splitk_out, serial_out),
+        "splitk_error_vs_serial_per_head": _per_head_error(splitk_out, serial_out),
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
 
