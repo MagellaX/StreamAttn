@@ -80,6 +80,10 @@ def _summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         corrected = quality.get("corrected_error_vs_dense_all") or {}
         rows.append(
             {
+                "model_id": row.get("model_id"),
+                "prompt_type": row.get("prompt_type"),
+                "layer_id": row.get("layer_id"),
+                "kv_len": row.get("kv_len"),
                 "trusted_heads": (row.get("policy") or {}).get("trusted_sparse_heads"),
                 "exact_heads": (row.get("policy") or {}).get("exact_heads"),
                 "dense_all_ms": timing.get("dense_all_ms"),
@@ -196,95 +200,110 @@ def _run(
                 f"capture produced no usable rows for kv_len={kv_len}: "
                 f"rows={capture_payload.get('rows', [])[:4]} errors={capture_payload.get('errors', [])[:4]}"
             )
-        captured = rows[0]
         print(
-            f"[modal-hybrid] captured kv_len={kv_len} rows={len(rows)} shape={captured.get('shape')}",
+            f"[modal-hybrid] captured kv_len={kv_len} rows={len(rows)} first_shape={rows[0].get('shape')}",
             flush=True,
         )
-        captures.append({"kv_len": kv_len, "row_count": len(rows), "shape": captured.get("shape")})
         group_values = _groups(trusted_head_groups)
-        for case_index, trusted_heads in enumerate(group_values, start=1):
-            print(
-                f"[modal-hybrid] profile {case_index}/{len(group_values)} "
-                f"kv_len={kv_len} aggressive={aggressive_heads} trusted={trusted_heads}",
-                flush=True,
-            )
-            profile_cmd = [
-                "python",
-                "/root/StreamAttn/benchmarks/profile_gate0_hybrid_correction.py",
-                "--q-path",
-                captured["q_path"],
-                "--k-path",
-                captured["k_path"],
-                "--v-path",
-                captured["v_path"],
-                "--dtype",
-                dtype,
-                "--aggressive-heads",
-                aggressive_heads,
-                "--trusted-heads",
-                trusted_heads,
-                "--block-size",
-                str(block_size),
-                "--tile-size-q",
-                str(tile_size_q),
-                "--sink-blocks",
-                str(sink_blocks),
-                "--recent-blocks",
-                str(recent_blocks),
-                "--middle-seed-blocks",
-                str(middle_seed_blocks),
-                "--chunk-anchor-blocks",
-                str(chunk_anchor_blocks),
-                "--block-order",
-                block_order,
-                "--num-chunks",
-                str(num_chunks),
-                "--seed-strategy",
-                seed_strategy,
-                "--projection-dim",
-                str(projection_dim),
-                "--projection-metadata-dtype",
-                projection_metadata_dtype,
-                "--splitk-workspace",
-                splitk_workspace,
-                "--filter-margin",
-                str(filter_margin),
-                "--error-budget",
-                str(error_budget),
-                "--seed",
-                str(projection_seed),
-                "--warmup",
-                str(warmup),
-                "--iters",
-                str(iters),
-            ]
-            if measure_parallel_streams:
-                profile_cmd.append("--measure-parallel-streams")
-            profile = _json_from_cmd(profile_cmd, env=env)
-            profile.update(
+        for captured_index, captured in enumerate(rows, start=1):
+            captures.append(
                 {
-                    "model_id": model,
-                    "prompt_type": prompt_type,
-                    "layer_id": captured.get("layer_id"),
                     "kv_len": kv_len,
-                    "capture_shape": captured.get("shape"),
-                    "profile_command": profile_cmd,
+                    "row_count": len(rows),
+                    "capture_index": captured_index,
+                    "layer_id": captured.get("layer_id"),
+                    "shape": captured.get("shape"),
                 }
             )
-            results.append(profile)
-            timing = profile.get("timing") or {}
-            quality = profile.get("quality") or {}
-            corrected = quality.get("corrected_error_vs_dense_all") or {}
             print(
-                f"[modal-hybrid] done {case_index}/{len(group_values)} "
-                f"dense_all={timing.get('dense_all_ms')} sparse={timing.get('sparse_union_ms')} "
-                f"exact={timing.get('dense_exact_ms')} oracle_speed={timing.get('oracle_max_speedup_vs_dense_all')} "
-                f"fused_speed={timing.get('fused_hybrid_speedup_vs_dense_all')} "
-                f"parallel_speed={timing.get('parallel_stream_speedup_vs_dense_all')} "
-                f"corrected_err={corrected.get('max_abs_error')}",
+                f"[modal-hybrid] profiling captured row {captured_index}/{len(rows)} "
+                f"kv_len={kv_len} layer={captured.get('layer_id')}",
                 flush=True,
             )
+            for case_index, trusted_heads in enumerate(group_values, start=1):
+                print(
+                    f"[modal-hybrid] profile {case_index}/{len(group_values)} "
+                    f"kv_len={kv_len} layer={captured.get('layer_id')} "
+                    f"aggressive={aggressive_heads} trusted={trusted_heads}",
+                    flush=True,
+                )
+                profile_cmd = [
+                    "python",
+                    "/root/StreamAttn/benchmarks/profile_gate0_hybrid_correction.py",
+                    "--q-path",
+                    captured["q_path"],
+                    "--k-path",
+                    captured["k_path"],
+                    "--v-path",
+                    captured["v_path"],
+                    "--dtype",
+                    dtype,
+                    "--aggressive-heads",
+                    aggressive_heads,
+                    "--trusted-heads",
+                    trusted_heads,
+                    "--block-size",
+                    str(block_size),
+                    "--tile-size-q",
+                    str(tile_size_q),
+                    "--sink-blocks",
+                    str(sink_blocks),
+                    "--recent-blocks",
+                    str(recent_blocks),
+                    "--middle-seed-blocks",
+                    str(middle_seed_blocks),
+                    "--chunk-anchor-blocks",
+                    str(chunk_anchor_blocks),
+                    "--block-order",
+                    block_order,
+                    "--num-chunks",
+                    str(num_chunks),
+                    "--seed-strategy",
+                    seed_strategy,
+                    "--projection-dim",
+                    str(projection_dim),
+                    "--projection-metadata-dtype",
+                    projection_metadata_dtype,
+                    "--splitk-workspace",
+                    splitk_workspace,
+                    "--filter-margin",
+                    str(filter_margin),
+                    "--error-budget",
+                    str(error_budget),
+                    "--seed",
+                    str(projection_seed),
+                    "--warmup",
+                    str(warmup),
+                    "--iters",
+                    str(iters),
+                ]
+                if measure_parallel_streams:
+                    profile_cmd.append("--measure-parallel-streams")
+                profile = _json_from_cmd(profile_cmd, env=env)
+                profile.update(
+                    {
+                        "model_id": model,
+                        "prompt_type": prompt_type,
+                        "layer_id": captured.get("layer_id"),
+                        "kv_len": kv_len,
+                        "capture_shape": captured.get("shape"),
+                        "profile_command": profile_cmd,
+                    }
+                )
+                results.append(profile)
+                timing = profile.get("timing") or {}
+                quality = profile.get("quality") or {}
+                corrected = quality.get("corrected_error_vs_dense_all") or {}
+                print(
+                    f"[modal-hybrid] done {case_index}/{len(group_values)} "
+                    f"layer={captured.get('layer_id')} dense_all={timing.get('dense_all_ms')} "
+                    f"sparse={timing.get('sparse_union_ms')} exact={timing.get('dense_exact_ms')} "
+                    f"oracle_speed={timing.get('oracle_max_speedup_vs_dense_all')} "
+                    f"fused_speed={timing.get('fused_hybrid_speedup_vs_dense_all')} "
+                    f"parallel_speed={timing.get('parallel_stream_speedup_vs_dense_all')} "
+                    f"corrected_err={corrected.get('max_abs_error')}",
+                    flush=True,
+                )
 
     return {
         "capture": {

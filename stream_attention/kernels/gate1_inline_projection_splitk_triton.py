@@ -352,71 +352,79 @@ if TRITON_AVAILABLE:
         off_c = tl.program_id(2)
         offs_d = tl.arange(0, D)
         offs_r = tl.arange(0, RANK)
-        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
-        if COMPUTE_QPROJ:
-            projection_tile = tl.load(Projection + offs_r[:, None] * D + offs_d[None, :]).to(tl.float32)
-            q_proj = tl.sum(projection_tile * q[None, :].to(tl.float32), axis=1)
-        else:
-            q_proj = tl.load(QProj + off_b * H * RANK + off_h * RANK + offs_r).to(tl.float32)
         head_mode = tl.load(HeadModes + off_h, mask=HAS_HEAD_MODES, other=0)
         is_exact_head = HAS_HEAD_MODES & (head_mode == 1)
+        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
+        if COMPUTE_QPROJ:
+            if is_exact_head:
+                q_proj = tl.zeros([RANK], dtype=tl.float32)
+            else:
+                projection_tile = tl.load(Projection + offs_r[:, None] * D + offs_d[None, :]).to(tl.float32)
+                q_proj = tl.sum(projection_tile * q[None, :].to(tl.float32), axis=1)
+        else:
+            if is_exact_head:
+                q_proj = tl.zeros([RANK], dtype=tl.float32)
+            else:
+                q_proj = tl.load(QProj + off_b * H * RANK + off_h * RANK + offs_r).to(tl.float32)
 
         seed_max = tl.full([], -float("inf"), dtype=tl.float32)
         seed_den = tl.zeros([], dtype=tl.float32)
         seed_num = tl.zeros([D], dtype=tl.float32)
-        for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
-            if iter_idx < SINK_BLOCKS:
-                block_idx = iter_idx
-            elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
-                recent_pos = iter_idx - SINK_BLOCKS
-                block_idx = RECENT_START + recent_pos
-            else:
-                middle_pos = iter_idx - SINK_BLOCKS - RECENT_BLOCKS
-                if BLOCK_ORDER == 0:  # sequential
-                    block_idx = SINK_BLOCKS + middle_pos
-                else:  # recent_first / sink_recent_first
-                    block_idx = RECENT_START - 1 - middle_pos
+        should_compute_seed = (~is_exact_head) | (off_c == 0)
+        if should_compute_seed:
+            for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
+                if iter_idx < SINK_BLOCKS:
+                    block_idx = iter_idx
+                elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
+                    recent_pos = iter_idx - SINK_BLOCKS
+                    block_idx = RECENT_START + recent_pos
+                else:
+                    middle_pos = iter_idx - SINK_BLOCKS - RECENT_BLOCKS
+                    if BLOCK_ORDER == 0:  # sequential
+                        block_idx = SINK_BLOCKS + middle_pos
+                    else:  # recent_first / sink_recent_first
+                        block_idx = RECENT_START - 1 - middle_pos
 
-            start_n = block_idx * TILE_N
-            block_len_i = min(TILE_N, N - start_n)
-            offs_n = start_n + tl.arange(0, TILE_N)
-            col_mask = tl.arange(0, TILE_N) < block_len_i
-            k_tile = tl.load(
-                K
-                + off_b * N * H * D
-                + offs_n[:, None] * H * D
-                + off_h * D
-                + offs_d[None, :],
-                mask=col_mask[:, None],
-                other=0.0,
-            )
-            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
-            qk = tl.where(col_mask, qk, -float("inf"))
-            tile_max = tl.max(qk, axis=0)
-            tile_valid = tile_max > -float("inf")
-            prev_valid = seed_den > 0.0
-            new_valid = prev_valid | tile_valid
-            new_max = tl.maximum(seed_max, tile_max)
-            safe_new_max = tl.where(new_valid, new_max, 0.0)
-            correction = tl.where(prev_valid, tl.exp(seed_max - safe_new_max), 0.0)
-            p = tl.exp(qk - safe_new_max)
-            p = tl.where(qk > -float("inf"), p, 0.0)
-            v_tile = tl.load(
-                V
-                + off_b * N * H * D
-                + offs_n[:, None] * H * D
-                + off_h * D
-                + offs_d[None, :],
-                mask=col_mask[:, None],
-                other=0.0,
-            )
-            if PV_USE_BF16:
-                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
-            else:
-                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
-            seed_num = seed_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
-            seed_den = seed_den * correction + tl.sum(p, axis=0)
-            seed_max = tl.where(new_valid, new_max, seed_max)
+                start_n = block_idx * TILE_N
+                block_len_i = min(TILE_N, N - start_n)
+                offs_n = start_n + tl.arange(0, TILE_N)
+                col_mask = tl.arange(0, TILE_N) < block_len_i
+                k_tile = tl.load(
+                    K
+                    + off_b * N * H * D
+                    + offs_n[:, None] * H * D
+                    + off_h * D
+                    + offs_d[None, :],
+                    mask=col_mask[:, None],
+                    other=0.0,
+                )
+                qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+                qk = tl.where(col_mask, qk, -float("inf"))
+                tile_max = tl.max(qk, axis=0)
+                tile_valid = tile_max > -float("inf")
+                prev_valid = seed_den > 0.0
+                new_valid = prev_valid | tile_valid
+                new_max = tl.maximum(seed_max, tile_max)
+                safe_new_max = tl.where(new_valid, new_max, 0.0)
+                correction = tl.where(prev_valid, tl.exp(seed_max - safe_new_max), 0.0)
+                p = tl.exp(qk - safe_new_max)
+                p = tl.where(qk > -float("inf"), p, 0.0)
+                v_tile = tl.load(
+                    V
+                    + off_b * N * H * D
+                    + offs_n[:, None] * H * D
+                    + off_h * D
+                    + offs_d[None, :],
+                    mask=col_mask[:, None],
+                    other=0.0,
+                )
+                if PV_USE_BF16:
+                    weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+                else:
+                    weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+                seed_num = seed_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+                seed_den = seed_den * correction + tl.sum(p, axis=0)
+                seed_max = tl.where(new_valid, new_max, seed_max)
 
         total_states = NUM_CHUNKS + 1
         state_base = off_b * H * total_states + off_h * total_states
