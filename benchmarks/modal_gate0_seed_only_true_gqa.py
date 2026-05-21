@@ -79,6 +79,8 @@ def _run(
     middle_seed_blocks: int,
     warmup: int,
     iters: int,
+    group_warmup: int,
+    group_iters: int,
     measure_parallel_streams: bool,
 ):
     env = os.environ.copy()
@@ -148,6 +150,10 @@ def _run(
             str(warmup),
             "--iters",
             str(iters),
+            "--group-warmup",
+            str(group_warmup),
+            "--group-iters",
+            str(group_iters),
         ]
         if measure_parallel_streams:
             profile_cmd.append("--measure-parallel-streams")
@@ -195,6 +201,8 @@ def main(
     middle_seed_blocks: int = 8,
     warmup: int = 3,
     iters: int = 10,
+    group_warmup: int = 3,
+    group_iters: int = 10,
     measure_parallel_streams: bool = False,
     output_json: str = "",
 ):
@@ -215,6 +223,8 @@ def main(
         middle_seed_blocks=middle_seed_blocks,
         warmup=warmup,
         iters=iters,
+        group_warmup=group_warmup,
+        group_iters=group_iters,
         measure_parallel_streams=measure_parallel_streams,
     )
     text = json.dumps(result, indent=2, sort_keys=True)

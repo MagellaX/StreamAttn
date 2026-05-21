@@ -312,6 +312,18 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             iters=args.group_iters,
         )
         group_timings.append({"kv_head": kv_head, "q_heads": heads, "seed_only_ms": ms})
+    exact_group_timings = []
+    for kv_head, heads in exact_groups.items():
+        q_group = _select_q_heads(q, heads)
+        k_group = _select_kv_head(k_true, kv_head)
+        v_group = _select_kv_head(v_true, kv_head)
+        ms = _time_cuda(
+            lambda qg=q_group, kg=k_group, vg=v_group: _dense_true_gqa(qg, kg, vg),
+            device=device,
+            warmup=args.group_warmup,
+            iters=args.group_iters,
+        )
+        exact_group_timings.append({"kv_head": kv_head, "q_heads": heads, "dense_ms": ms})
 
     dense_out = dense_all()
     dense_selected_out = _dense_selected_heads(q, k_true, v_true, seed_heads)
@@ -320,6 +332,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     hybrid_selected_out = hybrid_seed_selected_serial()
     _sync(device)
     group_parallel_oracle = max([item["seed_only_ms"] for item in group_timings] + [0.0])
+    exact_group_parallel_oracle = max([item["dense_ms"] for item in exact_group_timings] + [0.0])
+    exact_group_serial_sum = sum(item["dense_ms"] for item in exact_group_timings)
+    fused_parallel_oracle = max(seed_selected_ms, exact_group_parallel_oracle)
+    fused_group_parallel_oracle = max(group_parallel_oracle, exact_group_parallel_oracle)
+    fused_serial_lower_bound = seed_selected_ms + exact_group_serial_sum
     return {
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
         "shape": {
@@ -351,6 +368,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "hybrid_seed_selected_serial_ms": hybrid_selected_ms,
             "hybrid_seed_parallel_stream_ms": parallel_stream_ms,
             "seed_only_group_parallel_oracle_ms": group_parallel_oracle,
+            "exact_remaining_group_parallel_oracle_ms": exact_group_parallel_oracle,
+            "exact_remaining_group_serial_sum_ms": exact_group_serial_sum,
+            "fused_hybrid_parallel_oracle_ms": fused_parallel_oracle,
+            "fused_hybrid_group_parallel_oracle_ms": fused_group_parallel_oracle,
+            "fused_hybrid_serial_lower_bound_ms": fused_serial_lower_bound,
             "seed_only_selected_speedup_vs_dense_selected": (
                 dense_selected_ms / seed_selected_ms if seed_selected_ms else None
             ),
@@ -366,8 +388,18 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_group_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / group_parallel_oracle if group_parallel_oracle else None
             ),
+            "fused_hybrid_parallel_oracle_speedup_vs_true_dense": (
+                dense_ms / fused_parallel_oracle if fused_parallel_oracle else None
+            ),
+            "fused_hybrid_group_parallel_oracle_speedup_vs_true_dense": (
+                dense_ms / fused_group_parallel_oracle if fused_group_parallel_oracle else None
+            ),
+            "fused_hybrid_serial_lower_bound_speedup_vs_true_dense": (
+                dense_ms / fused_serial_lower_bound if fused_serial_lower_bound else None
+            ),
         },
         "group_timings": group_timings,
+        "exact_group_timings": exact_group_timings,
         "quality": {
             "hybrid_seed_error_vs_true_dense": _error(hybrid_out, dense_out),
             "hybrid_seed_error_vs_true_dense_per_head": _per_head_error(hybrid_out, dense_out),
