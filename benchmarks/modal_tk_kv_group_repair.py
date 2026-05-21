@@ -1,4 +1,4 @@
-"""Modal runner for the TK tensor-core exact true-GQA decode baseline."""
+"""Modal runner for the TK KV-group repair break-even benchmark."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ image = (
     .add_local_dir(".", remote_path="/root/StreamAttn", copy=True)
 )
 
-app = modal.App("streamattn-tk-tensor-core-exact-decode")
+app = modal.App("streamattn-tk-kv-group-repair")
 volume = modal.Volume.from_name("streamattn-artifacts", create_if_missing=True)
 
 
@@ -30,22 +30,22 @@ volume = modal.Volume.from_name("streamattn-artifacts", create_if_missing=True)
 def run(
     *,
     kv_len: int = 32768,
-    q_heads: int = 14,
-    kv_heads: int = 2,
-    head_dim: int = 128,
+    q_heads: int = 7,
+    kv_heads: int = 1,
+    head_dim: int = 64,
     dtype: str = "bf16",
     seed: int = 0,
-    warmup: int = 5,
-    iters: int = 20,
-    num_chunks: int = 64,
-    num_chunks_list: str = "",
-    seed_heads: str = "2,3,4,6,7",
+    warmup: int = 3,
+    iters: int = 10,
+    num_chunks: int = 256,
+    repair_counts: str = "0,1,2,3,4,7",
+    repair_order: str = "",
     block_size: int = 32,
     sink_blocks: int = 2,
     recent_blocks: int = 2,
     middle_seed_blocks: int = 2,
     block_order: str = "recent_first",
-    output_json: str = "/artifacts/gate0/tk_tensor_core_exact_decode_h100.json",
+    output_json: str = "/artifacts/gate0/tk_kv_group_repair_d64_bf16_h100.json",
 ) -> str:
     import os
     import subprocess
@@ -56,7 +56,7 @@ def run(
     checkout_dir = "/artifacts/backend_sources"
     cmd = [
         "python",
-        "benchmarks/profile_tk_tensor_core_exact_decode.py",
+        "benchmarks/profile_tk_kv_group_repair.py",
         "--kv-len",
         str(kv_len),
         "--q-heads",
@@ -75,8 +75,8 @@ def run(
         str(iters),
         "--num-chunks",
         str(num_chunks),
-        "--seed-heads",
-        seed_heads,
+        "--repair-counts",
+        repair_counts,
         "--block-size",
         str(block_size),
         "--sink-blocks",
@@ -94,12 +94,12 @@ def run(
         "--output-json",
         output_json,
     ]
-    if num_chunks_list:
-        cmd.extend(["--num-chunks-list", num_chunks_list])
-    print("[modal-tk-tc] launching benchmark subprocess", flush=True)
+    if repair_order:
+        cmd.extend(["--repair-order", repair_order])
+    print("[modal-tk-repair] launching benchmark subprocess", flush=True)
     proc = subprocess.run(cmd, check=False, text=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"TK tensor-core exact decode benchmark failed with code {proc.returncode}")
+        raise RuntimeError(f"TK KV-group repair benchmark failed with code {proc.returncode}")
     volume.commit()
     return "ok"
 
@@ -107,22 +107,22 @@ def run(
 @app.local_entrypoint()
 def main(
     kv_len: int = 32768,
-    q_heads: int = 14,
-    kv_heads: int = 2,
-    head_dim: int = 128,
+    q_heads: int = 7,
+    kv_heads: int = 1,
+    head_dim: int = 64,
     dtype: str = "bf16",
     seed: int = 0,
-    warmup: int = 5,
-    iters: int = 20,
-    num_chunks: int = 64,
-    num_chunks_list: str = "",
-    seed_heads: str = "2,3,4,6,7",
+    warmup: int = 3,
+    iters: int = 10,
+    num_chunks: int = 256,
+    repair_counts: str = "0,1,2,3,4,7",
+    repair_order: str = "",
     block_size: int = 32,
     sink_blocks: int = 2,
     recent_blocks: int = 2,
     middle_seed_blocks: int = 2,
     block_order: str = "recent_first",
-    output_json: str = "/artifacts/gate0/tk_tensor_core_exact_decode_h100.json",
+    output_json: str = "/artifacts/gate0/tk_kv_group_repair_d64_bf16_h100.json",
 ) -> None:
     print(
         run.remote(
@@ -135,8 +135,8 @@ def main(
             warmup=warmup,
             iters=iters,
             num_chunks=num_chunks,
-            num_chunks_list=num_chunks_list,
-            seed_heads=seed_heads,
+            repair_counts=repair_counts,
+            repair_order=repair_order,
             block_size=block_size,
             sink_blocks=sink_blocks,
             recent_blocks=recent_blocks,

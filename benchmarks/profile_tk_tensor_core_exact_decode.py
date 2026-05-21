@@ -125,6 +125,17 @@ template <int D>
 struct streamattn_tc_exact_tiles {};
 
 template <>
+struct streamattn_tc_exact_tiles<64> {
+  using q_tile = rt_bf<16, 64>;
+  using k_tile = rt_bf<16, 64>;
+  using v_tile = rt_bf<16, 64, ducks::rt_layout::col>;
+  using scores_fl = rt_fl<16, 16>;
+  using scores_bf = rt_bf<16, 16>;
+  using out_tile = rt_fl<16, 64>;
+  using score_col = col_vec<scores_fl>;
+};
+
+template <>
 struct streamattn_tc_exact_tiles<128> {
   using q_tile = rt_bf<16, 128>;
   using k_tile = rt_bf<16, 128>;
@@ -229,7 +240,8 @@ __global__ void streamattn_tk_tc_exact_decode_kernel(
   warp::zero(norm_vec);
   warp::neg_infty(max_vec);
 
-  constexpr float scale_log2 = 0.08838834764f * 1.44269504089f;
+  const float scale = rsqrtf(static_cast<float>(D));
+  const float scale_log2 = scale * 1.44269504089f;
   const int tiles = g.N / 16;
   for (int tile = 0; tile < tiles; ++tile) {
     warp::load(k_reg, g.k, {b, kvh, tile, 0});
@@ -301,7 +313,8 @@ __global__ void streamattn_tk_tc_exact_decode_chunk_kernel(
   warp::zero(norm_vec);
   warp::neg_infty(max_vec);
 
-  constexpr float scale_log2 = 0.08838834764f * 1.44269504089f;
+  const float scale = rsqrtf(static_cast<float>(D));
+  const float scale_log2 = scale * 1.44269504089f;
   const int tile_begin = chunk * g.tiles_per_chunk;
   const int tile_end = min(tile_begin + g.tiles_per_chunk, g.N / 16);
   for (int tile = tile_begin; tile < tile_end; ++tile) {
@@ -357,11 +370,22 @@ __global__ void streamattn_tk_tc_exact_decode_chunk_kernel(
 
   warp::div_row(acc, acc, norm_vec);
   warp::store(g.partial_out, acc, {b, kvh, chunk_slot, 0});
-  warp::mul(max_vec_scaled, max_vec, 0.08838834764f);
+  warp::mul(max_vec_scaled, max_vec, scale);
   warp::log(norm_vec, norm_vec);
   warp::add(norm_vec, norm_vec, max_vec_scaled);
   warp::store(g.partial_lse, norm_vec, {b, kvh, chunk_slot, 0});
 }
+
+#define STREAMATTN_TK_TC_DISPATCH_D(D_VALUE, KERNEL_NAME, GRID, BLOCK, GLOBALS) \
+  do { \
+    if ((D_VALUE) == 64) { \
+      KERNEL_NAME<64><<<(GRID), (BLOCK)>>>(GLOBALS); \
+    } else if ((D_VALUE) == 128) { \
+      KERNEL_NAME<128><<<(GRID), (BLOCK)>>>(GLOBALS); \
+    } else { \
+      TORCH_CHECK(false, "only D=64 or D=128 is implemented"); \
+    } \
+  } while (0)
 
 __global__ void streamattn_tk_tc_exact_merge_kernel(
     const bf16* __restrict__ partial_out,
@@ -440,7 +464,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_cuda(
   const int N = k_group.size(2);
   TORCH_CHECK(k_group.size(0) == B && k_group.size(1) == Hkv && k_group.size(3) == D,
               "K shape incompatible with Q");
-  TORCH_CHECK(D == 128, "only D=128 is implemented");
+  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
 
@@ -472,7 +496,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_cuda(
            static_cast<unsigned long>(D)},
       N,
       Hkv};
-  streamattn_tk_tc_exact_decode_kernel<128><<<grid, block>>>(g);
+  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_kernel, grid, block, g);
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
   return out;
@@ -497,7 +521,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunks_cuda(
   const int padded_rows = q_group.size(2);
   const int D = q_group.size(3);
   const int N = k_group.size(2);
-  TORCH_CHECK(D == 128, "only D=128 is implemented");
+  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
   TORCH_CHECK(num_chunks > 0, "num_chunks must be positive");
@@ -554,7 +578,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunks_cuda(
       0,
       0,
       0};
-  streamattn_tk_tc_exact_decode_chunk_kernel<128><<<grid, block>>>(g);
+  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, grid, block, g);
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
   return partial;
@@ -577,7 +601,7 @@ std::vector<torch::Tensor> streamattn_tk_tc_exact_decode_chunk_states_cuda(
   const int padded_rows = q_group.size(2);
   const int D = q_group.size(3);
   const int N = k_group.size(2);
-  TORCH_CHECK(D == 128, "only D=128 is implemented");
+  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
   TORCH_CHECK(num_chunks > 0, "num_chunks must be positive");
@@ -634,7 +658,7 @@ std::vector<torch::Tensor> streamattn_tk_tc_exact_decode_chunk_states_cuda(
       0,
       0,
       0};
-  streamattn_tk_tc_exact_decode_chunk_kernel<128><<<grid, block>>>(g);
+  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, grid, block, g);
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
   return {partial, partial_lse};
@@ -696,7 +720,7 @@ torch::Tensor streamattn_tk_tc_head_mode_chunk_merged_cuda(
   const int padded_rows = q_group.size(2);
   const int D = q_group.size(3);
   const int N = k_group.size(2);
-  TORCH_CHECK(D == 128, "only D=128 is implemented");
+  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(row_modes.size(0) == Hkv && row_modes.size(1) == padded_rows, "row_modes shape mismatch");
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
@@ -754,7 +778,7 @@ torch::Tensor streamattn_tk_tc_head_mode_chunk_merged_cuda(
       static_cast<int>(block_order),
       1,
       0};
-  streamattn_tk_tc_exact_decode_chunk_kernel<128><<<chunk_grid, chunk_block>>>(g);
+  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, chunk_grid, chunk_block, g);
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
 
@@ -819,7 +843,7 @@ torch::Tensor streamattn_tk_tc_head_mode_compact_chunk_merged_cuda(
   const int N = k_group.size(2);
   const int max_active_chunks = active_chunks.size(1);
   const int total_active_entries = flat_active_chunks.size(0);
-  TORCH_CHECK(D == 128, "only D=128 is implemented");
+  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(row_modes.size(0) == Hkv && row_modes.size(1) == padded_rows, "row_modes shape mismatch");
   TORCH_CHECK(active_chunks.size(0) == Hkv, "active_chunks Hkv mismatch");
@@ -883,7 +907,7 @@ torch::Tensor streamattn_tk_tc_head_mode_compact_chunk_merged_cuda(
       static_cast<int>(block_order),
       1,
       1};
-  streamattn_tk_tc_exact_decode_chunk_kernel<128><<<chunk_grid, chunk_block>>>(g);
+  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, chunk_grid, chunk_block, g);
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
 
@@ -1167,8 +1191,8 @@ def main() -> None:
 
     if args.dtype != "bf16":
         raise ValueError("this spike currently supports --dtype bf16 only")
-    if args.head_dim != 128:
-        raise ValueError("this spike currently supports --head-dim 128 only")
+    if args.head_dim not in (64, 128):
+        raise ValueError("this spike currently supports --head-dim 64 or 128 only")
 
     device = torch.device("cuda")
     dtype = _dtype(args.dtype)
@@ -1203,6 +1227,12 @@ def main() -> None:
     block_order_id = 0 if args.block_order == "sequential" else 1
 
     tk_root = _find_or_clone_tk(args)
+    print(
+        "[tk-tc] compiling extension "
+        f"head_dim={args.head_dim} dtype={args.dtype} q_heads={args.q_heads} "
+        f"kv_heads={args.kv_heads} kv_len={args.kv_len}",
+        flush=True,
+    )
     compile_start = time.perf_counter()
     ext = _compile_extension(
         tk_root=tk_root,
@@ -1211,6 +1241,7 @@ def main() -> None:
         verbose=args.compile_verbose,
     )
     compile_s = time.perf_counter() - compile_start
+    print(f"[tk-tc] compile finished in {compile_s:.2f}s", flush=True)
 
     def tk_exact() -> torch.Tensor:
         return ext.exact_decode(q_group, k_group, v_group)
@@ -1277,6 +1308,7 @@ def main() -> None:
             block_order_id,
         )
 
+    print("[tk-tc] running correctness references", flush=True)
     tk_out_group = tk_exact()
     partial_group = tk_chunk_only(args.num_chunks)
     merged_group = tk_chunk_merged(args.num_chunks)
@@ -1325,6 +1357,7 @@ def main() -> None:
 
     dense_ref = dense_true()
     head_ref = head_mode_ref()
+    print("[tk-tc] timing kernels", flush=True)
     try:
         flashinfer_ms = _time_cuda(
             lambda: _flashinfer_exact(q, k, v, use_tensor_cores=True),
