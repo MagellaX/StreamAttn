@@ -1,6 +1,7 @@
 from benchmarks.profile_gate0_kv_group_repair_real import (
     corrected_max_error,
     parse_budgets,
+    parse_fixed_repair_policy,
     q_heads_for_kv_group,
     repair_work_summary,
     select_repair_heads,
@@ -10,6 +11,13 @@ from benchmarks.profile_gate0_kv_group_repair_real import (
 def test_q_heads_for_true_gqa_kv_group():
     assert q_heads_for_kv_group(0, q_heads=14, kv_heads=2) == [0, 1, 2, 3, 4, 5, 6]
     assert q_heads_for_kv_group(1, q_heads=14, kv_heads=2) == [7, 8, 9, 10, 11, 12, 13]
+
+
+def test_parse_fixed_repair_policy():
+    assert parse_fixed_repair_policy("0:0,5,6;1:7,8,9,10,11,12,13") == {
+        0: [0, 5, 6],
+        1: [7, 8, 9, 10, 11, 12, 13],
+    }
 
 
 def test_budget_repair_selection_and_corrected_error():

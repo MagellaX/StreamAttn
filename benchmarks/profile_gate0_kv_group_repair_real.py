@@ -62,6 +62,19 @@ def parse_ints(raw: str) -> List[int]:
     return [int(item.strip()) for item in raw.split(",") if item.strip()]
 
 
+def parse_fixed_repair_policy(raw: str) -> Dict[int, List[int]]:
+    """Parse ``kv_head:head,head;kv_head:head`` repair policy syntax."""
+    policy: Dict[int, List[int]] = {}
+    if not raw.strip():
+        return policy
+    for item in raw.split(";"):
+        if not item.strip():
+            continue
+        kv_raw, heads_raw = item.split(":", 1)
+        policy[int(kv_raw.strip())] = parse_ints(heads_raw)
+    return policy
+
+
 def q_heads_for_kv_group(kv_head: int, *, q_heads: int, kv_heads: int) -> List[int]:
     if q_heads % kv_heads != 0:
         raise ValueError("q_heads must be divisible by kv_heads")
@@ -424,6 +437,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             raise ValueError(f"kv_group {kv_head} outside [0, {kv_heads})")
 
     repair_counts = parse_ints(args.repair_counts)
+    fixed_repair_policy = parse_fixed_repair_policy(args.fixed_repair_policy)
     tk_ext = None
     tk_compile: Dict[str, Any] | None = None
     if args.measure_tk_bf16:
@@ -683,6 +697,57 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
 
+        fixed_policy_row = None
+        if kv_head in fixed_repair_policy:
+            fixed_repair_heads = sorted(set(fixed_repair_policy[kv_head]))
+            invalid_heads = [head for head in fixed_repair_heads if head not in set(group_heads)]
+            if invalid_heads:
+                raise ValueError(
+                    f"fixed repair policy for kv_group {kv_head} contains heads outside group: {invalid_heads}"
+                )
+            fixed_repair = repair_measure(fixed_repair_heads)
+            fixed_repair_ms = fixed_repair.get("best_ms")
+            fixed_triton_parallel_ms = (
+                max(seed_group_ms, float(fixed_repair_ms)) if fixed_repair_ms is not None else None
+            )
+            fixed_tk_parallel_ms = (
+                max(tk_seed_ms, float(fixed_repair_ms))
+                if tk_seed_ms is not None and fixed_repair_ms is not None
+                else None
+            )
+            fixed_policy_row = {
+                "repair_heads": fixed_repair_heads,
+                "trusted_seed_heads": [head for head in group_heads if head not in set(fixed_repair_heads)],
+                "corrected_max_abs_error": corrected_max_error(per_head_rows, repair_heads=fixed_repair_heads),
+                "tk_bf16_corrected_max_abs_error": (
+                    corrected_max_error(tk_per_head_rows, repair_heads=fixed_repair_heads)
+                    if tk_per_head_rows is not None
+                    else None
+                ),
+                "repair": fixed_repair,
+                "triton_external_parallel_oracle_ms": fixed_triton_parallel_ms,
+                "triton_external_parallel_oracle_speedup_vs_group_reference": (
+                    group_reference_ms / fixed_triton_parallel_ms
+                    if group_reference_ms and fixed_triton_parallel_ms
+                    else None
+                ),
+                "tk_bf16_external_parallel_oracle_ms": fixed_tk_parallel_ms,
+                "tk_bf16_external_parallel_oracle_speedup_vs_group_reference": (
+                    group_reference_ms / fixed_tk_parallel_ms
+                    if group_reference_ms and fixed_tk_parallel_ms
+                    else None
+                ),
+                "work": repair_work_summary(
+                    group_size=len(group_heads),
+                    repair_count=len(fixed_repair_heads),
+                    kv_len=int(k_true.shape[1]),
+                    block_size=args.block_size,
+                    sink_blocks=args.sink_blocks,
+                    recent_blocks=args.recent_blocks,
+                    middle_seed_blocks=args.middle_seed_blocks,
+                ),
+            }
+
         repair_order = _repair_order_from_errors(per_head_rows)
         sweep_rows = []
         for count in repair_counts:
@@ -767,6 +832,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 "tk_bf16": tk_bf16_payload,
                 "repair_order_by_seed_error": repair_order,
                 "budget_rows": budget_rows,
+                "fixed_policy": fixed_policy_row,
                 "repair_sweep": sweep_rows,
             }
         )
@@ -816,6 +882,55 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             }
         )
 
+    fixed_group_rows = [
+        {"kv_head": group["kv_head"], **group["fixed_policy"]}
+        for group in group_rows
+        if group.get("fixed_policy") is not None
+    ]
+    fixed_tk_values = [
+        row.get("tk_bf16_external_parallel_oracle_ms")
+        for row in fixed_group_rows
+        if row.get("tk_bf16_external_parallel_oracle_ms") is not None
+    ]
+    fixed_triton_values = [
+        row.get("triton_external_parallel_oracle_ms")
+        for row in fixed_group_rows
+        if row.get("triton_external_parallel_oracle_ms") is not None
+    ]
+    fixed_tk_layer_ms = max(float(value) for value in fixed_tk_values) if fixed_tk_values else None
+    fixed_triton_layer_ms = (
+        max(float(value) for value in fixed_triton_values) if fixed_triton_values else None
+    )
+    fixed_policy_summary = {
+        "repair_policy": fixed_repair_policy,
+        "group_rows": fixed_group_rows,
+        "tk_bf16_layer_parallel_oracle_ms": fixed_tk_layer_ms,
+        "tk_bf16_layer_parallel_oracle_speedup_vs_reference_all": (
+            reference_all_ms / fixed_tk_layer_ms if reference_all_ms and fixed_tk_layer_ms else None
+        ),
+        "tk_bf16_layer_corrected_max_abs_error": max(
+            (
+                float(row.get("tk_bf16_corrected_max_abs_error") or 0.0)
+                for row in fixed_group_rows
+            ),
+            default=None,
+        )
+        if fixed_group_rows
+        else None,
+        "triton_layer_parallel_oracle_ms": fixed_triton_layer_ms,
+        "triton_layer_parallel_oracle_speedup_vs_reference_all": (
+            reference_all_ms / fixed_triton_layer_ms
+            if reference_all_ms and fixed_triton_layer_ms
+            else None
+        ),
+        "triton_layer_corrected_max_abs_error": max(
+            (float(row.get("corrected_max_abs_error") or 0.0) for row in fixed_group_rows),
+            default=None,
+        )
+        if fixed_group_rows
+        else None,
+    }
+
     payload = {
         "schema": "streamattn.gate0.kv_group_repair_real.v1",
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
@@ -848,7 +963,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "flashinfer_all_no_tc_error": flashinfer_all_no_tc_error,
             "reference_all_ms": reference_all_ms,
         },
-        "summary": {"budget_rows": budget_summary},
+        "summary": {"budget_rows": budget_summary, "fixed_policy": fixed_policy_summary},
         "tk_compile": tk_compile,
         "kv_group_rows": group_rows,
     }
@@ -866,6 +981,7 @@ def main() -> None:
     parser.add_argument("--dtype", choices=["fp16", "bf16", "fp32"], default="fp16")
     parser.add_argument("--budgets", default=DEFAULT_BUDGETS)
     parser.add_argument("--repair-counts", default="0,1,2,3,4,7")
+    parser.add_argument("--fixed-repair-policy", default="")
     parser.add_argument("--block-size", type=int, default=32)
     parser.add_argument("--sink-blocks", type=int, default=2)
     parser.add_argument("--recent-blocks", type=int, default=2)

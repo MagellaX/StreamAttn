@@ -35,6 +35,32 @@ def _read_prompt_file(path: str) -> str:
     )
 
 
+def _prompt_for_kind(kind: str, fallback: str) -> str:
+    if kind == "code":
+        return (
+            "def stream_attention_decode(q, k_cache, v_cache, policy):\n"
+            "    kv_head = q_head // group_size\n"
+            "    if policy.seed_only_group:\n"
+            "        schedule_seed_blocks(sink, recent, middle_seed)\n"
+            "    else:\n"
+            "        schedule_exact_blocks(k_cache, v_cache)\n"
+            "    return online_softmax_merge(partial_states)\n"
+        )
+    if kind == "long_doc":
+        return (
+            "StreamAttn long context technical memorandum. "
+            "The system stores cached key and value tensors, maintains online softmax state, "
+            "routes true grouped-query attention heads, verifies approximation error, and "
+            "falls back to exact decode when calibration is stale. "
+        )
+    if kind == "needle":
+        return (
+            "Needle retrieval context with cached KV metadata, online softmax, middle blocks, "
+            "sink tokens, recent tokens, sparse decode routing, exact repair, and long-context retrieval. "
+        )
+    return fallback
+
+
 def _json_from_output(output: str) -> dict[str, Any]:
     decoder = json.JSONDecoder()
     for start, char in enumerate(output):
@@ -87,6 +113,7 @@ def _run(
     kv_groups: str,
     budgets: str,
     repair_counts: str,
+    fixed_repair_policy: str,
     block_size: int,
     sink_blocks: int,
     recent_blocks: int,
@@ -109,7 +136,7 @@ def _run(
     prompt_file = "/tmp/streamattn_kv_repair_prompt.txt"
     capture_dir = "/tmp/streamattn_kv_repair_qkv"
     capture_json = f"{capture_dir}/metadata.json"
-    Path(prompt_file).write_text(prompt, encoding="utf-8")
+    Path(prompt_file).write_text(" ".join(prompt.split()), encoding="utf-8")
 
     capture = _json_from_cmd(
         [
@@ -192,6 +219,8 @@ def _run(
         ]
         if kv_groups:
             profile_cmd.extend(["--kv-groups", kv_groups])
+        if fixed_repair_policy:
+            profile_cmd.extend(["--fixed-repair-policy", fixed_repair_policy])
         if measure_triton_repair:
             profile_cmd.append("--measure-triton-repair")
         if measure_tk_bf16:
@@ -227,6 +256,7 @@ def profile_h100(**kwargs):
 def main(
     model: str = "Qwen/Qwen2.5-0.5B-Instruct",
     prompt: str = "needle retrieval sparse attention seed only exact repair true gqa long context",
+    prompt_kind: str = "",
     prompt_file: str = "",
     prompt_type: str = "needle_kv_group_repair_l8_32k",
     prompt_repeat: int = 3000,
@@ -238,6 +268,7 @@ def main(
     kv_groups: str = "",
     budgets: str = "strict:1e-2,moderate:1.5e-2,research:5e-2",
     repair_counts: str = "0,1,2,3,4,7",
+    fixed_repair_policy: str = "",
     block_size: int = 32,
     sink_blocks: int = 2,
     recent_blocks: int = 2,
@@ -256,6 +287,8 @@ def main(
 ):
     if prompt_file:
         prompt = _read_prompt_file(prompt_file)
+    elif prompt_kind:
+        prompt = _prompt_for_kind(prompt_kind, prompt)
     prompt = ((prompt.strip() + " ") * max(1, prompt_repeat)).strip()
     result = profile_h100.remote(
         model=model,
@@ -269,6 +302,7 @@ def main(
         kv_groups=kv_groups,
         budgets=budgets,
         repair_counts=repair_counts,
+        fixed_repair_policy=fixed_repair_policy,
         block_size=block_size,
         sink_blocks=sink_blocks,
         recent_blocks=recent_blocks,
