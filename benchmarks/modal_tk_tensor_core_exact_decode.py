@@ -37,6 +37,8 @@ def run(
     seed: int = 0,
     warmup: int = 5,
     iters: int = 20,
+    num_chunks: int = 64,
+    num_chunks_list: str = "",
     output_json: str = "/artifacts/gate0/tk_tensor_core_exact_decode_h100.json",
 ) -> str:
     import os
@@ -64,6 +66,8 @@ def run(
         str(warmup),
         "--iters",
         str(iters),
+        "--num-chunks",
+        str(num_chunks),
         "--tk-root",
         tk_root,
         "--checkout-dir",
@@ -71,6 +75,8 @@ def run(
         "--output-json",
         output_json,
     ]
+    if num_chunks_list:
+        cmd.extend(["--num-chunks-list", num_chunks_list])
     proc = subprocess.run(cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     print(proc.stdout)
     if proc.returncode != 0:
@@ -89,6 +95,8 @@ def main(
     seed: int = 0,
     warmup: int = 5,
     iters: int = 20,
+    num_chunks: int = 64,
+    num_chunks_list: str = "",
     output_json: str = "/artifacts/gate0/tk_tensor_core_exact_decode_h100.json",
 ) -> None:
     print(
@@ -101,6 +109,8 @@ def main(
             seed=seed,
             warmup=warmup,
             iters=iters,
+            num_chunks=num_chunks,
+            num_chunks_list=num_chunks_list,
             output_json=output_json,
         )
     )
