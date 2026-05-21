@@ -258,7 +258,12 @@ torch::Tensor streamattn_head_mode_decode_cuda(
   const size_t shared_bytes = (threads + D * threads) * sizeof(float);
   const float scale = 1.0f / sqrtf(static_cast<float>(D));
 
-  AT_DISPATCH_FLOATING_TYPES_AND_HALF(q.scalar_type(), "streamattn_head_mode_decode_cuda", [&] {
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      q.scalar_type(),
+      "streamattn_head_mode_decode_cuda",
+      [&] {
     auto kernel = streamattn_head_mode_decode_kernel<scalar_t>;
     cudaFuncSetAttribute(
         kernel,

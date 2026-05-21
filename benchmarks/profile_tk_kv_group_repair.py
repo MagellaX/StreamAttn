@@ -31,6 +31,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from benchmarks.profile_gate0_true_gqa import _dense_true_gqa  # noqa: E402
 from benchmarks.profile_head_mode_decode_cuda import _flashinfer_exact, _torch_head_mode_reference  # noqa: E402
+from benchmarks.profile_head_mode_decode_cuda import _compile_extension as _compile_scalar_repair_extension  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype, _error, _time_cuda  # noqa: E402
 from benchmarks.profile_tk_tensor_core_exact_decode import (  # noqa: E402
     _compile_extension,
@@ -198,6 +199,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     )
     compile_s = time.perf_counter() - compile_start
     print(f"[tk-repair] compile finished in {compile_s:.2f}s", flush=True)
+    print("[tk-repair] compiling compact scalar repair extension", flush=True)
+    scalar_compile_start = time.perf_counter()
+    scalar_repair_ext = _compile_scalar_repair_extension(verbose=args.compile_verbose)
+    scalar_compile_s = time.perf_counter() - scalar_compile_start
+    print(f"[tk-repair] scalar repair compile finished in {scalar_compile_s:.2f}s", flush=True)
 
     def dense_true() -> torch.Tensor:
         return _dense_true_gqa(q[:, None, :, :], k, v)[:, 0]
@@ -301,6 +307,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         if repair_heads and flashinfer_ms is not None:
             repair_index = torch.tensor(repair_heads, device=device, dtype=torch.long)
             q_repair = q.index_select(1, repair_index).contiguous()
+            repair_modes = torch.zeros(len(repair_heads), device=device, dtype=torch.int32)
 
             exact_repair_tc_ms, exact_repair_tc_error = _time_flashinfer_exact(q_repair, use_tensor_cores=True)
             exact_repair_no_tc_ms, exact_repair_no_tc_error = _time_flashinfer_exact(q_repair, use_tensor_cores=False)
@@ -309,11 +316,80 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             ]
             exact_repair_ms = min(exact_repair_candidates) if exact_repair_candidates else None
             exact_repair_error = exact_repair_tc_error or exact_repair_no_tc_error
+
+            def compact_scalar_repair() -> torch.Tensor:
+                return scalar_repair_ext.head_mode_decode(
+                    q_repair,
+                    k,
+                    v,
+                    repair_modes,
+                    args.block_size,
+                    args.sink_blocks,
+                    args.recent_blocks,
+                    args.middle_seed_blocks,
+                    block_order_id,
+                    args.repair_threads,
+                )
+
+            try:
+                compact_scalar_repair_ms = _time_cuda(
+                    compact_scalar_repair,
+                    device=device,
+                    warmup=args.warmup,
+                    iters=args.iters,
+                )
+                compact_scalar_repair_error = None
+            except Exception as exc:  # pragma: no cover - optional dtype/backend constraints
+                compact_scalar_repair_ms = None
+                compact_scalar_repair_error = repr(exc)
+
+            def compact_triton_repair() -> torch.Tensor:
+                from stream_attention.kernels.gate0_compact_repair_triton import compact_repair_splitk_triton_forward
+
+                return compact_repair_splitk_triton_forward(
+                    q_repair,
+                    k,
+                    v,
+                    num_chunks=args.repair_num_chunks,
+                    block_d=args.repair_block_d,
+                )
+
+            try:
+                compact_triton_repair_ms = _time_cuda(
+                    compact_triton_repair,
+                    device=device,
+                    warmup=args.warmup,
+                    iters=args.iters,
+                )
+                compact_triton_repair_error = None
+            except Exception as exc:  # pragma: no cover - optional backend constraints
+                compact_triton_repair_ms = None
+                compact_triton_repair_error = repr(exc)
         else:
             exact_repair_ms = 0.0 if not repair_heads else None
             exact_repair_error = None if not repair_heads else flashinfer_error
             exact_repair_tc_ms = exact_repair_ms
             exact_repair_no_tc_ms = exact_repair_ms
+            compact_scalar_repair_ms = 0.0 if not repair_heads else None
+            compact_scalar_repair_error = None if not repair_heads else flashinfer_error
+            compact_triton_repair_ms = 0.0 if not repair_heads else None
+            compact_triton_repair_error = None if not repair_heads else flashinfer_error
+        repair_candidates = {
+            "flashinfer_best": exact_repair_ms,
+            "scalar_cuda": compact_scalar_repair_ms,
+            "triton_splitk": compact_triton_repair_ms,
+        }
+        available_repair_candidates = {
+            name: value for name, value in repair_candidates.items() if value is not None
+        }
+        compact_repair_best_name = (
+            min(available_repair_candidates, key=lambda name: float(available_repair_candidates[name]))
+            if available_repair_candidates
+            else None
+        )
+        compact_repair_best_ms = (
+            float(available_repair_candidates[compact_repair_best_name]) if compact_repair_best_name else None
+        )
         per_head = _per_head_errors(tk_out, dense_ref)
         trusted_errors = [row["max_abs_error"] for row in per_head if row["head"] in set(trusted_seed_heads)]
         repair_errors = [row["max_abs_error"] for row in per_head if row["head"] in set(repair_heads)]
@@ -338,6 +414,12 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 "exact_repair_flashinfer_tc_ms": exact_repair_tc_ms,
                 "exact_repair_flashinfer_no_tc_ms": exact_repair_no_tc_ms,
                 "exact_repair_flashinfer_error": exact_repair_error,
+                "compact_scalar_repair_ms": compact_scalar_repair_ms,
+                "compact_scalar_repair_error": compact_scalar_repair_error,
+                "compact_triton_repair_ms": compact_triton_repair_ms,
+                "compact_triton_repair_error": compact_triton_repair_error,
+                "compact_repair_best_ms": compact_repair_best_ms,
+                "compact_repair_best_backend": compact_repair_best_name,
                 "speedup_vs_dense_torch": dense_ms / timing_ms if timing_ms else None,
                 "speedup_vs_tk_exact": exact_ms / timing_ms if timing_ms else None,
                 "speedup_vs_flashinfer": flashinfer_ms / timing_ms if flashinfer_ms and timing_ms else None,
@@ -355,7 +437,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
 
     seed_only_whole_group_ms = next((row["timing_ms"] for row in rows if row["repair_count"] == 0), None)
     for row in rows:
-        exact_repair_ms = row.get("exact_repair_flashinfer_ms")
+        exact_repair_ms = row.get("compact_repair_best_ms")
         if seed_only_whole_group_ms is not None and exact_repair_ms is not None:
             serial_ms = seed_only_whole_group_ms + float(exact_repair_ms)
             parallel_oracle_ms = max(seed_only_whole_group_ms, float(exact_repair_ms))
@@ -404,9 +486,12 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "middle_seed_blocks": args.middle_seed_blocks,
             "block_order": args.block_order,
             "repair_order": repair_order,
+            "repair_num_chunks": args.repair_num_chunks,
+            "repair_block_d": args.repair_block_d,
         },
         "compile": {
             "compile_s": compile_s,
+            "scalar_repair_compile_s": scalar_compile_s,
             "tk_root": str(tk_root),
             "cuda_arch": args.cuda_arch,
         },
@@ -444,6 +529,9 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--iters", type=int, default=10)
     parser.add_argument("--num-chunks", type=int, default=256)
+    parser.add_argument("--repair-threads", type=int, default=128)
+    parser.add_argument("--repair-num-chunks", type=int, default=256)
+    parser.add_argument("--repair-block-d", type=int, default=32)
     parser.add_argument("--repair-counts", default="0,1,2,3,4,7")
     parser.add_argument("--repair-order", default="")
     parser.add_argument("--block-size", type=int, default=32)
