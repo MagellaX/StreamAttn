@@ -24,6 +24,7 @@ from benchmarks.profile_stream_attn_gate0_wrapper import (  # noqa: E402
 )
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward,
+    gate0_seed_only_selected_attention_kv_major_triton_forward,
     gate0_seed_only_selected_attention_triton_forward,
 )
 from stream_attention.kernels.gate1_inline_projection_splitk_triton import (  # noqa: E402
@@ -227,6 +228,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     v_expanded = _load_tensor(args.v_path, key="v", device=device, dtype=dtype)
     k_true = _true_gqa_kv(k_expanded, true_kv_heads=args.true_kv_heads)
     v_true = _true_gqa_kv(v_expanded, true_kv_heads=args.true_kv_heads)
+    k_true_kv_major = k_true.permute(0, 2, 1, 3).contiguous()
+    v_true_kv_major = v_true.permute(0, 2, 1, 3).contiguous()
     q_heads = int(q.shape[2])
     seed_heads = _parse_heads(args.seed_heads)
     seed_heads_tensor = torch.tensor(seed_heads, device=device, dtype=torch.int32)
@@ -285,6 +288,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             q,
             k_true,
             v_true,
+            seed_heads_tensor,
+            block_size=args.block_size,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+            middle_seed_blocks=args.middle_seed_blocks,
+            block_order=args.block_order,
+            validate_heads=False,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )[0]
+
+    def seed_only_selected_kv_major() -> torch.Tensor:
+        return gate0_seed_only_selected_attention_kv_major_triton_forward(
+            q,
+            k_true_kv_major,
+            v_true_kv_major,
             seed_heads_tensor,
             block_size=args.block_size,
             sink_blocks=args.sink_blocks,
@@ -451,6 +470,16 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     )
     seed_groups_ms = _time_cuda(seed_only_groups, device=device, warmup=args.warmup, iters=args.iters)
     seed_selected_ms = _time_cuda(seed_only_selected, device=device, warmup=args.warmup, iters=args.iters)
+    seed_selected_kv_major_ms = (
+        _time_cuda(
+            seed_only_selected_kv_major,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        if args.measure_kv_major_seed
+        else None
+    )
     hybrid_ms = _time_cuda(hybrid_seed_serial, device=device, warmup=args.warmup, iters=args.iters)
     hybrid_selected_ms = _time_cuda(
         hybrid_seed_selected_serial,
@@ -557,6 +586,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         flashinfer_out = flashinfer_all()
     dense_selected_out = _dense_selected_heads(q, k_true, v_true, seed_heads)
     selected_out = seed_only_selected()
+    selected_kv_major_out = seed_only_selected_kv_major() if seed_selected_kv_major_ms is not None else None
     hybrid_out = hybrid_seed_serial()
     hybrid_selected_out = hybrid_seed_selected_serial()
     if cuda_graph_ms is not None:
@@ -630,6 +660,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "true_gqa_dense_selected_heads_ms": dense_selected_ms,
             "seed_only_groups_ms": seed_groups_ms,
             "seed_only_selected_ms": seed_selected_ms,
+            "seed_only_selected_kv_major_ms": seed_selected_kv_major_ms,
             "hybrid_seed_serial_ms": hybrid_ms,
             "hybrid_seed_selected_serial_ms": hybrid_selected_ms,
             "hybrid_seed_parallel_stream_ms": parallel_stream_ms,
@@ -678,7 +709,17 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_only_selected_speedup_vs_reference_exact": (
                 reference_exact_ms / seed_selected_ms if seed_selected_ms else None
             ),
+            "seed_only_selected_kv_major_speedup_vs_reference_exact": (
+                reference_exact_ms / seed_selected_kv_major_ms
+                if seed_selected_kv_major_ms
+                else None
+            ),
             "seed_only_selected_margin_vs_reference_exact_ms": reference_exact_ms - seed_selected_ms,
+            "seed_only_selected_kv_major_margin_vs_reference_exact_ms": (
+                reference_exact_ms - seed_selected_kv_major_ms
+                if seed_selected_kv_major_ms is not None
+                else None
+            ),
             "fused_hybrid_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / fused_parallel_oracle if fused_parallel_oracle else None
             ),
@@ -739,6 +780,16 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_selected_error_vs_dense_selected_per_head": _per_head_error(
                 selected_out, dense_selected_out
             ),
+            "seed_selected_kv_major_error_vs_dense_selected": (
+                _error(selected_kv_major_out, dense_selected_out)
+                if selected_kv_major_out is not None
+                else None
+            ),
+            "seed_selected_kv_major_error_vs_interleaved_seed": (
+                _error(selected_kv_major_out, selected_out)
+                if selected_kv_major_out is not None
+                else None
+            ),
             "hybrid_seed_cuda_graph_error_vs_true_dense": (
                 _error(graph_out, dense_out) if cuda_graph_ms is not None else None
             ),
@@ -776,6 +827,7 @@ def main() -> None:
     parser.add_argument("--measure-fused-splitk-seed", action="store_true")
     parser.add_argument("--measure-flashinfer", action="store_true")
     parser.add_argument("--flashinfer-tensor-cores", action="store_true")
+    parser.add_argument("--measure-kv-major-seed", action="store_true")
     parser.add_argument("--fused-num-chunks", type=int, default=32)
     parser.add_argument("--projection-dim", type=int, default=8)
     parser.add_argument("--summary-json-out", default="")

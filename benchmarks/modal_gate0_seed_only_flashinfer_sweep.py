@@ -133,6 +133,7 @@ def _compact_row(
         "reference_exact_ms": timing.get("reference_exact_ms"),
         "flashinfer_all_true_gqa_ms": timing.get("flashinfer_all_true_gqa_ms"),
         "seed_only_selected_ms": timing.get("seed_only_selected_ms"),
+        "seed_only_selected_kv_major_ms": timing.get("seed_only_selected_kv_major_ms"),
         "seed_only_group_parallel_oracle_ms": timing.get("seed_only_group_parallel_oracle_ms"),
         "exact_remaining_flashinfer_group_parallel_oracle_ms": timing.get(
             "exact_remaining_flashinfer_group_parallel_oracle_ms"
@@ -145,6 +146,12 @@ def _compact_row(
         ),
         "seed_only_selected_margin_vs_reference_exact_ms": timing.get(
             "seed_only_selected_margin_vs_reference_exact_ms"
+        ),
+        "seed_only_selected_kv_major_margin_vs_reference_exact_ms": timing.get(
+            "seed_only_selected_kv_major_margin_vs_reference_exact_ms"
+        ),
+        "seed_only_selected_kv_major_speedup_vs_reference_exact": timing.get(
+            "seed_only_selected_kv_major_speedup_vs_reference_exact"
         ),
         "fused_hybrid_parallel_flashinfer_oracle_margin_vs_reference_exact_ms": timing.get(
             "fused_hybrid_parallel_flashinfer_oracle_margin_vs_reference_exact_ms"
@@ -304,6 +311,7 @@ def _run(
                         str(group_iters),
                         "--measure-flashinfer",
                         "--flashinfer-tensor-cores",
+                        "--measure-kv-major-seed",
                     ]
                     profile = _json_from_cmd(
                         profile_cmd,
@@ -323,6 +331,7 @@ def _run(
                         "[seed-sweep] result "
                         f"ref={row['reference_exact_ms']:.4f} "
                         f"seed={row['seed_only_selected_ms']:.4f} "
+                        f"kv_major={row.get('seed_only_selected_kv_major_ms')} "
                         f"group_oracle={row['fused_hybrid_group_parallel_flashinfer_oracle_ms']:.4f} "
                         f"margin={row['fused_hybrid_group_parallel_flashinfer_oracle_margin_vs_reference_exact_ms']:.4f} "
                         f"err={row['max_abs_error']}",

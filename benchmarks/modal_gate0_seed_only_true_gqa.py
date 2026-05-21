@@ -87,6 +87,7 @@ def _run(
     measure_fused_splitk_seed: bool,
     measure_flashinfer: bool,
     flashinfer_tensor_cores: bool,
+    measure_kv_major_seed: bool,
     fused_num_chunks: int,
 ):
     env = os.environ.copy()
@@ -171,6 +172,8 @@ def _run(
             profile_cmd.append("--measure-flashinfer")
         if flashinfer_tensor_cores:
             profile_cmd.append("--flashinfer-tensor-cores")
+        if measure_kv_major_seed:
+            profile_cmd.append("--measure-kv-major-seed")
         profile = _json_from_cmd(profile_cmd, env=env)
         profile["capture"] = {
             "model_id": model,
@@ -222,6 +225,7 @@ def main(
     measure_fused_splitk_seed: bool = False,
     measure_flashinfer: bool = False,
     flashinfer_tensor_cores: bool = False,
+    measure_kv_major_seed: bool = False,
     fused_num_chunks: int = 32,
     output_json: str = "",
 ):
@@ -249,6 +253,7 @@ def main(
         measure_fused_splitk_seed=measure_fused_splitk_seed,
         measure_flashinfer=measure_flashinfer,
         flashinfer_tensor_cores=flashinfer_tensor_cores,
+        measure_kv_major_seed=measure_kv_major_seed,
         fused_num_chunks=fused_num_chunks,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
