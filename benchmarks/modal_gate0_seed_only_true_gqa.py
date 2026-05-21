@@ -82,6 +82,9 @@ def _run(
     group_warmup: int,
     group_iters: int,
     measure_parallel_streams: bool,
+    measure_cuda_graph: bool,
+    measure_fused_splitk_seed: bool,
+    fused_num_chunks: int,
 ):
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
@@ -157,6 +160,10 @@ def _run(
         ]
         if measure_parallel_streams:
             profile_cmd.append("--measure-parallel-streams")
+        if measure_cuda_graph:
+            profile_cmd.append("--measure-cuda-graph")
+        if measure_fused_splitk_seed:
+            profile_cmd.extend(["--measure-fused-splitk-seed", "--fused-num-chunks", str(fused_num_chunks)])
         profile = _json_from_cmd(profile_cmd, env=env)
         profile["capture"] = {
             "model_id": model,
@@ -204,6 +211,9 @@ def main(
     group_warmup: int = 3,
     group_iters: int = 10,
     measure_parallel_streams: bool = False,
+    measure_cuda_graph: bool = False,
+    measure_fused_splitk_seed: bool = False,
+    fused_num_chunks: int = 32,
     output_json: str = "",
 ):
     if prompt_file:
@@ -226,6 +236,9 @@ def main(
         group_warmup=group_warmup,
         group_iters=group_iters,
         measure_parallel_streams=measure_parallel_streams,
+        measure_cuda_graph=measure_cuda_graph,
+        measure_fused_splitk_seed=measure_fused_splitk_seed,
+        fused_num_chunks=fused_num_chunks,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:

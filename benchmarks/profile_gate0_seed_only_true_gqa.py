@@ -26,6 +26,10 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward,
     gate0_seed_only_selected_attention_triton_forward,
 )
+from stream_attention.kernels.gate1_inline_projection_splitk_triton import (  # noqa: E402
+    gate1_inline_projection_splitk_attention_triton_forward,
+    make_splitk_workspace,
+)
 
 
 def _parse_heads(raw: str) -> List[int]:
@@ -146,6 +150,43 @@ def _time_parallel_groups(
     return float(sum(timings) / len(timings))
 
 
+def _time_cuda_graph_replay(
+    fn: Callable[[], torch.Tensor],
+    *,
+    device: torch.device,
+    warmup: int,
+    iters: int,
+) -> tuple[float | None, str | None]:
+    if device.type != "cuda":
+        return None, "CUDA graph replay requires CUDA"
+    _sync(device)
+    warmup_stream = torch.cuda.Stream(device=device)
+    warmup_stream.wait_stream(torch.cuda.current_stream(device))
+    with torch.cuda.stream(warmup_stream):
+        for _ in range(max(1, warmup)):
+            fn()
+    torch.cuda.current_stream(device).wait_stream(warmup_stream)
+    _sync(device)
+
+    graph = torch.cuda.CUDAGraph()
+    try:
+        with torch.cuda.graph(graph):
+            fn()
+    except Exception as exc:  # pragma: no cover - depends on CUDA graph support
+        _sync(device)
+        return None, repr(exc)
+    _sync(device)
+
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    start_event.record()
+    for _ in range(max(1, iters)):
+        graph.replay()
+    end_event.record()
+    torch.cuda.synchronize(device)
+    return start_event.elapsed_time(end_event) / max(1, iters), None
+
+
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is required")
@@ -164,6 +205,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     exact_heads = [head for head in range(q_heads) if head not in set(seed_heads)]
     seed_groups = _head_groups_by_kv(seed_heads, q_heads=q_heads, kv_heads=k_true.shape[2])
     exact_groups = _head_groups_by_kv(exact_heads, q_heads=q_heads, kv_heads=k_true.shape[2])
+    seed_heads_index = torch.tensor(seed_heads, device=device, dtype=torch.long)
+    head_modes_seed_only = torch.ones(q_heads, device=device, dtype=torch.int32)
+    if seed_heads:
+        head_modes_seed_only[seed_heads_index] = 2
+    exact_items = []
+    for kv_head, heads in exact_groups.items():
+        exact_items.append(
+            {
+                "kv_head": kv_head,
+                "heads": heads,
+                "index": torch.tensor(heads, device=device, dtype=torch.long),
+                "q": _select_q_heads(q, heads),
+                "k": _select_kv_head(k_true, kv_head),
+                "v": _select_kv_head(v_true, kv_head),
+            }
+        )
 
     def dense_all() -> torch.Tensor:
         return _dense_true_gqa(q, k_true, v_true)
@@ -230,16 +287,77 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
 
     def hybrid_seed_selected_serial() -> torch.Tensor:
         out = torch.empty_like(q)
-        for kv_head, heads in exact_groups.items():
-            group_out = _dense_true_gqa(
-                _select_q_heads(q, heads),
-                _select_kv_head(k_true, kv_head),
-                _select_kv_head(v_true, kv_head),
-            )
-            _scatter_heads(out, heads, group_out)
+        for item in exact_items:
+            group_out = _dense_true_gqa(item["q"], item["k"], item["v"])
+            out.index_copy_(2, item["index"], group_out)
         selected_out = seed_only_selected()
-        _scatter_selected(out, seed_heads, selected_out)
+        out.index_copy_(2, seed_heads_index, selected_out)
         return out
+
+    graph_out = torch.empty_like(q)
+
+    def hybrid_seed_selected_static() -> torch.Tensor:
+        for item in exact_items:
+            group_out = _dense_true_gqa(item["q"], item["k"], item["v"])
+            graph_out.index_copy_(2, item["index"], group_out)
+        selected_out = seed_only_selected()
+        graph_out.index_copy_(2, seed_heads_index, selected_out)
+        return graph_out
+
+    num_blocks = (int(k_true.shape[1]) + args.block_size - 1) // args.block_size
+    q_proj_dummy = torch.empty(
+        q.shape[0],
+        q_heads,
+        1,
+        args.projection_dim,
+        device=device,
+        dtype=torch.float32,
+    )
+    proj_min_dummy = torch.empty(
+        q.shape[0],
+        k_true.shape[2],
+        num_blocks,
+        args.projection_dim,
+        device=device,
+        dtype=dtype,
+    )
+    proj_max_dummy = torch.empty_like(proj_min_dummy)
+    fused_splitk_workspace = (
+        make_splitk_workspace(
+            q,
+            rank=args.projection_dim,
+            num_chunks=args.fused_num_chunks,
+            seed_strategy="recompute_seed",
+        )
+        if device.type == "cuda"
+        else None
+    )
+
+    def fused_splitk_seed_only() -> torch.Tensor:
+        return gate1_inline_projection_splitk_attention_triton_forward(
+            q,
+            k_true,
+            v_true,
+            q_proj_dummy,
+            proj_min_dummy,
+            proj_max_dummy,
+            compute_qproj=False,
+            num_chunks=args.fused_num_chunks,
+            error_budget=0.0,
+            filter_margin=0.0,
+            block_size=args.block_size,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+            middle_seed_blocks=args.middle_seed_blocks,
+            chunk_anchor_blocks=0,
+            block_order=args.block_order,
+            seed_strategy="recompute_seed",
+            head_modes=head_modes_seed_only,
+            return_raw_stats=False,
+            workspace=fused_splitk_workspace,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )[0]
 
     parallel_fns: List[Callable[[], torch.Tensor]] = []
     for kv_head, heads in exact_groups.items():
@@ -289,6 +407,26 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         if args.measure_parallel_streams
         else None
     )
+    cuda_graph_ms, cuda_graph_error = (
+        _time_cuda_graph_replay(
+            hybrid_seed_selected_static,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        if args.measure_cuda_graph
+        else (None, None)
+    )
+    fused_splitk_seed_ms = (
+        _time_cuda(
+            fused_splitk_seed_only,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        if args.measure_fused_splitk_seed
+        else None
+    )
     group_timings = []
     for kv_head, heads in seed_groups.items():
         q_group = _select_q_heads(q, heads)
@@ -330,6 +468,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     selected_out = seed_only_selected()
     hybrid_out = hybrid_seed_serial()
     hybrid_selected_out = hybrid_seed_selected_serial()
+    if cuda_graph_ms is not None:
+        hybrid_seed_selected_static()
+    fused_splitk_seed_out = fused_splitk_seed_only() if fused_splitk_seed_ms is not None else None
     _sync(device)
     group_parallel_oracle = max([item["seed_only_ms"] for item in group_timings] + [0.0])
     exact_group_parallel_oracle = max([item["dense_ms"] for item in exact_group_timings] + [0.0])
@@ -367,6 +508,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "hybrid_seed_serial_ms": hybrid_ms,
             "hybrid_seed_selected_serial_ms": hybrid_selected_ms,
             "hybrid_seed_parallel_stream_ms": parallel_stream_ms,
+            "hybrid_seed_cuda_graph_ms": cuda_graph_ms,
+            "fused_splitk_seed_hybrid_ms": fused_splitk_seed_ms,
             "seed_only_group_parallel_oracle_ms": group_parallel_oracle,
             "exact_remaining_group_parallel_oracle_ms": exact_group_parallel_oracle,
             "exact_remaining_group_serial_sum_ms": exact_group_serial_sum,
@@ -385,6 +528,18 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "hybrid_seed_parallel_stream_speedup_vs_true_dense": (
                 dense_ms / parallel_stream_ms if parallel_stream_ms else None
             ),
+            "hybrid_seed_cuda_graph_speedup_vs_true_dense": (
+                dense_ms / cuda_graph_ms if cuda_graph_ms else None
+            ),
+            "hybrid_seed_cuda_graph_overhead_vs_fused_oracle_ms": (
+                cuda_graph_ms - fused_parallel_oracle if cuda_graph_ms else None
+            ),
+            "fused_splitk_seed_hybrid_speedup_vs_true_dense": (
+                dense_ms / fused_splitk_seed_ms if fused_splitk_seed_ms else None
+            ),
+            "fused_splitk_seed_hybrid_overhead_vs_fused_oracle_ms": (
+                fused_splitk_seed_ms - fused_parallel_oracle if fused_splitk_seed_ms else None
+            ),
             "seed_group_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / group_parallel_oracle if group_parallel_oracle else None
             ),
@@ -398,6 +553,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 dense_ms / fused_serial_lower_bound if fused_serial_lower_bound else None
             ),
         },
+        "cuda_graph_error": cuda_graph_error,
         "group_timings": group_timings,
         "exact_group_timings": exact_group_timings,
         "quality": {
@@ -410,6 +566,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_selected_error_vs_dense_selected": _error(selected_out, dense_selected_out),
             "seed_selected_error_vs_dense_selected_per_head": _per_head_error(
                 selected_out, dense_selected_out
+            ),
+            "hybrid_seed_cuda_graph_error_vs_true_dense": (
+                _error(graph_out, dense_out) if cuda_graph_ms is not None else None
+            ),
+            "fused_splitk_seed_hybrid_error_vs_true_dense": (
+                _error(fused_splitk_seed_out, dense_out)
+                if fused_splitk_seed_out is not None
+                else None
             ),
         },
     }
@@ -436,6 +600,10 @@ def main() -> None:
     parser.add_argument("--group-warmup", type=int, default=3)
     parser.add_argument("--group-iters", type=int, default=10)
     parser.add_argument("--measure-parallel-streams", action="store_true")
+    parser.add_argument("--measure-cuda-graph", action="store_true")
+    parser.add_argument("--measure-fused-splitk-seed", action="store_true")
+    parser.add_argument("--fused-num-chunks", type=int, default=32)
+    parser.add_argument("--projection-dim", type=int, default=8)
     parser.add_argument("--summary-json-out", default="")
     args = parser.parse_args()
 

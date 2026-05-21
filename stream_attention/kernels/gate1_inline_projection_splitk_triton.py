@@ -363,15 +363,16 @@ if TRITON_AVAILABLE:
         offs_r = tl.arange(0, RANK)
         head_mode = tl.load(HeadModes + off_h, mask=HAS_HEAD_MODES, other=0)
         is_exact_head = HAS_HEAD_MODES & (head_mode == 1)
+        is_seed_only_head = HAS_HEAD_MODES & (head_mode == 2)
         q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
         if COMPUTE_QPROJ:
-            if is_exact_head:
+            if is_exact_head | is_seed_only_head:
                 q_proj = tl.zeros([RANK], dtype=tl.float32)
             else:
                 projection_tile = tl.load(Projection + offs_r[:, None] * D + offs_d[None, :]).to(tl.float32)
                 q_proj = tl.sum(projection_tile * q[None, :].to(tl.float32), axis=1)
         else:
-            if is_exact_head:
+            if is_exact_head | is_seed_only_head:
                 q_proj = tl.zeros([RANK], dtype=tl.float32)
             else:
                 q_proj = tl.load(QProj + off_b * H * RANK + off_h * RANK + offs_r).to(tl.float32)
@@ -379,7 +380,7 @@ if TRITON_AVAILABLE:
         seed_max = tl.full([], -float("inf"), dtype=tl.float32)
         seed_den = tl.zeros([], dtype=tl.float32)
         seed_num = tl.zeros([D], dtype=tl.float32)
-        should_compute_seed = (~is_exact_head) | (off_c == 0)
+        should_compute_seed = ((~is_exact_head) & (~is_seed_only_head)) | (off_c == 0)
         if should_compute_seed:
             for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
                 if iter_idx < SINK_BLOCKS:
@@ -451,7 +452,7 @@ if TRITON_AVAILABLE:
         pv_executed = tl.zeros([], dtype=tl.int32)
         middle_seen = tl.zeros([], dtype=tl.int32)
 
-        if DEBUG_MODE != 1:  # seed_only
+        if (DEBUG_MODE != 1) & (~is_seed_only_head):  # seed_only
           for local_idx in range(0, CHUNK_BLOCKS):
             logical = off_c * CHUNK_BLOCKS + local_idx
             valid_block = logical < (RECENT_START - SINK_BLOCKS - MIDDLE_SEED_BLOCKS)
@@ -565,7 +566,7 @@ if TRITON_AVAILABLE:
                 tl.full([], SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS, dtype=tl.int32),
             )
             tl.store(RawStats + stats_base + 6, tl.full([], NUM_CHUNKS, dtype=tl.int32))
-            tl.store(RawStats + stats_base + 7, tl.where(is_exact_head, 3, 2))
+            tl.store(RawStats + stats_base + 7, tl.where(is_exact_head, 3, tl.where(is_seed_only_head, 4, 2)))
 
     @triton.jit
     def _merge_kernel(
