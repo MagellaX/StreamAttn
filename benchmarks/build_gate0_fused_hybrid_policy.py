@@ -28,6 +28,7 @@ from benchmarks.summarize_gate1_inline_projection_splitk_robustness import (
     collect_rows_from_payload,
     parse_budgets,
 )
+from benchmarks.model_head_mode_kv_group_work import model_kv_group_work
 
 
 SCHEMA = "streamattn.gate0.fused_hybrid_splitk_policy.v1"
@@ -64,6 +65,24 @@ def _kv_len(row: Dict[str, Any]) -> int | None:
     if value is None:
         value = (row.get("shape") or {}).get("kv_len")
     return int(value) if value is not None else None
+
+
+def _shape(row: Dict[str, Any]) -> Dict[str, Any]:
+    return row.get("shape") or row.get("capture_shape") or {}
+
+
+def _kv_heads(row: Dict[str, Any]) -> int | None:
+    shape = _shape(row)
+    runtime = row.get("runtime") or {}
+    for value in (
+        shape.get("kv_heads"),
+        shape.get("h_kv"),
+        runtime.get("true_policy_kv_heads"),
+        runtime.get("kv_heads"),
+    ):
+        if value is not None:
+            return int(value)
+    return None
 
 
 def _load_rows(paths: Iterable[str]) -> List[Dict[str, Any]]:
@@ -122,6 +141,32 @@ def _runtime(row: Dict[str, Any], trusted_heads: Sequence[int], exact_heads: Seq
     }
 
 
+def _backend_work(row: Dict[str, Any], trusted_heads: Sequence[int]) -> Dict[str, Any] | None:
+    shape = _shape(row)
+    runtime = row.get("runtime") or {}
+    head_count = _as_int(shape.get("heads") or shape.get("q_heads") or shape.get("h_q"), 0)
+    kv_heads = _kv_heads(row)
+    kv_len = _kv_len(row)
+    block_size = runtime.get("block_size")
+    if not head_count or not kv_heads or not kv_len or not block_size:
+        return None
+    try:
+        return model_kv_group_work(
+            q_heads=head_count,
+            kv_heads=kv_heads,
+            kv_len=kv_len,
+            tile_size=int(block_size),
+            seed_heads=trusted_heads,
+            sink_blocks=_as_int(runtime.get("sink_blocks"), 0),
+            recent_blocks=_as_int(runtime.get("recent_blocks"), 0),
+            middle_seed_blocks=_as_int(runtime.get("middle_seed_blocks"), 0),
+            block_order=str(runtime.get("block_order") or "recent_first"),
+            padded_group_rows=_as_int(runtime.get("padded_group_rows"), 16),
+        )
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
 def _row_metrics(row: Dict[str, Any]) -> Dict[str, Any]:
     policy = row.get("policy") or {}
     timing = row.get("timing") or {}
@@ -131,6 +176,14 @@ def _row_metrics(row: Dict[str, Any]) -> Dict[str, Any]:
     fused_per_head_stats = _per_head_map(quality.get("fused_hybrid_per_head_stats") or {})
     trusted_heads = _heads(policy.get("trusted_sparse_heads") or row.get("trusted_heads"))
     exact_heads = _heads(policy.get("exact_heads") or row.get("exact_heads"))
+    backend_work = _backend_work(row, trusted_heads)
+    backend_totals = (backend_work or {}).get("totals") or {}
+    backend_groups = (backend_work or {}).get("per_kv_group") or []
+    seed_only_groups = [
+        int(group.get("kv_head"))
+        for group in backend_groups
+        if group.get("seed_only_whole_group")
+    ]
     dense_ms = _as_float(timing.get("dense_all_ms"), 0.0)
     fused_ms = _as_float(timing.get("fused_hybrid_ms"), 0.0)
     speedup = timing.get("fused_hybrid_speedup_vs_dense_all")
@@ -173,6 +226,11 @@ def _row_metrics(row: Dict[str, Any]) -> Dict[str, Any]:
         "trusted_projection_skip_fraction": trusted_skip,
         "trusted_pv_executed_fraction": trusted_pv,
         "runtime": _runtime(row, trusted_heads, exact_heads),
+        "backend_work": backend_work,
+        "kv_tile_load_reduction": _as_float(backend_totals.get("kv_tile_load_reduction"), 0.0),
+        "padded_row_work_reduction": _as_float(backend_totals.get("padded_row_work_reduction"), 0.0),
+        "row_work_reduction": _as_float(backend_totals.get("row_work_reduction"), 0.0),
+        "seed_only_kv_groups": seed_only_groups,
         "source": row.get("_source"),
     }
 
@@ -182,6 +240,7 @@ def _passes(
     budget: Dict[str, float | str],
     *,
     min_trusted_skip_fraction: float,
+    min_kv_tile_load_reduction: float,
 ) -> bool:
     speedup = row.get("speedup_vs_dense_all")
     return (
@@ -191,6 +250,7 @@ def _passes(
         and float(row["max_abs_error"]) <= float(budget["max_error"])
         and float(row["mean_abs_error"]) <= float(budget["max_mean_error"])
         and float(row["trusted_projection_skip_fraction"]) >= min_trusted_skip_fraction
+        and float(row["kv_tile_load_reduction"]) >= min_kv_tile_load_reduction
     )
 
 
@@ -199,6 +259,7 @@ def _failed_constraints(
     budget: Dict[str, float | str],
     *,
     min_trusted_skip_fraction: float,
+    min_kv_tile_load_reduction: float,
 ) -> List[str]:
     failed: List[str] = []
     speedup = row.get("speedup_vs_dense_all")
@@ -212,6 +273,8 @@ def _failed_constraints(
         failed.append("mean_error")
     if float(row["trusted_projection_skip_fraction"]) < min_trusted_skip_fraction:
         failed.append("trusted_skip")
+    if float(row["kv_tile_load_reduction"]) < min_kv_tile_load_reduction:
+        failed.append("kv_group_load_reduction")
     return failed
 
 
@@ -240,7 +303,12 @@ def _entry(row: Dict[str, Any], budget: Dict[str, float | str]) -> Dict[str, Any
             "trusted_mean_abs_error": row["trusted_mean_abs_error"],
             "trusted_projection_skip_fraction": row["trusted_projection_skip_fraction"],
             "trusted_pv_executed_fraction": row["trusted_pv_executed_fraction"],
+            "row_work_reduction": row["row_work_reduction"],
+            "kv_tile_load_reduction": row["kv_tile_load_reduction"],
+            "padded_row_work_reduction": row["padded_row_work_reduction"],
+            "seed_only_kv_groups": row["seed_only_kv_groups"],
         },
+        "backend_work": row["backend_work"],
         "source": row["source"],
     }
 
@@ -302,6 +370,12 @@ def _build_stable_entries(entries: Sequence[Dict[str, Any]], *, min_stable_promp
                     "max_abs_error_seen": max(errors),
                     "max_mean_error_seen": max(means),
                     "min_trusted_projection_skip_fraction": min(skips),
+                    "min_kv_tile_load_reduction": min(
+                        float(item["quality"].get("kv_tile_load_reduction") or 0.0) for item in group
+                    ),
+                    "min_padded_row_work_reduction": min(
+                        float(item["quality"].get("padded_row_work_reduction") or 0.0) for item in group
+                    ),
                 },
                 "sources": sorted({str(item.get("source")) for item in group}),
             }
@@ -362,6 +436,27 @@ def _frontier_candidate(
                         "trusted_head_group": runtime.get("trusted_head_group"),
                     }
                 )
+    if "kv_group_load_reduction" in failed:
+        heads = row.get("trusted_heads") or []
+        shape = row.get("shape") or {}
+        kv_heads = _kv_heads(row)
+        q_heads = _as_int(shape.get("heads") or shape.get("q_heads") or shape.get("h_q"), 0)
+        if kv_heads and q_heads and q_heads % kv_heads == 0:
+            group_size = q_heads // kv_heads
+            seed_set = set(int(head) for head in heads)
+            for kv_head in range(kv_heads):
+                group = list(range(kv_head * group_size, (kv_head + 1) * group_size))
+                missing = [head for head in group if head not in seed_set]
+                if missing and len(missing) <= max(1, group_size // 2):
+                    experiments.append(
+                        {
+                            "kind": "kv_group_coherent_seed_policy",
+                            "reason": "whole seed-only KV groups can skip K/V tile scheduling",
+                            "kv_head": kv_head,
+                            "candidate_trusted_head_group": _head_group(sorted(seed_set | set(group))),
+                            "additional_heads_to_verify": missing,
+                        }
+                    )
     return {
         "model_id": row["model_id"],
         "prompt_type": row["prompt_type"],
@@ -375,6 +470,8 @@ def _frontier_candidate(
             "max_abs_error": row["max_abs_error"],
             "mean_abs_error": row["mean_abs_error"],
             "trusted_projection_skip_fraction": row["trusted_projection_skip_fraction"],
+            "kv_tile_load_reduction": row["kv_tile_load_reduction"],
+            "padded_row_work_reduction": row["padded_row_work_reduction"],
         },
         "experiments": experiments[:8],
         "source": row["source"],
@@ -390,6 +487,7 @@ def build_policy(
     frontier_error_multiplier: float = 1.5,
     frontier_mean_error_multiplier: float = 1.5,
     frontier_speedup_scale: float = 0.95,
+    min_kv_tile_load_reduction: float = 0.0,
     frontier_limit: int = 32,
 ) -> Dict[str, Any]:
     rows = [_row_metrics(row) for row in raw_rows]
@@ -397,10 +495,20 @@ def build_policy(
     frontier: List[Dict[str, Any]] = []
     for budget in budgets:
         for row in rows:
-            if _passes(row, budget, min_trusted_skip_fraction=min_trusted_skip_fraction):
+            if _passes(
+                row,
+                budget,
+                min_trusted_skip_fraction=min_trusted_skip_fraction,
+                min_kv_tile_load_reduction=min_kv_tile_load_reduction,
+            ):
                 grouped_passes.setdefault(_entry_key(row, str(budget["name"])), []).append((row, budget))
                 continue
-            failed = _failed_constraints(row, budget, min_trusted_skip_fraction=min_trusted_skip_fraction)
+            failed = _failed_constraints(
+                row,
+                budget,
+                min_trusted_skip_fraction=min_trusted_skip_fraction,
+                min_kv_tile_load_reduction=min_kv_tile_load_reduction,
+            )
             speedup = row.get("speedup_vs_dense_all")
             near = (
                 speedup is not None
@@ -420,6 +528,8 @@ def build_policy(
             key=lambda item: (
                 float(item[0]["speedup_vs_dense_all"] or 0.0),
                 -float(item[0]["max_abs_error"]),
+                float(item[0]["kv_tile_load_reduction"]),
+                float(item[0]["padded_row_work_reduction"]),
                 len(item[0]["trusted_heads"]),
                 float(item[0]["trusted_projection_skip_fraction"]),
             ),
@@ -472,6 +582,7 @@ def build_policy(
             "frontier_error_multiplier": frontier_error_multiplier,
             "frontier_mean_error_multiplier": frontier_mean_error_multiplier,
             "frontier_speedup_scale": frontier_speedup_scale,
+            "min_kv_tile_load_reduction": min_kv_tile_load_reduction,
         },
         "budgets": list(budgets),
         "budget_summary": budget_summary,
@@ -490,7 +601,7 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 
 def _print_entries(entries: Sequence[Dict[str, Any]], *, limit: int) -> None:
-    headers = ["budget", "prompt", "layer", "kv", "trusted", "speed", "err", "mean", "skip"]
+    headers = ["budget", "prompt", "layer", "kv", "trusted", "speed", "err", "mean", "skip", "kvred"]
     print(" ".join(f"{header:>12}" for header in headers))
     for row in entries[:limit]:
         quality = row["quality"]
@@ -507,6 +618,7 @@ def _print_entries(entries: Sequence[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(quality.get('max_abs_error')):>12}",
                     f"{_fmt(quality.get('mean_abs_error')):>12}",
                     f"{_fmt(quality.get('trusted_projection_skip_fraction')):>12}",
+                    f"{_fmt(quality.get('kv_tile_load_reduction')):>12}",
                 ]
             )
         )
@@ -516,7 +628,7 @@ def _print_stable(entries: Sequence[Dict[str, Any]], *, limit: int) -> None:
     if not entries:
         return
     print("stable")
-    headers = ["budget", "layer", "kv", "trusted", "prompts", "min_spd", "err", "skip"]
+    headers = ["budget", "layer", "kv", "trusted", "prompts", "min_spd", "err", "skip", "kvred"]
     print(" ".join(f"{header:>12}" for header in headers))
     for row in entries[:limit]:
         runtime = row["runtime"]
@@ -532,6 +644,7 @@ def _print_stable(entries: Sequence[Dict[str, Any]], *, limit: int) -> None:
                     f"{_fmt(robust.get('min_speedup_vs_dense_all')):>12}",
                     f"{_fmt(robust.get('max_abs_error_seen')):>12}",
                     f"{_fmt(robust.get('min_trusted_projection_skip_fraction')):>12}",
+                    f"{_fmt(robust.get('min_kv_tile_load_reduction')):>12}",
                 ]
             )
         )
@@ -546,6 +659,7 @@ def main() -> None:
     parser.add_argument("--frontier-error-multiplier", type=float, default=1.5)
     parser.add_argument("--frontier-mean-error-multiplier", type=float, default=1.5)
     parser.add_argument("--frontier-speedup-scale", type=float, default=0.95)
+    parser.add_argument("--min-kv-tile-load-reduction", type=float, default=0.0)
     parser.add_argument("--frontier-limit", type=int, default=32)
     parser.add_argument("--output-json", default="")
     parser.add_argument("--limit", type=int, default=24)
@@ -559,6 +673,7 @@ def main() -> None:
         frontier_error_multiplier=args.frontier_error_multiplier,
         frontier_mean_error_multiplier=args.frontier_mean_error_multiplier,
         frontier_speedup_scale=args.frontier_speedup_scale,
+        min_kv_tile_load_reduction=args.min_kv_tile_load_reduction,
         frontier_limit=args.frontier_limit,
     )
     print(json.dumps(payload["summary"], indent=2, sort_keys=True))

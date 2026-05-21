@@ -40,7 +40,7 @@ def _row(
         "prompt_type": prompt_type,
         "layer_id": layer_id,
         "kv_len": 32768,
-        "shape": {"heads": 14, "kv_len": 32768},
+        "shape": {"heads": 14, "kv_heads": 2, "kv_len": 32768},
         "policy": {
             "aggressive_sparse_heads": [2, 3, 4, 6, 7, 8, 9, 11],
             "trusted_sparse_heads": trusted,
@@ -134,3 +134,28 @@ def test_fused_hybrid_policy_rejects_low_skip_trusted_heads():
 
     assert payload["summary"]["entries"] == 0
     assert payload["summary"]["frontier_candidates"] == 0
+
+
+def test_fused_hybrid_policy_reports_kv_group_backend_work():
+    rows = [_row(trusted=list(range(7)), speedup=1.45, max_error=0.006)]
+
+    payload = build_policy(rows, parse_budgets("moderate:1e-2:1e-3:1.15"))
+
+    entry = payload["entries"][0]
+    assert entry["quality"]["seed_only_kv_groups"] == [0]
+    assert entry["quality"]["kv_tile_load_reduction"] > 0.0
+    assert entry["backend_work"]["per_kv_group"][0]["seed_only_whole_group"] is True
+
+
+def test_fused_hybrid_policy_can_require_kv_group_load_reduction():
+    rows = [_row(trusted=[2, 3, 4, 6, 7], speedup=1.45, max_error=0.006)]
+
+    payload = build_policy(
+        rows,
+        parse_budgets("moderate:1e-2:1e-3:1.15"),
+        min_kv_tile_load_reduction=0.1,
+    )
+
+    assert payload["summary"]["entries"] == 0
+    assert payload["summary"]["frontier_candidates"] == 1
+    assert payload["frontier"][0]["failed_constraints"] == ["kv_group_load_reduction"]
