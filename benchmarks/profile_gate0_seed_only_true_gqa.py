@@ -24,6 +24,7 @@ from benchmarks.profile_stream_attn_gate0_wrapper import (  # noqa: E402
 )
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward,
+    gate0_seed_only_selected_attention_triton_forward,
 )
 
 
@@ -51,6 +52,36 @@ def _select_kv_head(tensor: torch.Tensor, kv_head: int) -> torch.Tensor:
 
 def _scatter_heads(out: torch.Tensor, heads: Sequence[int], values: torch.Tensor) -> None:
     out.index_copy_(2, torch.tensor(list(heads), device=out.device, dtype=torch.long), values)
+
+
+def _scatter_selected(out: torch.Tensor, heads: Sequence[int], values: torch.Tensor) -> None:
+    _scatter_heads(out, heads, values)
+
+
+def _dense_selected_heads(
+    q: torch.Tensor,
+    k_true: torch.Tensor,
+    v_true: torch.Tensor,
+    heads: Sequence[int],
+) -> torch.Tensor:
+    if not heads:
+        return torch.empty(q.shape[0], q.shape[1], 0, q.shape[3], device=q.device, dtype=q.dtype)
+    groups = _head_groups_by_kv(heads, q_heads=q.shape[2], kv_heads=k_true.shape[2])
+    local_index = {int(head): idx for idx, head in enumerate(heads)}
+    out = torch.empty(q.shape[0], q.shape[1], len(heads), q.shape[3], device=q.device, dtype=q.dtype)
+    for kv_head, group_heads in groups.items():
+        group_out = _dense_true_gqa(
+            _select_q_heads(q, group_heads),
+            _select_kv_head(k_true, kv_head),
+            _select_kv_head(v_true, kv_head),
+        )
+        local_positions = [local_index[head] for head in group_heads]
+        out.index_copy_(
+            2,
+            torch.tensor(local_positions, device=out.device, dtype=torch.long),
+            group_out,
+        )
+    return out
 
 
 def _per_head_error(actual: torch.Tensor, expected: torch.Tensor) -> Dict[str, Any]:
@@ -129,6 +160,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     v_true = _true_gqa_kv(v_expanded, true_kv_heads=args.true_kv_heads)
     q_heads = int(q.shape[2])
     seed_heads = _parse_heads(args.seed_heads)
+    seed_heads_tensor = torch.tensor(seed_heads, device=device, dtype=torch.int32)
     exact_heads = [head for head in range(q_heads) if head not in set(seed_heads)]
     seed_groups = _head_groups_by_kv(seed_heads, q_heads=q_heads, kv_heads=k_true.shape[2])
     exact_groups = _head_groups_by_kv(exact_heads, q_heads=q_heads, kv_heads=k_true.shape[2])
@@ -155,6 +187,21 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             )
         return outs
 
+    def seed_only_selected() -> torch.Tensor:
+        return gate0_seed_only_selected_attention_triton_forward(
+            q,
+            k_true,
+            v_true,
+            seed_heads_tensor,
+            block_size=args.block_size,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+            middle_seed_blocks=args.middle_seed_blocks,
+            block_order=args.block_order,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )[0]
+
     def hybrid_seed_serial() -> torch.Tensor:
         out = torch.empty_like(q)
         for kv_head, heads in exact_groups.items():
@@ -178,6 +225,19 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 num_stages=args.num_stages,
             )[0]
             _scatter_heads(out, heads, group_out)
+        return out
+
+    def hybrid_seed_selected_serial() -> torch.Tensor:
+        out = torch.empty_like(q)
+        for kv_head, heads in exact_groups.items():
+            group_out = _dense_true_gqa(
+                _select_q_heads(q, heads),
+                _select_kv_head(k_true, kv_head),
+                _select_kv_head(v_true, kv_head),
+            )
+            _scatter_heads(out, heads, group_out)
+        selected_out = seed_only_selected()
+        _scatter_selected(out, seed_heads, selected_out)
         return out
 
     parallel_fns: List[Callable[[], torch.Tensor]] = []
@@ -208,8 +268,21 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         )
 
     dense_ms = _time_cuda(dense_all, device=device, warmup=args.warmup, iters=args.iters)
+    dense_selected_ms = _time_cuda(
+        lambda: _dense_selected_heads(q, k_true, v_true, seed_heads),
+        device=device,
+        warmup=args.warmup,
+        iters=args.iters,
+    )
     seed_groups_ms = _time_cuda(seed_only_groups, device=device, warmup=args.warmup, iters=args.iters)
+    seed_selected_ms = _time_cuda(seed_only_selected, device=device, warmup=args.warmup, iters=args.iters)
     hybrid_ms = _time_cuda(hybrid_seed_serial, device=device, warmup=args.warmup, iters=args.iters)
+    hybrid_selected_ms = _time_cuda(
+        hybrid_seed_selected_serial,
+        device=device,
+        warmup=args.warmup,
+        iters=args.iters,
+    )
     parallel_stream_ms = (
         _time_parallel_groups(parallel_fns, device=device, warmup=args.warmup, iters=args.iters)
         if args.measure_parallel_streams
@@ -240,7 +313,10 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         group_timings.append({"kv_head": kv_head, "q_heads": heads, "seed_only_ms": ms})
 
     dense_out = dense_all()
+    dense_selected_out = _dense_selected_heads(q, k_true, v_true, seed_heads)
+    selected_out = seed_only_selected()
     hybrid_out = hybrid_seed_serial()
+    hybrid_selected_out = hybrid_seed_selected_serial()
     _sync(device)
     group_parallel_oracle = max([item["seed_only_ms"] for item in group_timings] + [0.0])
     return {
@@ -267,12 +343,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "timing": {
             "true_gqa_dense_all_ms": dense_ms,
+            "true_gqa_dense_selected_heads_ms": dense_selected_ms,
             "seed_only_groups_ms": seed_groups_ms,
+            "seed_only_selected_ms": seed_selected_ms,
             "hybrid_seed_serial_ms": hybrid_ms,
+            "hybrid_seed_selected_serial_ms": hybrid_selected_ms,
             "hybrid_seed_parallel_stream_ms": parallel_stream_ms,
             "seed_only_group_parallel_oracle_ms": group_parallel_oracle,
+            "seed_only_selected_speedup_vs_dense_selected": (
+                dense_selected_ms / seed_selected_ms if seed_selected_ms else None
+            ),
+            "seed_only_selected_speedup_vs_true_dense": dense_ms / seed_selected_ms if seed_selected_ms else None,
             "seed_only_groups_speedup_vs_true_dense": dense_ms / seed_groups_ms if seed_groups_ms else None,
             "hybrid_seed_serial_speedup_vs_true_dense": dense_ms / hybrid_ms if hybrid_ms else None,
+            "hybrid_seed_selected_serial_speedup_vs_true_dense": (
+                dense_ms / hybrid_selected_ms if hybrid_selected_ms else None
+            ),
             "hybrid_seed_parallel_stream_speedup_vs_true_dense": (
                 dense_ms / parallel_stream_ms if parallel_stream_ms else None
             ),
@@ -284,6 +370,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "quality": {
             "hybrid_seed_error_vs_true_dense": _error(hybrid_out, dense_out),
             "hybrid_seed_error_vs_true_dense_per_head": _per_head_error(hybrid_out, dense_out),
+            "hybrid_seed_selected_error_vs_true_dense": _error(hybrid_selected_out, dense_out),
+            "hybrid_seed_selected_error_vs_true_dense_per_head": _per_head_error(
+                hybrid_selected_out, dense_out
+            ),
+            "seed_selected_error_vs_dense_selected": _error(selected_out, dense_selected_out),
+            "seed_selected_error_vs_dense_selected_per_head": _per_head_error(
+                selected_out, dense_selected_out
+            ),
         },
     }
 
