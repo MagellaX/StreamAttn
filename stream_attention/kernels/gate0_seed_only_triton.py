@@ -336,6 +336,7 @@ def gate0_seed_only_selected_attention_triton_forward(
     middle_seed_blocks: int = 8,
     block_order: str = "recent_first",
     return_raw_stats: bool = False,
+    validate_heads: bool = True,
     num_warps: int = 4,
     num_stages: int = 3,
 ) -> Tuple[torch.Tensor, torch.Tensor | None]:
@@ -380,10 +381,11 @@ def gate0_seed_only_selected_attention_triton_forward(
     seq_k = key.shape[1]
     kv_heads = key.shape[2]
     group_size = q_heads // kv_heads
-    min_head = int(selected_heads.min().item())
-    max_head = int(selected_heads.max().item())
-    if min_head < 0 or max_head >= q_heads:
-        raise ValueError(f"selected_heads must be within [0, {q_heads})")
+    if validate_heads:
+        min_head = int(selected_heads.min().item())
+        max_head = int(selected_heads.max().item())
+        if min_head < 0 or max_head >= q_heads:
+            raise ValueError(f"selected_heads must be within [0, {q_heads})")
     num_blocks = triton.cdiv(seq_k, block_size)
     if sink_blocks + recent_blocks > num_blocks:
         raise ValueError("sink_blocks + recent_blocks must not exceed K blocks")

@@ -198,6 +198,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             recent_blocks=args.recent_blocks,
             middle_seed_blocks=args.middle_seed_blocks,
             block_order=args.block_order,
+            validate_heads=False,
             num_warps=args.num_warps,
             num_stages=args.num_stages,
         )[0]
