@@ -31,6 +31,14 @@ from stream_attention.kernels.gate1_inline_projection_splitk_triton import (  # 
     make_splitk_workspace,
 )
 
+try:
+    import flashinfer
+
+    HAS_FLASHINFER = True
+except Exception:  # pragma: no cover - optional dependency
+    flashinfer = None
+    HAS_FLASHINFER = False
+
 
 def _parse_heads(raw: str) -> List[int]:
     return sorted(set(int(item.strip()) for item in raw.split(",") if item.strip()))
@@ -86,6 +94,26 @@ def _dense_selected_heads(
             group_out,
         )
     return out
+
+
+def _flashinfer_single_decode(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    use_tensor_cores: bool,
+) -> torch.Tensor:
+    if not HAS_FLASHINFER:
+        raise RuntimeError("FlashInfer is not available")
+    out = flashinfer.decode.single_decode_with_kv_cache(
+        q[0, 0].contiguous(),
+        k[0].contiguous(),
+        v[0].contiguous(),
+        kv_layout="NHD",
+        pos_encoding_mode="NONE",
+        use_tensor_cores=use_tensor_cores,
+    )
+    return out.view(1, 1, q.shape[2], q.shape[3])
 
 
 def _per_head_error(actual: torch.Tensor, expected: torch.Tensor) -> Dict[str, Any]:
@@ -224,6 +252,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
 
     def dense_all() -> torch.Tensor:
         return _dense_true_gqa(q, k_true, v_true)
+
+    def flashinfer_all() -> torch.Tensor:
+        return _flashinfer_single_decode(
+            q,
+            k_true,
+            v_true,
+            use_tensor_cores=args.flashinfer_tensor_cores,
+        )
 
     def seed_only_groups() -> List[torch.Tensor]:
         outs = []
@@ -387,6 +423,26 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         )
 
     dense_ms = _time_cuda(dense_all, device=device, warmup=args.warmup, iters=args.iters)
+    flashinfer_all_ms = None
+    flashinfer_errors: List[Dict[str, Any]] = []
+    if args.measure_flashinfer and HAS_FLASHINFER:
+        try:
+            flashinfer_all_ms = _time_cuda(
+                flashinfer_all,
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+        except Exception as exc:
+            flashinfer_errors.append(
+                {
+                    "scope": "all_heads",
+                    "q_heads": q_heads,
+                    "kv_heads": int(k_true.shape[2]),
+                    "use_tensor_cores": args.flashinfer_tensor_cores,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
     dense_selected_ms = _time_cuda(
         lambda: _dense_selected_heads(q, k_true, v_true, seed_heads),
         device=device,
@@ -451,6 +507,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         )
         group_timings.append({"kv_head": kv_head, "q_heads": heads, "seed_only_ms": ms})
     exact_group_timings = []
+    exact_group_flashinfer_timings = []
     for kv_head, heads in exact_groups.items():
         q_group = _select_q_heads(q, heads)
         k_group = _select_kv_head(k_true, kv_head)
@@ -462,8 +519,42 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             iters=args.group_iters,
         )
         exact_group_timings.append({"kv_head": kv_head, "q_heads": heads, "dense_ms": ms})
+        if args.measure_flashinfer and HAS_FLASHINFER:
+            try:
+                flashinfer_ms = _time_cuda(
+                    lambda qg=q_group, kg=k_group, vg=v_group: _flashinfer_single_decode(
+                        qg,
+                        kg,
+                        vg,
+                        use_tensor_cores=args.flashinfer_tensor_cores,
+                    ),
+                    device=device,
+                    warmup=args.group_warmup,
+                    iters=args.group_iters,
+                )
+                exact_group_flashinfer_timings.append(
+                    {
+                        "kv_head": kv_head,
+                        "q_heads": heads,
+                        "flashinfer_ms": flashinfer_ms,
+                    }
+                )
+            except Exception as exc:
+                flashinfer_errors.append(
+                    {
+                        "scope": "exact_group",
+                        "kv_head": kv_head,
+                        "q_heads": heads,
+                        "kv_heads": 1,
+                        "use_tensor_cores": args.flashinfer_tensor_cores,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
 
     dense_out = dense_all()
+    flashinfer_out = None
+    if flashinfer_all_ms is not None:
+        flashinfer_out = flashinfer_all()
     dense_selected_out = _dense_selected_heads(q, k_true, v_true, seed_heads)
     selected_out = seed_only_selected()
     hybrid_out = hybrid_seed_serial()
@@ -475,11 +566,42 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     group_parallel_oracle = max([item["seed_only_ms"] for item in group_timings] + [0.0])
     exact_group_parallel_oracle = max([item["dense_ms"] for item in exact_group_timings] + [0.0])
     exact_group_serial_sum = sum(item["dense_ms"] for item in exact_group_timings)
+    exact_group_flashinfer_parallel_oracle = (
+        max([item["flashinfer_ms"] for item in exact_group_flashinfer_timings])
+        if exact_group_flashinfer_timings
+        else None
+    )
+    exact_group_flashinfer_serial_sum = (
+        sum(item["flashinfer_ms"] for item in exact_group_flashinfer_timings)
+        if exact_group_flashinfer_timings
+        else None
+    )
     fused_parallel_oracle = max(seed_selected_ms, exact_group_parallel_oracle)
     fused_group_parallel_oracle = max(group_parallel_oracle, exact_group_parallel_oracle)
+    fused_parallel_flashinfer_oracle = (
+        max(seed_selected_ms, exact_group_flashinfer_parallel_oracle)
+        if exact_group_flashinfer_parallel_oracle is not None
+        else None
+    )
+    fused_group_parallel_flashinfer_oracle = (
+        max(group_parallel_oracle, exact_group_flashinfer_parallel_oracle)
+        if exact_group_flashinfer_parallel_oracle is not None
+        else None
+    )
     fused_serial_lower_bound = seed_selected_ms + exact_group_serial_sum
+    reference_exact_ms = flashinfer_all_ms if flashinfer_all_ms is not None else dense_ms
+    reference_exact_backend = (
+        "flashinfer_tc"
+        if flashinfer_all_ms is not None and args.flashinfer_tensor_cores
+        else "flashinfer"
+        if flashinfer_all_ms is not None
+        else "torch_sdpa"
+    )
     return {
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
+        "flashinfer_available": HAS_FLASHINFER,
+        "flashinfer_tensor_cores": args.flashinfer_tensor_cores,
+        "flashinfer_errors": flashinfer_errors,
         "shape": {
             "batch": int(q.shape[0]),
             "query_len": int(q.shape[1]),
@@ -502,6 +624,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "timing": {
             "true_gqa_dense_all_ms": dense_ms,
+            "flashinfer_all_true_gqa_ms": flashinfer_all_ms,
+            "reference_exact_backend": reference_exact_backend,
+            "reference_exact_ms": reference_exact_ms,
             "true_gqa_dense_selected_heads_ms": dense_selected_ms,
             "seed_only_groups_ms": seed_groups_ms,
             "seed_only_selected_ms": seed_selected_ms,
@@ -513,8 +638,12 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_only_group_parallel_oracle_ms": group_parallel_oracle,
             "exact_remaining_group_parallel_oracle_ms": exact_group_parallel_oracle,
             "exact_remaining_group_serial_sum_ms": exact_group_serial_sum,
+            "exact_remaining_flashinfer_group_parallel_oracle_ms": exact_group_flashinfer_parallel_oracle,
+            "exact_remaining_flashinfer_group_serial_sum_ms": exact_group_flashinfer_serial_sum,
             "fused_hybrid_parallel_oracle_ms": fused_parallel_oracle,
             "fused_hybrid_group_parallel_oracle_ms": fused_group_parallel_oracle,
+            "fused_hybrid_parallel_flashinfer_oracle_ms": fused_parallel_flashinfer_oracle,
+            "fused_hybrid_group_parallel_flashinfer_oracle_ms": fused_group_parallel_flashinfer_oracle,
             "fused_hybrid_serial_lower_bound_ms": fused_serial_lower_bound,
             "seed_only_selected_speedup_vs_dense_selected": (
                 dense_selected_ms / seed_selected_ms if seed_selected_ms else None
@@ -543,11 +672,50 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_group_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / group_parallel_oracle if group_parallel_oracle else None
             ),
+            "seed_group_parallel_oracle_speedup_vs_reference_exact": (
+                reference_exact_ms / group_parallel_oracle if group_parallel_oracle else None
+            ),
+            "seed_only_selected_speedup_vs_reference_exact": (
+                reference_exact_ms / seed_selected_ms if seed_selected_ms else None
+            ),
+            "seed_only_selected_margin_vs_reference_exact_ms": reference_exact_ms - seed_selected_ms,
             "fused_hybrid_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / fused_parallel_oracle if fused_parallel_oracle else None
             ),
+            "fused_hybrid_parallel_oracle_speedup_vs_reference_exact": (
+                reference_exact_ms / fused_parallel_oracle if fused_parallel_oracle else None
+            ),
+            "fused_hybrid_parallel_oracle_margin_vs_reference_exact_ms": (
+                reference_exact_ms - fused_parallel_oracle
+            ),
             "fused_hybrid_group_parallel_oracle_speedup_vs_true_dense": (
                 dense_ms / fused_group_parallel_oracle if fused_group_parallel_oracle else None
+            ),
+            "fused_hybrid_group_parallel_oracle_speedup_vs_reference_exact": (
+                reference_exact_ms / fused_group_parallel_oracle if fused_group_parallel_oracle else None
+            ),
+            "fused_hybrid_group_parallel_oracle_margin_vs_reference_exact_ms": (
+                reference_exact_ms - fused_group_parallel_oracle
+            ),
+            "fused_hybrid_parallel_flashinfer_oracle_speedup_vs_reference_exact": (
+                reference_exact_ms / fused_parallel_flashinfer_oracle
+                if fused_parallel_flashinfer_oracle
+                else None
+            ),
+            "fused_hybrid_parallel_flashinfer_oracle_margin_vs_reference_exact_ms": (
+                reference_exact_ms - fused_parallel_flashinfer_oracle
+                if fused_parallel_flashinfer_oracle is not None
+                else None
+            ),
+            "fused_hybrid_group_parallel_flashinfer_oracle_speedup_vs_reference_exact": (
+                reference_exact_ms / fused_group_parallel_flashinfer_oracle
+                if fused_group_parallel_flashinfer_oracle
+                else None
+            ),
+            "fused_hybrid_group_parallel_flashinfer_oracle_margin_vs_reference_exact_ms": (
+                reference_exact_ms - fused_group_parallel_flashinfer_oracle
+                if fused_group_parallel_flashinfer_oracle is not None
+                else None
             ),
             "fused_hybrid_serial_lower_bound_speedup_vs_true_dense": (
                 dense_ms / fused_serial_lower_bound if fused_serial_lower_bound else None
@@ -556,7 +724,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "cuda_graph_error": cuda_graph_error,
         "group_timings": group_timings,
         "exact_group_timings": exact_group_timings,
+        "exact_group_flashinfer_timings": exact_group_flashinfer_timings,
         "quality": {
+            "flashinfer_all_error_vs_true_dense": (
+                _error(flashinfer_out, dense_out) if flashinfer_out is not None else None
+            ),
             "hybrid_seed_error_vs_true_dense": _error(hybrid_out, dense_out),
             "hybrid_seed_error_vs_true_dense_per_head": _per_head_error(hybrid_out, dense_out),
             "hybrid_seed_selected_error_vs_true_dense": _error(hybrid_selected_out, dense_out),
@@ -602,6 +774,8 @@ def main() -> None:
     parser.add_argument("--measure-parallel-streams", action="store_true")
     parser.add_argument("--measure-cuda-graph", action="store_true")
     parser.add_argument("--measure-fused-splitk-seed", action="store_true")
+    parser.add_argument("--measure-flashinfer", action="store_true")
+    parser.add_argument("--flashinfer-tensor-cores", action="store_true")
     parser.add_argument("--fused-num-chunks", type=int, default=32)
     parser.add_argument("--projection-dim", type=int, default=8)
     parser.add_argument("--summary-json-out", default="")

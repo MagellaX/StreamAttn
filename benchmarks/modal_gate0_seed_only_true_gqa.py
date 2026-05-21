@@ -14,9 +14,10 @@ import modal
 app = modal.App("streamattn-gate0-seed-only-true-gqa")
 
 image = (
-    modal.Image.from_registry("pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel")
+    modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
     .pip_install(
-        "triton==3.1.0",
+        "flashinfer-python",
+        "flashinfer-cubin",
         "transformers>=4.45.0",
         "accelerate",
         "sentencepiece",
@@ -84,6 +85,8 @@ def _run(
     measure_parallel_streams: bool,
     measure_cuda_graph: bool,
     measure_fused_splitk_seed: bool,
+    measure_flashinfer: bool,
+    flashinfer_tensor_cores: bool,
     fused_num_chunks: int,
 ):
     env = os.environ.copy()
@@ -164,6 +167,10 @@ def _run(
             profile_cmd.append("--measure-cuda-graph")
         if measure_fused_splitk_seed:
             profile_cmd.extend(["--measure-fused-splitk-seed", "--fused-num-chunks", str(fused_num_chunks)])
+        if measure_flashinfer:
+            profile_cmd.append("--measure-flashinfer")
+        if flashinfer_tensor_cores:
+            profile_cmd.append("--flashinfer-tensor-cores")
         profile = _json_from_cmd(profile_cmd, env=env)
         profile["capture"] = {
             "model_id": model,
@@ -213,6 +220,8 @@ def main(
     measure_parallel_streams: bool = False,
     measure_cuda_graph: bool = False,
     measure_fused_splitk_seed: bool = False,
+    measure_flashinfer: bool = False,
+    flashinfer_tensor_cores: bool = False,
     fused_num_chunks: int = 32,
     output_json: str = "",
 ):
@@ -238,6 +247,8 @@ def main(
         measure_parallel_streams=measure_parallel_streams,
         measure_cuda_graph=measure_cuda_graph,
         measure_fused_splitk_seed=measure_fused_splitk_seed,
+        measure_flashinfer=measure_flashinfer,
+        flashinfer_tensor_cores=flashinfer_tensor_cores,
         fused_num_chunks=fused_num_chunks,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
