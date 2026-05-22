@@ -104,6 +104,10 @@ def _metric(row: dict[str, Any], key: str) -> float | None:
     return float(value) if value is not None else None
 
 
+def _fmt_ms(value: Any) -> str:
+    return "n/a" if value is None else f"{float(value):.4f}"
+
+
 def _quality(row: dict[str, Any]) -> dict[str, Any]:
     return (row.get("quality") or {}).get("hybrid_seed_selected_error_vs_true_dense") or {}
 
@@ -329,11 +333,11 @@ def _run(
                     compact_rows.append(row)
                     print(
                         "[seed-sweep] result "
-                        f"ref={row['reference_exact_ms']:.4f} "
-                        f"seed={row['seed_only_selected_ms']:.4f} "
-                        f"kv_major={row.get('seed_only_selected_kv_major_ms')} "
-                        f"group_oracle={row['fused_hybrid_group_parallel_flashinfer_oracle_ms']:.4f} "
-                        f"margin={row['fused_hybrid_group_parallel_flashinfer_oracle_margin_vs_reference_exact_ms']:.4f} "
+                        f"ref={_fmt_ms(row.get('reference_exact_ms'))} "
+                        f"seed={_fmt_ms(row.get('seed_only_selected_ms'))} "
+                        f"kv_major={_fmt_ms(row.get('seed_only_selected_kv_major_ms'))} "
+                        f"group_oracle={_fmt_ms(row.get('fused_hybrid_group_parallel_flashinfer_oracle_ms'))} "
+                        f"margin={_fmt_ms(row.get('fused_hybrid_group_parallel_flashinfer_oracle_margin_vs_reference_exact_ms'))} "
                         f"err={row['max_abs_error']}",
                         flush=True,
                     )
