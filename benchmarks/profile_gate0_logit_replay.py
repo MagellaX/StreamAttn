@@ -498,6 +498,37 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             }
         )
 
+    print("[logit-replay] replaying zero_attention_output", flush=True)
+    zero_patch = torch.zeros_like(dense_patch)
+    zero_logits = _final_logits_with_patch(
+        model=model,
+        module=module,
+        tokens=tokens,
+        patch=zero_patch,
+        target_positions=target_positions,
+    )
+    rows.append(
+        {
+            "name": "zero_attention_output",
+            "mode": "skip_attention_output",
+            "seed_heads": list(range(q_heads)),
+            "repair_heads": [],
+            "post_o_proj_error_vs_dense_patch": _error_summary(zero_patch, dense_patch),
+            "logits_vs_model_baseline": _logit_metrics(
+                zero_logits,
+                baseline_logits,
+                target_positions=target_positions,
+                top_k=args.top_k,
+            ),
+            "logits_vs_dense_patch": _logit_metrics(
+                zero_logits,
+                dense_patch_logits,
+                target_positions=target_positions,
+                top_k=args.top_k,
+            ),
+        }
+    )
+
     return {
         "schema": "streamattn.gate0.logit_replay.v1",
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",

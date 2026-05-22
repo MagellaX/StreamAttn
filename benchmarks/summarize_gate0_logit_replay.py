@@ -69,6 +69,7 @@ def _extract(
     seed_g0 = _policy(row, "seed_kv_groups_0")
     all_seed = _policy(row, "all_seed_only")
     trusted = _policy(row, "trusted_cross_prompt_policy")
+    zero_attention = _policy(row, "zero_attention_output")
     best = _best_nontrivial(
         row,
         max_kl=max_kl,
@@ -83,6 +84,7 @@ def _extract(
         "seed_g0": seed_g0,
         "all_seed": all_seed,
         "trusted": trusted,
+        "zero_attention": zero_attention,
         "best_nontrivial": best,
     }
 
@@ -135,7 +137,7 @@ def main() -> None:
         )
         for path in args.artifacts
     ]
-    print("prompt\tdense_patch_top_change\tseed_g0\tall_seed\ttrusted\tbest_nontrivial")
+    print("prompt\tdense_patch_top_change\tseed_g0\tall_seed\ttrusted\tzero_attention\tbest_nontrivial")
     for row in rows:
         baseline = row["dense_patch_vs_model"]
         print(
@@ -146,6 +148,7 @@ def main() -> None:
                     _label(row["seed_g0"]),
                     _label(row["all_seed"]),
                     _label(row["trusted"]),
+                    _label(row["zero_attention"]),
                     _label(row["best_nontrivial"]),
                 ]
             )
