@@ -94,11 +94,15 @@ def _compact_row(*, profile: dict[str, Any], capture_row: dict[str, Any], seed_s
         "q_only_ms": timing.get("q_only_ms"),
         "qkv_seed_load_no_softmax_ms": timing.get("qkv_seed_load_no_softmax_ms"),
         "seed_direct_full_ms": timing.get("seed_direct_full_ms"),
+        "seed_direct_full_prealloc_ms": timing.get("seed_direct_full_prealloc_ms"),
         "seed_selected_compact_ms": timing.get("seed_selected_compact_ms"),
         "seed_selected_kv_major_ms": timing.get("seed_selected_kv_major_ms"),
         "scatter_selected_only_ms": timing.get("scatter_selected_only_ms"),
         "copy_full_only_ms": timing.get("copy_full_only_ms"),
         "seed_direct_full_speedup_vs_flashinfer": timing.get("seed_direct_full_speedup_vs_flashinfer"),
+        "seed_direct_full_prealloc_speedup_vs_flashinfer": timing.get(
+            "seed_direct_full_prealloc_speedup_vs_flashinfer"
+        ),
         "seed_selected_compact_speedup_vs_flashinfer": timing.get(
             "seed_selected_compact_speedup_vs_flashinfer"
         ),
@@ -233,6 +237,7 @@ def _run(
                 "[seed-floor] result "
                 f"flash={row['flashinfer_tc_exact_ms']:.4f} "
                 f"direct={row['seed_direct_full_ms']:.4f} "
+                f"prealloc={row['seed_direct_full_prealloc_ms']:.4f} "
                 f"selected={row['seed_selected_compact_ms']:.4f} "
                 f"empty={row['empty_launch_ms']:.4f} "
                 f"decision={row['decision']}",

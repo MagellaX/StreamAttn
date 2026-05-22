@@ -427,6 +427,88 @@ def gate0_seed_only_attention_triton_forward(
     return output, raw_stats if return_raw_stats else None
 
 
+def gate0_seed_only_attention_triton_forward_out(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    block_order: str = "recent_first",
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Run seed-only decode into a caller-provided final output buffer."""
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    if not all(t.is_cuda for t in (query, key, value, output)):
+        raise RuntimeError("gate0_seed_only_attention_triton_forward_out requires CUDA tensors")
+    if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+        raise ValueError("query, key, and value must be [batch, seq, heads, dim]")
+    if query.shape[1] != 1:
+        raise ValueError("seed-only Gate-0 only supports query_len == 1")
+    if output.shape != query.shape:
+        raise ValueError("output must have the same shape as query")
+    if not output.is_contiguous():
+        raise ValueError("output must be contiguous")
+    if key.shape != value.shape:
+        raise ValueError("key and value must have the same shape")
+    if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
+    if query.shape[2] % key.shape[2] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if sink_blocks < 0 or recent_blocks < 0 or middle_seed_blocks < 0:
+        raise ValueError("seed block counts must be non-negative")
+
+    query = query.contiguous()
+    key = key.contiguous()
+    value = value.contiguous()
+    batch, _seq_q, heads, dim = query.shape
+    seq_k = key.shape[1]
+    kv_heads = key.shape[2]
+    group_size = heads // kv_heads
+    num_blocks = triton.cdiv(seq_k, block_size)
+    if sink_blocks + recent_blocks > num_blocks:
+        raise ValueError("sink_blocks + recent_blocks must not exceed K blocks")
+    middle_blocks = num_blocks - sink_blocks - recent_blocks
+    if middle_seed_blocks > middle_blocks:
+        raise ValueError("middle_seed_blocks must be within the middle block count")
+
+    score_scale = 1.0 / math.sqrt(dim)
+    recent_start = num_blocks - recent_blocks
+    _seed_only_kernel[(batch, heads)](
+        query,
+        key,
+        value,
+        output,
+        output,
+        N=seq_k,
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=group_size,
+        D=dim,
+        NUM_BLOCKS=num_blocks,
+        TILE_N=block_size,
+        SCALE=score_scale,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        RECENT_START=int(recent_start),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=_block_order_id(block_order),
+        PV_USE_BF16=value.dtype is torch.bfloat16,
+        HAS_STATS=False,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
 def gate0_seed_only_selected_attention_triton_forward(
     query: torch.Tensor,
     key: torch.Tensor,

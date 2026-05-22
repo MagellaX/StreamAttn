@@ -42,6 +42,7 @@ from stream_attention.kernels.gate0_launch_floor_triton import (  # noqa: E402
 )
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward,
+    gate0_seed_only_attention_triton_forward_out,
     gate0_seed_only_selected_attention_kv_major_triton_forward,
     gate0_seed_only_selected_attention_triton_forward,
 )
@@ -90,6 +91,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     seed_heads_index = torch.tensor(seed_heads, device=device, dtype=torch.long)
     seed_is_all_heads = seed_heads == all_heads
     full_out_buffer = torch.empty_like(q)
+    prealloc_seed_out = torch.empty_like(q)
 
     def flashinfer_exact() -> torch.Tensor:
         return _flashinfer_single_decode(
@@ -139,6 +141,21 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             num_warps=args.num_warps,
             num_stages=args.num_stages,
         )[0]
+
+    def seed_direct_full_prealloc() -> torch.Tensor:
+        return gate0_seed_only_attention_triton_forward_out(
+            q,
+            k_true,
+            v_true,
+            prealloc_seed_out,
+            block_size=args.block_size,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+            middle_seed_blocks=args.middle_seed_blocks,
+            block_order=args.block_order,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )
 
     def seed_selected_compact() -> torch.Tensor:
         return gate0_seed_only_selected_attention_triton_forward(
@@ -193,6 +210,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         ("q_only_ms", q_only),
         ("qkv_seed_load_no_softmax_ms", qkv_no_softmax),
         ("seed_direct_full_ms", seed_direct_full),
+        ("seed_direct_full_prealloc_ms", seed_direct_full_prealloc),
         ("seed_selected_compact_ms", seed_selected_compact),
         ("seed_selected_kv_major_ms", seed_selected_kv_major),
         ("scatter_selected_only_ms", scatter_selected_only),
@@ -208,6 +226,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     selected_out = seed_selected_compact()
     selected_kv_major_out = seed_selected_kv_major()
     direct_selected = direct_full_out.index_select(2, seed_heads_index)
+    prealloc_out = seed_direct_full_prealloc().clone()
     _sync(device)
 
     seed_blocks = args.sink_blocks + args.recent_blocks + args.middle_seed_blocks
@@ -240,6 +259,10 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 timings.get("flashinfer_tc_exact_ms"),
                 timings.get("seed_direct_full_ms"),
             ),
+            "seed_direct_full_prealloc_speedup_vs_flashinfer": _fmt_speedup(
+                timings.get("flashinfer_tc_exact_ms"),
+                timings.get("seed_direct_full_prealloc_ms"),
+            ),
             "seed_selected_compact_speedup_vs_flashinfer": _fmt_speedup(
                 timings.get("flashinfer_tc_exact_ms"),
                 timings.get("seed_selected_compact_ms"),
@@ -256,6 +279,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "quality": {
             "seed_direct_full_vs_flashinfer": _error(direct_full_out, flash_out),
+            "seed_direct_full_prealloc_vs_direct_full": _error(prealloc_out, direct_full_out),
             "seed_selected_compact_vs_direct_full_selected_heads": _error(selected_out, direct_selected),
             "seed_selected_kv_major_vs_direct_full_selected_heads": _error(
                 selected_kv_major_out,
