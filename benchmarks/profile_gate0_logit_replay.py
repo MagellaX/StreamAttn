@@ -67,34 +67,70 @@ def _error_summary(actual: torch.Tensor, expected: torch.Tensor) -> Dict[str, fl
     }
 
 
-def _logit_metrics(candidate: torch.Tensor, reference: torch.Tensor, *, top_k: int) -> Dict[str, Any]:
-    cand = candidate[:, -1, :].detach().float()
-    ref = reference[:, -1, :].detach().float()
+def _logit_metrics(
+    candidate: torch.Tensor,
+    reference: torch.Tensor,
+    *,
+    target_positions: Sequence[int],
+    top_k: int,
+) -> Dict[str, Any]:
+    cand = candidate.detach().float()
+    ref = reference.detach().float()
     logp = F.log_softmax(ref, dim=-1)
     logq = F.log_softmax(cand, dim=-1)
     p = logp.exp()
     kl = torch.sum(p * (logp - logq), dim=-1)
     ref_top = torch.topk(ref, k=top_k, dim=-1)
     cand_top = torch.topk(cand, k=top_k, dim=-1)
-    ref_top1 = int(ref_top.indices[0, 0].item())
-    cand_top1 = int(cand_top.indices[0, 0].item())
-    ref_top_set = set(int(x) for x in ref_top.indices[0].tolist())
-    cand_top_set = set(int(x) for x in cand_top.indices[0].tolist())
-    dense_top1_logprob_delta = float((logq[0, ref_top1] - logp[0, ref_top1]).item())
+    top1_changed_count = 0
+    topk_changed_count = 0
+    min_topk_overlap = top_k
+    top1_logprob_delta_values = []
+    per_position = []
+    for local_idx, position in enumerate(target_positions):
+        ref_top1 = int(ref_top.indices[0, local_idx, 0].item())
+        cand_top1 = int(cand_top.indices[0, local_idx, 0].item())
+        ref_top_set = set(int(x) for x in ref_top.indices[0, local_idx].tolist())
+        cand_top_set = set(int(x) for x in cand_top.indices[0, local_idx].tolist())
+        overlap = len(ref_top_set & cand_top_set)
+        top1_changed = ref_top1 != cand_top1
+        topk_changed = ref_top_set != cand_top_set
+        top1_changed_count += int(top1_changed)
+        topk_changed_count += int(topk_changed)
+        min_topk_overlap = min(min_topk_overlap, overlap)
+        top1_delta = float((logq[0, local_idx, ref_top1] - logp[0, local_idx, ref_top1]).item())
+        top1_logprob_delta_values.append(top1_delta)
+        per_position.append(
+            {
+                "position": int(position),
+                "kl_ref_to_candidate": float(kl[0, local_idx].item()),
+                "reference_top1": ref_top1,
+                "candidate_top1": cand_top1,
+                "top1_changed": bool(top1_changed),
+                "topk_changed": bool(topk_changed),
+                "topk_overlap": overlap,
+                "reference_top_tokens": ref_top.indices[0, local_idx].tolist(),
+                "candidate_top_tokens": cand_top.indices[0, local_idx].tolist(),
+                "reference_top_scores": ref_top.values[0, local_idx].tolist(),
+                "candidate_top_scores": cand_top.values[0, local_idx].tolist(),
+                "reference_top1_logprob_delta": top1_delta,
+            }
+        )
+    max_abs_top1_delta = max((abs(value) for value in top1_logprob_delta_values), default=0.0)
     return {
         **_error_summary(cand, ref),
         "kl_ref_to_candidate": float(kl.max().item()),
-        "top1_changed": bool(ref_top1 != cand_top1),
-        "reference_top1": ref_top1,
-        "candidate_top1": cand_top1,
+        "kl_abs_max": float(kl.abs().max().item()),
+        "top1_changed": bool(top1_changed_count > 0),
+        "top1_changed_count": top1_changed_count,
         "topk": top_k,
-        "topk_overlap": len(ref_top_set & cand_top_set),
-        "topk_changed": bool(ref_top_set != cand_top_set),
-        "reference_top_tokens": ref_top.indices[0].tolist(),
-        "candidate_top_tokens": cand_top.indices[0].tolist(),
-        "reference_top_scores": ref_top.values[0].tolist(),
-        "candidate_top_scores": cand_top.values[0].tolist(),
-        "reference_top1_logprob_delta": dense_top1_logprob_delta,
+        "target_position_count": len(target_positions),
+        "topk_changed": bool(topk_changed_count > 0),
+        "topk_changed_count": topk_changed_count,
+        "topk_overlap_min": min_topk_overlap,
+        "reference_top1_logprob_delta": max_abs_top1_delta,
+        "reference_top1_logprob_delta_values": top1_logprob_delta_values,
+        "per_position": per_position,
     }
 
 
@@ -151,15 +187,17 @@ def _rank_heads(rows: Sequence[Dict[str, Any]], metric: str, candidates: Iterabl
     ]
 
 
-def _attention_output_hook(patch: torch.Tensor):
+def _attention_output_hook(patch: torch.Tensor, target_positions: Sequence[int]):
     def hook(_module, _inputs, output):
         if isinstance(output, tuple):
             attn = output[0]
             patched = attn.clone()
-            patched[:, -1:, :] = patch.to(device=patched.device, dtype=patched.dtype)
+            index = torch.tensor(target_positions, device=patched.device, dtype=torch.long)
+            patched.index_copy_(1, index, patch.to(device=patched.device, dtype=patched.dtype))
             return (patched, *output[1:])
         patched = output.clone()
-        patched[:, -1:, :] = patch.to(device=patched.device, dtype=patched.dtype)
+        index = torch.tensor(target_positions, device=patched.device, dtype=torch.long)
+        patched.index_copy_(1, index, patch.to(device=patched.device, dtype=patched.dtype))
         return patched
 
     return hook
@@ -169,12 +207,18 @@ def _base_model(model: torch.nn.Module) -> torch.nn.Module:
     return getattr(model, "model", model)
 
 
-def _final_logits(model: torch.nn.Module, tokens: Dict[str, torch.Tensor]) -> torch.Tensor:
+def _selected_logits(
+    model: torch.nn.Module,
+    tokens: Dict[str, torch.Tensor],
+    *,
+    target_positions: Sequence[int],
+) -> torch.Tensor:
     base = _base_model(model)
     with torch.no_grad():
         outputs = base(**tokens, use_cache=False)
         hidden = outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
-        logits = model.lm_head(hidden[:, -1:, :])
+        index = torch.tensor(target_positions, device=hidden.device, dtype=torch.long)
+        logits = model.lm_head(hidden.index_select(1, index))
     return logits.detach()
 
 
@@ -184,10 +228,11 @@ def _final_logits_with_patch(
     module: torch.nn.Module,
     tokens: Dict[str, torch.Tensor],
     patch: torch.Tensor,
+    target_positions: Sequence[int],
 ) -> torch.Tensor:
-    handle = module.register_forward_hook(_attention_output_hook(patch))
+    handle = module.register_forward_hook(_attention_output_hook(patch, target_positions))
     try:
-        return _final_logits(model, tokens)
+        return _selected_logits(model, tokens, target_positions=target_positions)
     finally:
         handle.remove()
 
@@ -266,10 +311,11 @@ def _capture_qkv_and_logits(
     tokens: Dict[str, torch.Tensor],
     layer_id: int,
     apply_rope: bool,
+    target_positions: Sequence[int],
 ) -> tuple[Any, torch.Tensor]:
     captured, handles = _capture_attention_inputs(model, {layer_id})
     try:
-        logits = _final_logits(model, tokens)
+        logits = _selected_logits(model, tokens, target_positions=target_positions)
     finally:
         for handle in handles:
             handle.remove()
@@ -278,6 +324,51 @@ def _capture_qkv_and_logits(
     capture = captured[0]
     q, k, v, meta = _shape_qkv(capture, apply_rope=apply_rope)
     return (capture, q, k, v, meta), logits
+
+
+def _target_positions(seq_len: int, *, count: int, stride: int) -> List[int]:
+    if count <= 0:
+        raise ValueError("--position-count must be positive")
+    if stride <= 0:
+        raise ValueError("--position-stride must be positive")
+    positions = [seq_len - 1 - idx * stride for idx in range(count)]
+    positions = [pos for pos in positions if pos >= 0]
+    return sorted(set(positions))
+
+
+def _compute_head_stacks(
+    *,
+    q_full: torch.Tensor,
+    k_true_full: torch.Tensor,
+    v_true_full: torch.Tensor,
+    target_positions: Sequence[int],
+    kv_len: int,
+    args: argparse.Namespace,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    dense_rows = []
+    seed_rows = []
+    for position in target_positions:
+        prefix_len = int(position) + 1
+        start = max(0, prefix_len - kv_len) if kv_len and kv_len > 0 else 0
+        q = q_full[:, position : position + 1, :, :].contiguous()
+        k = k_true_full[:, start:prefix_len, :, :].contiguous()
+        v = v_true_full[:, start:prefix_len, :, :].contiguous()
+        dense_rows.append(_dense_true_gqa(q, k, v))
+        seed, _ = gate0_seed_only_attention_triton_forward(
+            q,
+            k,
+            v,
+            block_size=args.block_size,
+            sink_blocks=args.sink_blocks,
+            recent_blocks=args.recent_blocks,
+            middle_seed_blocks=args.middle_seed_blocks,
+            block_order=args.block_order,
+            return_raw_stats=False,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+        )
+        seed_rows.append(seed)
+    return torch.cat(dense_rows, dim=1), torch.cat(seed_rows, dim=1)
 
 
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
@@ -306,49 +397,46 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         max_length=args.max_seq,
     ).to(device)
     seq_len = int(tokens["input_ids"].shape[1])
+    target_positions = _target_positions(
+        seq_len,
+        count=args.position_count,
+        stride=args.position_stride,
+    )
     if args.kv_len and seq_len != args.kv_len:
         print(
             f"[logit-replay] token count {seq_len} differs from kv_len {args.kv_len}; using captured sequence length",
             flush=True,
         )
 
-    print("[logit-replay] capturing baseline Q/K/V and final logits", flush=True)
+    print("[logit-replay] capturing baseline Q/K/V and target-position logits", flush=True)
     (capture, q_full, k_full, v_full, meta), baseline_logits = _capture_qkv_and_logits(
         model=model,
         tokens=tokens,
         layer_id=args.layer_id,
         apply_rope=args.tensor_space == "post_rope",
+        target_positions=target_positions,
     )
-    q = q_full[:, -1:, :, :].contiguous()
-    k = k_full.contiguous()
-    v = v_full.contiguous()
-    if args.kv_len and args.kv_len > 0:
-        k = k[:, -args.kv_len :, :, :].contiguous()
-        v = v[:, -args.kv_len :, :, :].contiguous()
-    true_kv_heads = int(meta.get("num_kv_heads", k.shape[2]))
-    k_true = _true_gqa_kv(k, true_kv_heads=true_kv_heads)
-    v_true = _true_gqa_kv(v, true_kv_heads=true_kv_heads)
+    true_kv_heads = int(meta.get("num_kv_heads", k_full.shape[2]))
+    k_true = _true_gqa_kv(k_full.contiguous(), true_kv_heads=true_kv_heads)
+    v_true = _true_gqa_kv(v_full.contiguous(), true_kv_heads=true_kv_heads)
 
-    q_heads = int(q.shape[2])
+    q_heads = int(q_full.shape[2])
     kv_heads = int(k_true.shape[2])
     modules = _attention_modules(model)
     _layer_id, module_name, module = modules[args.layer_id]
 
-    print("[logit-replay] computing dense and seed-only final-token attention patches", flush=True)
+    print(
+        f"[logit-replay] computing dense and seed-only attention patches for positions {target_positions}",
+        flush=True,
+    )
     with torch.no_grad():
-        dense_heads = _dense_true_gqa(q, k_true, v_true)
-        seed_heads_all, _ = gate0_seed_only_attention_triton_forward(
-            q,
-            k_true,
-            v_true,
-            block_size=args.block_size,
-            sink_blocks=args.sink_blocks,
-            recent_blocks=args.recent_blocks,
-            middle_seed_blocks=args.middle_seed_blocks,
-            block_order=args.block_order,
-            return_raw_stats=False,
-            num_warps=args.num_warps,
-            num_stages=args.num_stages,
+        dense_heads, seed_heads_all = _compute_head_stacks(
+            q_full=q_full,
+            k_true_full=k_true,
+            v_true_full=v_true,
+            target_positions=target_positions,
+            kv_len=args.kv_len,
+            args=args,
         )
         dense_patch = _project_attention_output(module, dense_heads)
 
@@ -358,6 +446,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         module=module,
         tokens=tokens,
         patch=dense_patch,
+        target_positions=target_positions,
     )
 
     specs = _candidate_specs(
@@ -382,14 +471,30 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         logits = (
             dense_patch_logits
             if name == "dense_patch_validation"
-            else _final_logits_with_patch(model=model, module=module, tokens=tokens, patch=patch)
+            else _final_logits_with_patch(
+                model=model,
+                module=module,
+                tokens=tokens,
+                patch=patch,
+                target_positions=target_positions,
+            )
         )
         rows.append(
             {
                 **spec,
                 "post_o_proj_error_vs_dense_patch": _error_summary(patch, dense_patch),
-                "logits_vs_model_baseline": _logit_metrics(logits, baseline_logits, top_k=args.top_k),
-                "logits_vs_dense_patch": _logit_metrics(logits, dense_patch_logits, top_k=args.top_k),
+                "logits_vs_model_baseline": _logit_metrics(
+                    logits,
+                    baseline_logits,
+                    target_positions=target_positions,
+                    top_k=args.top_k,
+                ),
+                "logits_vs_dense_patch": _logit_metrics(
+                    logits,
+                    dense_patch_logits,
+                    target_positions=target_positions,
+                    top_k=args.top_k,
+                ),
             }
         )
 
@@ -404,13 +509,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "shape": {
             "seq_len": seq_len,
-            "kv_len": int(k_true.shape[1]),
+            "kv_len": int(min(args.kv_len, seq_len) if args.kv_len and args.kv_len > 0 else seq_len),
             "q_heads": q_heads,
             "true_kv_heads": kv_heads,
             "group_size": q_heads // kv_heads,
-            "dim": int(q.shape[3]),
+            "dim": int(q_full.shape[3]),
             "dtype": args.dtype,
         },
+        "target_positions": target_positions,
         "seed_config": {
             "block_size": args.block_size,
             "sink_blocks": args.sink_blocks,
@@ -422,6 +528,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "dense_patch_logits_vs_model_baseline": _logit_metrics(
                 dense_patch_logits,
                 baseline_logits,
+                target_positions=target_positions,
                 top_k=args.top_k,
             ),
         },
@@ -445,6 +552,8 @@ def main() -> None:
     parser.add_argument("--trusted-seed-heads", default="2,3,4")
     parser.add_argument("--repair-counts", default="0,2,4,7,11")
     parser.add_argument("--max-policies", type=int, default=18)
+    parser.add_argument("--position-count", type=int, default=1)
+    parser.add_argument("--position-stride", type=int, default=1)
     parser.add_argument("--block-size", type=int, default=32)
     parser.add_argument("--sink-blocks", type=int, default=2)
     parser.add_argument("--recent-blocks", type=int, default=2)
