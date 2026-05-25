@@ -23,6 +23,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install build
+      - name: Seed-only policy smoke
+        run: |
+          python benchmarks/check_seed_only_policy_route_smoke.py --allow-no-torch
       - name: Build wheel
         run: |
           python -m build --wheel
