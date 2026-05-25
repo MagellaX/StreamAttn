@@ -74,6 +74,37 @@ with torch.no_grad():
 print(y_qkv.shape)
 ```
 
+## Seed-Only Serving Wedge
+
+The first deployable StreamAttn decode route is intentionally narrow and
+fail-closed: Qwen2.5-0.5B layer 8, post-RoPE true-GQA tensors, 32K KV bucket,
+fp16, batch >= 8. It uses the packaged seed-only policy when the request
+matches and falls back to dense attention otherwise.
+
+```python
+from stream_attention import StreamAttnSeedOnlyDecodeService
+
+service = StreamAttnSeedOnlyDecodeService.from_packaged(
+    dense_fallback=flashinfer_dense_fallback,
+    dense_fallback_backend="flashinfer_dense",
+)
+
+out, info = service.run(q, k_cache, v_cache, mode="auto")
+print(info.to_dict())
+```
+
+CPU-safe fail-closed smoke:
+
+```bash
+python examples/seed_only_serving_decode.py --backend torch --batch 4 --kv-len 128 --dtype fp32
+```
+
+Real serving-shape smoke:
+
+```bash
+python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 8 --kv-len 32768 --dtype fp16
+```
+
 
 ## API Reference
 
