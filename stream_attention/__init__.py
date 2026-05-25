@@ -78,6 +78,7 @@ from .decode import (
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
     decode_cost_model_from_profile_rows,
+    load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
 )
@@ -146,6 +147,7 @@ __all__ = [
     "StreamAttnDecodeWorkspace",
     "StreamAttnDecodeWrapper",
     "decode_cost_model_from_profile_rows",
+    "load_packaged_gate0_seed_only_batched_policy",
     "stream_attn_decode_plan",
     "stream_attn_decode_run",
     # Utilities

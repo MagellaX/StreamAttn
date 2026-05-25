@@ -53,6 +53,17 @@
       "max_logit_delta": 0.1171875,
       "reference_top1_margin_min": 4.234375,
       "reference_top1_logprob_delta_max": 0.000268152
+    },
+    "coupled_top_p_sampling_32": {
+      "prompt_kinds": ["needle", "code", "long_doc", "chat_doc"],
+      "cases": 256,
+      "top_p": 0.95,
+      "sample_token_changed_count": 0,
+      "sample_sequence_exact_match_rate": 1.0,
+      "top1_changes": 0,
+      "top5_overlap_min": 5,
+      "kl_max": 0.000003014,
+      "reference_top1_logprob_delta_max": 0.0003992654
     }
   },
   "timing": {
