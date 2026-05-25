@@ -30,6 +30,29 @@ from .telemetry import Prediction, seq_bucket
 
 
 DenseFallbackFn = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
+DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY = "qwen25_05b_l8_32k_seed_only_batched"
+_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
+    DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY: "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+    "qwen25_05b_l8_32k_fp16_b8_seed_only_v1": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+}
+
+
+def _read_packaged_text(relative_path: str) -> str:
+    """Read a text resource from the installed stream_attention package."""
+
+    parts = tuple(part for part in relative_path.replace("\\", "/").split("/") if part)
+    try:
+        from importlib import resources as importlib_resources
+
+        files = getattr(importlib_resources, "files", None)
+        if files is not None:
+            resource = importlib_resources.files(__package__ or "stream_attention")
+            for part in parts:
+                resource = resource.joinpath(part)
+            return resource.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return (Path(__file__).resolve().parent.joinpath(*parts)).read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -305,6 +328,104 @@ class Gate0SeedOnlyBatchedPolicy:
         if entries:
             return cls.from_entry(entries[entry_index])
         return cls.from_entry(payload)
+
+    @classmethod
+    def from_packaged(
+        cls,
+        name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+        *,
+        entry_index: int = 0,
+    ) -> "Gate0SeedOnlyBatchedPolicy":
+        """Load a packaged, validated seed-only policy by name."""
+
+        try:
+            relative_path = _PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES[name]
+        except KeyError as exc:
+            known = ", ".join(sorted(_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES))
+            raise ValueError(f"unknown packaged Gate-0 seed-only policy {name!r}; known: {known}") from exc
+        payload = json.loads(_read_packaged_text(relative_path))
+        entries = payload.get("stable_entries") or payload.get("entries")
+        if entries:
+            return cls.from_entry(entries[entry_index])
+        return cls.from_entry(payload)
+
+    def mismatch_reasons(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        *,
+        min_kv_len: int = 1,
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+        backend_available: bool = True,
+    ) -> List[str]:
+        """Return fail-closed reasons for rejecting this policy on tensors."""
+
+        reasons: List[str] = []
+        if model_id is not None and model_id != self.model_id:
+            reasons.append("model_mismatch")
+        if layer_id is not None and int(layer_id) != self.layer_id:
+            reasons.append("layer_mismatch")
+        if not backend_available:
+            reasons.append("backend_unavailable")
+        if query.dim() != 4 or key.dim() != 4:
+            return reasons + ["shape_mismatch"]
+        batch, query_len, heads, dim = query.shape
+        key_batch, kv_len, kv_heads, key_dim = key.shape
+        if batch != key_batch or dim != key_dim:
+            reasons.append("shape_mismatch")
+        if query_len != 1:
+            reasons.append("query_len_mismatch")
+        if batch < self.min_batch:
+            reasons.append("batch_below_min")
+        if kv_len < min_kv_len:
+            reasons.append("kv_len_below_min")
+        if self.kv_len_bucket is not None and seq_bucket(kv_len) != seq_bucket(int(self.kv_len_bucket)):
+            reasons.append("kv_len_bucket_mismatch")
+        expected_dtype = _normalize_dtype_name(self.dtype)
+        actual_dtype = _normalize_dtype_name(query.dtype)
+        if expected_dtype is not None and expected_dtype != actual_dtype:
+            reasons.append("dtype_mismatch")
+        if kv_heads <= 0 or heads % kv_heads != 0:
+            reasons.append("gqa_shape_mismatch")
+        if self.heads is not None and self.heads != heads:
+            reasons.append("heads_mismatch")
+        if self.kv_heads is not None and self.kv_heads != kv_heads:
+            reasons.append("kv_heads_mismatch")
+        if self.dim is not None and self.dim != dim:
+            reasons.append("head_dim_mismatch")
+        return reasons
+
+    def matches_tensors(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        *,
+        min_kv_len: int = 1,
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+        backend_available: bool = True,
+    ) -> bool:
+        """Return whether this policy can be used without fail-closed fallback."""
+
+        return not self.mismatch_reasons(
+            query,
+            key,
+            min_kv_len=min_kv_len,
+            model_id=model_id,
+            layer_id=layer_id,
+            backend_available=backend_available,
+        )
+
+
+def load_packaged_gate0_seed_only_batched_policy(
+    name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+    *,
+    entry_index: int = 0,
+) -> Gate0SeedOnlyBatchedPolicy:
+    """Load a packaged Gate-0 seed-only batched policy."""
+
+    return Gate0SeedOnlyBatchedPolicy.from_packaged(name, entry_index=entry_index)
 
 
 @dataclass(frozen=True)
@@ -839,6 +960,7 @@ class StreamAttnDecodePlan:
     projection_metadata_required: bool = False
     gate0_fused_hybrid_policy: Optional[Gate0FusedHybridPolicy] = None
     gate0_seed_only_batched_policy: Optional[Gate0SeedOnlyBatchedPolicy] = None
+    fallback_reason: Optional[str] = None
 
 
 def _predict_active_fraction(
@@ -928,6 +1050,7 @@ def stream_attn_decode_plan(
         dense_ms = float(gate0_seed_only_batched_policy.expected_dense_ms or 0.0)
     candidates = {"dense": dense_ms}
     reasons = {"dense": "dense_fallback"}
+    fallback_reason: Optional[str] = None
     metadata_available = metadata is not None and metadata.value_norm_bounds is not None
     active_threshold = (
         cost.break_even_active_fraction(safety_margin=policy.safety_margin)
@@ -977,20 +1100,10 @@ def stream_attn_decode_plan(
         and policy.allow_gate0_seed_only_batched
     ):
         seed_policy = gate0_seed_only_batched_policy
-        seed_bucket_ok = (
-            seed_policy.kv_len_bucket is None
-            or seq_bucket(key.shape[1]) == seq_bucket(int(seed_policy.kv_len_bucket))
-        )
-        seed_dtype = _normalize_dtype_name(seed_policy.dtype)
-        seed_dtype_ok = seed_dtype is None or seed_dtype == _normalize_dtype_name(query.dtype)
-        seed_shape_ok = (
-            query.shape[1] == 1
-            and query.shape[0] >= seed_policy.min_batch
-            and key.shape[2] > 0
-            and query.shape[2] % key.shape[2] == 0
-            and (seed_policy.heads is None or seed_policy.heads == query.shape[2])
-            and (seed_policy.kv_heads is None or seed_policy.kv_heads == key.shape[2])
-            and (seed_policy.dim is None or seed_policy.dim == query.shape[3])
+        seed_mismatches = seed_policy.mismatch_reasons(
+            query,
+            key,
+            min_kv_len=policy.min_kv_len_for_gate0_seed_only,
         )
         seed_ms = seed_policy.expected_seed_only_ms
         if seed_ms is None and seed_policy.expected_speedup_vs_dense and dense_ms > 0.0:
@@ -1000,11 +1113,16 @@ def stream_attn_decode_plan(
             seed_speedup = dense_ms / seed_ms
         elif seed_policy.expected_speedup_vs_dense is not None:
             seed_speedup = seed_policy.expected_speedup_vs_dense
+        if seed_mismatches:
+            fallback_reason = seed_mismatches[0]
+        elif seed_ms is None or seed_ms <= 0.0:
+            fallback_reason = "missing_seed_only_batched_timing"
+        elif dense_ms <= 0.0:
+            fallback_reason = "missing_dense_timing"
+        elif seed_speedup is None or seed_speedup < policy.safety_margin:
+            fallback_reason = "seed_only_batched_not_profitable"
         if (
-            seed_shape_ok
-            and seed_bucket_ok
-            and seed_dtype_ok
-            and key.shape[1] >= policy.min_kv_len_for_gate0_seed_only
+            not seed_mismatches
             and seed_ms is not None
             and seed_ms > 0.0
             and dense_ms > 0.0
@@ -1041,6 +1159,7 @@ def stream_attn_decode_plan(
             dense_ms=0.0,
             expected_regret_ms=0.0,
             collect_telemetry=collect_telemetry,
+            fallback_reason=fallback_reason,
         )
 
     if (
@@ -1119,6 +1238,7 @@ def stream_attn_decode_plan(
             if backend == "gate0_seed_only_batched"
             else None
         ),
+        fallback_reason=(fallback_reason if backend == "dense" else None),
     )
 
 
@@ -1375,6 +1495,8 @@ class StreamAttnDecodeWrapper:
     def _record_runtime_info(self, plan: StreamAttnDecodePlan, info) -> None:
         backend_used = getattr(info, "backend_used", None) if info is not None else None
         fallback_reason = getattr(info, "fallback_reason", None) if info is not None else None
+        if fallback_reason is None and plan.backend == "dense":
+            fallback_reason = plan.fallback_reason
         if backend_used is None:
             backend_used = (
                 self.dense_fallback_backend

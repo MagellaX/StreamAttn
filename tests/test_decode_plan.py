@@ -11,6 +11,7 @@ from stream_attention.decode import (
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
     decode_cost_model_from_profile_rows,
+    load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
 )
@@ -520,6 +521,7 @@ def test_decode_plan_rejects_gate0_seed_only_batched_below_min_batch():
 
     assert plan.backend == "dense"
     assert plan.reason == "missing_decode_cost"
+    assert plan.fallback_reason == "batch_below_min"
 
 
 def test_decode_run_gate0_seed_only_batched_uses_dense_fallback_on_cpu():
@@ -641,7 +643,7 @@ def test_decode_wrapper_counts_injected_dense_fallback_backend():
     torch.testing.assert_close(out, torch.zeros_like(q))
     assert wrapper.last_plan.backend == "dense"
     assert wrapper.runtime_counters()["backend_counts"] == {"flashinfer_dense": 1}
-    assert wrapper.runtime_counters()["fallback_reasons"] == {}
+    assert wrapper.runtime_counters()["fallback_reasons"] == {"batch_below_min": 1}
 
 
 def test_gate0_seed_only_batched_policy_loads_captured_batch_artifact_entry():
@@ -719,3 +721,58 @@ def test_gate0_seed_only_batched_policy_loads_packaged_l8_artifact():
     assert policy.expected_speedup_vs_dense == 1.60
     assert policy.max_kl == 0.0001
     assert policy.max_logprob_delta == 0.001
+
+
+def test_gate0_seed_only_batched_policy_loads_packaged_default():
+    policy = load_packaged_gate0_seed_only_batched_policy()
+    via_class = Gate0SeedOnlyBatchedPolicy.from_packaged(
+        "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+    )
+
+    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+    assert via_class.policy_id == policy.policy_id
+    assert policy.min_batch == 8
+
+
+def test_gate0_seed_only_batched_policy_reports_fail_closed_mismatches():
+    q, k, _ = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, min_batch=8)
+
+    reasons = policy.mismatch_reasons(q, k, min_kv_len=1, layer_id=9)
+
+    assert "batch_below_min" in reasons
+    assert "layer_mismatch" in reasons
+    assert not policy.matches_tensors(q, k, min_kv_len=1, layer_id=9)
+
+
+def test_gate0_seed_only_batched_policy_accepts_matching_tensors():
+    q, k, _ = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, min_batch=4)
+
+    assert policy.mismatch_reasons(q, k, min_kv_len=1, layer_id=8) == []
+    assert policy.matches_tensors(q, k, min_kv_len=1, layer_id=8)
+
+
+def test_gate0_seed_only_batched_policy_reports_dtype_and_bucket_mismatch():
+    q, k, _ = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    policy = Gate0SeedOnlyBatchedPolicy(
+        model_id="test-model",
+        layer_id=8,
+        dtype="fp16",
+        kv_len_bucket=32768,
+        min_batch=4,
+        heads=q.shape[2],
+        kv_heads=k.shape[2],
+        dim=q.shape[3],
+    )
+
+    reasons = policy.mismatch_reasons(q, k, min_kv_len=1)
+
+    assert "dtype_mismatch" in reasons
+    assert "kv_len_bucket_mismatch" in reasons
