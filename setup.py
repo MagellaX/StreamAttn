@@ -84,7 +84,7 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "stream_attention": ["*.yaml", "*.json"],
+        "stream_attention": ["*.yaml", "*.json", "policies/*.json"],
     },
     entry_points={
         "console_scripts": [

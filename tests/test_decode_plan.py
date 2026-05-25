@@ -1,10 +1,12 @@
 import torch
 import pytest
+from pathlib import Path
 
 from stream_attention.decode import (
     DecodeCostEntry,
     DecodeCostKey,
     DecodeCostModel,
+    Gate0SeedOnlyBatchedPolicy,
     StreamAttnDecodePolicy,
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
@@ -358,6 +360,37 @@ def _gate0_policy(q, k, *, speedup: float = 1.4, error: float = 0.005):
     )
 
 
+def _seed_only_policy(
+    q,
+    k,
+    *,
+    speedup: float = 1.2,
+    min_batch: int = 4,
+):
+    dense_ms = 1.0
+    return Gate0SeedOnlyBatchedPolicy(
+        model_id="test-model",
+        layer_id=8,
+        policy_id="test-seed-only-batched",
+        dtype="fp32",
+        kv_len_bucket=k.shape[1],
+        min_batch=min_batch,
+        heads=q.shape[2],
+        kv_heads=k.shape[2],
+        dim=q.shape[3],
+        block_size=16,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        block_order="recent_first",
+        expected_dense_ms=dense_ms,
+        expected_seed_only_ms=dense_ms / speedup,
+        expected_speedup_vs_dense=speedup,
+        max_kl=1.0e-5,
+        max_logit_delta=0.2,
+    )
+
+
 def test_decode_plan_chooses_gate0_fused_hybrid_from_policy_without_cost_model():
     q, k, _ = _tensors(kv_len=32768)
     gate0_policy = _gate0_policy(q, k, speedup=1.45, error=0.005)
@@ -446,3 +479,243 @@ def test_decode_wrapper_can_plan_gate0_fused_hybrid_backend():
 
     assert out.shape == q.shape
     assert wrapper.last_plan.backend == "gate0_fused_hybrid"
+
+
+def test_decode_plan_chooses_gate0_seed_only_batched_from_policy_without_cost_model():
+    q, k, _ = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    seed_policy = _seed_only_policy(q, k, speedup=1.2)
+
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_seed_only_batched_policy=seed_policy,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    assert plan.backend == "gate0_seed_only_batched"
+    assert plan.reason == "calibrated_gate0_seed_only_batched_policy"
+    assert plan.gate0_seed_only_batched_policy is seed_policy
+    assert plan.projection_metadata_required is False
+    assert plan.metadata_update_required is False
+
+
+def test_decode_plan_rejects_gate0_seed_only_batched_below_min_batch():
+    q, k, _ = _tensors(kv_len=128)
+    seed_policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_seed_only_batched_policy=seed_policy,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    assert plan.backend == "dense"
+    assert plan.reason == "missing_decode_cost"
+
+
+def test_decode_run_gate0_seed_only_batched_uses_dense_fallback_on_cpu():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    seed_policy = _seed_only_policy(q, k, speedup=1.2)
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        gate0_seed_only_batched_policy=seed_policy,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    out, info = stream_attn_decode_run(q, k, v, plan=plan, return_info=True)
+    expected = dense_attention_forward(q, k, v, causal=False)
+
+    torch.testing.assert_close(out, expected)
+    assert info.backend_used == "dense"
+    assert info.fallback_reason == "seed_only_batched_requires_cuda"
+    assert info.stats is None
+
+
+def test_decode_run_dense_plan_uses_injected_fallback():
+    q, k, v = _tensors(kv_len=128)
+    plan = stream_attn_decode_plan(
+        q,
+        k,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate1=4096),
+        active_fraction_hint=1.0,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    out = stream_attn_decode_run(
+        q,
+        k,
+        v,
+        plan=plan,
+        dense_fallback=lambda query, key, value: torch.zeros_like(query),
+    )
+
+    assert plan.backend == "dense"
+    torch.testing.assert_close(out, torch.zeros_like(q))
+
+
+def test_decode_wrapper_can_plan_gate0_seed_only_batched_backend():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    seed_policy = _seed_only_policy(q, k, speedup=1.2)
+    workspace = StreamAttnDecodeWorkspace.allocate(
+        device="cpu",
+        max_batch=4,
+        max_query_len=1,
+        max_kv_len=128,
+        max_heads=2,
+        head_dim=8,
+        block_size=16,
+        dtype=q.dtype,
+    )
+    wrapper = StreamAttnDecodeWrapper(
+        workspace,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        gate0_seed_only_batched_policy=seed_policy,
+    )
+    wrapper.plan(
+        query_shape=q.shape,
+        kv_shape=k.shape,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    out = wrapper.run(q, k, v, active_fraction_hint=1.0)
+
+    assert out.shape == q.shape
+    assert wrapper.last_plan.backend == "gate0_seed_only_batched"
+    assert wrapper.last_info.backend_used == "dense"
+    assert wrapper.runtime_counters()["backend_counts"] == {"dense": 1}
+    assert wrapper.runtime_counters()["fallback_reasons"] == {
+        "seed_only_batched_requires_cuda": 1
+    }
+
+
+def test_decode_wrapper_counts_injected_dense_fallback_backend():
+    q, k, v = _tensors(kv_len=128)
+    seed_policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    workspace = StreamAttnDecodeWorkspace.allocate(
+        device="cpu",
+        max_batch=1,
+        max_query_len=1,
+        max_kv_len=128,
+        max_heads=2,
+        head_dim=8,
+        block_size=16,
+        dtype=q.dtype,
+    )
+    wrapper = StreamAttnDecodeWrapper(
+        workspace,
+        policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        gate0_seed_only_batched_policy=seed_policy,
+        dense_fallback=lambda query, key, value: torch.zeros_like(query),
+        dense_fallback_backend="flashinfer_dense",
+    )
+    wrapper.plan(
+        query_shape=q.shape,
+        kv_shape=k.shape,
+        block_size=16,
+        tile_size_q=16,
+    )
+
+    out = wrapper.run(q, k, v, active_fraction_hint=1.0)
+
+    torch.testing.assert_close(out, torch.zeros_like(q))
+    assert wrapper.last_plan.backend == "dense"
+    assert wrapper.runtime_counters()["backend_counts"] == {"flashinfer_dense": 1}
+    assert wrapper.runtime_counters()["fallback_reasons"] == {}
+
+
+def test_gate0_seed_only_batched_policy_loads_captured_batch_artifact_entry():
+    entry = {
+        "model_id": "Qwen2.5-0.5B",
+        "layer_id": 8,
+        "mode": "all_seed_only",
+        "shape": {
+            "batch": 4,
+            "q_heads": 14,
+            "true_kv_heads": 2,
+            "dim": 64,
+            "dtype": "fp16",
+            "kv_len": 32768,
+        },
+        "seed_config": {
+            "block_size": 32,
+            "sink_blocks": 2,
+            "recent_blocks": 2,
+            "middle_seed_blocks": 8,
+            "block_order": "recent_first",
+            "num_warps": 4,
+            "num_stages": 2,
+        },
+        "timing": {
+            "seed_direct_full_prealloc_ms": 0.0552,
+            "flashinfer_batch_tc_exact_ms": 0.0651,
+            "speedup_vs_flashinfer_batch": 1.18,
+        },
+        "quality": {
+            "seed_vs_flashinfer_exact": {
+                "max_abs_error": 0.2429,
+                "mean_abs_error": 0.00958,
+            }
+        },
+    }
+
+    policy = Gate0SeedOnlyBatchedPolicy.from_entry(entry)
+
+    assert policy.model_id == "Qwen2.5-0.5B"
+    assert policy.layer_id == 8
+    assert policy.min_batch == 4
+    assert policy.heads == 14
+    assert policy.kv_heads == 2
+    assert policy.dim == 64
+    assert policy.dtype == "fp16"
+    assert policy.kv_len_bucket == 32768
+    assert policy.expected_seed_only_ms == 0.0552
+    assert policy.expected_dense_ms == 0.0651
+    assert policy.expected_speedup_vs_dense == 1.18
+    assert policy.expected_max_abs_error == 0.2429
+
+
+def test_gate0_seed_only_batched_policy_loads_packaged_l8_artifact():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "stream_attention"
+        / "policies"
+        / "qwen25_05b_l8_32k_seed_only_batched.json"
+    )
+
+    policy = Gate0SeedOnlyBatchedPolicy.from_json(path)
+
+    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+    assert policy.model_id == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert policy.layer_id == 8
+    assert policy.min_batch == 8
+    assert policy.heads == 14
+    assert policy.kv_heads == 2
+    assert policy.dim == 64
+    assert policy.dtype == "fp16"
+    assert policy.kv_len_bucket == 32768
+    assert policy.expected_seed_only_ms == 0.03559
+    assert policy.expected_dense_ms == 0.05698
+    assert policy.expected_speedup_vs_dense == 1.60
+    assert policy.max_kl == 0.0001
+    assert policy.max_logprob_delta == 0.001
