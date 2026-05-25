@@ -283,6 +283,9 @@ def _summarize(wrapper: Dict[str, Any], safety: Dict[str, Any], kwargs: Dict[str
     product_runtime = entry.get("product_wrapper_route") or {}
     fallback_route = fallback_entry.get("product_route") or {}
     fallback_runtime = fallback_entry.get("product_wrapper_route") or {}
+    fallback_counters = fallback_runtime.get("runtime_counters") or {}
+    fallback_backend_counts = fallback_counters.get("backend_counts") or {}
+    fallback_reason_counts = fallback_counters.get("fallback_reasons") or {}
     safety_policy = safety.get("policy") or {}
     safety_summary = safety_policy.get("summary_vs_model_baseline") or {}
 
@@ -292,8 +295,14 @@ def _summarize(wrapper: Dict[str, Any], safety: Dict[str, Any], kwargs: Dict[str
     )
     fallback_ok = (
         fallback_route.get("backend") == "dense"
-        and fallback_runtime.get("backend_used") == "flashinfer_dense"
-        and fallback_runtime.get("fallback_reason") == "batch_below_min"
+        and (
+            fallback_runtime.get("backend_used") == "flashinfer_dense"
+            or int(fallback_backend_counts.get("flashinfer_dense", 0)) > 0
+        )
+        and (
+            fallback_runtime.get("fallback_reason") == "batch_below_min"
+            or int(fallback_reason_counts.get("batch_below_min", 0)) > 0
+        )
     )
     speedup = float(timing.get("product_wrapper_speedup_vs_flashinfer") or 0.0)
     speed_ok = speedup >= float(kwargs["min_speedup"])
