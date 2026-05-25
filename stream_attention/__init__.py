@@ -77,10 +77,13 @@ from .decode import (
     StreamAttnDecodePolicy,
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
+    StreamAttnSeedOnlyDecodeService,
+    StreamAttnServingInfo,
     decode_cost_model_from_profile_rows,
     load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
+    stream_attn_seed_only_decode,
 )
 
 # Utilities
@@ -146,10 +149,13 @@ __all__ = [
     "StreamAttnDecodePolicy",
     "StreamAttnDecodeWorkspace",
     "StreamAttnDecodeWrapper",
+    "StreamAttnSeedOnlyDecodeService",
+    "StreamAttnServingInfo",
     "decode_cost_model_from_profile_rows",
     "load_packaged_gate0_seed_only_batched_policy",
     "stream_attn_decode_plan",
     "stream_attn_decode_run",
+    "stream_attn_seed_only_decode",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",

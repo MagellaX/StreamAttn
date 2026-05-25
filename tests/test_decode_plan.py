@@ -10,10 +10,12 @@ from stream_attention.decode import (
     StreamAttnDecodePolicy,
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
+    StreamAttnSeedOnlyDecodeService,
     decode_cost_model_from_profile_rows,
     load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
+    stream_attn_seed_only_decode,
 )
 from stream_attention.gate0_fused_hybrid import Gate0FusedHybridPolicy
 from stream_attention.gate1 import dense_attention_forward
@@ -776,3 +778,93 @@ def test_gate0_seed_only_batched_policy_reports_dtype_and_bucket_mismatch():
 
     assert "dtype_mismatch" in reasons
     assert "kv_len_bucket_mismatch" in reasons
+
+
+def test_seed_only_decode_service_fails_closed_when_backend_unavailable():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        dense_fallback=lambda query, key, value: torch.zeros_like(query),
+        dense_fallback_backend="flashinfer_dense",
+    )
+
+    out, info = service.run(q, k, v)
+
+    torch.testing.assert_close(out, torch.zeros_like(q))
+    assert info.backend_used == "flashinfer_dense"
+    assert info.fallback_reason == "backend_unavailable"
+    assert info.plan_backend == "dense"
+    assert info.seed_only_enabled is False
+    assert info.safety_policy_matched is True
+    assert info.runtime_counters["fallback_reasons"] == {"backend_unavailable": 1}
+    assert info.to_dict()["policy_id"] == "test-seed-only-batched"
+
+
+def test_seed_only_decode_service_reports_policy_mismatch():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        dense_fallback=lambda query, key, value: torch.ones_like(query),
+        dense_fallback_backend="flashinfer_dense",
+    )
+
+    out, info = service.run(q, k, v, layer_id=9)
+
+    torch.testing.assert_close(out, torch.ones_like(q))
+    assert info.backend_used == "flashinfer_dense"
+    assert info.fallback_reason == "layer_mismatch"
+    assert info.safety_policy_matched is False
+
+
+def test_seed_only_decode_service_manual_dense_mode():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        dense_fallback=lambda query, key, value: torch.full_like(query, 2.0),
+        dense_fallback_backend="flashinfer_dense",
+    )
+
+    out, info = service.run(q, k, v, mode="dense")
+
+    torch.testing.assert_close(out, torch.full_like(q, 2.0))
+    assert info.backend_used == "flashinfer_dense"
+    assert info.fallback_reason == "manual_dense"
+    assert info.safety_policy_matched is True
+
+
+def test_stream_attn_seed_only_decode_one_shot_helper():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+
+    out, info = stream_attn_seed_only_decode(
+        q,
+        k,
+        v,
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+        dense_fallback=lambda query, key, value: torch.zeros_like(query),
+        dense_fallback_backend="flashinfer_dense",
+    )
+
+    torch.testing.assert_close(out, torch.zeros_like(q))
+    assert info.policy_id == "test-seed-only-batched"
+    assert info.backend_used == "flashinfer_dense"
+    assert info.fallback_reason == "backend_unavailable"

@@ -452,6 +452,32 @@ class Gate0SeedOnlyBatchedRunInfo:
 
 
 @dataclass(frozen=True)
+class StreamAttnServingInfo:
+    """Structured telemetry returned by the serving-facing seed-only API."""
+
+    backend_used: str
+    policy_id: Optional[str]
+    fallback_reason: Optional[str]
+    batch_size: int
+    kv_len: int
+    layer_id: Optional[int]
+    model_id: Optional[str]
+    dtype: str
+    device: str
+    plan_backend: str
+    plan_reason: str
+    seed_only_enabled: bool
+    safety_policy_matched: bool
+    runtime_counters: Dict[str, Dict[str, int]]
+    stats: Optional[Dict[str, object]] = None
+
+    def to_dict(self) -> Dict[str, object]:
+        """Return a JSON-serializable telemetry snapshot."""
+
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class DecodeCostKey:
     device_class: str
     dtype: str
@@ -1654,3 +1680,280 @@ class StreamAttnDecodeWrapper:
                 self.last_active_fraction = float(info.stats.seed_fraction)
         self.workspace.advance_step()
         return (output, info) if return_info else output
+
+
+class StreamAttnSeedOnlyDecodeService:
+    """Serving-facing wrapper for the packaged seed-only StreamAttn route.
+
+    The service keeps the first deployable wedge narrow: it loads one validated
+    seed-only policy, reuses decode workspace for stable request shapes, and
+    fails closed to dense whenever policy/runtime invariants do not match.
+    """
+
+    def __init__(
+        self,
+        *,
+        policy: Optional[Gate0SeedOnlyBatchedPolicy] = None,
+        policy_name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+        decode_policy: Optional[StreamAttnDecodePolicy] = None,
+        dense_fallback: Optional[DenseFallbackFn] = None,
+        dense_fallback_backend: str = "dense",
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+    ) -> None:
+        self.policy = policy or load_packaged_gate0_seed_only_batched_policy(policy_name)
+        self.decode_policy = decode_policy or StreamAttnDecodePolicy(
+            collect_telemetry_every=0,
+        )
+        self.dense_fallback = dense_fallback
+        self.dense_fallback_backend = dense_fallback_backend
+        self.model_id = model_id if model_id is not None else self.policy.model_id
+        self.layer_id = layer_id if layer_id is not None else self.policy.layer_id
+        self.workspace: Optional[StreamAttnDecodeWorkspace] = None
+        self.wrapper: Optional[StreamAttnDecodeWrapper] = None
+        self._planned_shape: Optional[tuple] = None
+
+    @classmethod
+    def from_packaged(
+        cls,
+        name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+        **kwargs,
+    ) -> "StreamAttnSeedOnlyDecodeService":
+        """Build a serving service from a packaged policy artifact."""
+
+        return cls(policy=load_packaged_gate0_seed_only_batched_policy(name), **kwargs)
+
+    def _preflight_reasons(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        *,
+        model_id: Optional[str],
+        layer_id: Optional[int],
+        mode: str,
+    ) -> List[str]:
+        if mode not in {"auto", "dense"}:
+            raise ValueError("mode must be 'auto' or 'dense'")
+        if mode == "dense":
+            return ["manual_dense"]
+        safety_reasons = self.policy.mismatch_reasons(
+            query,
+            key_cache,
+            min_kv_len=self.decode_policy.min_kv_len_for_gate0_seed_only,
+            model_id=model_id,
+            layer_id=layer_id,
+        )
+        if safety_reasons:
+            return safety_reasons
+        if not all(t.is_cuda for t in (query, key_cache)):
+            return ["backend_unavailable"]
+        return []
+
+    def _allocate_wrapper(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+    ) -> StreamAttnDecodeWrapper:
+        shape_key = (tuple(query.shape), tuple(key_cache.shape), tuple(value_cache.shape))
+        if self.wrapper is not None and self._planned_shape == shape_key:
+            return self.wrapper
+        self.workspace = StreamAttnDecodeWorkspace.allocate(
+            device=query.device,
+            max_batch=query.shape[0],
+            max_query_len=query.shape[1],
+            max_kv_len=key_cache.shape[1],
+            max_heads=max(query.shape[2], key_cache.shape[2]),
+            head_dim=query.shape[3],
+            block_size=self.policy.block_size,
+            dtype=query.dtype,
+        )
+        self.wrapper = StreamAttnDecodeWrapper(
+            self.workspace,
+            policy=self.decode_policy,
+            gate0_seed_only_batched_policy=self.policy,
+            dense_fallback=self.dense_fallback,
+            dense_fallback_backend=self.dense_fallback_backend,
+        )
+        self.wrapper.plan(
+            query_shape=query.shape,
+            kv_shape=key_cache.shape,
+            block_size=self.policy.block_size,
+            tile_size_q=16,
+            num_warps=self.policy.num_warps,
+            num_stages=self.policy.num_stages,
+        )
+        self._planned_shape = shape_key
+        return self.wrapper
+
+    def _dense_output(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.dense_fallback is not None:
+            return self.dense_fallback(query, key_cache, value_cache)
+        return dense_attention_forward(query, key_cache, value_cache, causal=False)
+
+    def _serving_info(
+        self,
+        *,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        model_id: Optional[str],
+        layer_id: Optional[int],
+        backend_used: str,
+        fallback_reason: Optional[str],
+        plan_backend: str,
+        plan_reason: str,
+        safety_policy_matched: bool,
+        runtime_counters: Optional[Dict[str, Dict[str, int]]] = None,
+        stats: Optional[object] = None,
+    ) -> StreamAttnServingInfo:
+        return StreamAttnServingInfo(
+            backend_used=backend_used,
+            policy_id=self.policy.policy_id,
+            fallback_reason=fallback_reason,
+            batch_size=int(query.shape[0]),
+            kv_len=int(key_cache.shape[1]),
+            layer_id=layer_id,
+            model_id=model_id,
+            dtype=_normalize_dtype_name(query.dtype) or str(query.dtype),
+            device=str(query.device),
+            plan_backend=plan_backend,
+            plan_reason=plan_reason,
+            seed_only_enabled=backend_used == "gate0_seed_only_batched",
+            safety_policy_matched=safety_policy_matched,
+            runtime_counters=runtime_counters or {
+                "backend_counts": {backend_used: 1},
+                "fallback_reasons": (
+                    {fallback_reason: 1} if fallback_reason is not None else {}
+                ),
+            },
+            stats=asdict(stats) if stats is not None else None,
+        )
+
+    def run(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+        mode: str = "auto",
+        active_fraction_hint: Optional[float] = 1.0,
+        return_info: bool = True,
+    ):
+        """Run one decode call with policy-aware seed-only routing.
+
+        ``mode='auto'`` uses the packaged policy if all invariants match and the
+        backend is available.  ``mode='dense'`` forces dense fallback while still
+        returning structured telemetry.
+        """
+
+        if query.dim() != 4 or key_cache.dim() != 4 or value_cache.dim() != 4:
+            raise ValueError("query, key_cache, and value_cache must be [batch, seq, heads, dim]")
+        if key_cache.shape != value_cache.shape:
+            raise ValueError("key_cache and value_cache shapes must match")
+        if query.shape[0] != key_cache.shape[0] or query.shape[3] != key_cache.shape[3]:
+            raise ValueError("query/KV batch and head_dim must match")
+        effective_model_id = model_id if model_id is not None else self.model_id
+        effective_layer_id = layer_id if layer_id is not None else self.layer_id
+        safety_reasons = self.policy.mismatch_reasons(
+            query,
+            key_cache,
+            min_kv_len=self.decode_policy.min_kv_len_for_gate0_seed_only,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+        )
+        reasons = self._preflight_reasons(
+            query,
+            key_cache,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+            mode=mode,
+        )
+        if reasons:
+            reason = reasons[0]
+            output = self._dense_output(query, key_cache, value_cache)
+            backend = self.dense_fallback_backend if self.dense_fallback is not None else "dense"
+            info = self._serving_info(
+                query=query,
+                key_cache=key_cache,
+                model_id=effective_model_id,
+                layer_id=effective_layer_id,
+                backend_used=backend,
+                fallback_reason=reason,
+                plan_backend="dense",
+                plan_reason=reason,
+                safety_policy_matched=not safety_reasons,
+            )
+            return (output, info) if return_info else output
+
+        wrapper = self._allocate_wrapper(query, key_cache, value_cache)
+        output, run_info = wrapper.run(
+            query,
+            key_cache,
+            value_cache,
+            active_fraction_hint=active_fraction_hint,
+            return_info=True,
+        )
+        plan = wrapper.last_plan
+        assert plan is not None
+        backend = getattr(run_info, "backend_used", None) or plan.backend
+        fallback_reason = getattr(run_info, "fallback_reason", None) or plan.fallback_reason
+        info = self._serving_info(
+            query=query,
+            key_cache=key_cache,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+            backend_used=str(backend),
+            fallback_reason=fallback_reason,
+            plan_backend=plan.backend,
+            plan_reason=plan.reason,
+            safety_policy_matched=True,
+            runtime_counters=wrapper.runtime_counters(),
+            stats=getattr(run_info, "stats", None),
+        )
+        return (output, info) if return_info else output
+
+
+def stream_attn_seed_only_decode(
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    *,
+    policy: Optional[Gate0SeedOnlyBatchedPolicy] = None,
+    policy_name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+    decode_policy: Optional[StreamAttnDecodePolicy] = None,
+    dense_fallback: Optional[DenseFallbackFn] = None,
+    dense_fallback_backend: str = "dense",
+    model_id: Optional[str] = None,
+    layer_id: Optional[int] = None,
+    mode: str = "auto",
+    active_fraction_hint: Optional[float] = 1.0,
+    return_info: bool = True,
+):
+    """One-shot serving helper for policy-aware seed-only decode."""
+
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        policy_name=policy_name,
+        decode_policy=decode_policy,
+        dense_fallback=dense_fallback,
+        dense_fallback_backend=dense_fallback_backend,
+        model_id=model_id,
+        layer_id=layer_id,
+    )
+    return service.run(
+        query,
+        key_cache,
+        value_cache,
+        model_id=model_id,
+        layer_id=layer_id,
+        mode=mode,
+        active_fraction_hint=active_fraction_hint,
+        return_info=return_info,
+    )
