@@ -169,7 +169,7 @@ def _wrapper_gate(kwargs: Dict[str, Any], *, env: Dict[str, str], prompt_kinds: 
             "--layer-id",
             str(kwargs["layer_id"]),
             "--batch-sizes",
-            str(kwargs["batch_size"]),
+            f"{kwargs['fallback_batch_size']},{kwargs['batch_size']}",
             "--product-min-batch",
             str(kwargs["batch_size"]),
             "--forced-min-batch",
@@ -259,17 +259,41 @@ def _summarize(wrapper: Dict[str, Any], safety: Dict[str, Any], kwargs: Dict[str
     entries = wrapper.get("entries") or []
     if not entries:
         raise RuntimeError("wrapper benchmark returned no entries")
-    entry = entries[0]
+    entry = next(
+        (row for row in entries if int(row.get("batch", -1)) == int(kwargs["batch_size"])),
+        None,
+    )
+    if entry is None:
+        raise RuntimeError(f"wrapper benchmark returned no batch={kwargs['batch_size']} entry")
+    fallback_entry = next(
+        (
+            row
+            for row in entries
+            if int(row.get("batch", -1)) == int(kwargs["fallback_batch_size"])
+        ),
+        None,
+    )
+    if fallback_entry is None:
+        raise RuntimeError(
+            f"wrapper benchmark returned no fallback batch={kwargs['fallback_batch_size']} entry"
+        )
     timing = entry.get("timing") or {}
     decision = entry.get("decision") or {}
     product_route = entry.get("product_route") or {}
     product_runtime = entry.get("product_wrapper_route") or {}
+    fallback_route = fallback_entry.get("product_route") or {}
+    fallback_runtime = fallback_entry.get("product_wrapper_route") or {}
     safety_policy = safety.get("policy") or {}
     safety_summary = safety_policy.get("summary_vs_model_baseline") or {}
 
     route_ok = (
         product_route.get("backend") == "gate0_seed_only_batched"
         and product_runtime.get("backend_used") == "gate0_seed_only_batched"
+    )
+    fallback_ok = (
+        fallback_route.get("backend") == "dense"
+        and fallback_runtime.get("backend_used") == "flashinfer_dense"
+        and fallback_runtime.get("fallback_reason") == "batch_below_min"
     )
     speedup = float(timing.get("product_wrapper_speedup_vs_flashinfer") or 0.0)
     speed_ok = speedup >= float(kwargs["min_speedup"])
@@ -280,20 +304,29 @@ def _summarize(wrapper: Dict[str, Any], safety: Dict[str, Any], kwargs: Dict[str
         and float(safety_summary.get("kl_max", 1.0)) <= float(kwargs["max_kl"])
     )
     gate = {
-        "passed": bool(route_ok and speed_ok and safety_ok),
+        "passed": bool(route_ok and fallback_ok and speed_ok and safety_ok),
         "route_ok": bool(route_ok),
+        "fallback_ok": bool(fallback_ok),
         "speed_ok": bool(speed_ok),
         "safety_ok": bool(safety_ok),
         "min_speedup": float(kwargs["min_speedup"]),
     }
     return {
         "schema": "streamattn.gate0.seed_only_product_wedge_smoke.v1",
+        "commit": kwargs.get("commit") or None,
+        "model": kwargs["model"],
         "gate": gate,
         "shape": {
             "batch": entry.get("batch"),
             "kv_len": (entry.get("shape") or {}).get("kv_len"),
             "layer_id": kwargs["layer_id"],
             "dtype": kwargs["dtype"],
+        },
+        "fallback_smoke": {
+            "batch": fallback_entry.get("batch"),
+            "product_route": fallback_route,
+            "product_wrapper_route": fallback_runtime,
+            "passed": bool(fallback_ok),
         },
         "route": {
             "product_route": product_route,
@@ -343,7 +376,9 @@ def main(
     max_seq: int = 32768,
     kv_len: int = 32768,
     batch_size: int = 8,
+    fallback_batch_size: int = 4,
     dtype: str = "fp16",
+    commit: str = "",
     position_count: int = 8,
     position_stride: int = 1,
     min_speedup: float = 1.10,
@@ -369,7 +404,9 @@ def main(
         max_seq=max_seq,
         kv_len=kv_len,
         batch_size=batch_size,
+        fallback_batch_size=fallback_batch_size,
         dtype=dtype,
+        commit=commit,
         position_count=position_count,
         position_stride=position_stride,
         min_speedup=min_speedup,
@@ -391,7 +428,20 @@ def main(
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-        compact = {key: result.get(key) for key in ("schema", "gate", "shape", "route", "timing", "safety")}
+        compact = {
+            key: result.get(key)
+            for key in (
+                "schema",
+                "commit",
+                "model",
+                "gate",
+                "shape",
+                "fallback_smoke",
+                "route",
+                "timing",
+                "safety",
+            )
+        }
         print(json.dumps(compact, indent=2, sort_keys=True))
     else:
         print(text)
