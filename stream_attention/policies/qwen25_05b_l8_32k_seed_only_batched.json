@@ -1,0 +1,92 @@
+{
+  "schema": "streamattn.gate0.seed_only_batched_policy.v1",
+  "policy_id": "qwen25_05b_l8_32k_fp16_b8_seed_only_v1",
+  "mode": "all_seed_only",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "layer_id": 8,
+  "tensor_space": "post_rope",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 8,
+  "shape": {
+    "batch": 8,
+    "q_heads": 14,
+    "true_kv_heads": 2,
+    "dim": 64,
+    "kv_len": 32768,
+    "dtype": "fp16"
+  },
+  "seed_config": {
+    "block_size": 32,
+    "sink_blocks": 2,
+    "recent_blocks": 2,
+    "middle_seed_blocks": 8,
+    "block_order": "recent_first",
+    "num_warps": 4,
+    "num_stages": 2
+  },
+  "safety": {
+    "gate": "distribution_aware",
+    "top1_must_match": true,
+    "min_top5_overlap": 5,
+    "max_kl": 0.0001,
+    "max_logit_delta": 0.2,
+    "max_logprob_delta": 0.001,
+    "validated_rollout_steps": 32,
+    "teacher_forced_last32": {
+      "prompt_kinds": ["needle", "code", "long_doc", "chat_doc"],
+      "cases": 256,
+      "top1_changes": 0,
+      "top5_overlap_min": 5,
+      "kl_max": 0.00000191,
+      "max_logit_delta": 0.16015625,
+      "target_logprob_delta_max": 0.000127
+    },
+    "greedy_closed_loop_32": {
+      "prompt_kinds": ["needle", "code", "long_doc", "chat_doc"],
+      "cases": 256,
+      "diverged_rows": 0,
+      "sequence_exact_match_rate": 1.0,
+      "top1_changes": 0,
+      "top5_overlap_min": 5,
+      "kl_max": 0.000002138,
+      "max_logit_delta": 0.1171875,
+      "reference_top1_margin_min": 4.234375,
+      "reference_top1_logprob_delta_max": 0.000268152
+    }
+  },
+  "timing": {
+    "seed_direct_full_prealloc_ms": 0.03559,
+    "flashinfer_batch_tc_exact_ms": 0.05698,
+    "speedup_vs_flashinfer_batch": 1.60,
+    "h100_product_wrapper_b8_ms": 0.04204,
+    "h100_flashinfer_b8_ms": 0.05644,
+    "h100_product_wrapper_b8_speedup": 1.34,
+    "h100_product_wrapper_b16_ms": 0.04068,
+    "h100_flashinfer_b16_ms": 0.10024,
+    "h100_product_wrapper_b16_speedup": 2.46,
+    "a100_product_wrapper_b8_ms": 0.05868,
+    "a100_flashinfer_b8_ms": 0.11930,
+    "a100_product_wrapper_b8_speedup": 2.03,
+    "a100_product_wrapper_b16_ms": 0.06415,
+    "a100_flashinfer_b16_ms": 0.21284,
+    "a100_product_wrapper_b16_speedup": 3.32,
+    "first_wrapper_win_batch": 8,
+    "first_product_route_seed_only_batch": 8
+  },
+  "known_out_of_scope": [
+    {
+      "kv_len_bucket": 65536,
+      "status": "research_only",
+      "reason": "64K last-32 mixed-prompt replay did not pass the 32K strict distribution gate",
+      "observed": {
+        "top1_changes": 0,
+        "top5_overlap_min": 4,
+        "kl_max": 0.0001454836,
+        "target_logprob_delta_max": 0.0027825721,
+        "runtime_product_wrapper_win_batch": 4
+      }
+    }
+  ],
+  "fallback": "dense"
+}

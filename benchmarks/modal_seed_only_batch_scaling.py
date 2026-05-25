@@ -16,7 +16,18 @@ app = modal.App("streamattn-seed-only-batch-scaling")
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
     .pip_install("flashinfer-python", "flashinfer-cubin")
-    .add_local_dir(".", remote_path="/root/StreamAttn", copy=True)
+    .add_local_dir(
+        ".",
+        remote_path="/root/StreamAttn",
+        copy=True,
+        ignore=[
+            ".git",
+            ".git/**",
+            ".pytest_cache/**",
+            "__pycache__/**",
+            "artifacts/**",
+        ],
+    )
 )
 
 
@@ -108,6 +119,11 @@ def profile_h100(**kwargs):
     return _run(**kwargs)
 
 
+@app.function(image=image, gpu="A100", timeout=3600)
+def profile_a100(**kwargs):
+    return _run(**kwargs)
+
+
 @app.local_entrypoint()
 def main(
     dtype: str = "fp16",
@@ -130,9 +146,11 @@ def main(
     warmup: int = 5,
     iters: int = 20,
     seed: int = 1234,
+    gpu: str = "h100",
     output_json: str = "",
 ):
-    result = profile_h100.remote(
+    runner = profile_a100 if gpu.lower() == "a100" else profile_h100
+    result = runner.remote(
         dtype=dtype,
         batch_sizes=batch_sizes,
         q_heads=q_heads,
@@ -159,4 +177,21 @@ def main(
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-    print(text)
+        summary = {
+            "schema": result.get("schema"),
+            "shape": result.get("shape"),
+            "break_even_batch": result.get("break_even_batch"),
+            "decision": result.get("decision"),
+            "rows": [
+                {
+                    "batch": row.get("batch"),
+                    "seed_ms": row.get("seed_direct_full_prealloc_ms"),
+                    "flashinfer_ms": row.get("flashinfer_batch_tc_exact_ms"),
+                    "speedup": row.get("speedup_vs_flashinfer_batch"),
+                }
+                for row in result.get("rows", [])
+            ],
+        }
+        print(json.dumps(summary, indent=2, sort_keys=True))
+    else:
+        print(text)
