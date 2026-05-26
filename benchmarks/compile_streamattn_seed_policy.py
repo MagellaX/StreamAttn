@@ -139,6 +139,10 @@ def _discover_rollout_path(
     matches = sorted(
         closed_loop_dir.glob(f"seed_only_l{layer_id}_b{min_batch}_closed_loop*.json")
     )
+    if not matches:
+        matches = sorted(
+            closed_loop_dir.glob(f"seed_only_*_l{layer_id}_b{min_batch}_closed_loop*.json")
+        )
     return matches[0] if matches else None
 
 
@@ -176,6 +180,16 @@ def _existing_registry_by_name(registry_path: Path) -> Dict[str, Dict[str, Any]]
         for entry in registry.get("policies") or []
         if entry.get("name")
     }
+
+
+def _existing_registry_payload(registry_path: Path) -> Dict[str, Any]:
+    if not registry_path.exists():
+        return {
+            "schema": "streamattn.policy_registry.v1",
+            "default": DEFAULT_POLICY_DEFAULT,
+            "policies": [],
+        }
+    return _read_json(registry_path)
 
 
 def _seed_config_from_sweep(sweep: Dict[str, Any]) -> Dict[str, Any]:
@@ -386,6 +400,7 @@ def compile_seed_policy_cells(
     registry_json: Path,
     model_slug: str = DEFAULT_MODEL_SLUG,
     model_id: Optional[str] = None,
+    default_policy_name: Optional[str] = None,
     min_batch: int = 4,
     dtype: Optional[str] = None,
     max_kl: Optional[float] = None,
@@ -469,7 +484,7 @@ def compile_seed_policy_cells(
             sweep=sweep,
             layer_result=layer_result,
             rollout=rollout or {},
-            rollout_artifact=str(rollout_path),
+            rollout_artifact=_portable_path(rollout_path),
             policy_id=compiled_policy_id,
             model_id=compiled_model_id,
             layer_id=layer_id,
@@ -494,9 +509,15 @@ def compile_seed_policy_cells(
             )
         )
 
+    green_names = [cell.name for cell in green_cells]
+    resolved_default_policy = default_policy_name
+    if resolved_default_policy is None and DEFAULT_POLICY_DEFAULT in green_names:
+        resolved_default_policy = DEFAULT_POLICY_DEFAULT
+    if resolved_default_policy is None and green_cells:
+        resolved_default_policy = green_cells[0].name
     registry = {
         "schema": "streamattn.policy_registry.v1",
-        "default": DEFAULT_POLICY_DEFAULT,
+        "default": resolved_default_policy or "",
         "policies": [
             _registry_entry(
                 name=cell.name,
@@ -555,6 +576,7 @@ def _write_compiled_outputs(
     registry_json: Path,
     write_existing: bool,
 ) -> Dict[str, Any]:
+    existing_payload = _existing_registry_payload(registry_json)
     existing = _existing_registry_by_name(registry_json)
     writes: List[Dict[str, Any]] = []
     for cell in compiled["_compiled_cells"]:
@@ -572,7 +594,25 @@ def _write_compiled_outputs(
             policy=cell.policy,
             aliases=cell.aliases,
         )
-    _write_json(registry_json, compiled["registry"])
+    merged_registry = {
+        "schema": "streamattn.policy_registry.v1",
+        "default": (
+            existing_payload.get("default")
+            if existing_payload.get("default") in existing
+            else compiled["registry"].get("default")
+        ),
+        "policies": sorted(
+            existing.values(),
+            key=lambda entry: (
+                str(entry.get("model_id", "")),
+                int(entry.get("kv_len_bucket", 0)),
+                int(entry.get("min_batch", 0)),
+                int(entry.get("layer_id", 0)),
+                str(entry.get("name", "")),
+            ),
+        ),
+    }
+    _write_json(registry_json, merged_registry)
     writes.append({"path": _portable_path(registry_json), "action": "wrote"})
     return {"writes": writes}
 
@@ -601,6 +641,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--model-slug", default=DEFAULT_MODEL_SLUG)
     parser.add_argument("--model-id", default=None)
+    parser.add_argument("--default-policy-name", default=None)
     parser.add_argument("--dtype", default=None)
     parser.add_argument("--min-batch", type=int, default=4)
     parser.add_argument("--max-kl", type=float, default=None)
@@ -621,6 +662,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         registry_json=args.registry_json,
         model_slug=args.model_slug,
         model_id=args.model_id,
+        default_policy_name=args.default_policy_name,
         min_batch=args.min_batch,
         dtype=args.dtype,
         max_kl=args.max_kl,

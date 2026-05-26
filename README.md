@@ -184,6 +184,22 @@ green layers L1, L2, L5, L6, L8, and L18. It requires both the last-32 layer
 sweep gate and per-layer 32-step teacher-forced, greedy, and coupled top-p
 rollout gates before a cell can enter the registry.
 
+For new model buckets, use the Modal policy pipeline to run sweep, validate
+candidates, and compile a summary in one H100 job:
+
+```bash
+modal run benchmarks/modal_compile_streamattn_seed_policy.py \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --layers 0-27 \
+  --kv-len 32768 \
+  --batch-size 4 \
+  --output-dir artifacts/gate0/qwen25_15b_32k_b4
+```
+
+The pipeline only runs closed-loop rollout for sweep-passing candidate layers.
+It writes the sweep, per-candidate rollout artifacts, compiled policy summary,
+and `seed_policy_pipeline_summary.json` into the output directory.
+
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
 in that direction: it validates policy and tensor invariants once, binds fixed
 Q/K/V/output buffers, and returns a `StreamAttnSeedOnlyDirectRunner` whose
