@@ -73,6 +73,7 @@ from .decode import (
     Gate0SeedOnlyBatchedPolicy,
     Gate0SeedOnlyBatchedRunInfo,
     Gate0SeedOnlyBatchedStats,
+    STREAMATTN_EXACT_NATIVE_BACKEND,
     StreamAttnDecodePlan,
     StreamAttnDecodePolicy,
     StreamAttnDecodeWorkspace,
@@ -83,6 +84,7 @@ from .decode import (
     load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
+    stream_attn_exact_native_decode,
     stream_attn_seed_only_decode,
 )
 
@@ -145,6 +147,7 @@ __all__ = [
     "Gate0SeedOnlyBatchedPolicy",
     "Gate0SeedOnlyBatchedRunInfo",
     "Gate0SeedOnlyBatchedStats",
+    "STREAMATTN_EXACT_NATIVE_BACKEND",
     "StreamAttnDecodePlan",
     "StreamAttnDecodePolicy",
     "StreamAttnDecodeWorkspace",
@@ -155,6 +158,7 @@ __all__ = [
     "load_packaged_gate0_seed_only_batched_policy",
     "stream_attn_decode_plan",
     "stream_attn_decode_run",
+    "stream_attn_exact_native_decode",
     "stream_attn_seed_only_decode",
     # Utilities
     "MemoryProfiler",

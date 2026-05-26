@@ -30,6 +30,7 @@ from .telemetry import Prediction, seq_bucket
 
 
 DenseFallbackFn = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
+STREAMATTN_EXACT_NATIVE_BACKEND = "streamattn_exact_native"
 DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY = "qwen25_05b_l8_32k_seed_only_batched"
 _PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
     DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY: "policies/qwen25_05b_l8_32k_seed_only_batched.json",
@@ -53,6 +54,22 @@ def _read_packaged_text(relative_path: str) -> str:
     except Exception:
         pass
     return (Path(__file__).resolve().parent.joinpath(*parts)).read_text(encoding="utf-8")
+
+
+def stream_attn_exact_native_decode(
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+) -> torch.Tensor:
+    """StreamAttn-owned exact decode path for serving fail-closed execution.
+
+    This is the engine-level exact mode used when no external benchmark backend
+    is injected.  It intentionally starts from the repository's dense reference;
+    the H100/TK exact-native kernel can replace this implementation without
+    changing serving semantics.
+    """
+
+    return dense_attention_forward(query, key_cache, value_cache, causal=False)
 
 
 @dataclass(frozen=True)
@@ -1687,7 +1704,8 @@ class StreamAttnSeedOnlyDecodeService:
 
     The service keeps the first deployable wedge narrow: it loads one validated
     seed-only policy, reuses decode workspace for stable request shapes, and
-    fails closed to dense whenever policy/runtime invariants do not match.
+    fails closed to StreamAttn exact-native whenever policy/runtime invariants
+    do not match.
     """
 
     def __init__(
@@ -1697,7 +1715,7 @@ class StreamAttnSeedOnlyDecodeService:
         policy_name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
         decode_policy: Optional[StreamAttnDecodePolicy] = None,
         dense_fallback: Optional[DenseFallbackFn] = None,
-        dense_fallback_backend: str = "dense",
+        dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
         model_id: Optional[str] = None,
         layer_id: Optional[int] = None,
     ) -> None:
@@ -1794,7 +1812,7 @@ class StreamAttnSeedOnlyDecodeService:
     ) -> torch.Tensor:
         if self.dense_fallback is not None:
             return self.dense_fallback(query, key_cache, value_cache)
-        return dense_attention_forward(query, key_cache, value_cache, causal=False)
+        return stream_attn_exact_native_decode(query, key_cache, value_cache)
 
     def _serving_info(
         self,
@@ -1849,8 +1867,8 @@ class StreamAttnSeedOnlyDecodeService:
         """Run one decode call with policy-aware seed-only routing.
 
         ``mode='auto'`` uses the packaged policy if all invariants match and the
-        backend is available.  ``mode='dense'`` forces dense fallback while still
-        returning structured telemetry.
+        backend is available.  ``mode='dense'`` forces exact-native execution
+        while still returning structured telemetry.
         """
 
         if query.dim() != 4 or key_cache.dim() != 4 or value_cache.dim() != 4:
@@ -1878,7 +1896,7 @@ class StreamAttnSeedOnlyDecodeService:
         if reasons:
             reason = reasons[0]
             output = self._dense_output(query, key_cache, value_cache)
-            backend = self.dense_fallback_backend if self.dense_fallback is not None else "dense"
+            backend = self.dense_fallback_backend
             info = self._serving_info(
                 query=query,
                 key_cache=key_cache,
@@ -1929,7 +1947,7 @@ def stream_attn_seed_only_decode(
     policy_name: str = DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
     decode_policy: Optional[StreamAttnDecodePolicy] = None,
     dense_fallback: Optional[DenseFallbackFn] = None,
-    dense_fallback_backend: str = "dense",
+    dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
     model_id: Optional[str] = None,
     layer_id: Optional[int] = None,
     mode: str = "auto",

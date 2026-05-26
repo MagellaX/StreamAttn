@@ -79,15 +79,13 @@ print(y_qkv.shape)
 The first deployable StreamAttn decode route is intentionally narrow and
 fail-closed: Qwen2.5-0.5B layer 8, post-RoPE true-GQA tensors, 32K KV bucket,
 fp16, batch >= 8. It uses the packaged seed-only policy when the request
-matches and falls back to dense attention otherwise.
+matches and otherwise stays inside StreamAttn exact-native mode. FlashInfer is
+kept as a benchmark/reference injection, not a required serving fallback.
 
 ```python
 from stream_attention import StreamAttnSeedOnlyDecodeService
 
-service = StreamAttnSeedOnlyDecodeService.from_packaged(
-    dense_fallback=flashinfer_dense_fallback,
-    dense_fallback_backend="flashinfer_dense",
-)
+service = StreamAttnSeedOnlyDecodeService.from_packaged()
 
 out, info = service.run(q, k_cache, v_cache, mode="auto")
 print(info.to_dict())
@@ -96,14 +94,29 @@ print(info.to_dict())
 CPU-safe fail-closed smoke:
 
 ```bash
-python examples/seed_only_serving_decode.py --backend torch --batch 4 --kv-len 128 --dtype fp32
+python examples/seed_only_serving_decode.py --batch 4 --kv-len 128 --dtype fp32
 ```
 
-Real serving-shape smoke:
+Real serving-shape smoke with FlashInfer as an external reference backend:
 
 ```bash
 python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 8 --kv-len 32768 --dtype fp16
 ```
+
+## Engine Direction
+
+The narrow Qwen L8 route is the first executable wedge, not the final goal.
+StreamAttn is being shaped as a self-owned attention serving engine:
+
+- `streamattn_exact_native`: exact decode owned by StreamAttn. It starts as the
+  internal dense reference path and is the replacement point for TK/CUDA exact
+  kernels.
+- `gate0_seed_only_batched`: the first optimized native mode, enabled only for
+  validated logit-safe cells.
+- FlashInfer and FlashAttention-class kernels are development baselines and
+  reference backends, not required serving fallbacks.
+- General frontier-model coverage requires a policy compiler over model,
+  layer, KV-length, batch, dtype, GQA/MQA/MHA shape, and device buckets.
 
 
 ## API Reference

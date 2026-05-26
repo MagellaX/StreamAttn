@@ -7,6 +7,7 @@ from stream_attention.decode import (
     DecodeCostKey,
     DecodeCostModel,
     Gate0SeedOnlyBatchedPolicy,
+    STREAMATTN_EXACT_NATIVE_BACKEND,
     StreamAttnDecodePolicy,
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
@@ -15,6 +16,7 @@ from stream_attention.decode import (
     load_packaged_gate0_seed_only_batched_policy,
     stream_attn_decode_plan,
     stream_attn_decode_run,
+    stream_attn_exact_native_decode,
     stream_attn_seed_only_decode,
 )
 from stream_attention.gate0_fused_hybrid import Gate0FusedHybridPolicy
@@ -805,6 +807,29 @@ def test_seed_only_decode_service_fails_closed_when_backend_unavailable():
     assert info.to_dict()["policy_id"] == "test-seed-only-batched"
 
 
+def test_seed_only_decode_service_defaults_to_exact_native():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+    )
+
+    out, info = service.run(q, k, v)
+    expected = dense_attention_forward(q, k, v, causal=False)
+
+    torch.testing.assert_close(out, expected)
+    assert info.backend_used == STREAMATTN_EXACT_NATIVE_BACKEND
+    assert info.fallback_reason == "backend_unavailable"
+    assert info.plan_backend == "dense"
+    assert info.runtime_counters["backend_counts"] == {
+        STREAMATTN_EXACT_NATIVE_BACKEND: 1
+    }
+
+
 def test_seed_only_decode_service_reports_policy_mismatch():
     q, k, v = _tensors(kv_len=128)
     q = q.repeat(4, 1, 1, 1)
@@ -847,6 +872,26 @@ def test_seed_only_decode_service_manual_dense_mode():
     assert info.safety_policy_matched is True
 
 
+def test_seed_only_decode_service_manual_exact_native_mode():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+    )
+
+    out, info = service.run(q, k, v, mode="dense")
+    expected = stream_attn_exact_native_decode(q, k, v)
+
+    torch.testing.assert_close(out, expected)
+    assert info.backend_used == STREAMATTN_EXACT_NATIVE_BACKEND
+    assert info.fallback_reason == "manual_dense"
+    assert info.safety_policy_matched is True
+
+
 def test_stream_attn_seed_only_decode_one_shot_helper():
     q, k, v = _tensors(kv_len=128)
     q = q.repeat(4, 1, 1, 1)
@@ -867,4 +912,26 @@ def test_stream_attn_seed_only_decode_one_shot_helper():
     torch.testing.assert_close(out, torch.zeros_like(q))
     assert info.policy_id == "test-seed-only-batched"
     assert info.backend_used == "flashinfer_dense"
+    assert info.fallback_reason == "backend_unavailable"
+
+
+def test_stream_attn_seed_only_decode_one_shot_defaults_to_exact_native():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+
+    out, info = stream_attn_seed_only_decode(
+        q,
+        k,
+        v,
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+    )
+    expected = stream_attn_exact_native_decode(q, k, v)
+
+    torch.testing.assert_close(out, expected)
+    assert info.policy_id == "test-seed-only-batched"
+    assert info.backend_used == STREAMATTN_EXACT_NATIVE_BACKEND
     assert info.fallback_reason == "backend_unavailable"

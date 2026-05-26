@@ -5,14 +5,14 @@ This example demonstrates the first bounded StreamAttn wedge:
     Qwen2.5-0.5B, L8, 32K bucket, fp16, true GQA, batch >= 8.
 
 The API is intentionally fail-closed.  If the policy does not match the tensors
-or the seed-only backend is unavailable, the service uses the injected dense
-fallback and reports the reason in ``StreamAttnServingInfo``.
+or the seed-only backend is unavailable, the service uses StreamAttn exact-native
+and reports the reason in ``StreamAttnServingInfo``.
 
 CPU-safe smoke:
 
-    python examples/seed_only_serving_decode.py --backend torch --batch 4 --kv-len 128 --dtype fp32
+    python examples/seed_only_serving_decode.py --batch 4 --kv-len 128 --dtype fp32
 
-Real serving-shape smoke with FlashInfer fallback:
+Real serving-shape smoke with FlashInfer as a benchmark/reference dense backend:
 
     python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 8 --kv-len 32768 --dtype fp16
 """
@@ -53,7 +53,7 @@ def _dtype(name: str) -> torch.dtype:
 
 
 def make_torch_dense_fallback() -> DenseFallback:
-    """Dense fallback with the repository's reference attention."""
+    """Injectable dense reference backend used only for explicit smoke tests."""
 
     def fallback(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
         return dense_attention_forward(query, key, value, causal=False)
@@ -113,7 +113,7 @@ def make_flashinfer_dense_fallback(
     use_tensor_cores: bool = True,
     disable_split_kv: bool = False,
 ) -> DenseFallback:
-    """Build an injectable FlashInfer dense fallback.
+    """Build an injectable FlashInfer dense benchmark/reference backend.
 
     This compact example plans the FlashInfer wrapper per call.  A production
     server should reuse the workspace and plan lifecycle across decode steps.
@@ -173,9 +173,12 @@ def make_service(args: argparse.Namespace) -> StreamAttnSeedOnlyDecodeService:
             disable_split_kv=args.disable_split_kv,
         )
         fallback_backend = "flashinfer_dense"
-    else:
+    elif args.backend == "torch":
         dense_fallback = make_torch_dense_fallback()
         fallback_backend = "torch_dense"
+    else:
+        dense_fallback = None
+        fallback_backend = "streamattn_exact_native"
 
     return StreamAttnSeedOnlyDecodeService.from_packaged(
         dense_fallback=dense_fallback,
@@ -190,7 +193,15 @@ def make_service(args: argparse.Namespace) -> StreamAttnSeedOnlyDecodeService:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", choices=["torch", "flashinfer"], default="torch")
+    parser.add_argument(
+        "--backend",
+        choices=["streamattn", "torch", "flashinfer"],
+        default="streamattn",
+        help=(
+            "Exact mode for fail-closed execution. 'streamattn' uses the internal "
+            "exact-native path; 'flashinfer' is a benchmark/reference injection."
+        ),
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--kv-len", type=int, default=128)
