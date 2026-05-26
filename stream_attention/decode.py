@@ -112,15 +112,18 @@ def list_packaged_gate0_seed_only_batched_policies(
 
     registry = packaged_gate0_seed_only_batched_policy_registry()
     names: list[str] = []
+    seen: set[str] = set()
     for entry in registry.get("policies") or []:
         canonical = entry.get("name")
-        if canonical:
+        if canonical and str(canonical) not in seen:
             names.append(str(canonical))
+            seen.add(str(canonical))
         if include_aliases:
             for alias in [entry.get("policy_id"), *(entry.get("aliases") or [])]:
-                if alias:
+                if alias and str(alias) not in seen:
                     names.append(str(alias))
-    return sorted(set(names))
+                    seen.add(str(alias))
+    return names
 
 
 def find_packaged_gate0_seed_only_batched_policies(
@@ -141,6 +144,7 @@ def find_packaged_gate0_seed_only_batched_policies(
     expected_dtype = _normalize_dtype_name(dtype) if dtype is not None else None
     registry = packaged_gate0_seed_only_batched_policy_registry()
     matches: list[str] = []
+    seen: set[str] = set()
     for entry in registry.get("policies") or []:
         if status is not None and entry.get("status") != status:
             continue
@@ -155,9 +159,10 @@ def find_packaged_gate0_seed_only_batched_policies(
         if min_batch is not None and int(entry.get("min_batch", 0)) > int(min_batch):
             continue
         name = entry.get("name")
-        if name:
+        if name and str(name) not in seen:
             matches.append(str(name))
-    return sorted(matches)
+            seen.add(str(name))
+    return matches
 
 
 def stream_attn_exact_native_decode(

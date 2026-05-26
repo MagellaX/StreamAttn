@@ -763,6 +763,43 @@ def test_gate0_seed_only_batched_policy_loads_packaged_l6_artifact():
     assert policy.max_logprob_delta == 0.001
 
 
+def test_gate0_seed_only_batched_policy_loads_packaged_expansion_cells():
+    expected = {
+        "qwen25_05b_l1_32k_seed_only_batched": (
+            "qwen25_05b_l1_32k_fp16_b4_seed_only_v1",
+            1,
+            0.002,
+        ),
+        "qwen25_05b_l2_32k_seed_only_batched": (
+            "qwen25_05b_l2_32k_fp16_b4_seed_only_v1",
+            2,
+            0.001,
+        ),
+        "qwen25_05b_l5_32k_seed_only_batched": (
+            "qwen25_05b_l5_32k_fp16_b4_seed_only_v1",
+            5,
+            0.001,
+        ),
+        "qwen25_05b_l18_32k_seed_only_batched": (
+            "qwen25_05b_l18_32k_fp16_b4_seed_only_v1",
+            18,
+            0.001,
+        ),
+    }
+
+    for name, (policy_id, layer_id, max_logprob_delta) in expected.items():
+        policy = load_packaged_gate0_seed_only_batched_policy(name)
+        via_id = Gate0SeedOnlyBatchedPolicy.from_packaged(policy_id)
+
+        assert policy.policy_id == policy_id
+        assert via_id.policy_id == policy.policy_id
+        assert policy.layer_id == layer_id
+        assert policy.min_batch == 4
+        assert policy.min_topk_overlap == 4
+        assert policy.max_kl == 0.0001
+        assert policy.max_logprob_delta == max_logprob_delta
+
+
 def test_gate0_seed_only_batched_policy_registry_lists_green_cells():
     registry = packaged_gate0_seed_only_batched_policy_registry()
     names = list_packaged_gate0_seed_only_batched_policies()
@@ -770,13 +807,23 @@ def test_gate0_seed_only_batched_policy_registry_lists_green_cells():
 
     assert registry["schema"] == "streamattn.policy_registry.v1"
     assert registry["default"] == "qwen25_05b_l8_32k_seed_only_batched"
-    assert names == [
+    expected_names = [
+        "qwen25_05b_l1_32k_seed_only_batched",
+        "qwen25_05b_l2_32k_seed_only_batched",
+        "qwen25_05b_l5_32k_seed_only_batched",
         "qwen25_05b_l6_32k_seed_only_batched",
         "qwen25_05b_l8_32k_seed_only_batched",
+        "qwen25_05b_l18_32k_seed_only_batched",
     ]
+
+    assert names == expected_names
+    assert "qwen25_05b_l1_32k_fp16_b4_seed_only_v1" in names_with_aliases
+    assert "qwen25_05b_l2_32k_fp16_b4_seed_only_v1" in names_with_aliases
+    assert "qwen25_05b_l5_32k_fp16_b4_seed_only_v1" in names_with_aliases
     assert "qwen25_05b_l6_32k_fp16_b4_seed_only_v1" in names_with_aliases
     assert "qwen25_05b_l8_32k_fp16_b4_seed_only_v2" in names_with_aliases
     assert "qwen25_05b_l8_32k_fp16_b8_seed_only_v1" in names_with_aliases
+    assert "qwen25_05b_l18_32k_fp16_b4_seed_only_v1" in names_with_aliases
 
 
 def test_gate0_seed_only_batched_policy_registry_finds_matching_cells():
@@ -810,8 +857,12 @@ def test_gate0_seed_only_batched_policy_registry_finds_matching_cells():
 
     assert l8_matches == ["qwen25_05b_l8_32k_seed_only_batched"]
     assert all_matches == [
+        "qwen25_05b_l1_32k_seed_only_batched",
+        "qwen25_05b_l2_32k_seed_only_batched",
+        "qwen25_05b_l5_32k_seed_only_batched",
         "qwen25_05b_l6_32k_seed_only_batched",
         "qwen25_05b_l8_32k_seed_only_batched",
+        "qwen25_05b_l18_32k_seed_only_batched",
     ]
     assert too_small_batch == []
     assert wrong_layer == []

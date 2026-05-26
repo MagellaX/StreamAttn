@@ -86,10 +86,10 @@ Validated seed-only cells are indexed by
 `stream_attention/policies/registry.json`. Use
 `list_packaged_gate0_seed_only_batched_policies()` or
 `find_packaged_gate0_seed_only_batched_policies(...)` to discover green routes
-before loading an artifact. Today the registry contains two green Qwen2.5-0.5B
-32K cells, L6 and L8. New frontier-model or additional-layer routes should
-enter through this registry only after their runtime and distribution-safety
-artifacts pass.
+before loading an artifact. Today the registry contains six green Qwen2.5-0.5B
+32K cells: L1, L2, L5, L6, L8, and L18. New frontier-model or
+additional-layer routes should enter through this registry only after their
+runtime and distribution-safety artifacts pass.
 
 ```python
 from stream_attention import StreamAttnSeedOnlyDecodeService
