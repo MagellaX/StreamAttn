@@ -132,6 +132,14 @@ itself is only `384 / 32768 = 1.17%` of the KV cache. The autotuner in
 counts, and whether the next kernel should use head-private direct seed,
 head-private split-seed, or a GQA-shared seed path.
 
+The first two-kernel split-seed prototype is intentionally diagnostic: it writes
+partial online-softmax states and merges them in a second kernel. The H100 smoke
+artifact in `artifacts/seed_only_split_seed_h100_smoke.json` shows this path is
+numerically correct against direct seed-only but not yet profitable; merge and
+extra launch overhead dominate. That result keeps the next backend target honest:
+batch `<8` needs a lower-overhead single-kernel/CUDA/TK split-seed design, not
+the current two-kernel Triton decomposition.
+
 
 ## API Reference
 
