@@ -167,15 +167,17 @@ def seed_kernel_candidates(
     shape: SeedKernelShape,
     *,
     sm_count: int = 132,
-    target_waves: float = 0.75,
+    target_waves: float = 0.40,
     seed_tile_tokens: Iterable[int] = (384, 256, 192, 128, 96, 64, 32),
     duplication_byte_budget: float = 0.15,
 ) -> List[SeedKernelCandidate]:
     """Return analytical candidates for seed-only kernel modes.
 
     ``duplication_byte_budget`` is applied to the head-private byte ratio
-    ``G*S/N``.  The default keeps the Qwen L8 32K route green while rejecting
-    policies that duplicate too much of the exact KV traffic.
+    ``G*S/N``.  ``target_waves`` is intentionally calibrated to the measured
+    H100 direct-seed route: B4 already beats exact with 56 CTAs, while B1/B2 do
+    not have enough steady-state work.  More conservative values can still be
+    used to request split-seed diagnostic candidates.
     """
 
     if sm_count <= 0:
@@ -265,7 +267,7 @@ def seed_kernel_candidates(
                     duplication_byte_budget,
                     seed_chunks=chunks,
                 )
-                - 0.20,  # shared-GQA seed has lower CTA supply for small Hkv.
+                - 0.60,  # shared-GQA seed is not a product kernel yet.
             )
         )
 
@@ -295,7 +297,7 @@ def autotune_seed_kernel_mode(
     shape: SeedKernelShape,
     *,
     sm_count: int = 132,
-    target_waves: float = 0.75,
+    target_waves: float = 0.40,
     seed_tile_tokens: Iterable[int] = (384, 256, 192, 128, 96, 64, 32),
     duplication_byte_budget: float = 0.15,
 ) -> SeedKernelAutotuneResult:

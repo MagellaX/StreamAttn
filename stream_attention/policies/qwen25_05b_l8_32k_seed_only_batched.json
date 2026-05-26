@@ -108,6 +108,25 @@
     "first_planned_direct_win_batch": 4,
     "first_product_route_seed_only_batch": 4
   },
+  "kernel_modes": {
+    "batch_ge_4": "head_private_direct_seed",
+    "batch_lt_4": "exact_native",
+    "two_kernel_split_seed_status": "diagnostic_not_product_profitable",
+    "two_kernel_split_seed_h100_below8": {
+      "artifact": "artifacts/seed_only_split_seed_below8_h100.json",
+      "direct_seed_beats_flashinfer_batches": [2, 4, 8],
+      "split_seed_beats_flashinfer_batches": [],
+      "split_seed_beats_direct_batches": [],
+      "best_b1_split_ms": 0.0676409578,
+      "best_b1_flashinfer_ms": 0.0369734406,
+      "best_b2_split_ms": 0.0665273619,
+      "best_b2_flashinfer_ms": 0.0362259197,
+      "best_b4_split_ms": 0.0657791996,
+      "best_b4_direct_seed_ms": 0.0327974391,
+      "best_b4_flashinfer_ms": 0.0348505592,
+      "max_err_vs_direct_seed_max": 0.00048828125
+    }
+  },
   "known_out_of_scope": [
     {
       "kv_len_bucket": 65536,

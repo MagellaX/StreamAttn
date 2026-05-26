@@ -1,10 +1,11 @@
 """Benchmark head-private split-seed decode against direct seed and FlashInfer.
 
-The split-seed path tests the key kernel prediction from
-``seed_autotune.py``: low batch can recover occupancy by increasing
-``CTA_count = B * Hq * Csplit`` while preserving the same seed-only schedule.
-Correctness is checked against the direct seed-only output, not exact dense,
-because both kernels compute the same approximation.
+The split-seed path tests the remaining low-batch kernel question from
+``seed_autotune.py``: can extra CTAs from
+``CTA_count = B * Hq * Csplit`` beat the chunk/merge overhead while preserving
+the same seed-only schedule?  Correctness is checked against the direct
+seed-only output, not exact dense, because both kernels compute the same
+approximation.
 """
 
 from __future__ import annotations
@@ -313,6 +314,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "search": {
             "batch_sizes": _parse_ints(args.batch_sizes),
             "seed_tiles": _parse_ints(args.seed_tiles),
+            "target_waves": args.target_waves,
             "warmup": args.warmup,
             "iters": args.iters,
         },
@@ -322,6 +324,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "split_seed_beats_direct_batches": split_beats_direct_batches,
             "direct_seed_beats_flashinfer_batches": direct_wins_batches,
             "split_seed_profitable": bool(split_wins_batches),
+            "split_seed_lowers_batch4_threshold": 4 in split_wins_batches,
             "batch4_threshold_lowered": 4 in split_wins_batches,
         },
         "rows": sorted(
@@ -357,7 +360,7 @@ def main() -> None:
     parser.add_argument("--merge-num-warps", type=int, default=1)
     parser.add_argument("--merge-num-stages", type=int, default=3)
     parser.add_argument("--sm-count", type=int, default=132)
-    parser.add_argument("--target-waves", type=float, default=0.75)
+    parser.add_argument("--target-waves", type=float, default=0.40)
     parser.add_argument("--duplication-byte-budget", type=float, default=0.15)
     parser.add_argument("--flashinfer-backend", default="auto")
     parser.add_argument("--flashinfer-tensor-cores", action="store_true")

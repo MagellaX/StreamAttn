@@ -133,12 +133,14 @@ counts, and whether the next kernel should use head-private direct seed,
 head-private split-seed, or a GQA-shared seed path.
 
 The first two-kernel split-seed prototype is intentionally diagnostic: it writes
-partial online-softmax states and merges them in a second kernel. The H100 smoke
-artifact in `artifacts/seed_only_split_seed_h100_smoke.json` shows this path is
-numerically correct against direct seed-only but not yet profitable; merge and
-extra launch overhead dominate. That result keeps the next backend target honest:
-batch `<8` needs a lower-overhead single-kernel/CUDA/TK split-seed design, not
-the current two-kernel Triton decomposition.
+partial online-softmax states and merges them in a second kernel. The H100
+below-B8 artifact in `artifacts/seed_only_split_seed_below8_h100.json` shows
+this path is numerically correct against direct seed-only but not product
+profitable. On that run, direct seed already wins at B4, while split-seed loses
+to direct seed for every batch and does not recover B1/B2. Merge and extra
+launch overhead dominate, so batch `<4` needs a lower-overhead single-kernel
+CUDA/TK cooperative split design, not the current two-kernel Triton
+decomposition.
 
 The direct seed-only batch-threshold gate in
 `artifacts/seed_only_direct_below8_h100_gate.json` narrows that target further.
@@ -146,10 +148,17 @@ On captured Qwen L8 32K rows, the raw direct seed kernel first beats the
 FlashInfer exact reference at batch 4, and the planned direct service path now
 clears the same product gate at batch 4. The ordinary wrapper route remains as
 a comparison path, but `StreamAttnSeedOnlyDecodeService` defaults to a bound
-planned-direct runner for eligible fixed-buffer CUDA decode loops. The next
-expansion is therefore not new sparse-attention policy work; it is extending
+planned-direct runner for eligible fixed-buffer CUDA decode loops. The measured
+native route rule is therefore:
+
+```text
+B >= 4: head_private_direct_seed
+B < 4: exact_native until a single-kernel cooperative split-seed path proves out
+```
+
+The next expansion is not new sparse-attention policy work; it is extending
 that planned/native path across more layers, lengths, devices, and model
-families.
+families, while treating B1/B2 as a separate backend-kernel project.
 
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
 in that direction: it validates policy and tensor invariants once, binds fixed

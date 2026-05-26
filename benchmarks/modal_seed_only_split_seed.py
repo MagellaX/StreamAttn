@@ -161,7 +161,7 @@ def main(
     merge_num_warps: int = 1,
     merge_num_stages: int = 3,
     sm_count: int = 132,
-    target_waves: float = 0.75,
+    target_waves: float = 0.40,
     duplication_byte_budget: float = 0.15,
     flashinfer_backend: str = "auto",
     disable_split_kv: bool = False,

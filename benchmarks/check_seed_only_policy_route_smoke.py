@@ -30,6 +30,7 @@ def _load_policy_json() -> Dict[str, Any]:
 def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
     safety = payload.get("safety") or {}
     timing = payload.get("timing") or {}
+    kernel_modes = payload.get("kernel_modes") or {}
     shape = payload.get("shape") or {}
     seed = payload.get("seed_config") or {}
     failures = []
@@ -79,6 +80,12 @@ def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
         failures.append("h100_b4_planned_direct_speedup_below_gate")
     if float(timing.get("a100_product_wrapper_b8_speedup", 0.0)) < 1.10:
         failures.append("a100_b8_speedup_below_gate")
+    if kernel_modes.get("batch_ge_4") != "head_private_direct_seed":
+        failures.append("kernel_mode_batch_ge_4_not_direct_seed")
+    if kernel_modes.get("batch_lt_4") != "exact_native":
+        failures.append("kernel_mode_batch_lt_4_not_exact_native")
+    if kernel_modes.get("two_kernel_split_seed_status") != "diagnostic_not_product_profitable":
+        failures.append("split_seed_status_not_diagnostic_no_go")
 
     return {
         "artifact_policy_id": payload.get("policy_id"),

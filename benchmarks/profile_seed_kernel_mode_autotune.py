@@ -4,13 +4,15 @@ This script encodes the route math behind the current StreamAttn wedge:
 
 * head-private seed-only can duplicate tiny seed K/V reads across Q heads when
   ``G * S / N`` remains small;
-* split-seed mode increases CTA count for batch sizes below the direct-kernel
-  occupancy threshold;
+* split-seed mode increases CTA count for batch sizes below the calibrated
+  direct-kernel occupancy threshold;
 * GQA-shared seed mode preserves bytes but can under-supply CTAs when Hkv is
   small.
 
 It does not time kernels by itself.  Use it to choose which CUDA/TK seed-only
-kernel family to benchmark next.
+kernel family to benchmark next.  The default H100 threshold is calibrated from
+the planned-direct B4 evidence; pass a larger ``--target-waves`` value when you
+want conservative split-seed diagnostics.
 """
 
 from __future__ import annotations
@@ -121,7 +123,7 @@ def main() -> None:
     parser.add_argument("--dtype", default="fp16", choices=["fp16", "bf16", "fp32", "fp8", "int8"])
     parser.add_argument("--batch-sizes", default="1,2,4,8,16,32")
     parser.add_argument("--sm-count", type=int, default=132)
-    parser.add_argument("--target-waves", type=float, default=0.75)
+    parser.add_argument("--target-waves", type=float, default=0.40)
     parser.add_argument("--duplication-byte-budget", type=float, default=0.15)
     parser.add_argument("--seed-tile-tokens", default="384,256,192,128,96,64,32")
     parser.add_argument("--top-k", type=int, default=4)

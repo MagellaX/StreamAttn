@@ -27,20 +27,43 @@ def test_qwen_l8_batch8_prefers_head_private_direct():
     result = autotune_seed_kernel_mode(
         shape,
         sm_count=132,
-        target_waves=0.75,
+        target_waves=0.40,
         duplication_byte_budget=0.15,
     )
 
     assert result.decision == "seed_only_native_candidate"
     assert result.recommended_mode == "head_private_direct_seed"
-    assert result.occupancy_threshold_ctas == 99
+    assert result.occupancy_threshold_ctas == 53
     best = result.candidates[0]
     assert best.mode == "head_private_direct_seed"
     assert best.cta_count == 8 * 14
     assert best.viable
 
 
-def test_qwen_l8_batch4_prefers_split_seed_to_raise_ctas():
+def test_qwen_l8_batch4_prefers_head_private_direct_after_h100_calibration():
+    policy = load_packaged_gate0_seed_only_batched_policy()
+    shape = seed_shape_from_policy(policy, batch=4)
+
+    result = autotune_seed_kernel_mode(
+        shape,
+        sm_count=132,
+        target_waves=0.40,
+        seed_tile_tokens=(384, 192, 128, 64, 32),
+        duplication_byte_budget=0.15,
+    )
+
+    assert result.decision == "seed_only_native_candidate"
+    assert result.recommended_mode == "head_private_direct_seed"
+    assert result.recommended_seed_tile_tokens == 384
+    direct = next(
+        candidate for candidate in result.candidates if candidate.mode == "head_private_direct_seed"
+    )
+    assert direct.cta_count == 4 * 14
+    assert direct.viable_occupancy
+    assert result.candidates[0].mode == "head_private_direct_seed"
+
+
+def test_qwen_l8_batch4_can_still_request_split_seed_diagnostics():
     policy = load_packaged_gate0_seed_only_batched_policy()
     shape = seed_shape_from_policy(policy, batch=4)
 
@@ -54,13 +77,11 @@ def test_qwen_l8_batch4_prefers_split_seed_to_raise_ctas():
 
     assert result.decision == "seed_only_native_candidate"
     assert result.recommended_mode == "head_private_split_seed"
-    assert result.recommended_seed_tile_tokens in {192, 128, 64, 32}
     direct = next(
         candidate for candidate in result.candidates if candidate.mode == "head_private_direct_seed"
     )
     assert direct.cta_count == 4 * 14
     assert not direct.viable_occupancy
-    assert result.candidates[0].cta_count >= result.occupancy_threshold_ctas
 
 
 def test_seed_autotune_rejects_excessive_duplication():
@@ -79,7 +100,7 @@ def test_seed_autotune_rejects_excessive_duplication():
     result = autotune_seed_kernel_mode(
         shape,
         sm_count=132,
-        target_waves=0.75,
+        target_waves=0.40,
         duplication_byte_budget=0.15,
     )
 
