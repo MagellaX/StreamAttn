@@ -40,7 +40,7 @@ def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
         "tensor_space": "post_rope",
         "dtype": "fp16",
         "kv_len_bucket": 32768,
-        "min_batch": 8,
+        "min_batch": 4,
     }
     for key, value in expected.items():
         if payload.get(key) != value:
@@ -73,6 +73,8 @@ def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if float(timing.get("h100_product_wrapper_b8_speedup", 0.0)) < 1.10:
         failures.append("h100_b8_speedup_below_gate")
+    if float(timing.get("h100_service_b4_speedup", 0.0)) < 1.10:
+        failures.append("h100_b4_service_speedup_below_gate")
     if float(timing.get("h100_planned_direct_b4_speedup", 0.0)) < 1.10:
         failures.append("h100_b4_planned_direct_speedup_below_gate")
     if float(timing.get("a100_product_wrapper_b8_speedup", 0.0)) < 1.10:
@@ -95,8 +97,8 @@ def _check_route_with_torch() -> Dict[str, Any]:
     )
 
     policy = load_packaged_gate0_seed_only_batched_policy()
-    q = torch.empty((8, 1, 14, 64), dtype=torch.float16)
-    k = torch.empty((8, 32768, 2, 64), dtype=torch.float16)
+    q = torch.empty((4, 1, 14, 64), dtype=torch.float16)
+    k = torch.empty((4, 32768, 2, 64), dtype=torch.float16)
     plan = stream_attn_decode_plan(
         q,
         k,
@@ -108,8 +110,8 @@ def _check_route_with_torch() -> Dict[str, Any]:
         num_stages=policy.num_stages,
     )
 
-    q_small = torch.empty((4, 1, 14, 64), dtype=torch.float16)
-    k_small = torch.empty((4, 32768, 2, 64), dtype=torch.float16)
+    q_small = torch.empty((2, 1, 14, 64), dtype=torch.float16)
+    k_small = torch.empty((2, 32768, 2, 64), dtype=torch.float16)
     small_plan = stream_attn_decode_plan(
         q_small,
         k_small,

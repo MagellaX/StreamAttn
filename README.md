@@ -78,7 +78,7 @@ print(y_qkv.shape)
 
 The first deployable StreamAttn decode route is intentionally narrow and
 fail-closed: Qwen2.5-0.5B layer 8, post-RoPE true-GQA tensors, 32K KV bucket,
-fp16, batch >= 8. It uses the packaged seed-only policy when the request
+fp16, batch >= 4. It uses the packaged seed-only policy when the request
 matches and otherwise stays inside StreamAttn exact-native mode. FlashInfer is
 kept as a benchmark/reference injection, not a required serving fallback.
 
@@ -100,7 +100,7 @@ python examples/seed_only_serving_decode.py --batch 4 --kv-len 128 --dtype fp32
 Real serving-shape smoke with FlashInfer as an external reference backend:
 
 ```bash
-python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 8 --kv-len 32768 --dtype fp16
+python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 4 --kv-len 32768 --dtype fp16
 ```
 
 ## Engine Direction
@@ -143,18 +143,23 @@ the current two-kernel Triton decomposition.
 The direct seed-only batch-threshold gate in
 `artifacts/seed_only_direct_below8_h100_gate.json` narrows that target further.
 On captured Qwen L8 32K rows, the raw direct seed kernel first beats the
-FlashInfer exact reference at batch 4, while the planned direct runner first
-beats at batch 2 in the latest H100 threshold gate. The ordinary wrapper route
-still first clears the gate at batch 8, so the packaged product policy remains
-conservative. The next expansion is therefore not new sparse-attention policy
-work; it is pushing the low-overhead planned/native run path into the serving
-loop.
+FlashInfer exact reference at batch 4, and the planned direct service path now
+clears the same product gate at batch 4. The ordinary wrapper route remains as
+a comparison path, but `StreamAttnSeedOnlyDecodeService` defaults to a bound
+planned-direct runner for eligible fixed-buffer CUDA decode loops. The next
+expansion is therefore not new sparse-attention policy work; it is extending
+that planned/native path across more layers, lengths, devices, and model
+families.
 
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
 in that direction: it validates policy and tensor invariants once, binds fixed
 Q/K/V/output buffers, and returns a `StreamAttnSeedOnlyDirectRunner` whose
 steady-state `run()` path launches the prechecked direct seed kernel without
 per-step routing.
+
+The B4 promotion is backed by `artifacts/seed_only_direct_below8_h100_gate.json`
+for runtime and `artifacts/gate0/seed_only_b4_closed_loop_h100.json` for
+32-step teacher-forced, greedy, coupled top-p, and forced-same-token safety.
 
 
 ## API Reference

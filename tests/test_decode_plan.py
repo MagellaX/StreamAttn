@@ -711,18 +711,18 @@ def test_gate0_seed_only_batched_policy_loads_packaged_l8_artifact():
 
     policy = Gate0SeedOnlyBatchedPolicy.from_json(path)
 
-    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b4_seed_only_v2"
     assert policy.model_id == "Qwen/Qwen2.5-0.5B-Instruct"
     assert policy.layer_id == 8
-    assert policy.min_batch == 8
+    assert policy.min_batch == 4
     assert policy.heads == 14
     assert policy.kv_heads == 2
     assert policy.dim == 64
     assert policy.dtype == "fp16"
     assert policy.kv_len_bucket == 32768
-    assert policy.expected_seed_only_ms == 0.03559
-    assert policy.expected_dense_ms == 0.05698
-    assert policy.expected_speedup_vs_dense == 1.60
+    assert policy.expected_seed_only_ms == 0.0254828811
+    assert policy.expected_dense_ms == 0.0343097591
+    assert policy.expected_speedup_vs_dense == 1.34638462
     assert policy.max_kl == 0.0001
     assert policy.max_logprob_delta == 0.001
 
@@ -730,12 +730,16 @@ def test_gate0_seed_only_batched_policy_loads_packaged_l8_artifact():
 def test_gate0_seed_only_batched_policy_loads_packaged_default():
     policy = load_packaged_gate0_seed_only_batched_policy()
     via_class = Gate0SeedOnlyBatchedPolicy.from_packaged(
+        "qwen25_05b_l8_32k_fp16_b4_seed_only_v2"
+    )
+    via_compat_alias = Gate0SeedOnlyBatchedPolicy.from_packaged(
         "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
     )
 
-    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+    assert policy.policy_id == "qwen25_05b_l8_32k_fp16_b4_seed_only_v2"
     assert via_class.policy_id == policy.policy_id
-    assert policy.min_batch == 8
+    assert via_compat_alias.policy_id == policy.policy_id
+    assert policy.min_batch == 4
 
 
 def test_gate0_seed_only_batched_policy_reports_fail_closed_mismatches():

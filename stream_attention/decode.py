@@ -34,6 +34,7 @@ STREAMATTN_EXACT_NATIVE_BACKEND = "streamattn_exact_native"
 DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY = "qwen25_05b_l8_32k_seed_only_batched"
 _PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
     DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY: "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+    "qwen25_05b_l8_32k_fp16_b4_seed_only_v2": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
     "qwen25_05b_l8_32k_fp16_b8_seed_only_v1": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
 }
 
@@ -550,6 +551,15 @@ class StreamAttnSeedOnlyDirectRunner:
         self.value_cache = value_cache
         self.output = output
         self.info = info
+        self.query_shape = tuple(query.shape)
+        self.key_shape = tuple(key_cache.shape)
+        self.value_shape = tuple(value_cache.shape)
+        self.query_stride = tuple(query.stride())
+        self.key_stride = tuple(key_cache.stride())
+        self.value_stride = tuple(value_cache.stride())
+        self.query_data_ptr = int(query.data_ptr())
+        self.key_data_ptr = int(key_cache.data_ptr())
+        self.value_data_ptr = int(value_cache.data_ptr())
         self._launch = gate0_seed_only_attention_triton_forward_out_prechecked
         self._seq_k = int(key_cache.shape[1])
         self._q_heads = int(query.shape[2])
@@ -1818,6 +1828,7 @@ class StreamAttnSeedOnlyDecodeService:
         dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
         model_id: Optional[str] = None,
         layer_id: Optional[int] = None,
+        use_planned_direct_seed_only_path: bool = True,
         use_direct_seed_only_path: bool = False,
     ) -> None:
         self.policy = policy or load_packaged_gate0_seed_only_batched_policy(policy_name)
@@ -1828,10 +1839,13 @@ class StreamAttnSeedOnlyDecodeService:
         self.dense_fallback_backend = dense_fallback_backend
         self.model_id = model_id if model_id is not None else self.policy.model_id
         self.layer_id = layer_id if layer_id is not None else self.policy.layer_id
+        self.use_planned_direct_seed_only_path = bool(use_planned_direct_seed_only_path)
         self.use_direct_seed_only_path = bool(use_direct_seed_only_path)
         self.workspace: Optional[StreamAttnDecodeWorkspace] = None
         self.wrapper: Optional[StreamAttnDecodeWrapper] = None
         self.output_workspace: Optional[torch.Tensor] = None
+        self.direct_runner: Optional[StreamAttnSeedOnlyDirectRunner] = None
+        self._direct_runner_key: Optional[tuple] = None
         self._planned_shape: Optional[tuple] = None
 
     @classmethod
@@ -1928,6 +1942,64 @@ class StreamAttnSeedOnlyDecodeService:
             return self.output_workspace
         self.output_workspace = torch.empty_like(query)
         return self.output_workspace
+
+    def _direct_runner_cache_key(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str],
+        layer_id: Optional[int],
+    ) -> tuple:
+        return (
+            self.policy.policy_id,
+            model_id,
+            layer_id,
+            tuple(query.shape),
+            tuple(query.stride()),
+            str(query.device),
+            query.dtype,
+            int(query.data_ptr()),
+            tuple(key_cache.shape),
+            tuple(key_cache.stride()),
+            str(key_cache.device),
+            key_cache.dtype,
+            int(key_cache.data_ptr()),
+            tuple(value_cache.shape),
+            tuple(value_cache.stride()),
+            str(value_cache.device),
+            value_cache.dtype,
+            int(value_cache.data_ptr()),
+        )
+
+    def _direct_runner_matches(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str],
+        layer_id: Optional[int],
+    ) -> bool:
+        runner = self.direct_runner
+        if runner is None:
+            return False
+        if query is not runner.query or key_cache is not runner.key_cache or value_cache is not runner.value_cache:
+            return False
+        if runner.info.model_id != model_id or runner.info.layer_id != layer_id:
+            return False
+        return (
+            tuple(query.shape) == runner.query_shape
+            and tuple(key_cache.shape) == runner.key_shape
+            and tuple(value_cache.shape) == runner.value_shape
+            and tuple(query.stride()) == runner.query_stride
+            and tuple(key_cache.stride()) == runner.key_stride
+            and tuple(value_cache.stride()) == runner.value_stride
+            and int(query.data_ptr()) == runner.query_data_ptr
+            and int(key_cache.data_ptr()) == runner.key_data_ptr
+            and int(value_cache.data_ptr()) == runner.value_data_ptr
+        )
 
     def _run_direct_seed_only(
         self,
@@ -2058,6 +2130,36 @@ class StreamAttnSeedOnlyDecodeService:
             info=info,
         )
 
+    def _allocate_direct_runner(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str],
+        layer_id: Optional[int],
+        mode: str,
+    ) -> StreamAttnSeedOnlyDirectRunner:
+        key = self._direct_runner_cache_key(
+            query,
+            key_cache,
+            value_cache,
+            model_id=model_id,
+            layer_id=layer_id,
+        )
+        if self.direct_runner is not None and self._direct_runner_key == key:
+            return self.direct_runner
+        self.direct_runner = self.plan_direct_seed_only(
+            query,
+            key_cache,
+            value_cache,
+            model_id=model_id,
+            layer_id=layer_id,
+            mode=mode,
+        )
+        self._direct_runner_key = key
+        return self.direct_runner
+
     def run(
         self,
         query: torch.Tensor,
@@ -2077,14 +2179,32 @@ class StreamAttnSeedOnlyDecodeService:
         while still returning structured telemetry.
         """
 
+        effective_model_id = model_id if model_id is not None else self.model_id
+        effective_layer_id = layer_id if layer_id is not None else self.layer_id
+        if (
+            mode == "auto"
+            and self.use_planned_direct_seed_only_path
+            and not self.use_direct_seed_only_path
+            and self._direct_runner_matches(
+                query,
+                key_cache,
+                value_cache,
+                model_id=effective_model_id,
+                layer_id=effective_layer_id,
+            )
+        ):
+            runner = self.direct_runner
+            assert runner is not None
+            if not return_info:
+                return runner.run()
+            return runner.run_with_info()
+
         if query.dim() != 4 or key_cache.dim() != 4 or value_cache.dim() != 4:
             raise ValueError("query, key_cache, and value_cache must be [batch, seq, heads, dim]")
         if key_cache.shape != value_cache.shape:
             raise ValueError("key_cache and value_cache shapes must match")
         if query.shape[0] != key_cache.shape[0] or query.shape[3] != key_cache.shape[3]:
             raise ValueError("query/KV batch and head_dim must match")
-        effective_model_id = model_id if model_id is not None else self.model_id
-        effective_layer_id = layer_id if layer_id is not None else self.layer_id
         safety_reasons = self.policy.mismatch_reasons(
             query,
             key_cache,
@@ -2115,6 +2235,39 @@ class StreamAttnSeedOnlyDecodeService:
                 safety_policy_matched=not safety_reasons,
             )
             return (output, info) if return_info else output
+
+        if self.use_planned_direct_seed_only_path and not self.use_direct_seed_only_path:
+            try:
+                runner = self._allocate_direct_runner(
+                    query,
+                    key_cache,
+                    value_cache,
+                    model_id=effective_model_id,
+                    layer_id=effective_layer_id,
+                    mode=mode,
+                )
+                if not return_info:
+                    return runner.run()
+                return runner.run_with_info()
+            except Exception as exc:  # pragma: no cover - CUDA/Triton environment dependent
+                if self.policy.fallback != "dense":
+                    raise
+                reason = f"seed_only_batched_backend_error:{type(exc).__name__}"
+                output = self._dense_output(query, key_cache, value_cache)
+                if not return_info:
+                    return output
+                info = self._serving_info(
+                    query=query,
+                    key_cache=key_cache,
+                    model_id=effective_model_id,
+                    layer_id=effective_layer_id,
+                    backend_used=self.dense_fallback_backend,
+                    fallback_reason=reason,
+                    plan_backend="dense",
+                    plan_reason=reason,
+                    safety_policy_matched=True,
+                )
+                return output, info
 
         if self.use_direct_seed_only_path:
             try:
@@ -2198,6 +2351,7 @@ def stream_attn_seed_only_decode(
     dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
     model_id: Optional[str] = None,
     layer_id: Optional[int] = None,
+    use_planned_direct_seed_only_path: bool = True,
     use_direct_seed_only_path: bool = False,
     mode: str = "auto",
     active_fraction_hint: Optional[float] = 1.0,
@@ -2213,6 +2367,7 @@ def stream_attn_seed_only_decode(
         dense_fallback_backend=dense_fallback_backend,
         model_id=model_id,
         layer_id=layer_id,
+        use_planned_direct_seed_only_path=use_planned_direct_seed_only_path,
         use_direct_seed_only_path=use_direct_seed_only_path,
     )
     return service.run(

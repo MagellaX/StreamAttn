@@ -227,7 +227,6 @@ def _profile_batch(
             kv_cache,
         ).view_as(query),
         dense_fallback_backend="flashinfer_dense",
-        use_direct_seed_only_path=True,
     )
     planned_direct_service = StreamAttnSeedOnlyDecodeService(
         policy=forced_policy,
@@ -250,6 +249,32 @@ def _profile_batch(
     def planned_direct_run() -> torch.Tensor:
         return planned_direct_runner.run()
 
+    def planned_direct_mutation_check() -> Dict[str, Any]:
+        q_mut = q_b.clone()
+        mutation_service = StreamAttnSeedOnlyDecodeService(
+            policy=forced_policy,
+            decode_policy=StreamAttnDecodePolicy(
+                collect_telemetry_every=0,
+                min_kv_len_for_gate0_seed_only=1,
+                safety_margin=args.safety_margin,
+            ),
+            dense_fallback=lambda query, key, value: flash_wrapper.run(
+                query[:, 0].contiguous(),
+                kv_cache,
+            ).view_as(query),
+            dense_fallback_backend="flashinfer_dense",
+        )
+        runner = mutation_service.plan_direct_seed_only(q_mut, k_b, v_b)
+        before = runner.run().clone()
+        q_mut[:, :, :, 0].add_(1.0)
+        after = runner.run().clone()
+        delta = (after - before).detach().abs().float()
+        max_change = float(delta.max().item())
+        return {
+            "planned_direct_mutation_max_change": max_change,
+            "planned_direct_mutation_changed_output": bool(max_change > 0.0),
+        }
+
     wrapper_ref, info = wrapper.run(q_b, k_b, v_b, active_fraction_hint=1.0, return_info=True)
     product_ref, product_info = product_wrapper.run(
         q_b,
@@ -266,6 +291,7 @@ def _profile_batch(
         active_fraction_hint=1.0,
         return_info=True,
     )
+    mutation = planned_direct_mutation_check()
     direct_ref = direct_seed_run().clone()
     flash_ref = flashinfer_run().clone()
     _sync(device)
@@ -307,6 +333,7 @@ def _profile_batch(
         "service_route": {
             "backend_used": getattr(service_info, "backend_used", None),
             "fallback_reason": getattr(service_info, "fallback_reason", None),
+            "plan_reason": getattr(service_info, "plan_reason", None),
             "runtime_counters": getattr(service_info, "runtime_counters", None),
         },
         "planned_direct_route": {
@@ -356,6 +383,7 @@ def _profile_batch(
             "wrapper_vs_direct_seed": _error(wrapper_ref, direct_ref),
             "wrapper_vs_flashinfer_exact": _error(wrapper_ref, flash_ref),
         },
+        "diagnostics": mutation,
         "decision": {
             "product_wrapper_beats_flashinfer": bool(product_wrapper_ms < flash_ms),
             "planned_direct_beats_flashinfer": bool(
