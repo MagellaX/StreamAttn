@@ -1,0 +1,313 @@
+{
+  "artifacts": {
+    "closed_loop": {
+      "0": "artifacts/gate0/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "3": "artifacts/gate0/seed_only_qwen25_15b_l3_b4_closed_loop_h100.json"
+    },
+    "compiled": "artifacts/gate0/seed_only_qwen25_15b_32k_b4_compiled_policy_h100.json",
+    "sweep": "artifacts/gate0/seed_only_qwen25_15b_32k_b4_layer_sweep_h100.json"
+  },
+  "candidate_layers": [
+    0,
+    3
+  ],
+  "closed_loop_rows": [
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 1.4063678463571705e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 0,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 1.4063678463571705e-05,
+      "teacher_forced_kl_max": 1.4063678463571705e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 5.328053248376818e-06,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 3,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 5.328053248376818e-06,
+      "teacher_forced_kl_max": 5.328053248376818e-06,
+      "top5_overlap_min": 4
+    }
+  ],
+  "compiled_policies": [
+    {
+      "closed_loop_kl_max": 1.4063678463571705e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 0,
+      "max_logit_delta_budget": 1.0,
+      "max_logprob_delta_budget": 0.005,
+      "name": "qwen25_15b_l0_32k_seed_only_batched",
+      "path": "policies/qwen25_15b_l0_32k_seed_only_batched.json",
+      "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "sweep_kl_max": 6.817666144343093e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 5.328053248376818e-06,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 3,
+      "max_logit_delta_budget": 1.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_15b_l3_32k_seed_only_batched",
+      "path": "policies/qwen25_15b_l3_32k_seed_only_batched.json",
+      "policy_id": "qwen25_15b_l3_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_15b_l3_b4_closed_loop_h100.json",
+      "sweep_kl_max": 3.4456432331353426e-05,
+      "sweep_top5_overlap_min": 4
+    }
+  ],
+  "green_layers": [
+    0,
+    3
+  ],
+  "layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27
+  ],
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_slug": "qwen25_15b",
+  "rejected_layers": [
+    {
+      "layer_id": 1,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 2,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 4,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 5,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 6,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 7,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 8,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 9,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 10,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 11,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 12,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 13,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 14,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 15,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 16,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 17,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 18,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 19,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 20,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 21,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 22,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 23,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 24,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 25,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 26,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 27,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    }
+  ],
+  "schema": "streamattn.seed_policy_modal_pipeline.v1"
+}
