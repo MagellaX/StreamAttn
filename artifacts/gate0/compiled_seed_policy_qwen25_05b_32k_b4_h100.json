@@ -1,0 +1,389 @@
+{
+  "schema": "streamattn.seed_policy_compiler.v1",
+  "sweep_json": "artifacts/gate0/seed_only_layer_sweep_l0_l23_b4_h100.json",
+  "closed_loop_dir": "artifacts/gate0",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_slug": "qwen25_05b",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 4,
+  "gates": {
+    "max_kl": 0.0001,
+    "min_top5_overlap": 4,
+    "require_top1_match": true
+  },
+  "green_layers": [
+    1,
+    2,
+    5,
+    6,
+    8,
+    18
+  ],
+  "rejected_layers": [
+    {
+      "layer_id": 0,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 3,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 4,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 7,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 9,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 10,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 11,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 12,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 13,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 14,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 15,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 16,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 17,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 19,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 20,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 21,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 22,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 23,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    }
+  ],
+  "registry": {
+    "schema": "streamattn.policy_registry.v1",
+    "default": "qwen25_05b_l8_32k_seed_only_batched",
+    "policies": [
+      {
+        "name": "qwen25_05b_l1_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l1_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l1_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 1,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_05b_l2_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l2_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l2_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 2,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_05b_l5_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l5_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l5_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 5,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_05b_l6_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l6_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l6_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 6,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_05b_l8_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l8_32k_fp16_b4_seed_only_v2",
+        "aliases": [
+          "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+        ],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 8,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_05b_l18_32k_seed_only_batched",
+        "path": "policies/qwen25_05b_l18_32k_seed_only_batched.json",
+        "policy_id": "qwen25_05b_l18_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "layer_id": 18,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 14,
+        "kv_heads": 2,
+        "head_dim": 64,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      }
+    ]
+  },
+  "policies": [
+    {
+      "layer_id": 1,
+      "name": "qwen25_05b_l1_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l1_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l1_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_l1_b4_closed_loop_h100.json",
+      "sweep_kl_max": 2.827832031471189e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 1.254793914995389e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.002,
+      "max_logit_delta_budget": 1.0
+    },
+    {
+      "layer_id": 2,
+      "name": "qwen25_05b_l2_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l2_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l2_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_l2_b4_closed_loop_h100.json",
+      "sweep_kl_max": 1.2298588444537017e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 7.73440842749551e-06,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 1.0
+    },
+    {
+      "layer_id": 5,
+      "name": "qwen25_05b_l5_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l5_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l5_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_l5_b4_closed_loop_h100.json",
+      "sweep_kl_max": 6.232764280866832e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 8.652260294184089e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 2.0
+    },
+    {
+      "layer_id": 6,
+      "name": "qwen25_05b_l6_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l6_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l6_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_l6_b4_closed_loop_h100.json",
+      "sweep_kl_max": 4.7856934543233365e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 1.075674663297832e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 1.0
+    },
+    {
+      "layer_id": 8,
+      "name": "qwen25_05b_l8_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l8_32k_fp16_b4_seed_only_v2",
+      "rollout_artifact": "artifacts/gate0/seed_only_b4_closed_loop_h100.json",
+      "sweep_kl_max": 1.2299018635530956e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 3.01372983813053e-06,
+      "closed_loop_top5_overlap_min": 5,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 0.2
+    },
+    {
+      "layer_id": 18,
+      "name": "qwen25_05b_l18_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l18_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l18_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_l18_b4_closed_loop_h100.json",
+      "sweep_kl_max": 7.959953654790297e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 6.749894237145782e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 2.0
+    }
+  ]
+}

@@ -169,6 +169,21 @@ The next expansion is not new sparse-attention policy work; it is extending
 that planned/native path across more layers, lengths, devices, and model
 families, while treating B1/B2 as a separate backend-kernel project.
 
+The artifact-driven policy compiler turns sweep/rollout evidence into policy
+cells and registry metadata:
+
+```bash
+python benchmarks/compile_streamattn_seed_policy.py \
+  --sweep-json artifacts/gate0/seed_only_layer_sweep_l0_l23_b4_h100.json \
+  --closed-loop-dir artifacts/gate0 \
+  --summary-json artifacts/gate0/compiled_seed_policy_qwen25_05b_32k_b4_h100.json
+```
+
+For the current Qwen2.5-0.5B 32K B4 evidence, the compiler reproduces the six
+green layers L1, L2, L5, L6, L8, and L18. It requires both the last-32 layer
+sweep gate and per-layer 32-step teacher-forced, greedy, and coupled top-p
+rollout gates before a cell can enter the registry.
+
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
 in that direction: it validates policy and tensor invariants once, binds fixed
 Q/K/V/output buffers, and returns a `StreamAttnSeedOnlyDirectRunner` whose
