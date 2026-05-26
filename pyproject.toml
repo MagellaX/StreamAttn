@@ -22,3 +22,6 @@ dependencies = [
 [tool.stream_attention]
 cuda_version = "12.1"
 triton_version = "2.1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

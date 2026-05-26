@@ -1,0 +1,132 @@
+{
+  "schema": "streamattn.gate0.seed_only_batched_policy.v1",
+  "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
+  "mode": "all_seed_only",
+  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "layer_id": 0,
+  "tensor_space": "post_rope",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 4,
+  "shape": {
+    "batch": 4,
+    "q_heads": 12,
+    "true_kv_heads": 2,
+    "dim": 128,
+    "kv_len": 32768,
+    "dtype": "fp16"
+  },
+  "seed_config": {
+    "block_size": 32,
+    "sink_blocks": 2,
+    "recent_blocks": 2,
+    "middle_seed_blocks": 8,
+    "block_order": "recent_first",
+    "num_warps": 4,
+    "num_stages": 2
+  },
+  "safety": {
+    "gate": "distribution_aware",
+    "top1_must_match": true,
+    "min_top5_overlap": 4,
+    "max_kl": 0.0001,
+    "max_logit_delta": 1.0,
+    "max_logprob_delta": 0.005,
+    "validated_rollout_steps": 32,
+    "teacher_forced_last32": {
+      "artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_32k_b4_layer_sweep_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 128,
+      "top1_changes": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 6.817666144343093e-05,
+      "max_logit_delta": 0.6875,
+      "target_logprob_delta_max": 0.0025981739163398743
+    },
+    "greedy_closed_loop_32": {
+      "artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 128,
+      "diverged_rows": 0,
+      "sequence_exact_match_rate": 1.0,
+      "top1_changes": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 1.4063678463571705e-05,
+      "max_logit_delta": 0.375,
+      "reference_top1_margin_min": 3.0,
+      "reference_top1_logprob_delta_max": 0.000842265784740448
+    },
+    "coupled_top_p_sampling_32": {
+      "artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 128,
+      "top_p": 0.95,
+      "sample_token_changed_count": 0,
+      "sample_sequence_exact_match_rate": 1.0,
+      "top1_changes": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 1.4063678463571705e-05,
+      "reference_top1_logprob_delta_max": 0.000842265784740448
+    },
+    "batch4_closed_loop_32": {
+      "artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 128,
+      "top1_changes": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 1.4063678463571705e-05,
+      "max_logit_delta": 0.375,
+      "teacher_forced_top1_changes": 0,
+      "greedy_diverged_rows": 0,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sample_sequence_exact_match_rate": 1.0,
+      "reference_top1_margin_min": 3.0,
+      "reference_top1_logprob_delta_max": 0.000842265784740448
+    }
+  },
+  "timing": {
+    "streamattn_seed_only_ms": 0.03130559921264649,
+    "seed_direct_full_prealloc_ms": 0.030090880393981934,
+    "flashinfer_batch_tc_exact_ms": 0.054747519493103025,
+    "speedup_vs_flashinfer_batch": 1.748809186536405,
+    "h100_service_b4_ms": 0.03130559921264649,
+    "h100_flashinfer_b4_ms": 0.054747519493103025,
+    "h100_service_b4_speedup": 1.748809186536405,
+    "h100_planned_direct_b4_ms": 0.030090880393981934,
+    "h100_planned_direct_b4_speedup": 1.819405706190382,
+    "h100_service_b8_ms": 0.03475840091705322,
+    "h100_flashinfer_b8_ms": 0.09807999610900879,
+    "h100_service_b8_speedup": 2.821763761315286,
+    "h100_planned_direct_b8_ms": 0.03103872060775757,
+    "h100_planned_direct_b8_speedup": 3.1599239333497358,
+    "first_service_win_batch": 4,
+    "first_planned_direct_win_batch": 2,
+    "first_product_route_seed_only_batch": 4
+  },
+  "kernel_modes": {
+    "batch_ge_4": "head_private_direct_seed",
+    "batch_lt_4": "exact_native"
+  },
+  "fallback": "dense"
+}

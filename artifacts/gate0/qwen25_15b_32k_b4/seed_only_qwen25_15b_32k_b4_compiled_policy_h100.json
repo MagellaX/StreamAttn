@@ -1,6 +1,12 @@
 {
-  "closed_loop_dir": "artifacts/gate0",
+  "schema": "streamattn.seed_policy_compiler.v1",
+  "sweep_json": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_32k_b4_layer_sweep_h100.json",
+  "closed_loop_dir": "artifacts/gate0/qwen25_15b_32k_b4",
+  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_slug": "qwen25_15b",
   "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 4,
   "gates": {
     "max_kl": 0.0001,
     "min_top5_overlap": 4,
@@ -10,88 +16,6 @@
     0,
     3
   ],
-  "kv_len_bucket": 32768,
-  "min_batch": 4,
-  "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-  "model_slug": "qwen25_15b",
-  "policies": [
-    {
-      "closed_loop_kl_max": 1.4063678463571705e-05,
-      "closed_loop_top5_overlap_min": 4,
-      "layer_id": 0,
-      "max_logit_delta_budget": 1.0,
-      "max_logprob_delta_budget": 0.005,
-      "name": "qwen25_15b_l0_32k_seed_only_batched",
-      "path": "policies/qwen25_15b_l0_32k_seed_only_batched.json",
-      "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
-      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
-      "sweep_kl_max": 6.817666144343093e-05,
-      "sweep_top5_overlap_min": 4
-    },
-    {
-      "closed_loop_kl_max": 5.328053248376818e-06,
-      "closed_loop_top5_overlap_min": 4,
-      "layer_id": 3,
-      "max_logit_delta_budget": 1.0,
-      "max_logprob_delta_budget": 0.001,
-      "name": "qwen25_15b_l3_32k_seed_only_batched",
-      "path": "policies/qwen25_15b_l3_32k_seed_only_batched.json",
-      "policy_id": "qwen25_15b_l3_32k_fp16_b4_seed_only_v1",
-      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_15b_l3_b4_closed_loop_h100.json",
-      "sweep_kl_max": 3.4456432331353426e-05,
-      "sweep_top5_overlap_min": 4
-    }
-  ],
-  "registry": {
-    "default": "qwen25_15b_l0_32k_seed_only_batched",
-    "policies": [
-      {
-        "aliases": [],
-        "attention_type": "true_gqa",
-        "dtype": "fp16",
-        "head_dim": 128,
-        "kernel_modes": {
-          "batch_ge_4": "head_private_direct_seed",
-          "batch_lt_4": "exact_native"
-        },
-        "kv_heads": 2,
-        "kv_len_bucket": 32768,
-        "layer_id": 0,
-        "min_batch": 4,
-        "mode": "all_seed_only",
-        "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-        "name": "qwen25_15b_l0_32k_seed_only_batched",
-        "path": "policies/qwen25_15b_l0_32k_seed_only_batched.json",
-        "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
-        "q_heads": 12,
-        "status": "green",
-        "tensor_space": "post_rope"
-      },
-      {
-        "aliases": [],
-        "attention_type": "true_gqa",
-        "dtype": "fp16",
-        "head_dim": 128,
-        "kernel_modes": {
-          "batch_ge_4": "head_private_direct_seed",
-          "batch_lt_4": "exact_native"
-        },
-        "kv_heads": 2,
-        "kv_len_bucket": 32768,
-        "layer_id": 3,
-        "min_batch": 4,
-        "mode": "all_seed_only",
-        "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-        "name": "qwen25_15b_l3_32k_seed_only_batched",
-        "path": "policies/qwen25_15b_l3_32k_seed_only_batched.json",
-        "policy_id": "qwen25_15b_l3_32k_fp16_b4_seed_only_v1",
-        "q_heads": 12,
-        "status": "green",
-        "tensor_space": "post_rope"
-      }
-    ],
-    "schema": "streamattn.policy_registry.v1"
-  },
   "rejected_layers": [
     {
       "layer_id": 1,
@@ -302,6 +226,98 @@
       ]
     }
   ],
-  "schema": "streamattn.seed_policy_compiler.v1",
-  "sweep_json": "artifacts/gate0/seed_only_qwen25_15b_32k_b4_layer_sweep_h100.json"
+  "registry": {
+    "schema": "streamattn.policy_registry.v1",
+    "default": "qwen25_15b_l0_32k_seed_only_batched",
+    "policies": [
+      {
+        "name": "qwen25_15b_l0_32k_seed_only_batched",
+        "path": "policies/qwen25_15b_l0_32k_seed_only_batched.json",
+        "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+        "layer_id": 0,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 12,
+        "kv_heads": 2,
+        "head_dim": 128,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      },
+      {
+        "name": "qwen25_15b_l3_32k_seed_only_batched",
+        "path": "policies/qwen25_15b_l3_32k_seed_only_batched.json",
+        "policy_id": "qwen25_15b_l3_32k_fp16_b4_seed_only_v1",
+        "aliases": [],
+        "status": "green",
+        "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+        "layer_id": 3,
+        "mode": "all_seed_only",
+        "tensor_space": "post_rope",
+        "dtype": "fp16",
+        "kv_len_bucket": 32768,
+        "min_batch": 4,
+        "q_heads": 12,
+        "kv_heads": 2,
+        "head_dim": 128,
+        "attention_type": "true_gqa",
+        "kernel_modes": {
+          "batch_ge_4": "head_private_direct_seed",
+          "batch_lt_4": "exact_native"
+        }
+      }
+    ]
+  },
+  "policies": [
+    {
+      "layer_id": 0,
+      "name": "qwen25_15b_l0_32k_seed_only_batched",
+      "path": "policies/qwen25_15b_l0_32k_seed_only_batched.json",
+      "policy_id": "qwen25_15b_l0_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_l0_b4_closed_loop_h100.json",
+      "sweep_kl_max": 6.817666144343093e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 1.4063678463571705e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.005,
+      "max_logit_delta_budget": 1.0
+    },
+    {
+      "layer_id": 3,
+      "name": "qwen25_15b_l3_32k_seed_only_batched",
+      "path": "policies/qwen25_15b_l3_32k_seed_only_batched.json",
+      "policy_id": "qwen25_15b_l3_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/qwen25_15b_32k_b4/seed_only_qwen25_15b_l3_b4_closed_loop_h100.json",
+      "sweep_kl_max": 3.4456432331353426e-05,
+      "sweep_top5_overlap_min": 4,
+      "closed_loop_kl_max": 5.328053248376818e-06,
+      "closed_loop_top5_overlap_min": 4,
+      "max_logprob_delta_budget": 0.001,
+      "max_logit_delta_budget": 1.0
+    }
+  ],
+  "write_summary": {
+    "writes": [
+      {
+        "path": "stream_attention/policies/qwen25_15b_l0_32k_seed_only_batched.json",
+        "action": "wrote"
+      },
+      {
+        "path": "stream_attention/policies/qwen25_15b_l3_32k_seed_only_batched.json",
+        "action": "wrote"
+      },
+      {
+        "path": "stream_attention/policies/registry.json",
+        "action": "wrote"
+      }
+    ]
+  }
 }
