@@ -140,6 +140,15 @@ extra launch overhead dominate. That result keeps the next backend target honest
 batch `<8` needs a lower-overhead single-kernel/CUDA/TK split-seed design, not
 the current two-kernel Triton decomposition.
 
+The direct seed-only batch-threshold gate in
+`artifacts/seed_only_direct_below8_h100_gate.json` narrows that target further.
+On captured Qwen L8 32K rows, the raw direct seed kernel first beats the
+FlashInfer exact reference at batch 4, while the wrapper/service route still
+first beats at batch 8 because Python/wrapper overhead costs several
+microseconds. The next product expansion is therefore not new sparse-attention
+policy work: it is a lower-overhead planned/native direct seed run path that can
+realize the B4 raw-kernel economics in the serving route.
+
 
 ## API Reference
 

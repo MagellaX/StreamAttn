@@ -24,6 +24,7 @@ from benchmarks.profile_stream_attn_gate0_wrapper import _dtype, _error, _sync, 
 from stream_attention.decode import (  # noqa: E402
     Gate0SeedOnlyBatchedPolicy,
     StreamAttnDecodePolicy,
+    StreamAttnSeedOnlyDecodeService,
     StreamAttnDecodeWorkspace,
     StreamAttnDecodeWrapper,
     stream_attn_decode_plan,
@@ -214,8 +215,33 @@ def _profile_batch(
     def product_wrapper_run() -> torch.Tensor:
         return product_wrapper.run(q_b, k_b, v_b, active_fraction_hint=1.0)
 
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=product_policy,
+        decode_policy=StreamAttnDecodePolicy(
+            collect_telemetry_every=0,
+            min_kv_len_for_gate0_seed_only=1,
+            safety_margin=args.safety_margin,
+        ),
+        dense_fallback=lambda query, key, value: flash_wrapper.run(
+            query[:, 0].contiguous(),
+            kv_cache,
+        ).view_as(query),
+        dense_fallback_backend="flashinfer_dense",
+        use_direct_seed_only_path=True,
+    )
+
+    def service_run() -> torch.Tensor:
+        return service.run(q_b, k_b, v_b, active_fraction_hint=1.0, return_info=False)
+
     wrapper_ref, info = wrapper.run(q_b, k_b, v_b, active_fraction_hint=1.0, return_info=True)
     product_ref, product_info = product_wrapper.run(
+        q_b,
+        k_b,
+        v_b,
+        active_fraction_hint=1.0,
+        return_info=True,
+    )
+    service_ref, service_info = service.run(
         q_b,
         k_b,
         v_b,
@@ -225,6 +251,7 @@ def _profile_batch(
     direct_ref = direct_seed_run().clone()
     flash_ref = flashinfer_run().clone()
     _sync(device)
+    service_ms = _time_cuda(service_run, device=device, warmup=args.warmup, iters=args.iters)
     product_wrapper_ms = _time_cuda(
         product_wrapper_run,
         device=device,
@@ -253,6 +280,11 @@ def _profile_batch(
             "fallback_reason": getattr(product_info, "fallback_reason", None),
             "runtime_counters": product_wrapper.runtime_counters(),
         },
+        "service_route": {
+            "backend_used": getattr(service_info, "backend_used", None),
+            "fallback_reason": getattr(service_info, "fallback_reason", None),
+            "runtime_counters": getattr(service_info, "runtime_counters", None),
+        },
         "shape": {
             "query_len": int(q_b.shape[1]),
             "q_heads": int(q_b.shape[2]),
@@ -264,24 +296,35 @@ def _profile_batch(
         "timing": {
             "forced_wrapper_seed_only_ms": wrapper_ms,
             "product_wrapper_ms": product_wrapper_ms,
+            "service_ms": service_ms,
             "direct_seed_only_ms": direct_ms,
             "flashinfer_batch_tc_exact_ms": flash_ms,
             "product_wrapper_over_flashinfer_ms": product_wrapper_ms - flash_ms,
+            "service_over_flashinfer_ms": service_ms - flash_ms,
+            "service_over_direct_ms": service_ms - direct_ms,
             "wrapper_over_direct_ms": wrapper_ms - direct_ms,
             "product_wrapper_speedup_vs_flashinfer": flash_ms / product_wrapper_ms,
+            "service_speedup_vs_flashinfer": flash_ms / service_ms,
             "forced_wrapper_speedup_vs_flashinfer": flash_ms / wrapper_ms,
             "direct_speedup_vs_flashinfer": flash_ms / direct_ms,
             "product_wrapper_per_row_us": product_wrapper_ms * 1000.0 / batch,
+            "service_per_row_us": service_ms * 1000.0 / batch,
             "forced_wrapper_per_row_us": wrapper_ms * 1000.0 / batch,
             "flashinfer_per_row_us": flash_ms * 1000.0 / batch,
         },
         "quality": {
             "product_wrapper_vs_flashinfer_exact": _error(product_ref, flash_ref),
+            "service_vs_direct_seed": _error(service_ref, direct_ref),
+            "service_vs_flashinfer_exact": _error(service_ref, flash_ref),
             "wrapper_vs_direct_seed": _error(wrapper_ref, direct_ref),
             "wrapper_vs_flashinfer_exact": _error(wrapper_ref, flash_ref),
         },
         "decision": {
             "product_wrapper_beats_flashinfer": bool(product_wrapper_ms < flash_ms),
+            "service_beats_flashinfer": bool(
+                service_ms < flash_ms
+                and getattr(service_info, "backend_used", None) == "gate0_seed_only_batched"
+            ),
             "forced_wrapper_beats_flashinfer": bool(
                 wrapper_ms < flash_ms and info.backend_used == "gate0_seed_only_batched"
             ),
@@ -365,6 +408,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             ),
             "first_product_wrapper_beats_flashinfer_batch": _first_batch(
                 lambda row: row["decision"]["product_wrapper_beats_flashinfer"]
+            ),
+            "first_service_beats_flashinfer_batch": _first_batch(
+                lambda row: row["decision"]["service_beats_flashinfer"]
             ),
         },
         "entries": entries,

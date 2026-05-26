@@ -1718,6 +1718,7 @@ class StreamAttnSeedOnlyDecodeService:
         dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
         model_id: Optional[str] = None,
         layer_id: Optional[int] = None,
+        use_direct_seed_only_path: bool = False,
     ) -> None:
         self.policy = policy or load_packaged_gate0_seed_only_batched_policy(policy_name)
         self.decode_policy = decode_policy or StreamAttnDecodePolicy(
@@ -1727,8 +1728,10 @@ class StreamAttnSeedOnlyDecodeService:
         self.dense_fallback_backend = dense_fallback_backend
         self.model_id = model_id if model_id is not None else self.policy.model_id
         self.layer_id = layer_id if layer_id is not None else self.policy.layer_id
+        self.use_direct_seed_only_path = bool(use_direct_seed_only_path)
         self.workspace: Optional[StreamAttnDecodeWorkspace] = None
         self.wrapper: Optional[StreamAttnDecodeWrapper] = None
+        self.output_workspace: Optional[torch.Tensor] = None
         self._planned_shape: Optional[tuple] = None
 
     @classmethod
@@ -1813,6 +1816,59 @@ class StreamAttnSeedOnlyDecodeService:
         if self.dense_fallback is not None:
             return self.dense_fallback(query, key_cache, value_cache)
         return stream_attn_exact_native_decode(query, key_cache, value_cache)
+
+    def _allocate_output_workspace(self, query: torch.Tensor) -> torch.Tensor:
+        if (
+            self.output_workspace is not None
+            and self.output_workspace.shape == query.shape
+            and self.output_workspace.device == query.device
+            and self.output_workspace.dtype == query.dtype
+            and self.output_workspace.is_contiguous()
+        ):
+            return self.output_workspace
+        self.output_workspace = torch.empty_like(query)
+        return self.output_workspace
+
+    def _run_direct_seed_only(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+    ) -> tuple[torch.Tensor, Gate0SeedOnlyBatchedStats]:
+        from .kernels.gate0_seed_only_triton import (
+            gate0_seed_only_attention_triton_forward_out,
+        )
+
+        output = self._allocate_output_workspace(query)
+        gate0_seed_only_attention_triton_forward_out(
+            query,
+            key_cache,
+            value_cache,
+            output,
+            block_size=self.policy.block_size,
+            sink_blocks=self.policy.sink_blocks,
+            recent_blocks=self.policy.recent_blocks,
+            middle_seed_blocks=self.policy.middle_seed_blocks,
+            block_order=self.policy.block_order,
+            num_warps=self.policy.num_warps,
+            num_stages=self.policy.num_stages,
+        )
+        total_blocks = (key_cache.shape[1] + self.policy.block_size - 1) // self.policy.block_size
+        seed_blocks = (
+            self.policy.sink_blocks
+            + self.policy.recent_blocks
+            + self.policy.middle_seed_blocks
+        )
+        stats = Gate0SeedOnlyBatchedStats(
+            batch_size=query.shape[0],
+            heads=query.shape[2],
+            kv_heads=key_cache.shape[2],
+            kv_len=key_cache.shape[1],
+            block_size=self.policy.block_size,
+            seed_blocks=min(seed_blocks, total_blocks),
+            total_blocks=total_blocks,
+        )
+        return output, stats
 
     def _serving_info(
         self,
@@ -1910,6 +1966,48 @@ class StreamAttnSeedOnlyDecodeService:
             )
             return (output, info) if return_info else output
 
+        if self.use_direct_seed_only_path:
+            try:
+                output, stats = self._run_direct_seed_only(query, key_cache, value_cache)
+            except Exception as exc:  # pragma: no cover - CUDA/Triton environment dependent
+                if self.policy.fallback != "dense":
+                    raise
+                reason = f"seed_only_batched_backend_error:{type(exc).__name__}"
+                output = self._dense_output(query, key_cache, value_cache)
+                if not return_info:
+                    return output
+                info = self._serving_info(
+                    query=query,
+                    key_cache=key_cache,
+                    model_id=effective_model_id,
+                    layer_id=effective_layer_id,
+                    backend_used=self.dense_fallback_backend,
+                    fallback_reason=reason,
+                    plan_backend="dense",
+                    plan_reason=reason,
+                    safety_policy_matched=True,
+                )
+                return output, info
+            if not return_info:
+                return output
+            info = self._serving_info(
+                query=query,
+                key_cache=key_cache,
+                model_id=effective_model_id,
+                layer_id=effective_layer_id,
+                backend_used="gate0_seed_only_batched",
+                fallback_reason=None,
+                plan_backend="gate0_seed_only_batched",
+                plan_reason="calibrated_gate0_seed_only_batched_policy",
+                safety_policy_matched=True,
+                runtime_counters={
+                    "backend_counts": {"gate0_seed_only_batched": 1},
+                    "fallback_reasons": {},
+                },
+                stats=stats,
+            )
+            return output, info
+
         wrapper = self._allocate_wrapper(query, key_cache, value_cache)
         output, run_info = wrapper.run(
             query,
@@ -1950,6 +2048,7 @@ def stream_attn_seed_only_decode(
     dense_fallback_backend: str = STREAMATTN_EXACT_NATIVE_BACKEND,
     model_id: Optional[str] = None,
     layer_id: Optional[int] = None,
+    use_direct_seed_only_path: bool = False,
     mode: str = "auto",
     active_fraction_hint: Optional[float] = 1.0,
     return_info: bool = True,
@@ -1964,6 +2063,7 @@ def stream_attn_seed_only_decode(
         dense_fallback_backend=dense_fallback_backend,
         model_id=model_id,
         layer_id=layer_id,
+        use_direct_seed_only_path=use_direct_seed_only_path,
     )
     return service.run(
         query,
