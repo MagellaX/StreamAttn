@@ -143,11 +143,18 @@ the current two-kernel Triton decomposition.
 The direct seed-only batch-threshold gate in
 `artifacts/seed_only_direct_below8_h100_gate.json` narrows that target further.
 On captured Qwen L8 32K rows, the raw direct seed kernel first beats the
-FlashInfer exact reference at batch 4, while the wrapper/service route still
-first beats at batch 8 because Python/wrapper overhead costs several
-microseconds. The next product expansion is therefore not new sparse-attention
-policy work: it is a lower-overhead planned/native direct seed run path that can
-realize the B4 raw-kernel economics in the serving route.
+FlashInfer exact reference at batch 4, while the planned direct runner first
+beats at batch 2 in the latest H100 threshold gate. The ordinary wrapper route
+still first clears the gate at batch 8, so the packaged product policy remains
+conservative. The next expansion is therefore not new sparse-attention policy
+work; it is pushing the low-overhead planned/native run path into the serving
+loop.
+
+`StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
+in that direction: it validates policy and tensor invariants once, binds fixed
+Q/K/V/output buffers, and returns a `StreamAttnSeedOnlyDirectRunner` whose
+steady-state `run()` path launches the prechecked direct seed kernel without
+per-step routing.
 
 
 ## API Reference

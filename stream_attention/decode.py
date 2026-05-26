@@ -494,6 +494,106 @@ class StreamAttnServingInfo:
         return asdict(self)
 
 
+def _seed_block_order_id(block_order: str) -> int:
+    if block_order == "sequential":
+        return 0
+    if block_order == "recent_first":
+        return 1
+    if block_order == "sink_recent_first":
+        return 2
+    raise ValueError("block_order must be sequential, recent_first, or sink_recent_first")
+
+
+def _make_gate0_seed_only_batched_stats(
+    policy: Gate0SeedOnlyBatchedPolicy,
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+) -> Gate0SeedOnlyBatchedStats:
+    total_blocks = (key_cache.shape[1] + policy.block_size - 1) // policy.block_size
+    seed_blocks = policy.sink_blocks + policy.recent_blocks + policy.middle_seed_blocks
+    return Gate0SeedOnlyBatchedStats(
+        batch_size=int(query.shape[0]),
+        heads=int(query.shape[2]),
+        kv_heads=int(key_cache.shape[2]),
+        kv_len=int(key_cache.shape[1]),
+        block_size=int(policy.block_size),
+        seed_blocks=min(seed_blocks, total_blocks),
+        total_blocks=total_blocks,
+    )
+
+
+class StreamAttnSeedOnlyDirectRunner:
+    """Fixed-buffer direct seed-only runner for planned serving loops.
+
+    The service validates policy, shape, dtype, layout, and CUDA availability
+    once, then this runner keeps the steady-state path to one prechecked Triton
+    launch into a reused final output buffer.
+    """
+
+    def __init__(
+        self,
+        *,
+        policy: Gate0SeedOnlyBatchedPolicy,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        output: torch.Tensor,
+        info: StreamAttnServingInfo,
+    ) -> None:
+        from .kernels.gate0_seed_only_triton import (
+            gate0_seed_only_attention_triton_forward_out_prechecked,
+        )
+
+        self.policy = policy
+        self.query = query
+        self.key_cache = key_cache
+        self.value_cache = value_cache
+        self.output = output
+        self.info = info
+        self._launch = gate0_seed_only_attention_triton_forward_out_prechecked
+        self._seq_k = int(key_cache.shape[1])
+        self._q_heads = int(query.shape[2])
+        self._kv_heads = int(key_cache.shape[2])
+        self._group_size = self._q_heads // self._kv_heads
+        self._dim = int(query.shape[3])
+        self._num_blocks = (self._seq_k + policy.block_size - 1) // policy.block_size
+        self._recent_start = self._num_blocks - policy.recent_blocks
+        self._block_order_id = _seed_block_order_id(policy.block_order)
+        self._score_scale = 1.0 / math.sqrt(self._dim)
+        self._pv_use_bf16 = value_cache.dtype is torch.bfloat16
+
+    def run(self) -> torch.Tensor:
+        """Launch the planned direct seed-only kernel and return final output."""
+
+        return self._launch(
+            self.query,
+            self.key_cache,
+            self.value_cache,
+            self.output,
+            seq_k=self._seq_k,
+            q_heads=self._q_heads,
+            kv_heads=self._kv_heads,
+            group_size=self._group_size,
+            dim=self._dim,
+            num_blocks=self._num_blocks,
+            block_size=self.policy.block_size,
+            sink_blocks=self.policy.sink_blocks,
+            recent_blocks=self.policy.recent_blocks,
+            recent_start=self._recent_start,
+            middle_seed_blocks=self.policy.middle_seed_blocks,
+            block_order_id=self._block_order_id,
+            score_scale=self._score_scale,
+            pv_use_bf16=self._pv_use_bf16,
+            num_warps=self.policy.num_warps,
+            num_stages=self.policy.num_stages,
+        )
+
+    def run_with_info(self) -> tuple[torch.Tensor, StreamAttnServingInfo]:
+        """Launch the kernel and return the precomputed serving telemetry."""
+
+        return self.run(), self.info
+
+
 @dataclass(frozen=True)
 class DecodeCostKey:
     device_class: str
@@ -1853,21 +1953,7 @@ class StreamAttnSeedOnlyDecodeService:
             num_warps=self.policy.num_warps,
             num_stages=self.policy.num_stages,
         )
-        total_blocks = (key_cache.shape[1] + self.policy.block_size - 1) // self.policy.block_size
-        seed_blocks = (
-            self.policy.sink_blocks
-            + self.policy.recent_blocks
-            + self.policy.middle_seed_blocks
-        )
-        stats = Gate0SeedOnlyBatchedStats(
-            batch_size=query.shape[0],
-            heads=query.shape[2],
-            kv_heads=key_cache.shape[2],
-            kv_len=key_cache.shape[1],
-            block_size=self.policy.block_size,
-            seed_blocks=min(seed_blocks, total_blocks),
-            total_blocks=total_blocks,
-        )
+        stats = _make_gate0_seed_only_batched_stats(self.policy, query, key_cache)
         return output, stats
 
     def _serving_info(
@@ -1906,6 +1992,70 @@ class StreamAttnSeedOnlyDecodeService:
                 ),
             },
             stats=asdict(stats) if stats is not None else None,
+        )
+
+    def plan_direct_seed_only(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+        mode: str = "auto",
+    ) -> StreamAttnSeedOnlyDirectRunner:
+        """Validate once and return a low-overhead direct seed-only runner.
+
+        The returned runner is for fixed-shape, fixed-buffer serving loops where
+        Q/K/V contents are updated in place. Any policy or shape mismatch raises
+        instead of silently switching backend, so callers can fail closed before
+        entering a timed or captured decode loop.
+        """
+
+        if query.dim() != 4 or key_cache.dim() != 4 or value_cache.dim() != 4:
+            raise ValueError("query, key_cache, and value_cache must be [batch, seq, heads, dim]")
+        if key_cache.shape != value_cache.shape:
+            raise ValueError("key_cache and value_cache shapes must match")
+        if query.shape[0] != key_cache.shape[0] or query.shape[3] != key_cache.shape[3]:
+            raise ValueError("query/KV batch and head_dim must match")
+        effective_model_id = model_id if model_id is not None else self.model_id
+        effective_layer_id = layer_id if layer_id is not None else self.layer_id
+        reasons = self._preflight_reasons(
+            query,
+            key_cache,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+            mode=mode,
+        )
+        if reasons:
+            raise ValueError(f"cannot plan direct seed-only route: {','.join(reasons)}")
+        if not query.is_contiguous() or not key_cache.is_contiguous() or not value_cache.is_contiguous():
+            raise ValueError("cannot plan direct seed-only route: layout_mismatch")
+        output = self._allocate_output_workspace(query)
+        stats = _make_gate0_seed_only_batched_stats(self.policy, query, key_cache)
+        info = self._serving_info(
+            query=query,
+            key_cache=key_cache,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+            backend_used="gate0_seed_only_batched",
+            fallback_reason=None,
+            plan_backend="gate0_seed_only_batched",
+            plan_reason="planned_direct_seed_only",
+            safety_policy_matched=True,
+            runtime_counters={
+                "backend_counts": {"gate0_seed_only_batched": 1},
+                "fallback_reasons": {},
+            },
+            stats=stats,
+        )
+        return StreamAttnSeedOnlyDirectRunner(
+            policy=self.policy,
+            query=query,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            output=output,
+            info=info,
         )
 
     def run(

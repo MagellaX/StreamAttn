@@ -73,6 +73,8 @@ def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if float(timing.get("h100_product_wrapper_b8_speedup", 0.0)) < 1.10:
         failures.append("h100_b8_speedup_below_gate")
+    if float(timing.get("h100_planned_direct_b4_speedup", 0.0)) < 1.10:
+        failures.append("h100_b4_planned_direct_speedup_below_gate")
     if float(timing.get("a100_product_wrapper_b8_speedup", 0.0)) < 1.10:
         failures.append("a100_b8_speedup_below_gate")
 

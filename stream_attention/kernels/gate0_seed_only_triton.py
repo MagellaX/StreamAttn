@@ -679,6 +679,65 @@ def gate0_seed_only_attention_triton_forward_out(
     return output
 
 
+def gate0_seed_only_attention_triton_forward_out_prechecked(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    *,
+    seq_k: int,
+    q_heads: int,
+    kv_heads: int,
+    group_size: int,
+    dim: int,
+    num_blocks: int,
+    block_size: int,
+    sink_blocks: int,
+    recent_blocks: int,
+    recent_start: int,
+    middle_seed_blocks: int,
+    block_order_id: int,
+    score_scale: float,
+    pv_use_bf16: bool,
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Run seed-only decode using a caller-validated fixed-shape launch plan.
+
+    This intentionally skips Python-side tensor validation and shape arithmetic.
+    It is only for planned serving paths that already checked policy, shape,
+    dtype, layout, and CUDA availability before entering the steady-state loop.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    _seed_only_kernel[(query.shape[0], q_heads)](
+        query,
+        key,
+        value,
+        output,
+        output,
+        N=int(seq_k),
+        H=int(q_heads),
+        H_KV=int(kv_heads),
+        GROUP_SIZE=int(group_size),
+        D=int(dim),
+        NUM_BLOCKS=int(num_blocks),
+        TILE_N=int(block_size),
+        SCALE=float(score_scale),
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        RECENT_START=int(recent_start),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=int(block_order_id),
+        PV_USE_BF16=bool(pv_use_bf16),
+        HAS_STATS=False,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
 def make_gate0_seed_only_split_seed_workspace(
     query: torch.Tensor,
     *,

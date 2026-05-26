@@ -41,6 +41,7 @@
       "decision": {
         "direct_seed_beats_flashinfer": false,
         "forced_wrapper_beats_flashinfer": false,
+        "planned_direct_beats_flashinfer": false,
         "product_route_uses_seed_only": true,
         "product_wrapper_beats_flashinfer": false,
         "service_beats_flashinfer": false
@@ -51,6 +52,17 @@
         "runtime_counters": {
           "backend_counts": {
             "gate0_seed_only_batched": 61
+          },
+          "fallback_reasons": {}
+        }
+      },
+      "planned_direct_route": {
+        "backend_used": "gate0_seed_only_batched",
+        "fallback_reason": null,
+        "plan_reason": "planned_direct_seed_only",
+        "runtime_counters": {
+          "backend_counts": {
+            "gate0_seed_only_batched": 1
           },
           "fallback_reasons": {}
         }
@@ -74,6 +86,14 @@
         0
       ],
       "quality": {
+        "planned_direct_vs_direct_seed": {
+          "max_abs_error": 0.0,
+          "mean_abs_error": 0.0
+        },
+        "planned_direct_vs_flashinfer_exact": {
+          "max_abs_error": 0.1575927734375,
+          "mean_abs_error": 0.010152343660593033
+        },
         "product_wrapper_vs_flashinfer_exact": {
           "max_abs_error": 0.1575927734375,
           "mean_abs_error": 0.010152343660593033
@@ -114,23 +134,28 @@
         "true_kv_heads": 2
       },
       "timing": {
-        "direct_seed_only_ms": 0.03040895938873291,
-        "direct_speedup_vs_flashinfer": 0.8814033573558138,
-        "flashinfer_batch_tc_exact_ms": 0.02680255889892578,
-        "flashinfer_per_row_us": 26.80255889892578,
-        "forced_wrapper_per_row_us": 38.62720012664795,
-        "forced_wrapper_seed_only_ms": 0.03862720012664795,
-        "forced_wrapper_speedup_vs_flashinfer": 0.6938778583756413,
-        "product_wrapper_ms": 0.04072000026702881,
-        "product_wrapper_over_flashinfer_ms": 0.013917441368103026,
-        "product_wrapper_per_row_us": 40.72000026702881,
-        "product_wrapper_speedup_vs_flashinfer": 0.6582160786631416,
-        "service_ms": 0.048209919929504394,
-        "service_over_direct_ms": 0.017800960540771484,
-        "service_over_flashinfer_ms": 0.021407361030578612,
-        "service_per_row_us": 48.209919929504395,
-        "service_speedup_vs_flashinfer": 0.5559552668437986,
-        "wrapper_over_direct_ms": 0.00821824073791504
+        "direct_seed_only_ms": 0.02640575885772705,
+        "direct_speedup_vs_flashinfer": 0.9325238380125717,
+        "flashinfer_batch_tc_exact_ms": 0.02462399959564209,
+        "flashinfer_per_row_us": 24.62399959564209,
+        "forced_wrapper_per_row_us": 34.7052788734436,
+        "forced_wrapper_seed_only_ms": 0.0347052788734436,
+        "forced_wrapper_speedup_vs_flashinfer": 0.709517410461851,
+        "planned_direct_over_direct_ms": -0.0016684794425964357,
+        "planned_direct_over_flashinfer_ms": 0.0001132798194885265,
+        "planned_direct_per_row_us": 24.737279415130615,
+        "planned_direct_seed_only_ms": 0.024737279415130615,
+        "planned_direct_speedup_vs_flashinfer": 0.9954206839973179,
+        "product_wrapper_ms": 0.03410880088806152,
+        "product_wrapper_over_flashinfer_ms": 0.009484801292419433,
+        "product_wrapper_per_row_us": 34.10880088806152,
+        "product_wrapper_speedup_vs_flashinfer": 0.7219251030387519,
+        "service_ms": 0.04074111938476563,
+        "service_over_direct_ms": 0.014335360527038578,
+        "service_over_flashinfer_ms": 0.01611711978912354,
+        "service_per_row_us": 40.741119384765625,
+        "service_speedup_vs_flashinfer": 0.604401645499455,
+        "wrapper_over_direct_ms": 0.00829952001571655
       }
     },
     {
@@ -138,6 +163,7 @@
       "decision": {
         "direct_seed_beats_flashinfer": false,
         "forced_wrapper_beats_flashinfer": false,
+        "planned_direct_beats_flashinfer": true,
         "product_route_uses_seed_only": true,
         "product_wrapper_beats_flashinfer": false,
         "service_beats_flashinfer": false
@@ -148,6 +174,17 @@
         "runtime_counters": {
           "backend_counts": {
             "gate0_seed_only_batched": 61
+          },
+          "fallback_reasons": {}
+        }
+      },
+      "planned_direct_route": {
+        "backend_used": "gate0_seed_only_batched",
+        "fallback_reason": null,
+        "plan_reason": "planned_direct_seed_only",
+        "runtime_counters": {
+          "backend_counts": {
+            "gate0_seed_only_batched": 1
           },
           "fallback_reasons": {}
         }
@@ -172,6 +209,14 @@
         1
       ],
       "quality": {
+        "planned_direct_vs_direct_seed": {
+          "max_abs_error": 0.0,
+          "mean_abs_error": 0.0
+        },
+        "planned_direct_vs_flashinfer_exact": {
+          "max_abs_error": 0.15771484375,
+          "mean_abs_error": 0.007717390079051256
+        },
         "product_wrapper_vs_flashinfer_exact": {
           "max_abs_error": 0.15771484375,
           "mean_abs_error": 0.007717390079051256
@@ -212,23 +257,28 @@
         "true_kv_heads": 2
       },
       "timing": {
-        "direct_seed_only_ms": 0.030632319450378417,
-        "direct_speedup_vs_flashinfer": 0.8980841252646495,
-        "flashinfer_batch_tc_exact_ms": 0.02751039981842041,
-        "flashinfer_per_row_us": 13.755199909210205,
-        "forced_wrapper_per_row_us": 19.666240215301514,
-        "forced_wrapper_seed_only_ms": 0.03933248043060303,
-        "forced_wrapper_speedup_vs_flashinfer": 0.699432110999429,
-        "product_wrapper_ms": 0.03851392030715942,
-        "product_wrapper_over_flashinfer_ms": 0.011003520488739014,
-        "product_wrapper_per_row_us": 19.256960153579712,
-        "product_wrapper_speedup_vs_flashinfer": 0.7142975734232501,
-        "service_ms": 0.04636864185333252,
-        "service_over_direct_ms": 0.0157363224029541,
-        "service_over_flashinfer_ms": 0.01885824203491211,
-        "service_per_row_us": 23.18432092666626,
-        "service_speedup_vs_flashinfer": 0.5932975113965567,
-        "wrapper_over_direct_ms": 0.008700160980224612
+        "direct_seed_only_ms": 0.03367615938186645,
+        "direct_speedup_vs_flashinfer": 0.8042152086347387,
+        "flashinfer_batch_tc_exact_ms": 0.027082879543304444,
+        "flashinfer_per_row_us": 13.541439771652222,
+        "forced_wrapper_per_row_us": 20.078721046447754,
+        "forced_wrapper_seed_only_ms": 0.040157442092895505,
+        "forced_wrapper_speedup_vs_flashinfer": 0.6744174462271301,
+        "planned_direct_over_direct_ms": -0.00995199918746948,
+        "planned_direct_over_flashinfer_ms": -0.003358719348907472,
+        "planned_direct_per_row_us": 11.862080097198486,
+        "planned_direct_seed_only_ms": 0.023724160194396972,
+        "planned_direct_speedup_vs_flashinfer": 1.1415737931874492,
+        "product_wrapper_ms": 0.039007360935211184,
+        "product_wrapper_over_flashinfer_ms": 0.01192448139190674,
+        "product_wrapper_per_row_us": 19.50368046760559,
+        "product_wrapper_speedup_vs_flashinfer": 0.6943017649486063,
+        "service_ms": 0.04123775959014893,
+        "service_over_direct_ms": 0.007561600208282476,
+        "service_over_flashinfer_ms": 0.014154880046844485,
+        "service_per_row_us": 20.618879795074463,
+        "service_speedup_vs_flashinfer": 0.6567495376197433,
+        "wrapper_over_direct_ms": 0.006481282711029053
       }
     },
     {
@@ -236,6 +286,7 @@
       "decision": {
         "direct_seed_beats_flashinfer": true,
         "forced_wrapper_beats_flashinfer": false,
+        "planned_direct_beats_flashinfer": true,
         "product_route_uses_seed_only": true,
         "product_wrapper_beats_flashinfer": false,
         "service_beats_flashinfer": false
@@ -246,6 +297,17 @@
         "runtime_counters": {
           "backend_counts": {
             "gate0_seed_only_batched": 61
+          },
+          "fallback_reasons": {}
+        }
+      },
+      "planned_direct_route": {
+        "backend_used": "gate0_seed_only_batched",
+        "fallback_reason": null,
+        "plan_reason": "planned_direct_seed_only",
+        "runtime_counters": {
+          "backend_counts": {
+            "gate0_seed_only_batched": 1
           },
           "fallback_reasons": {}
         }
@@ -272,6 +334,14 @@
         3
       ],
       "quality": {
+        "planned_direct_vs_direct_seed": {
+          "max_abs_error": 0.0,
+          "mean_abs_error": 0.0
+        },
+        "planned_direct_vs_flashinfer_exact": {
+          "max_abs_error": 0.242919921875,
+          "mean_abs_error": 0.008516030386090279
+        },
         "product_wrapper_vs_flashinfer_exact": {
           "max_abs_error": 0.242919921875,
           "mean_abs_error": 0.008516030386090279
@@ -312,23 +382,28 @@
         "true_kv_heads": 2
       },
       "timing": {
-        "direct_seed_only_ms": 0.026900479793548582,
-        "direct_speedup_vs_flashinfer": 1.2682956185207694,
-        "flashinfer_batch_tc_exact_ms": 0.03411776065826416,
-        "flashinfer_per_row_us": 8.52944016456604,
-        "forced_wrapper_per_row_us": 9.220640063285828,
-        "forced_wrapper_seed_only_ms": 0.036882560253143314,
-        "forced_wrapper_speedup_vs_flashinfer": 0.9250377529134919,
-        "product_wrapper_ms": 0.03958847999572754,
-        "product_wrapper_over_flashinfer_ms": 0.005470719337463376,
-        "product_wrapper_per_row_us": 9.897119998931885,
-        "product_wrapper_speedup_vs_flashinfer": 0.8618103211324661,
-        "service_ms": 0.045900797843933104,
-        "service_over_direct_ms": 0.01900031805038452,
-        "service_over_flashinfer_ms": 0.011783037185668942,
-        "service_per_row_us": 11.475199460983276,
-        "service_speedup_vs_flashinfer": 0.7432934123338696,
-        "wrapper_over_direct_ms": 0.009982080459594731
+        "direct_seed_only_ms": 0.028306560516357424,
+        "direct_speedup_vs_flashinfer": 1.1680797484500487,
+        "flashinfer_batch_tc_exact_ms": 0.03306432008743286,
+        "flashinfer_per_row_us": 8.266080021858215,
+        "forced_wrapper_per_row_us": 8.895040154457092,
+        "forced_wrapper_seed_only_ms": 0.03558016061782837,
+        "forced_wrapper_speedup_vs_flashinfer": 0.9292909169967355,
+        "planned_direct_over_direct_ms": -0.0034502410888671876,
+        "planned_direct_over_flashinfer_ms": -0.008208000659942625,
+        "planned_direct_per_row_us": 6.214079856872559,
+        "planned_direct_seed_only_ms": 0.024856319427490236,
+        "planned_direct_speedup_vs_flashinfer": 1.330217862056635,
+        "product_wrapper_ms": 0.035692799091339114,
+        "product_wrapper_over_flashinfer_ms": 0.0026284790039062533,
+        "product_wrapper_per_row_us": 8.923199772834778,
+        "product_wrapper_speedup_vs_flashinfer": 0.9263582831601443,
+        "service_ms": 0.041543040275573734,
+        "service_over_direct_ms": 0.01323647975921631,
+        "service_over_flashinfer_ms": 0.008478720188140873,
+        "service_per_row_us": 10.385760068893433,
+        "service_speedup_vs_flashinfer": 0.7959051592782402,
+        "wrapper_over_direct_ms": 0.007273600101470948
       }
     },
     {
@@ -336,6 +411,7 @@
       "decision": {
         "direct_seed_beats_flashinfer": true,
         "forced_wrapper_beats_flashinfer": true,
+        "planned_direct_beats_flashinfer": true,
         "product_route_uses_seed_only": true,
         "product_wrapper_beats_flashinfer": true,
         "service_beats_flashinfer": true
@@ -346,6 +422,17 @@
         "runtime_counters": {
           "backend_counts": {
             "gate0_seed_only_batched": 61
+          },
+          "fallback_reasons": {}
+        }
+      },
+      "planned_direct_route": {
+        "backend_used": "gate0_seed_only_batched",
+        "fallback_reason": null,
+        "plan_reason": "planned_direct_seed_only",
+        "runtime_counters": {
+          "backend_counts": {
+            "gate0_seed_only_batched": 1
           },
           "fallback_reasons": {}
         }
@@ -376,6 +463,14 @@
         7
       ],
       "quality": {
+        "planned_direct_vs_direct_seed": {
+          "max_abs_error": 0.0,
+          "mean_abs_error": 0.0
+        },
+        "planned_direct_vs_flashinfer_exact": {
+          "max_abs_error": 0.242919921875,
+          "mean_abs_error": 0.00851878710091114
+        },
         "product_wrapper_vs_flashinfer_exact": {
           "max_abs_error": 0.242919921875,
           "mean_abs_error": 0.00851878710091114
@@ -416,23 +511,28 @@
         "true_kv_heads": 2
       },
       "timing": {
-        "direct_seed_only_ms": 0.031168639659881592,
-        "direct_speedup_vs_flashinfer": 1.874150496344586,
-        "flashinfer_batch_tc_exact_ms": 0.05841472148895264,
-        "flashinfer_per_row_us": 7.30184018611908,
-        "forced_wrapper_per_row_us": 4.902879893779755,
-        "forced_wrapper_seed_only_ms": 0.03922303915023804,
-        "forced_wrapper_speedup_vs_flashinfer": 1.4892961574243062,
-        "product_wrapper_ms": 0.038630399703979496,
-        "product_wrapper_over_flashinfer_ms": -0.019784321784973143,
-        "product_wrapper_per_row_us": 4.8287999629974365,
-        "product_wrapper_speedup_vs_flashinfer": 1.512143853974544,
-        "service_ms": 0.0457747220993042,
-        "service_over_direct_ms": 0.014606082439422609,
-        "service_over_flashinfer_ms": -0.012639999389648438,
-        "service_per_row_us": 5.721840262413025,
-        "service_speedup_vs_flashinfer": 1.2761349235988169,
-        "wrapper_over_direct_ms": 0.008054399490356447
+        "direct_seed_only_ms": 0.02734528064727783,
+        "direct_speedup_vs_flashinfer": 2.025838397369288,
+        "flashinfer_batch_tc_exact_ms": 0.05539711952209472,
+        "flashinfer_per_row_us": 6.924639940261841,
+        "forced_wrapper_per_row_us": 4.197840094566345,
+        "forced_wrapper_seed_only_ms": 0.033582720756530765,
+        "forced_wrapper_speedup_vs_flashinfer": 1.6495721095296234,
+        "planned_direct_over_direct_ms": -0.004055681228637694,
+        "planned_direct_over_flashinfer_ms": -0.032107520103454586,
+        "planned_direct_per_row_us": 2.911199927330017,
+        "planned_direct_seed_only_ms": 0.023289599418640138,
+        "planned_direct_speedup_vs_flashinfer": 2.3786205389929083,
+        "product_wrapper_ms": 0.03365504026412964,
+        "product_wrapper_over_flashinfer_ms": -0.021742079257965084,
+        "product_wrapper_per_row_us": 4.206880033016205,
+        "product_wrapper_speedup_vs_flashinfer": 1.6460274326617972,
+        "service_ms": 0.03915199995040894,
+        "service_over_direct_ms": 0.011806719303131107,
+        "service_over_flashinfer_ms": -0.016245119571685784,
+        "service_per_row_us": 4.893999993801117,
+        "service_speedup_vs_flashinfer": 1.4149243868068637,
+        "wrapper_over_direct_ms": 0.0062374401092529334
       }
     }
   ],
@@ -454,6 +554,7 @@
   "thresholds": {
     "first_direct_seed_beats_flashinfer_batch": 4,
     "first_forced_wrapper_beats_flashinfer_batch": 8,
+    "first_planned_direct_beats_flashinfer_batch": 2,
     "first_product_route_seed_only_batch": 1,
     "first_product_wrapper_beats_flashinfer_batch": 8,
     "first_service_beats_flashinfer_batch": 8

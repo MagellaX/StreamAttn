@@ -807,6 +807,21 @@ def test_seed_only_decode_service_fails_closed_when_backend_unavailable():
     assert info.to_dict()["policy_id"] == "test-seed-only-batched"
 
 
+def test_seed_only_decode_service_direct_plan_rejects_unavailable_backend():
+    q, k, v = _tensors(kv_len=128)
+    q = q.repeat(4, 1, 1, 1)
+    k = k.repeat(4, 1, 1, 1)
+    v = v.repeat(4, 1, 1, 1)
+    policy = _seed_only_policy(q, k, speedup=1.2, min_batch=4)
+    service = StreamAttnSeedOnlyDecodeService(
+        policy=policy,
+        decode_policy=StreamAttnDecodePolicy(min_kv_len_for_gate0_seed_only=1),
+    )
+
+    with pytest.raises(ValueError, match="backend_unavailable"):
+        service.plan_direct_seed_only(q, k, v)
+
+
 def test_seed_only_decode_service_defaults_to_exact_native():
     q, k, v = _tensors(kv_len=128)
     q = q.repeat(4, 1, 1, 1)
