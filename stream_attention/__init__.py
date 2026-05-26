@@ -87,6 +87,14 @@ from .decode import (
     stream_attn_exact_native_decode,
     stream_attn_seed_only_decode,
 )
+from .seed_autotune import (
+    SeedKernelAutotuneResult,
+    SeedKernelCandidate,
+    SeedKernelShape,
+    autotune_seed_kernel_mode,
+    seed_kernel_candidates,
+    seed_shape_from_policy,
+)
 
 # Utilities
 from .utils.memory import (
@@ -160,6 +168,12 @@ __all__ = [
     "stream_attn_decode_run",
     "stream_attn_exact_native_decode",
     "stream_attn_seed_only_decode",
+    "SeedKernelAutotuneResult",
+    "SeedKernelCandidate",
+    "SeedKernelShape",
+    "autotune_seed_kernel_mode",
+    "seed_kernel_candidates",
+    "seed_shape_from_policy",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",

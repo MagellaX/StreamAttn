@@ -118,6 +118,20 @@ StreamAttn is being shaped as a self-owned attention serving engine:
 - General frontier-model coverage requires a policy compiler over model,
   layer, KV-length, batch, dtype, GQA/MQA/MHA shape, and device buckets.
 
+The seed-only backend is guided by explicit kernel economics. For true GQA with
+group size `G = Hq / Hkv`, StreamAttn can intentionally duplicate tiny seed K/V
+reads across Q heads when:
+
+```text
+G * seed_tokens / kv_len << 1
+```
+
+For the packaged Qwen L8 32K route this is about `8.2%`, while the seed window
+itself is only `384 / 32768 = 1.17%` of the KV cache. The autotuner in
+`benchmarks/profile_seed_kernel_mode_autotune.py` reports these ratios, CTA
+counts, and whether the next kernel should use head-private direct seed,
+head-private split-seed, or a GQA-shared seed path.
+
 
 ## API Reference
 
