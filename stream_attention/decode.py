@@ -32,7 +32,8 @@ from .telemetry import Prediction, seq_bucket
 DenseFallbackFn = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 STREAMATTN_EXACT_NATIVE_BACKEND = "streamattn_exact_native"
 DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY = "qwen25_05b_l8_32k_seed_only_batched"
-_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
+_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICY_REGISTRY = "policies/registry.json"
+_FALLBACK_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
     DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY: "policies/qwen25_05b_l8_32k_seed_only_batched.json",
     "qwen25_05b_l8_32k_fp16_b4_seed_only_v2": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
     "qwen25_05b_l8_32k_fp16_b8_seed_only_v1": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
@@ -55,6 +56,108 @@ def _read_packaged_text(relative_path: str) -> str:
     except Exception:
         pass
     return (Path(__file__).resolve().parent.joinpath(*parts)).read_text(encoding="utf-8")
+
+
+def packaged_gate0_seed_only_batched_policy_registry() -> Dict[str, Any]:
+    """Return the packaged Gate-0 seed-only policy registry payload."""
+
+    try:
+        return json.loads(_read_packaged_text(_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICY_REGISTRY))
+    except Exception:
+        return {
+            "schema": "streamattn.policy_registry.v1",
+            "default": DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+            "policies": [
+                {
+                    "name": DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY,
+                    "path": _FALLBACK_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES[
+                        DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY
+                    ],
+                    "policy_id": "qwen25_05b_l8_32k_fp16_b4_seed_only_v2",
+                    "aliases": ["qwen25_05b_l8_32k_fp16_b8_seed_only_v1"],
+                    "status": "green",
+                }
+            ],
+        }
+
+
+def _packaged_gate0_seed_only_batched_policy_map() -> Dict[str, str]:
+    registry = packaged_gate0_seed_only_batched_policy_registry()
+    mapping: Dict[str, str] = {}
+    for entry in registry.get("policies") or []:
+        path = entry.get("path")
+        if not path:
+            continue
+        names = [
+            entry.get("name"),
+            entry.get("policy_id"),
+            *(entry.get("aliases") or []),
+        ]
+        for name in names:
+            if name:
+                mapping[str(name)] = str(path)
+    return mapping or dict(_FALLBACK_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES)
+
+
+def list_packaged_gate0_seed_only_batched_policies(
+    *,
+    include_aliases: bool = False,
+) -> List[str]:
+    """List packaged Gate-0 seed-only policy names.
+
+    By default this returns canonical registry names.  ``include_aliases`` also
+    includes versioned policy ids and compatibility aliases accepted by
+    ``from_packaged``.
+    """
+
+    registry = packaged_gate0_seed_only_batched_policy_registry()
+    names: list[str] = []
+    for entry in registry.get("policies") or []:
+        canonical = entry.get("name")
+        if canonical:
+            names.append(str(canonical))
+        if include_aliases:
+            for alias in [entry.get("policy_id"), *(entry.get("aliases") or [])]:
+                if alias:
+                    names.append(str(alias))
+    return sorted(set(names))
+
+
+def find_packaged_gate0_seed_only_batched_policies(
+    *,
+    model_id: Optional[str] = None,
+    layer_id: Optional[int] = None,
+    dtype: Optional[str] = None,
+    kv_len_bucket: Optional[int] = None,
+    min_batch: Optional[int] = None,
+    status: Optional[str] = "green",
+) -> List[str]:
+    """Find packaged policy names matching registry metadata.
+
+    This is intentionally metadata-only so serving code can discover candidate
+    cells before loading policy artifacts or constructing tensors.
+    """
+
+    expected_dtype = _normalize_dtype_name(dtype) if dtype is not None else None
+    registry = packaged_gate0_seed_only_batched_policy_registry()
+    matches: list[str] = []
+    for entry in registry.get("policies") or []:
+        if status is not None and entry.get("status") != status:
+            continue
+        if model_id is not None and entry.get("model_id") != model_id:
+            continue
+        if layer_id is not None and int(entry.get("layer_id", -1)) != int(layer_id):
+            continue
+        if expected_dtype is not None and _normalize_dtype_name(entry.get("dtype")) != expected_dtype:
+            continue
+        if kv_len_bucket is not None and int(entry.get("kv_len_bucket", -1)) != int(kv_len_bucket):
+            continue
+        if min_batch is not None and int(entry.get("min_batch", 0)) > int(min_batch):
+            continue
+        name = entry.get("name")
+        if name:
+            matches.append(str(name))
+    return sorted(matches)
 
 
 def stream_attn_exact_native_decode(
@@ -356,10 +459,11 @@ class Gate0SeedOnlyBatchedPolicy:
     ) -> "Gate0SeedOnlyBatchedPolicy":
         """Load a packaged, validated seed-only policy by name."""
 
+        policy_map = _packaged_gate0_seed_only_batched_policy_map()
         try:
-            relative_path = _PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES[name]
+            relative_path = policy_map[name]
         except KeyError as exc:
-            known = ", ".join(sorted(_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES))
+            known = ", ".join(sorted(policy_map))
             raise ValueError(f"unknown packaged Gate-0 seed-only policy {name!r}; known: {known}") from exc
         payload = json.loads(_read_packaged_text(relative_path))
         entries = payload.get("stable_entries") or payload.get("entries")

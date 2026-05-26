@@ -1,0 +1,30 @@
+{
+  "schema": "streamattn.policy_registry.v1",
+  "default": "qwen25_05b_l8_32k_seed_only_batched",
+  "policies": [
+    {
+      "name": "qwen25_05b_l8_32k_seed_only_batched",
+      "path": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
+      "policy_id": "qwen25_05b_l8_32k_fp16_b4_seed_only_v2",
+      "aliases": [
+        "qwen25_05b_l8_32k_fp16_b8_seed_only_v1"
+      ],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+      "layer_id": 8,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 14,
+      "kv_heads": 2,
+      "head_dim": 64,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    }
+  ]
+}

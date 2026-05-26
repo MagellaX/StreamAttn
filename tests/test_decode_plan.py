@@ -13,7 +13,10 @@ from stream_attention.decode import (
     StreamAttnDecodeWrapper,
     StreamAttnSeedOnlyDecodeService,
     decode_cost_model_from_profile_rows,
+    find_packaged_gate0_seed_only_batched_policies,
+    list_packaged_gate0_seed_only_batched_policies,
     load_packaged_gate0_seed_only_batched_policy,
+    packaged_gate0_seed_only_batched_policy_registry,
     stream_attn_decode_plan,
     stream_attn_decode_run,
     stream_attn_exact_native_decode,
@@ -740,6 +743,46 @@ def test_gate0_seed_only_batched_policy_loads_packaged_default():
     assert via_class.policy_id == policy.policy_id
     assert via_compat_alias.policy_id == policy.policy_id
     assert policy.min_batch == 4
+
+
+def test_gate0_seed_only_batched_policy_registry_lists_green_cells():
+    registry = packaged_gate0_seed_only_batched_policy_registry()
+    names = list_packaged_gate0_seed_only_batched_policies()
+    names_with_aliases = list_packaged_gate0_seed_only_batched_policies(include_aliases=True)
+
+    assert registry["schema"] == "streamattn.policy_registry.v1"
+    assert registry["default"] == "qwen25_05b_l8_32k_seed_only_batched"
+    assert names == ["qwen25_05b_l8_32k_seed_only_batched"]
+    assert "qwen25_05b_l8_32k_fp16_b4_seed_only_v2" in names_with_aliases
+    assert "qwen25_05b_l8_32k_fp16_b8_seed_only_v1" in names_with_aliases
+
+
+def test_gate0_seed_only_batched_policy_registry_finds_matching_cells():
+    matches = find_packaged_gate0_seed_only_batched_policies(
+        model_id="Qwen/Qwen2.5-0.5B-Instruct",
+        layer_id=8,
+        dtype="float16",
+        kv_len_bucket=32768,
+        min_batch=4,
+    )
+    too_small_batch = find_packaged_gate0_seed_only_batched_policies(
+        model_id="Qwen/Qwen2.5-0.5B-Instruct",
+        layer_id=8,
+        dtype="fp16",
+        kv_len_bucket=32768,
+        min_batch=2,
+    )
+    wrong_layer = find_packaged_gate0_seed_only_batched_policies(
+        model_id="Qwen/Qwen2.5-0.5B-Instruct",
+        layer_id=9,
+        dtype="fp16",
+        kv_len_bucket=32768,
+        min_batch=4,
+    )
+
+    assert matches == ["qwen25_05b_l8_32k_seed_only_batched"]
+    assert too_small_batch == []
+    assert wrong_layer == []
 
 
 def test_gate0_seed_only_batched_policy_reports_fail_closed_mismatches():

@@ -82,6 +82,14 @@ fp16, batch >= 4. It uses the packaged seed-only policy when the request
 matches and otherwise stays inside StreamAttn exact-native mode. FlashInfer is
 kept as a benchmark/reference injection, not a required serving fallback.
 
+Validated seed-only cells are indexed by
+`stream_attention/policies/registry.json`. Use
+`list_packaged_gate0_seed_only_batched_policies()` or
+`find_packaged_gate0_seed_only_batched_policies(...)` to discover green routes
+before loading an artifact. Today the registry intentionally contains one green
+cell; new frontier-model or additional-layer routes should enter through this
+registry only after their runtime and distribution-safety artifacts pass.
+
 ```python
 from stream_attention import StreamAttnSeedOnlyDecodeService
 

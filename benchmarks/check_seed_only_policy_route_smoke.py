@@ -21,10 +21,44 @@ POLICY_PATH = (
     / "policies"
     / "qwen25_05b_l8_32k_seed_only_batched.json"
 )
+REGISTRY_PATH = REPO_ROOT / "stream_attention" / "policies" / "registry.json"
 
 
 def _load_policy_json() -> Dict[str, Any]:
     return json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+
+
+def _load_registry_json() -> Dict[str, Any]:
+    return json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+
+
+def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
+    failures = []
+    policies = payload.get("policies") or []
+    default = payload.get("default")
+    names = {entry.get("name") for entry in policies}
+    green = [entry for entry in policies if entry.get("status") == "green"]
+
+    if payload.get("schema") != "streamattn.policy_registry.v1":
+        failures.append("registry_schema_mismatch")
+    if default != "qwen25_05b_l8_32k_seed_only_batched":
+        failures.append("registry_default_mismatch")
+    if default not in names:
+        failures.append("registry_default_missing")
+    if len(green) != 1:
+        failures.append("registry_green_policy_count_mismatch")
+    else:
+        entry = green[0]
+        if entry.get("min_batch") != 4:
+            failures.append("registry_green_min_batch_mismatch")
+        if entry.get("kernel_modes", {}).get("batch_ge_4") != "head_private_direct_seed":
+            failures.append("registry_green_kernel_mode_mismatch")
+
+    return {
+        "registry_failures": failures,
+        "registry_passed": not failures,
+        "registry_policy_count": len(policies),
+    }
 
 
 def _check_policy_artifact(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -158,9 +192,12 @@ def main() -> None:
     args = parser.parse_args()
 
     payload = _load_policy_json()
+    registry = _load_registry_json()
     result: Dict[str, Any] = {
         "schema": "streamattn.gate0.seed_only_policy_route_smoke.v1",
         "policy_path": str(POLICY_PATH.relative_to(REPO_ROOT)),
+        "registry_path": str(REGISTRY_PATH.relative_to(REPO_ROOT)),
+        "registry": _check_policy_registry(registry),
         "artifact": _check_policy_artifact(payload),
     }
     try:
@@ -173,8 +210,12 @@ def main() -> None:
             "skip_reason": f"missing_module:{exc.name}",
         }
 
-    passed = bool(result["artifact"]["artifact_passed"]) and bool(
-        result["route"].get("route_passed", result["route"].get("route_skipped", False))
+    passed = (
+        bool(result["registry"]["registry_passed"])
+        and bool(result["artifact"]["artifact_passed"])
+        and bool(
+            result["route"].get("route_passed", result["route"].get("route_skipped", False))
+        )
     )
     result["passed"] = passed
     print(json.dumps(result, indent=2, sort_keys=True))
