@@ -45,14 +45,17 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         failures.append("registry_default_mismatch")
     if default not in names:
         failures.append("registry_default_missing")
-    if len(green) != 1:
+    if len(green) < 2:
         failures.append("registry_green_policy_count_mismatch")
-    else:
-        entry = green[0]
+    for entry in green:
         if entry.get("min_batch") != 4:
             failures.append("registry_green_min_batch_mismatch")
         if entry.get("kernel_modes", {}).get("batch_ge_4") != "head_private_direct_seed":
             failures.append("registry_green_kernel_mode_mismatch")
+    if "qwen25_05b_l6_32k_seed_only_batched" not in names:
+        failures.append("registry_missing_l6_green_cell")
+    if "qwen25_05b_l8_32k_seed_only_batched" not in names:
+        failures.append("registry_missing_l8_green_cell")
 
     return {
         "registry_failures": failures,
