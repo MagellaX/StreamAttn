@@ -179,6 +179,182 @@
         "batch_ge_4": "head_private_direct_seed",
         "batch_lt_4": "exact_native"
       }
+    },
+    {
+      "name": "qwen25_3b_l0_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l0_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l0_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 0,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l14_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l14_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l14_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 14,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l16_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l16_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l16_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 16,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l24_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l24_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l24_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 24,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l26_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l26_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l26_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 26,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l27_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l27_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l27_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 27,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l29_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l29_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l29_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 29,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
+    },
+    {
+      "name": "qwen25_3b_l35_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l35_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l35_32k_fp16_b4_seed_only_v1",
+      "aliases": [],
+      "status": "green",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct",
+      "layer_id": 35,
+      "mode": "all_seed_only",
+      "tensor_space": "post_rope",
+      "dtype": "fp16",
+      "kv_len_bucket": 32768,
+      "min_batch": 4,
+      "q_heads": 16,
+      "kv_heads": 2,
+      "head_dim": 128,
+      "attention_type": "true_gqa",
+      "kernel_modes": {
+        "batch_ge_4": "head_private_direct_seed",
+        "batch_lt_4": "exact_native"
+      }
     }
   ]
 }

@@ -1,0 +1,2486 @@
+{
+  "capture_summary": {
+    "captured_rows": 8,
+    "layers": [
+      0,
+      14,
+      16,
+      24,
+      26,
+      27,
+      29,
+      35
+    ],
+    "prompt_kinds": [
+      "needle",
+      "code",
+      "long_doc",
+      "chat_doc",
+      "needle",
+      "code",
+      "long_doc",
+      "chat_doc"
+    ]
+  },
+  "layers": [
+    0,
+    14,
+    16,
+    24,
+    26,
+    27,
+    29,
+    35
+  ],
+  "profiles_by_layer": {
+    "0": {
+      "capture": {
+        "layer_id": 0,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.1376953125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016225282102823257
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016225282102823257
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016225282102823257
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016225282102823257
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.03451200008392334,
+            "direct_speedup_vs_flashinfer": 1.600834437391704,
+            "flashinfer_batch_tc_exact_ms": 0.05524799823760986,
+            "flashinfer_per_row_us": 13.811999559402466,
+            "forced_wrapper_per_row_us": 11.563359498977661,
+            "forced_wrapper_seed_only_ms": 0.04625343799591065,
+            "forced_wrapper_speedup_vs_flashinfer": 1.1944625228181835,
+            "planned_direct_over_direct_ms": -0.0022470402717590376,
+            "planned_direct_over_flashinfer_ms": -0.022983038425445558,
+            "planned_direct_per_row_us": 8.066239953041077,
+            "planned_direct_seed_only_ms": 0.032264959812164304,
+            "planned_direct_speedup_vs_flashinfer": 1.7123219294009675,
+            "product_wrapper_ms": 0.04796351909637451,
+            "product_wrapper_over_flashinfer_ms": -0.007284479141235353,
+            "product_wrapper_per_row_us": 11.990879774093628,
+            "product_wrapper_speedup_vs_flashinfer": 1.151875410280018,
+            "service_ms": 0.03625855922698975,
+            "service_over_direct_ms": 0.0017465591430664076,
+            "service_over_flashinfer_ms": -0.018989439010620113,
+            "service_per_row_us": 9.064639806747437,
+            "service_speedup_vs_flashinfer": 1.5237229337145024,
+            "wrapper_over_direct_ms": 0.011741437911987306
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.1376953125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016222555190324783
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016222555190324783
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016222555190324783
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.26171875,
+              "mean_abs_error": 0.016222555190324783
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.03478208065032959,
+            "direct_speedup_vs_flashinfer": 2.834544525056513,
+            "flashinfer_batch_tc_exact_ms": 0.09859135627746582,
+            "flashinfer_per_row_us": 12.323919534683228,
+            "forced_wrapper_per_row_us": 5.522400140762329,
+            "forced_wrapper_seed_only_ms": 0.04417920112609863,
+            "forced_wrapper_speedup_vs_flashinfer": 2.2316237904814327,
+            "planned_direct_over_direct_ms": -0.003143041133880614,
+            "planned_direct_over_flashinfer_ms": -0.06695231676101684,
+            "planned_direct_per_row_us": 3.954879939556122,
+            "planned_direct_seed_only_ms": 0.031639039516448975,
+            "planned_direct_speedup_vs_flashinfer": 3.1161298757570903,
+            "product_wrapper_ms": 0.0463040018081665,
+            "product_wrapper_over_flashinfer_ms": -0.052287354469299316,
+            "product_wrapper_per_row_us": 5.788000226020813,
+            "product_wrapper_speedup_vs_flashinfer": 2.129218910406952,
+            "service_ms": 0.03486272096633911,
+            "service_over_direct_ms": 8.064031600952398e-05,
+            "service_over_flashinfer_ms": -0.06372863531112671,
+            "service_per_row_us": 4.357840120792389,
+            "service_speedup_vs_flashinfer": 2.827987992465029,
+            "wrapper_over_direct_ms": 0.009397120475769044
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "14": {
+      "capture": {
+        "layer_id": 14,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.16845703125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597385436296463
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597385436296463
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597385436296463
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597385436296463
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.03399679899215698,
+            "direct_speedup_vs_flashinfer": 1.621686800556914,
+            "flashinfer_batch_tc_exact_ms": 0.05513216018676758,
+            "flashinfer_per_row_us": 13.783040046691895,
+            "forced_wrapper_per_row_us": 11.021920442581177,
+            "forced_wrapper_seed_only_ms": 0.04408768177032471,
+            "forced_wrapper_speedup_vs_flashinfer": 1.250511661601515,
+            "planned_direct_over_direct_ms": -0.0020940780639648465,
+            "planned_direct_over_flashinfer_ms": -0.023229439258575443,
+            "planned_direct_per_row_us": 7.975680232048034,
+            "planned_direct_seed_only_ms": 0.03190272092819214,
+            "planned_direct_speedup_vs_flashinfer": 1.7281334814939815,
+            "product_wrapper_ms": 0.046442880630493164,
+            "product_wrapper_over_flashinfer_ms": -0.008689279556274417,
+            "product_wrapper_per_row_us": 11.610720157623291,
+            "product_wrapper_speedup_vs_flashinfer": 1.1870960508545472,
+            "service_ms": 0.03492095947265625,
+            "service_over_direct_ms": 0.0009241604804992656,
+            "service_over_flashinfer_ms": -0.02021120071411133,
+            "service_per_row_us": 8.730239868164062,
+            "service_speedup_vs_flashinfer": 1.5787699140952032,
+            "wrapper_over_direct_ms": 0.010090882778167727
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.16845703125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597305715084076
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597305715084076
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597305715084076
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.041015625,
+              "mean_abs_error": 0.03597305715084076
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.0529260778427124,
+            "direct_speedup_vs_flashinfer": 1.8665490387185688,
+            "flashinfer_batch_tc_exact_ms": 0.09878911972045898,
+            "flashinfer_per_row_us": 12.348639965057373,
+            "forced_wrapper_per_row_us": 5.773680210113525,
+            "forced_wrapper_seed_only_ms": 0.0461894416809082,
+            "forced_wrapper_speedup_vs_flashinfer": 2.1387814211508895,
+            "planned_direct_over_direct_ms": -0.023889918327331543,
+            "planned_direct_over_flashinfer_ms": -0.06975296020507812,
+            "planned_direct_per_row_us": 3.6295199394226074,
+            "planned_direct_seed_only_ms": 0.02903615951538086,
+            "planned_direct_speedup_vs_flashinfer": 3.4022791364033185,
+            "product_wrapper_ms": 0.045066242218017576,
+            "product_wrapper_over_flashinfer_ms": -0.0537228775024414,
+            "product_wrapper_per_row_us": 5.633280277252197,
+            "product_wrapper_speedup_vs_flashinfer": 2.1920869115855166,
+            "service_ms": 0.0337388801574707,
+            "service_over_direct_ms": -0.0191871976852417,
+            "service_over_flashinfer_ms": -0.06505023956298828,
+            "service_per_row_us": 4.217360019683838,
+            "service_speedup_vs_flashinfer": 2.9280497532632066,
+            "wrapper_over_direct_ms": -0.006736636161804199
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "16": {
+      "capture": {
+        "layer_id": 16,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.100830078125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011829694733023643
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011829694733023643
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011829694733023643
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011829694733023643
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.033084800243377684,
+            "direct_speedup_vs_flashinfer": 1.6754425074824686,
+            "flashinfer_batch_tc_exact_ms": 0.05543168067932129,
+            "flashinfer_per_row_us": 13.857920169830322,
+            "forced_wrapper_per_row_us": 10.825599431991577,
+            "forced_wrapper_seed_only_ms": 0.04330239772796631,
+            "forced_wrapper_speedup_vs_flashinfer": 1.28010649727882,
+            "planned_direct_over_direct_ms": -0.00039423942565917913,
+            "planned_direct_over_flashinfer_ms": -0.022741119861602786,
+            "planned_direct_per_row_us": 8.172640204429626,
+            "planned_direct_seed_only_ms": 0.032690560817718504,
+            "planned_direct_speedup_vs_flashinfer": 1.695647896296626,
+            "product_wrapper_ms": 0.04519680023193359,
+            "product_wrapper_over_flashinfer_ms": -0.010234880447387698,
+            "product_wrapper_per_row_us": 11.299200057983398,
+            "product_wrapper_speedup_vs_flashinfer": 1.22645143892634,
+            "service_ms": 0.03394239902496338,
+            "service_over_direct_ms": 0.0008575987815856931,
+            "service_over_flashinfer_ms": -0.021489281654357914,
+            "service_per_row_us": 8.485599756240845,
+            "service_speedup_vs_flashinfer": 1.63311027716554,
+            "wrapper_over_direct_ms": 0.010217597484588628
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.100830078125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011828131042420864
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011828131042420864
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011828131042420864
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 0.2548828125,
+              "mean_abs_error": 0.011828131042420864
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.052693119049072264,
+            "direct_speedup_vs_flashinfer": 1.8724448778467822,
+            "flashinfer_batch_tc_exact_ms": 0.09866496086120606,
+            "flashinfer_per_row_us": 12.333120107650757,
+            "forced_wrapper_per_row_us": 5.471439957618713,
+            "forced_wrapper_seed_only_ms": 0.043771519660949706,
+            "forced_wrapper_speedup_vs_flashinfer": 2.2540903680168305,
+            "planned_direct_over_direct_ms": -0.023511040210723876,
+            "planned_direct_over_flashinfer_ms": -0.06948288202285767,
+            "planned_direct_per_row_us": 3.6477598547935486,
+            "planned_direct_seed_only_ms": 0.029182078838348387,
+            "planned_direct_speedup_vs_flashinfer": 3.3810120727776836,
+            "product_wrapper_ms": 0.04370175838470459,
+            "product_wrapper_over_flashinfer_ms": -0.05496320247650147,
+            "product_wrapper_per_row_us": 5.462719798088074,
+            "product_wrapper_speedup_vs_flashinfer": 2.257688580689658,
+            "service_ms": 0.03018752098083496,
+            "service_over_direct_ms": -0.022505598068237303,
+            "service_over_flashinfer_ms": -0.0684774398803711,
+            "service_per_row_us": 3.77344012260437,
+            "service_speedup_vs_flashinfer": 3.2684022289821386,
+            "wrapper_over_direct_ms": -0.008921599388122557
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "24": {
+      "capture": {
+        "layer_id": 24,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.21142578125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.04963071271777153
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.04963071271777153
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.04963071271777153
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.04963071271777153
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.03706176042556763,
+            "direct_speedup_vs_flashinfer": 1.4944136085382476,
+            "flashinfer_batch_tc_exact_ms": 0.05538559913635254,
+            "flashinfer_per_row_us": 13.846399784088135,
+            "forced_wrapper_per_row_us": 11.929279565811157,
+            "forced_wrapper_seed_only_ms": 0.04771711826324463,
+            "forced_wrapper_speedup_vs_flashinfer": 1.1607071246591762,
+            "planned_direct_over_direct_ms": -0.0032947206497192377,
+            "planned_direct_over_flashinfer_ms": -0.02161855936050415,
+            "planned_direct_per_row_us": 8.441759943962097,
+            "planned_direct_seed_only_ms": 0.03376703977584839,
+            "planned_direct_speedup_vs_flashinfer": 1.6402266678989923,
+            "product_wrapper_ms": 0.04799551963806152,
+            "product_wrapper_over_flashinfer_ms": -0.00739007949829102,
+            "product_wrapper_per_row_us": 11.99887990951538,
+            "product_wrapper_speedup_vs_flashinfer": 1.1539743616491762,
+            "service_ms": 0.035525760650634765,
+            "service_over_direct_ms": -0.001535999774932864,
+            "service_over_flashinfer_ms": -0.019859838485717776,
+            "service_per_row_us": 8.881440162658691,
+            "service_speedup_vs_flashinfer": 1.5590264113138117,
+            "wrapper_over_direct_ms": 0.010655357837677001
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.21142578125
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.049630071967840195
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.049630071967840195
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.049630071967840195
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.8671875,
+              "mean_abs_error": 0.049630071967840195
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.04975935935974121,
+            "direct_speedup_vs_flashinfer": 1.9741862567552002,
+            "flashinfer_batch_tc_exact_ms": 0.09823424339294434,
+            "flashinfer_per_row_us": 12.279280424118042,
+            "forced_wrapper_per_row_us": 5.26199996471405,
+            "forced_wrapper_seed_only_ms": 0.042095999717712405,
+            "forced_wrapper_speedup_vs_flashinfer": 2.3335766830977787,
+            "planned_direct_over_direct_ms": -0.02000959873199463,
+            "planned_direct_over_flashinfer_ms": -0.06848448276519777,
+            "planned_direct_per_row_us": 3.7187200784683228,
+            "planned_direct_seed_only_ms": 0.02974976062774658,
+            "planned_direct_speedup_vs_flashinfer": 3.302017943005721,
+            "product_wrapper_ms": 0.04377664089202881,
+            "product_wrapper_over_flashinfer_ms": -0.05445760250091553,
+            "product_wrapper_per_row_us": 5.472080111503601,
+            "product_wrapper_speedup_vs_flashinfer": 2.243987692779589,
+            "service_ms": 0.031985280513763426,
+            "service_over_direct_ms": -0.017774078845977787,
+            "service_over_flashinfer_ms": -0.06624896287918092,
+            "service_per_row_us": 3.998160064220428,
+            "service_speedup_vs_flashinfer": 3.071232823819496,
+            "wrapper_over_direct_ms": -0.007663359642028807
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "26": {
+      "capture": {
+        "layer_id": 26,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.068359375
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418546080589294
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418546080589294
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418546080589294
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418546080589294
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.036727681159973144,
+            "direct_speedup_vs_flashinfer": 1.5036680349498395,
+            "flashinfer_batch_tc_exact_ms": 0.05522624015808106,
+            "flashinfer_per_row_us": 13.806560039520264,
+            "forced_wrapper_per_row_us": 11.736639738082886,
+            "forced_wrapper_seed_only_ms": 0.046946558952331546,
+            "forced_wrapper_speedup_vs_flashinfer": 1.176363963419694,
+            "planned_direct_over_direct_ms": -0.006833920478820799,
+            "planned_direct_over_flashinfer_ms": -0.025332479476928713,
+            "planned_direct_per_row_us": 7.473440170288086,
+            "planned_direct_seed_only_ms": 0.029893760681152345,
+            "planned_direct_speedup_vs_flashinfer": 1.8474169492131023,
+            "product_wrapper_ms": 0.046695680618286134,
+            "product_wrapper_over_flashinfer_ms": -0.008530559539794924,
+            "product_wrapper_per_row_us": 11.673920154571533,
+            "product_wrapper_speedup_vs_flashinfer": 1.1826841246737143,
+            "service_ms": 0.03237504005432129,
+            "service_over_direct_ms": -0.004352641105651853,
+            "service_over_flashinfer_ms": -0.022851200103759767,
+            "service_per_row_us": 8.093760013580322,
+            "service_speedup_vs_flashinfer": 1.7058277013841001,
+            "wrapper_over_direct_ms": 0.010218877792358402
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.068359375
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418587803840637
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418587803840637
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418587803840637
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.525390625,
+              "mean_abs_error": 0.07418587803840637
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.05042111873626709,
+            "direct_speedup_vs_flashinfer": 1.9610449140941404,
+            "flashinfer_batch_tc_exact_ms": 0.09887807846069335,
+            "flashinfer_per_row_us": 12.35975980758667,
+            "forced_wrapper_per_row_us": 5.739920139312744,
+            "forced_wrapper_seed_only_ms": 0.045919361114501955,
+            "forced_wrapper_speedup_vs_flashinfer": 2.153298218024778,
+            "planned_direct_over_direct_ms": -0.018302078247070315,
+            "planned_direct_over_flashinfer_ms": -0.06675903797149657,
+            "planned_direct_per_row_us": 4.014880061149597,
+            "planned_direct_seed_only_ms": 0.032119040489196775,
+            "planned_direct_speedup_vs_flashinfer": 3.0784879297359753,
+            "product_wrapper_ms": 0.04635519981384277,
+            "product_wrapper_over_flashinfer_ms": -0.05252287864685058,
+            "product_wrapper_per_row_us": 5.794399976730347,
+            "product_wrapper_speedup_vs_flashinfer": 2.1330525778720943,
+            "service_ms": 0.034951040744781496,
+            "service_over_direct_ms": -0.015470077991485594,
+            "service_over_flashinfer_ms": -0.06392703771591185,
+            "service_per_row_us": 4.368880093097687,
+            "service_speedup_vs_flashinfer": 2.829045326081076,
+            "wrapper_over_direct_ms": -0.0045017576217651345
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "27": {
+      "capture": {
+        "layer_id": 27,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.038818359375
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.16973403096199036
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.16973403096199036
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.16973403096199036
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.16973403096199036
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.034070401191711425,
+            "direct_speedup_vs_flashinfer": 1.6209823233634442,
+            "flashinfer_batch_tc_exact_ms": 0.05522751808166504,
+            "flashinfer_per_row_us": 13.80687952041626,
+            "forced_wrapper_per_row_us": 11.103359460830688,
+            "forced_wrapper_seed_only_ms": 0.04441343784332275,
+            "forced_wrapper_speedup_vs_flashinfer": 1.2434866734813708,
+            "planned_direct_over_direct_ms": -0.00074048042297363,
+            "planned_direct_over_flashinfer_ms": -0.021897597312927244,
+            "planned_direct_per_row_us": 8.332480192184448,
+            "planned_direct_seed_only_ms": 0.033329920768737795,
+            "planned_direct_speedup_vs_flashinfer": 1.6569951805425942,
+            "product_wrapper_ms": 0.047502079010009766,
+            "product_wrapper_over_flashinfer_ms": -0.007725439071655273,
+            "product_wrapper_per_row_us": 11.875519752502441,
+            "product_wrapper_speedup_vs_flashinfer": 1.162633704306444,
+            "service_ms": 0.035664000511169434,
+            "service_over_direct_ms": 0.0015935993194580098,
+            "service_over_flashinfer_ms": -0.019563517570495605,
+            "service_per_row_us": 8.916000127792358,
+            "service_speedup_vs_flashinfer": 1.5485508437105535,
+            "wrapper_over_direct_ms": 0.010343036651611327
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.038818359375
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.1697314977645874
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.1697314977645874
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.1697314977645874
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.470703125,
+              "mean_abs_error": 0.1697314977645874
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.050125441551208495,
+            "direct_speedup_vs_flashinfer": 1.9713485463895921,
+            "flashinfer_batch_tc_exact_ms": 0.09881471633911133,
+            "flashinfer_per_row_us": 12.351839542388916,
+            "forced_wrapper_per_row_us": 5.519440174102783,
+            "forced_wrapper_seed_only_ms": 0.044155521392822264,
+            "forced_wrapper_speedup_vs_flashinfer": 2.2378790516371128,
+            "planned_direct_over_direct_ms": -0.017525761127471923,
+            "planned_direct_over_flashinfer_ms": -0.06621503591537475,
+            "planned_direct_per_row_us": 4.0749600529670715,
+            "planned_direct_seed_only_ms": 0.03259968042373657,
+            "planned_direct_speedup_vs_flashinfer": 3.031155982350124,
+            "product_wrapper_ms": 0.045252480506896973,
+            "product_wrapper_over_flashinfer_ms": -0.05356223583221436,
+            "product_wrapper_per_row_us": 5.656560063362122,
+            "product_wrapper_speedup_vs_flashinfer": 2.183630935414709,
+            "service_ms": 0.035183999538421634,
+            "service_over_direct_ms": -0.014941442012786861,
+            "service_over_flashinfer_ms": -0.0636307168006897,
+            "service_per_row_us": 4.397999942302704,
+            "service_speedup_vs_flashinfer": 2.808512893231586,
+            "wrapper_over_direct_ms": -0.005969920158386231
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "29": {
+      "capture": {
+        "layer_id": 29,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.060546875
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.05700812116265297
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.05700812116265297
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.05700812116265297
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.05700812116265297
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.03594239950180054,
+            "direct_speedup_vs_flashinfer": 1.547079782969997,
+            "flashinfer_batch_tc_exact_ms": 0.0556057596206665,
+            "flashinfer_per_row_us": 13.901439905166626,
+            "forced_wrapper_per_row_us": 11.511679887771606,
+            "forced_wrapper_seed_only_ms": 0.046046719551086426,
+            "forced_wrapper_speedup_vs_flashinfer": 1.207594377249281,
+            "planned_direct_over_direct_ms": -0.0031103992462158184,
+            "planned_direct_over_flashinfer_ms": -0.022773759365081782,
+            "planned_direct_per_row_us": 8.20800006389618,
+            "planned_direct_seed_only_ms": 0.03283200025558472,
+            "planned_direct_speedup_vs_flashinfer": 1.693645199433378,
+            "product_wrapper_ms": 0.04799744129180908,
+            "product_wrapper_over_flashinfer_ms": -0.007608318328857423,
+            "product_wrapper_per_row_us": 11.99936032295227,
+            "product_wrapper_speedup_vs_flashinfer": 1.1585150817228211,
+            "service_ms": 0.035486719608306884,
+            "service_over_direct_ms": -0.00045567989349365456,
+            "service_over_flashinfer_ms": -0.020119040012359618,
+            "service_per_row_us": 8.871679902076721,
+            "service_speedup_vs_flashinfer": 1.5669456133006463,
+            "wrapper_over_direct_ms": 0.010104320049285888
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.060546875
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.057006798684597015
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.057006798684597015
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.057006798684597015
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 2.798828125,
+              "mean_abs_error": 0.057006798684597015
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.05403520107269287,
+            "direct_speedup_vs_flashinfer": 1.818062349612862,
+            "flashinfer_batch_tc_exact_ms": 0.09823936462402344,
+            "flashinfer_per_row_us": 12.27992057800293,
+            "forced_wrapper_per_row_us": 5.893440246582031,
+            "forced_wrapper_seed_only_ms": 0.04714752197265625,
+            "forced_wrapper_speedup_vs_flashinfer": 2.083659130187128,
+            "planned_direct_over_direct_ms": -0.021632001399993897,
+            "planned_direct_over_flashinfer_ms": -0.06583616495132447,
+            "planned_direct_per_row_us": 4.050399959087372,
+            "planned_direct_seed_only_ms": 0.032403199672698973,
+            "planned_direct_speedup_vs_flashinfer": 3.0317797506520363,
+            "product_wrapper_ms": 0.04730368137359619,
+            "product_wrapper_over_flashinfer_ms": -0.05093568325042725,
+            "product_wrapper_per_row_us": 5.912960171699524,
+            "product_wrapper_speedup_vs_flashinfer": 2.0767805331713225,
+            "service_ms": 0.03492032051086426,
+            "service_over_direct_ms": -0.019114880561828612,
+            "service_over_flashinfer_ms": -0.06331904411315918,
+            "service_per_row_us": 4.365040063858032,
+            "service_speedup_vs_flashinfer": 2.8132434979644483,
+            "wrapper_over_direct_ms": -0.006887679100036619
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    },
+    "35": {
+      "capture": {
+        "layer_id": 35,
+        "metadata_json": "/tmp/streamattn_wrapper_threshold_qkv/metadata.json",
+        "prompt_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "row_count": 8
+      },
+      "entries": [
+        {
+          "batch": 4,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.14697265625
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174887299537659
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174887299537659
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174887299537659
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174887299537659
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.031385600566864014,
+            "direct_speedup_vs_flashinfer": 1.7647837770599148,
+            "flashinfer_batch_tc_exact_ms": 0.05538879871368408,
+            "flashinfer_per_row_us": 13.84719967842102,
+            "forced_wrapper_per_row_us": 10.104000568389893,
+            "forced_wrapper_seed_only_ms": 0.04041600227355957,
+            "forced_wrapper_speedup_vs_flashinfer": 1.3704670328049693,
+            "planned_direct_over_direct_ms": -0.00011136054992675476,
+            "planned_direct_over_flashinfer_ms": -0.02411455869674682,
+            "planned_direct_per_row_us": 7.818560004234315,
+            "planned_direct_seed_only_ms": 0.03127424001693726,
+            "planned_direct_speedup_vs_flashinfer": 1.771067776025478,
+            "product_wrapper_ms": 0.045450239181518554,
+            "product_wrapper_over_flashinfer_ms": -0.009938559532165527,
+            "product_wrapper_per_row_us": 11.362559795379639,
+            "product_wrapper_speedup_vs_flashinfer": 1.218669025975266,
+            "service_ms": 0.03357248067855835,
+            "service_over_direct_ms": 0.0021868801116943365,
+            "service_over_flashinfer_ms": -0.02181631803512573,
+            "service_per_row_us": 8.393120169639587,
+            "service_speedup_vs_flashinfer": 1.6498274060831943,
+            "wrapper_over_direct_ms": 0.009030401706695557
+          }
+        },
+        {
+          "batch": 8,
+          "decision": {
+            "direct_seed_beats_flashinfer": true,
+            "forced_wrapper_beats_flashinfer": true,
+            "planned_direct_beats_flashinfer": true,
+            "product_route_uses_seed_only": true,
+            "product_wrapper_beats_flashinfer": true,
+            "service_beats_flashinfer": true
+          },
+          "diagnostics": {
+            "planned_direct_mutation_changed_output": true,
+            "planned_direct_mutation_max_change": 0.14697265625
+          },
+          "forced_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "planned_direct_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "product_route": {
+            "backend": "gate0_seed_only_batched",
+            "min_batch": 4,
+            "reason": "calibrated_gate0_seed_only_batched_policy"
+          },
+          "product_wrapper_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 61
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "prompt_ids": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "quality": {
+            "planned_direct_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "planned_direct_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174681663513184
+            },
+            "product_wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174681663513184
+            },
+            "service_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "service_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174681663513184
+            },
+            "wrapper_vs_direct_seed": {
+              "max_abs_error": 0.0,
+              "mean_abs_error": 0.0
+            },
+            "wrapper_vs_flashinfer_exact": {
+              "max_abs_error": 1.181640625,
+              "mean_abs_error": 0.08174681663513184
+            }
+          },
+          "service_route": {
+            "backend_used": "gate0_seed_only_batched",
+            "fallback_reason": null,
+            "plan_reason": "planned_direct_seed_only",
+            "runtime_counters": {
+              "backend_counts": {
+                "gate0_seed_only_batched": 1
+              },
+              "fallback_reasons": {}
+            }
+          },
+          "shape": {
+            "dim": 128,
+            "group_size": 8,
+            "kv_len": 32768,
+            "q_heads": 16,
+            "query_len": 1,
+            "true_kv_heads": 2
+          },
+          "timing": {
+            "direct_seed_only_ms": 0.05013631820678711,
+            "direct_speedup_vs_flashinfer": 1.964117033219749,
+            "flashinfer_batch_tc_exact_ms": 0.09847359657287598,
+            "flashinfer_per_row_us": 12.309199571609497,
+            "forced_wrapper_per_row_us": 5.409359931945801,
+            "forced_wrapper_seed_only_ms": 0.043274879455566406,
+            "forced_wrapper_speedup_vs_flashinfer": 2.2755371664058885,
+            "planned_direct_over_direct_ms": -0.018850557804107666,
+            "planned_direct_over_flashinfer_ms": -0.06718783617019654,
+            "planned_direct_per_row_us": 3.91072005033493,
+            "planned_direct_seed_only_ms": 0.03128576040267944,
+            "planned_direct_speedup_vs_flashinfer": 3.1475532416479894,
+            "product_wrapper_ms": 0.04532671928405762,
+            "product_wrapper_over_flashinfer_ms": -0.05314687728881836,
+            "product_wrapper_per_row_us": 5.665839910507202,
+            "product_wrapper_speedup_vs_flashinfer": 2.172528657010287,
+            "service_ms": 0.03337215900421143,
+            "service_over_direct_ms": -0.01676415920257568,
+            "service_over_flashinfer_ms": -0.06510143756866454,
+            "service_per_row_us": 4.171519875526428,
+            "service_speedup_vs_flashinfer": 2.950770927360409,
+            "wrapper_over_direct_ms": -0.006861438751220701
+          }
+        }
+      ],
+      "policy": {
+        "block_order": "recent_first",
+        "block_size": 32,
+        "expected_dense_ms": 0.05698,
+        "expected_seed_only_ms": 0.03559,
+        "expected_speedup_vs_dense": 1.6,
+        "forced_min_batch": 1,
+        "middle_seed_blocks": 8,
+        "mode": "all_seed_only",
+        "policy_id": "ad_hoc_seed_only_threshold",
+        "product_min_batch": 4,
+        "recent_blocks": 2,
+        "sink_blocks": 2
+      },
+      "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold.v1",
+      "thresholds": {
+        "first_direct_seed_beats_flashinfer_batch": 4,
+        "first_forced_wrapper_beats_flashinfer_batch": 4,
+        "first_planned_direct_beats_flashinfer_batch": 4,
+        "first_product_route_seed_only_batch": 4,
+        "first_product_wrapper_beats_flashinfer_batch": 4,
+        "first_service_beats_flashinfer_batch": 4
+      }
+    }
+  },
+  "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold_layers.v1"
+}

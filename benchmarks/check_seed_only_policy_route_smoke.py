@@ -44,6 +44,16 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qwen25_05b_l6_32k_seed_only_batched",
         "qwen25_05b_l8_32k_seed_only_batched",
         "qwen25_05b_l18_32k_seed_only_batched",
+        "qwen25_15b_l0_32k_seed_only_batched",
+        "qwen25_15b_l3_32k_seed_only_batched",
+        "qwen25_3b_l0_32k_seed_only_batched",
+        "qwen25_3b_l14_32k_seed_only_batched",
+        "qwen25_3b_l16_32k_seed_only_batched",
+        "qwen25_3b_l24_32k_seed_only_batched",
+        "qwen25_3b_l26_32k_seed_only_batched",
+        "qwen25_3b_l27_32k_seed_only_batched",
+        "qwen25_3b_l29_32k_seed_only_batched",
+        "qwen25_3b_l35_32k_seed_only_batched",
     }
     green = [entry for entry in policies if entry.get("status") == "green"]
 

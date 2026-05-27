@@ -138,5 +138,5 @@ package Qwen1.5B B4 policies for L0 and L3
 
 keep B1/B2 on exact-native for product routing
 
-run Qwen2.5-3B 32K/B4 policy pipeline next
+Qwen2.5-3B 32K/B4 follow-up is now tracked in docs/qwen25_3b_32k_b4_seed_policy.md
 ```

@@ -1,0 +1,521 @@
+{
+  "artifacts": {
+    "closed_loop": {
+      "0": "artifacts/gate0/seed_only_qwen25_3b_l0_b4_closed_loop_h100.json",
+      "14": "artifacts/gate0/seed_only_qwen25_3b_l14_b4_closed_loop_h100.json",
+      "16": "artifacts/gate0/seed_only_qwen25_3b_l16_b4_closed_loop_h100.json",
+      "18": "artifacts/gate0/seed_only_qwen25_3b_l18_b4_closed_loop_h100.json",
+      "2": "artifacts/gate0/seed_only_qwen25_3b_l2_b4_closed_loop_h100.json",
+      "24": "artifacts/gate0/seed_only_qwen25_3b_l24_b4_closed_loop_h100.json",
+      "26": "artifacts/gate0/seed_only_qwen25_3b_l26_b4_closed_loop_h100.json",
+      "27": "artifacts/gate0/seed_only_qwen25_3b_l27_b4_closed_loop_h100.json",
+      "29": "artifacts/gate0/seed_only_qwen25_3b_l29_b4_closed_loop_h100.json",
+      "35": "artifacts/gate0/seed_only_qwen25_3b_l35_b4_closed_loop_h100.json"
+    },
+    "compiled": "artifacts/gate0/seed_only_qwen25_3b_32k_b4_compiled_policy_h100.json",
+    "sweep": "artifacts/gate0/seed_only_qwen25_3b_32k_b4_layer_sweep_h100.json"
+  },
+  "candidate_layers": [
+    0,
+    2,
+    14,
+    16,
+    18,
+    24,
+    26,
+    27,
+    29,
+    35
+  ],
+  "closed_loop_rows": [
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 3.184352317475714e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 0,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 3.184352317475714e-05,
+      "teacher_forced_kl_max": 3.184352317475714e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 6.7088903961121105e-06,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 2,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 6.7088903961121105e-06,
+      "teacher_forced_kl_max": 6.7088903961121105e-06,
+      "top5_overlap_min": 3
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 1.4714153621753212e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 14,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 1.4714153621753212e-05,
+      "teacher_forced_kl_max": 1.4714153621753212e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 3.6794590414501727e-06,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 16,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 3.6794590414501727e-06,
+      "teacher_forced_kl_max": 3.6794590414501727e-06,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 0.00013356034469325095,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 18,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 0.00013356034469325095,
+      "teacher_forced_kl_max": 0.00013356034469325095,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 4.9462301831226796e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 24,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 4.9462301831226796e-05,
+      "teacher_forced_kl_max": 4.9462301831226796e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 1.5488052667933516e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 26,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 1.5488052667933516e-05,
+      "teacher_forced_kl_max": 1.5488052667933516e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 6.33399176876992e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 27,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 6.33399176876992e-05,
+      "teacher_forced_kl_max": 6.33399176876992e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 9.502372267888859e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 29,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 9.502372267888859e-05,
+      "teacher_forced_kl_max": 9.502372267888859e-05,
+      "top5_overlap_min": 4
+    },
+    {
+      "greedy_diverged_rows": 0,
+      "greedy_kl_max": 1.078472996596247e-05,
+      "greedy_sequence_exact_match_rate": 1.0,
+      "layer_id": 35,
+      "sample_sequence_exact_match_rate": 1.0,
+      "sample_token_changed_count": 0,
+      "sampling_kl_max": 1.078472996596247e-05,
+      "teacher_forced_kl_max": 1.078472996596247e-05,
+      "top5_overlap_min": 4
+    }
+  ],
+  "compiled_policies": [
+    {
+      "closed_loop_kl_max": 3.184352317475714e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 0,
+      "max_logit_delta_budget": 4.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l0_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l0_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l0_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l0_b4_closed_loop_h100.json",
+      "sweep_kl_max": 5.910175968892872e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 1.4714153621753212e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 14,
+      "max_logit_delta_budget": 4.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l14_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l14_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l14_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l14_b4_closed_loop_h100.json",
+      "sweep_kl_max": 2.8751303034368902e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 3.6794590414501727e-06,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 16,
+      "max_logit_delta_budget": 4.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l16_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l16_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l16_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l16_b4_closed_loop_h100.json",
+      "sweep_kl_max": 1.0990518603648525e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 4.9462301831226796e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 24,
+      "max_logit_delta_budget": 2.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l24_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l24_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l24_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l24_b4_closed_loop_h100.json",
+      "sweep_kl_max": 3.181309512001462e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 1.5488052667933516e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 26,
+      "max_logit_delta_budget": 2.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l26_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l26_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l26_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l26_b4_closed_loop_h100.json",
+      "sweep_kl_max": 1.822325066314079e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 6.33399176876992e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 27,
+      "max_logit_delta_budget": 2.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l27_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l27_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l27_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l27_b4_closed_loop_h100.json",
+      "sweep_kl_max": 3.6674817238235846e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 9.502372267888859e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 29,
+      "max_logit_delta_budget": 4.0,
+      "max_logprob_delta_budget": 0.002,
+      "name": "qwen25_3b_l29_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l29_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l29_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l29_b4_closed_loop_h100.json",
+      "sweep_kl_max": 9.726555435918272e-05,
+      "sweep_top5_overlap_min": 4
+    },
+    {
+      "closed_loop_kl_max": 1.078472996596247e-05,
+      "closed_loop_top5_overlap_min": 4,
+      "layer_id": 35,
+      "max_logit_delta_budget": 1.0,
+      "max_logprob_delta_budget": 0.001,
+      "name": "qwen25_3b_l35_32k_seed_only_batched",
+      "path": "policies/qwen25_3b_l35_32k_seed_only_batched.json",
+      "policy_id": "qwen25_3b_l35_32k_fp16_b4_seed_only_v1",
+      "rollout_artifact": "artifacts/gate0/seed_only_qwen25_3b_l35_b4_closed_loop_h100.json",
+      "sweep_kl_max": 1.7186397599289194e-05,
+      "sweep_top5_overlap_min": 4
+    }
+  ],
+  "green_layers": [
+    0,
+    14,
+    16,
+    24,
+    26,
+    27,
+    29,
+    35
+  ],
+  "layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35
+  ],
+  "model": "Qwen/Qwen2.5-3B-Instruct",
+  "model_slug": "qwen25_3b",
+  "rejected_layers": [
+    {
+      "layer_id": 1,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 2,
+      "reasons": [
+        "closed_loop_gate_failed"
+      ]
+    },
+    {
+      "layer_id": 3,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 4,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 5,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 6,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 7,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 8,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 9,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 10,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 11,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 12,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 13,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 15,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 17,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 18,
+      "reasons": [
+        "closed_loop_gate_failed"
+      ]
+    },
+    {
+      "layer_id": 19,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 20,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 21,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 22,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 23,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 25,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 28,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 30,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 31,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 32,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 33,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    },
+    {
+      "layer_id": 34,
+      "reasons": [
+        "sweep_distribution_gate_failed",
+        "sweep_summary_failed",
+        "missing_closed_loop_artifact"
+      ]
+    }
+  ],
+  "schema": "streamattn.seed_policy_modal_pipeline.v1"
+}

@@ -117,6 +117,10 @@ def _run(**kwargs) -> dict[str, Any]:
         "".join(json.dumps({"prompt": prompt}) + "\n" for prompt in prompts),
         encoding="utf-8",
     )
+    layers = str(kwargs.get("layers") or kwargs["layer_id"])
+    layer_ids = [int(part.strip()) for part in layers.split(",") if part.strip()]
+    if not layer_ids:
+        raise ValueError("layers must contain at least one layer id")
     _json_from_cmd(
         [
             "python",
@@ -128,7 +132,7 @@ def _run(**kwargs) -> dict[str, Any]:
             "--max-prompts",
             str(len(prompts)),
             "--layers",
-            str(kwargs["layer_id"]),
+            layers,
             "--device",
             "cuda",
             "--dtype",
@@ -150,41 +154,53 @@ def _run(**kwargs) -> dict[str, Any]:
         env=env,
         tail=2500,
     )
-    cmd = [
-        "python",
-        "/root/StreamAttn/benchmarks/profile_seed_only_wrapper_batch_threshold.py",
-        "--metadata-json",
-        capture_json,
-        "--layer-id",
-        str(kwargs["layer_id"]),
-        "--batch-sizes",
-        kwargs["batch_sizes"],
-        "--product-min-batch",
-        str(kwargs["product_min_batch"]),
-        "--forced-min-batch",
-        str(kwargs["forced_min_batch"]),
-        "--dtype",
-        kwargs["dtype"],
-        "--policy-json",
-        kwargs["policy_json"],
-        "--safety-margin",
-        str(kwargs["safety_margin"]),
-        "--flashinfer-backend",
-        kwargs["flashinfer_backend"],
-        "--page-size",
-        str(kwargs["page_size"]),
-        "--workspace-mb",
-        str(kwargs["workspace_mb"]),
-        "--warmup",
-        str(kwargs["warmup"]),
-        "--iters",
-        str(kwargs["iters"]),
-        "--flashinfer-tensor-cores",
-    ]
-    profile = _json_from_cmd(cmd, env=env, tail=5000)
+    profiles = {}
+    for layer_id in layer_ids:
+        policy_json = str((kwargs.get("policy_json_by_layer") or {}).get(str(layer_id), kwargs["policy_json"]))
+        cmd = [
+            "python",
+            "/root/StreamAttn/benchmarks/profile_seed_only_wrapper_batch_threshold.py",
+            "--metadata-json",
+            capture_json,
+            "--layer-id",
+            str(layer_id),
+            "--batch-sizes",
+            kwargs["batch_sizes"],
+            "--product-min-batch",
+            str(kwargs["product_min_batch"]),
+            "--forced-min-batch",
+            str(kwargs["forced_min_batch"]),
+            "--dtype",
+            kwargs["dtype"],
+            "--policy-json",
+            policy_json,
+            "--safety-margin",
+            str(kwargs["safety_margin"]),
+            "--flashinfer-backend",
+            kwargs["flashinfer_backend"],
+            "--page-size",
+            str(kwargs["page_size"]),
+            "--workspace-mb",
+            str(kwargs["workspace_mb"]),
+            "--warmup",
+            str(kwargs["warmup"]),
+            "--iters",
+            str(kwargs["iters"]),
+            "--flashinfer-tensor-cores",
+        ]
+        profiles[str(layer_id)] = _json_from_cmd(cmd, env=env, tail=5000)
+    if len(profiles) == 1:
+        profile = next(iter(profiles.values()))
+    else:
+        profile = {
+            "schema": "streamattn.gate0.seed_only_wrapper_batch_threshold_layers.v1",
+            "layers": layer_ids,
+            "profiles_by_layer": profiles,
+        }
     profile["capture_summary"] = {
         "prompt_kinds": prompt_kinds,
         "captured_rows": len(prompts),
+        "layers": layer_ids,
     }
     return profile
 
@@ -208,6 +224,7 @@ def main(
     ),
     prompt_repeat: int = 3000,
     layer_id: int = 8,
+    layers: str = "",
     max_seq: int = 32768,
     kv_len: int = 32768,
     dtype: str = "fp16",
@@ -231,6 +248,7 @@ def main(
         prompt_kinds=prompt_kinds,
         prompt_repeat=prompt_repeat,
         layer_id=layer_id,
+        layers=layers,
         max_seq=max_seq,
         kv_len=kv_len,
         dtype=dtype,
@@ -251,19 +269,29 @@ def main(
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text + "\n", encoding="utf-8")
-        summary = {
-            "schema": result.get("schema"),
-            "thresholds": result.get("thresholds"),
-            "entries": [
-                {
-                    "batch": entry.get("batch"),
-                    "product_route": entry.get("product_route"),
-                    "timing": entry.get("timing"),
-                    "decision": entry.get("decision"),
-                }
-                for entry in result.get("entries", [])
-            ],
-        }
+        if "profiles_by_layer" in result:
+            summary = {
+                "schema": result.get("schema"),
+                "layers": result.get("layers"),
+                "thresholds_by_layer": {
+                    layer: profile.get("thresholds")
+                    for layer, profile in result.get("profiles_by_layer", {}).items()
+                },
+            }
+        else:
+            summary = {
+                "schema": result.get("schema"),
+                "thresholds": result.get("thresholds"),
+                "entries": [
+                    {
+                        "batch": entry.get("batch"),
+                        "product_route": entry.get("product_route"),
+                        "timing": entry.get("timing"),
+                        "decision": entry.get("decision"),
+                    }
+                    for entry in result.get("entries", [])
+                ],
+            }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(text)

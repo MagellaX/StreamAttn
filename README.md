@@ -86,10 +86,12 @@ Validated seed-only cells are indexed by
 `stream_attention/policies/registry.json`. Use
 `list_packaged_gate0_seed_only_batched_policies()` or
 `find_packaged_gate0_seed_only_batched_policies(...)` to discover green routes
-before loading an artifact. Today the registry contains six green Qwen2.5-0.5B
-32K cells (L1, L2, L5, L6, L8, L18) and two green Qwen2.5-1.5B 32K cells
-(L0, L3). New frontier-model or additional-layer routes should enter through
-this registry only after their runtime and distribution-safety artifacts pass.
+before loading an artifact. Today the registry contains sixteen green
+Qwen-family 32K cells: six Qwen2.5-0.5B cells (L1, L2, L5, L6, L8, L18), two
+Qwen2.5-1.5B cells (L0, L3), and eight Qwen2.5-3B cells (L0, L14, L16, L24,
+L26, L27, L29, L35). New frontier-model or additional-layer routes should enter
+through this registry only after their runtime and distribution-safety artifacts
+pass.
 
 ```python
 from stream_attention import StreamAttnSeedOnlyDecodeService
@@ -199,6 +201,26 @@ modal run benchmarks/modal_compile_streamattn_seed_policy.py \
 The pipeline only runs closed-loop rollout for sweep-passing candidate layers.
 It writes the sweep, per-candidate rollout artifacts, compiled policy summary,
 and `seed_policy_pipeline_summary.json` into the output directory.
+
+Qwen2.5-3B is the current largest packaged Qwen-family expansion. The 32K/B4
+pipeline found ten candidate layers and packaged eight green layers: L0, L14,
+L16, L24, L26, L27, L29, and L35. The multi-layer threshold gate in
+`artifacts/gate0/qwen25_3b_32k_b4_runtime/threshold_layers_h100.json` confirms
+all eight cells are already profitable at B4 with the planned direct seed path,
+so these cells do not need the two-kernel split-seed path.
+
+To benchmark several validated layers against the same capture, pass `--layers`
+to the Modal threshold runner:
+
+```bash
+modal run benchmarks/modal_seed_only_wrapper_batch_threshold.py \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --layers 0,14,16,24,26,27,29,35 \
+  --kv-len 32768 \
+  --batch-sizes 4,8 \
+  --product-min-batch 4 \
+  --output-json artifacts/gate0/qwen25_3b_32k_b4_runtime/threshold_layers_h100.json
+```
 
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
 in that direction: it validates policy and tensor invariants once, binds fixed
