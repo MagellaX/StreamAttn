@@ -177,6 +177,19 @@ sample token changes:       0
 KL max:                     9.801686e-05
 ```
 
+Adding the isolated-green L29 layer at B8 gives only a tiny additional runtime
+gain and fails the strict KL gate:
+
+```text
+B8 all-8 dense model decode:      915.765754 ms total / 28.617680 ms per token
+B8 all-8 StreamAttn model decode: 892.425253 ms total / 27.888289 ms per token
+B8 all-8 speedup:                 1.026x
+
+top1 changes:                     0
+sample token changes:             0
+KL max:                           1.719481e-04  # fails 1e-4 gate
+```
+
 This is the first actual-model decode win: it is small, but it is not an
 isolated attention-call estimate. The route now patches real Qwen attention
 modules during `use_cache=True` generation, updates the HF cache, and preserves
@@ -186,6 +199,64 @@ The B4/B8 split is important. Selected attention calls are strongly positive at
 B4, but full-model decode includes MLPs, layer norms, Python/HF overhead, cache
 updates, and all non-routed layers. The strict bundle needs B8 before the
 attention savings are visible at total-model level.
+
+## Full-Model Decode Math
+
+Use the Amdahl-style model:
+
+```text
+S_total = 1 / ((1 - f) + f / S_region)
+```
+
+where:
+
+```text
+S_total  = measured full-model speedup
+S_region = local speedup of the routed attention region
+f        = effective fraction of full-model decode time accelerated by routing
+```
+
+Assuming routed attention is roughly `3x` faster locally, the B8 strict
+full-model result:
+
+```text
+S_total = 1.024378
+```
+
+implies:
+
+```text
+f = (1 - 1 / S_total) / (1 - 1 / 3)
+  = 0.0357
+  = 3.57% effective routed fraction
+```
+
+So the current strict bundle accelerates only about `3.6%` of total model decode
+time after all HF/model overheads are included. This explains why selected-layer
+attention speedups around `1.6x-3x` become only a `1.024x` full-model decode
+speedup.
+
+For the same assumed `3x` routed-region speedup, required effective routed
+fractions are:
+
+```text
+target full-model speedup 1.05x -> f >=  7.14%
+target full-model speedup 1.10x -> f >= 13.64%
+target full-model speedup 1.20x -> f >= 25.00%
+```
+
+The next route therefore needs either:
+
+```text
+more strict-green layers
+lower integrated model-runner overhead
+or a stronger local seed-only kernel speedup
+```
+
+The marginal L29 result says "just add the eighth green isolated layer" is not
+the right answer yet: it barely improves full-model timing and breaks strict
+KL. L29 needs either a safer layer-specific seed schedule or should stay out of
+the strict bundle.
 
 Decision:
 
@@ -203,4 +274,7 @@ do not build split-seed for these cells; direct seed is already profitable
 for actual model decode, route the strict bundle at B8+ first; keep B4 as an
 attention-kernel-positive but full-model-negative cell until either more layers
 are green or the integrated runner overhead is lower
+
+do not add L29 to the strict B8 actual-model route without retuning its seed
+schedule; the all-8 route is runtime-positive but strict-safety-negative
 ```
