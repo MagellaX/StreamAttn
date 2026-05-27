@@ -1,8 +1,10 @@
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
+    StreamAttnQwenAttentionModule,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
+    _parent_module_and_attr,
     apply_layer_seed_overrides,
     parse_layer_id_set,
     parse_layer_seed_overrides,
@@ -208,3 +210,44 @@ def test_native_kv_cache_can_attach_hf_layer_views():
     assert cache.layers[0].keys.data_ptr() == native.k[0, :, :, :5, :].data_ptr()
     assert torch.equal(cache.layers[0].keys[:, :, 4:5, :], k_new)
     assert torch.equal(cache.layers[0].values[:, :, 4:5, :], v_new)
+
+
+def test_parent_module_and_attr_resolves_nested_module():
+    import torch
+
+    root = torch.nn.Module()
+    root.model = torch.nn.Module()
+    root.model.layers = torch.nn.ModuleList([torch.nn.Module()])
+    root.model.layers[0].self_attn = torch.nn.Linear(2, 2)
+
+    parent, attr = _parent_module_and_attr(root, "model.layers.0.self_attn")
+
+    assert parent is root.model.layers[0]
+    assert attr == "self_attn"
+
+
+def test_streamattn_qwen_attention_module_delegates_patch():
+    import torch
+
+    class Original(torch.nn.Module):
+        layer_idx = 3
+        attention_type = "full_attention"
+
+    class Patch:
+        def __init__(self):
+            self.called = False
+
+        def forward(self, module, hidden_states, **kwargs):
+            self.called = True
+            assert module.layer_idx == 3
+            return hidden_states + 1, None
+
+    patch = Patch()
+    wrapper = StreamAttnQwenAttentionModule(Original(), patch)
+    hidden = torch.zeros((1, 1, 2))
+
+    out, weights = wrapper(hidden, position_embeddings=(hidden, hidden), attention_mask=None)
+
+    assert patch.called
+    assert weights is None
+    assert torch.equal(out, torch.ones_like(hidden))

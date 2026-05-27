@@ -716,3 +716,26 @@ the cache object stays semantically coherent without `DynamicCache.update` for
 routed layers. This passed strict safety, but the 32-step wall-clock result was
 not yet faster than dense. Treat it as the next native-cache research switch,
 not the product route.
+
+A second experimental switch replaces routed Qwen attention modules with a
+`StreamAttnQwenAttentionModule` wrapper instead of monkey-patching `forward`:
+
+```text
+--native-attention-module
+```
+
+H100 result with the stable layer-0 sync bridge:
+
+```text
+dense decode:      28.6824 ms/token
+StreamAttn decode: 25.5305 ms/token
+speedup:           1.123x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+KL max:            9.80e-05
+```
+
+This confirms module replacement is semantically sound, but it does not beat the
+best patched native-cache route yet (`1.144x`). The next backend step is deeper
+fusion inside the routed module, not just replacing the Python module object.

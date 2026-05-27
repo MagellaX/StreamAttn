@@ -636,6 +636,50 @@ class _SeedOnlyQwenDecodePatch:
         return attn_output, None
 
 
+class StreamAttnQwenAttentionModule(torch.nn.Module):
+    """Qwen attention replacement that routes decode through StreamAttn."""
+
+    def __init__(self, original_module: torch.nn.Module, patch: _SeedOnlyQwenDecodePatch):
+        super().__init__()
+        self.original_module = original_module
+        self.patch = patch
+
+    @property
+    def layer_idx(self):
+        return self.original_module.layer_idx
+
+    @property
+    def attention_type(self):
+        return getattr(self.original_module, "attention_type", "full_attention")
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        position_embeddings: tuple[torch.Tensor, torch.Tensor],
+        attention_mask=None,
+        past_key_value=None,
+        cache_position=None,
+        **kwargs,
+    ):
+        return self.patch.forward(
+            self.original_module,
+            hidden_states,
+            position_embeddings=position_embeddings,
+            attention_mask=attention_mask,
+            past_key_value=past_key_value,
+            cache_position=cache_position,
+            **kwargs,
+        )
+
+
+def _parent_module_and_attr(root: torch.nn.Module, module_name: str):
+    parts = module_name.split(".")
+    parent = root
+    for part in parts[:-1]:
+        parent = getattr(parent, part)
+    return parent, parts[-1]
+
+
 def _cache_summary(cache: Any) -> Dict[str, Any]:
     summary: Dict[str, Any] = {
         "is_none": cache is None,
@@ -678,14 +722,18 @@ def _patched_seed_only_decode_modules(
     profile_timing: bool = False,
     native_cache: Optional[StreamAttnNativeKVCache] = None,
     native_cache_hf_sync_layers: Optional[Set[int]] = None,
+    native_attention_module: bool = False,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
-    modules_by_layer = {int(layer_id): module for layer_id, _name, module in _attention_modules(model)}
+    modules_by_layer = {
+        int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
+    }
     patches: Dict[str, _SeedOnlyQwenDecodePatch] = {}
     originals = []
     for policy in bundle.policies:
-        module = modules_by_layer.get(int(policy.layer_id))
-        if module is None:
+        item = modules_by_layer.get(int(policy.layer_id))
+        if item is None:
             raise ValueError(f"model is missing layer {policy.layer_id}")
+        name, module = item
         patch = _SeedOnlyQwenDecodePatch(
             policy=policy,
             original_forward=module.forward,
@@ -693,14 +741,19 @@ def _patched_seed_only_decode_modules(
             native_cache=native_cache,
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
         )
-        originals.append((module, module.forward))
-        module.forward = types.MethodType(patch.forward, module)
+        if native_attention_module:
+            parent, attr = _parent_module_and_attr(model, name)
+            originals.append((parent, attr, module))
+            setattr(parent, attr, StreamAttnQwenAttentionModule(module, patch))
+        else:
+            originals.append((module, "forward", module.forward))
+            module.forward = types.MethodType(patch.forward, module)
         patches[str(policy.layer_id)] = patch
     try:
         yield patches
     finally:
-        for module, original in originals:
-            module.forward = original
+        for owner, attr, original in originals:
+            setattr(owner, attr, original)
 
 
 def _prefill(model, tokens: Dict[str, torch.Tensor]):
@@ -816,6 +869,7 @@ def _warmup_decode(
             bundle,
             native_cache=native_cache,
             native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
+            native_attention_module=args.native_attention_module,
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1020,6 +1074,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             profile_timing=args.profile_patch_timing,
             native_cache=native_cache,
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+            native_attention_module=args.native_attention_module,
         ) as patches:
             seed = _decode_loop(
                 model=model,
@@ -1063,6 +1118,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "layer_seed_overrides": layer_seed_overrides,
             "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
             "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
+            "native_attention_module": bool(args.native_attention_module),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1159,6 +1215,11 @@ def main() -> None:
             "Experimental: point HF DynamicCache routed-layer keys/values at native-cache views "
             "instead of using HF update calls for cache metadata."
         ),
+    )
+    parser.add_argument(
+        "--native-attention-module",
+        action="store_true",
+        help="Replace routed Qwen attention modules with StreamAttnQwenAttentionModule during decode.",
     )
     parser.add_argument(
         "--profile-patch-timing",
