@@ -639,3 +639,68 @@ then:
   replace past_key_value.update for routed layers
   rerun B8/B16 actual-model decode
 ```
+
+## Native Routed Cache V0
+
+The first native-cache integration is now implemented in the actual model
+decode runner:
+
+```text
+--native-routed-cache
+--native-cache-hf-sync-layers 0
+```
+
+This allocates a prefilled StreamAttn BHND cache for routed layers:
+
+```text
+K/V: [routed_layers, B, Hkv, max_len, D]
+```
+
+Routed seed-only layers read from that native cache and append into it directly.
+Layer 0 still calls the Hugging Face cache update path as a temporary metadata
+sync point, because the Qwen causal-mask path uses layer-0 cache length for
+mask sizing. Full native cache ownership should replace this sync later.
+
+Critical implementation details:
+
+```text
+1. the seed kernel is stride-aware, so native caches can use preallocated max_len
+2. native append uses a CPU-side decode-position counter, not cache_position.item()
+3. warmup and measured loops allocate the same native-cache capacity, so Triton
+   specialization compile cost is paid before timing
+```
+
+H100 result, Qwen2.5-3B strict 7-layer route, B8, 32K, fp16, 32 decode steps:
+
+```text
+dense decode:      29.3923 ms/token
+StreamAttn decode: 25.9638 ms/token
+speedup:           1.132x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.80e-05
+```
+
+Diagnostic patch timing with the fixed warmup capacity:
+
+```text
+routed patch time: 1.558 ms/decode step
+
+stage share of routed patch total:
+  cache_update: 37.17%
+  RoPE:         22.52%
+  QKV proj:     20.48%
+  seed kernel:  13.45%
+  output proj:   5.04%
+  layout:        1.34%
+```
+
+This is the first material actual-model decode speedup from the Qwen3B route.
+It also narrows the next systems target:
+
+```text
+remove the remaining layer-0 HF sync path
+then fuse/own RoPE + cache append + seed attention for routed layers
+```

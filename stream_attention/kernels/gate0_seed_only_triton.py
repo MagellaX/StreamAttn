@@ -317,6 +317,12 @@ if TRITON_AVAILABLE:
         V,
         Out,
         CachePosition,
+        K_STRIDE_B: tl.constexpr,
+        K_STRIDE_H: tl.constexpr,
+        K_STRIDE_N: tl.constexpr,
+        V_STRIDE_B: tl.constexpr,
+        V_STRIDE_H: tl.constexpr,
+        V_STRIDE_N: tl.constexpr,
         H: tl.constexpr,
         H_KV: tl.constexpr,
         GROUP_SIZE: tl.constexpr,
@@ -362,9 +368,9 @@ if TRITON_AVAILABLE:
             col_mask = tl.arange(0, TILE_N) < block_len_i
             k_tile = tl.load(
                 K
-                + off_b * H_KV * n * D
-                + off_kv_h * n * D
-                + offs_n[:, None] * D
+                + off_b * K_STRIDE_B
+                + off_kv_h * K_STRIDE_H
+                + offs_n[:, None] * K_STRIDE_N
                 + offs_d[None, :],
                 mask=col_mask[:, None],
                 other=0.0,
@@ -382,9 +388,9 @@ if TRITON_AVAILABLE:
             p = tl.where(qk > -float("inf"), p, 0.0)
             v_tile = tl.load(
                 V
-                + off_b * H_KV * n * D
-                + off_kv_h * n * D
-                + offs_n[:, None] * D
+                + off_b * V_STRIDE_B
+                + off_kv_h * V_STRIDE_H
+                + offs_n[:, None] * V_STRIDE_N
                 + offs_d[None, :],
                 mask=col_mask[:, None],
                 other=0.0,
@@ -1187,6 +1193,12 @@ def gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
         value,
         output,
         cache_position,
+        key.stride(0),
+        key.stride(1),
+        key.stride(2),
+        value.stride(0),
+        value.stride(1),
+        value.stride(2),
         H=heads,
         H_KV=kv_heads,
         GROUP_SIZE=group_size,

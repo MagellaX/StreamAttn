@@ -152,6 +152,12 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.extend(["--layer-seed-overrides", kwargs["layer_seed_overrides"]])
     if kwargs["profile_patch_timing"]:
         cmd.append("--profile-patch-timing")
+    if kwargs["explicit_cache_position"]:
+        cmd.append("--explicit-cache-position")
+    if kwargs["native_routed_cache"]:
+        cmd.append("--native-routed-cache")
+    if kwargs["native_cache_hf_sync_layers"]:
+        cmd.extend(["--native-cache-hf-sync-layers", kwargs["native_cache_hf_sync_layers"]])
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -198,6 +204,9 @@ def main(
     num_warps: int = 4,
     num_stages: int = 2,
     profile_patch_timing: bool = False,
+    explicit_cache_position: bool = False,
+    native_routed_cache: bool = False,
+    native_cache_hf_sync_layers: str = "",
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -233,6 +242,9 @@ def main(
         num_warps=num_warps,
         num_stages=num_stages,
         profile_patch_timing=profile_patch_timing,
+        explicit_cache_position=explicit_cache_position,
+        native_routed_cache=native_routed_cache,
+        native_cache_hf_sync_layers=native_cache_hf_sync_layers,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:

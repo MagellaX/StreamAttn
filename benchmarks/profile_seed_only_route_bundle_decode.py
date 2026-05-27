@@ -23,7 +23,7 @@ from collections import Counter
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set
 
 import torch
 import torch.nn.functional as F
@@ -122,6 +122,21 @@ def parse_layer_seed_overrides(text: str) -> Dict[int, Dict[str, int]]:
     return overrides
 
 
+def parse_layer_id_set(text: str) -> Set[int]:
+    layers: Set[int] = set()
+    if not text.strip():
+        return layers
+    for part in text.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        layer_id = int(part)
+        if layer_id < 0:
+            raise ValueError("layer ids must be non-negative")
+        layers.add(layer_id)
+    return layers
+
+
 def _policy_seed_config(policy) -> Dict[str, Any]:
     return {
         "layer_id": int(policy.layer_id),
@@ -185,6 +200,111 @@ _PATCH_TIMING_STAGES = (
     ("seed_kernel_ms", "after_layout", "after_seed_kernel"),
     ("output_proj_ms", "after_seed_kernel", "end"),
 )
+
+
+class StreamAttnNativeKVCache:
+    """Preallocated BHND K/V cache for routed seed-only decode layers."""
+
+    def __init__(
+        self,
+        *,
+        layer_ids: Sequence[int],
+        k: torch.Tensor,
+        v: torch.Tensor,
+        prefill_len: int,
+    ):
+        if k.shape != v.shape:
+            raise ValueError("native K/V cache tensors must have matching shapes")
+        if k.dim() != 5:
+            raise ValueError("native K/V cache must be [layers,batch,kv_heads,max_len,dim]")
+        self.layer_ids = [int(layer_id) for layer_id in layer_ids]
+        self.layer_to_index = {layer_id: idx for idx, layer_id in enumerate(self.layer_ids)}
+        self.k = k
+        self.v = v
+        self.prefill_len = int(prefill_len)
+
+    @property
+    def max_len(self) -> int:
+        return int(self.k.shape[3])
+
+    def append(self, layer_id: int, key_states: torch.Tensor, value_states: torch.Tensor, cache_position: Any):
+        row = self.layer_to_index[int(layer_id)]
+        if isinstance(cache_position, int):
+            pos = cache_position
+        else:
+            pos = int(cache_position.reshape(-1)[0].item())
+        if pos < 0 or pos >= self.max_len:
+            raise ValueError(f"cache position {pos} exceeds native cache max_len {self.max_len}")
+        self.k[row, :, :, pos : pos + 1, :].copy_(key_states)
+        self.v[row, :, :, pos : pos + 1, :].copy_(value_states)
+        return self.k[row], self.v[row]
+
+    def layer_cache(self, layer_id: int):
+        row = self.layer_to_index[int(layer_id)]
+        return self.k[row], self.v[row]
+
+    def summary(self) -> Dict[str, Any]:
+        return {
+            "enabled": True,
+            "layer_ids": self.layer_ids,
+            "shape": list(self.k.shape),
+            "dtype": str(self.k.dtype).replace("torch.", ""),
+            "device": str(self.k.device),
+            "prefill_len": self.prefill_len,
+            "max_len": self.max_len,
+        }
+
+
+def _cache_layer_tensors(cache: Any, layer_id: int):
+    layer = None
+    layers = getattr(cache, "layers", None)
+    if layers is not None:
+        try:
+            layer = layers[int(layer_id)]
+        except Exception as exc:
+            raise ValueError(f"could not read HF cache layer {layer_id} from cache.layers") from exc
+    else:
+        try:
+            layer = cache[int(layer_id)]
+        except Exception as exc:
+            raise ValueError(f"could not read HF cache layer {layer_id}") from exc
+    if isinstance(layer, (tuple, list)) and len(layer) >= 2:
+        return layer[0], layer[1]
+    keys = getattr(layer, "keys", None)
+    values = getattr(layer, "values", None)
+    if keys is not None and values is not None:
+        return keys, values
+    raise ValueError(f"unsupported HF cache layer object for layer {layer_id}: {type(layer).__name__}")
+
+
+def _native_cache_from_hf_cache(cache: Any, bundle, *, max_len: int) -> StreamAttnNativeKVCache:
+    if not bundle.policies:
+        raise ValueError("route bundle is empty")
+    first_k, first_v = _cache_layer_tensors(cache, int(bundle.policies[0].layer_id))
+    if first_k.dim() != 4:
+        raise ValueError("expected HF cache tensors shaped [batch,kv_heads,seq,dim]")
+    layer_count = len(bundle.policies)
+    batch, kv_heads, prefill_len, dim = first_k.shape
+    if max_len < prefill_len:
+        raise ValueError(f"native cache max_len {max_len} is smaller than prefill_len {prefill_len}")
+    k_native = torch.empty(
+        (layer_count, batch, kv_heads, max_len, dim),
+        device=first_k.device,
+        dtype=first_k.dtype,
+    )
+    v_native = torch.empty_like(k_native)
+    for row, policy in enumerate(bundle.policies):
+        k_layer, v_layer = _cache_layer_tensors(cache, int(policy.layer_id))
+        if k_layer.shape != first_k.shape or v_layer.shape != first_v.shape:
+            raise ValueError(f"HF cache shape mismatch for routed layer {policy.layer_id}")
+        k_native[row, :, :, :prefill_len, :].copy_(k_layer)
+        v_native[row, :, :, :prefill_len, :].copy_(v_layer)
+    return StreamAttnNativeKVCache(
+        layer_ids=[int(policy.layer_id) for policy in bundle.policies],
+        k=k_native,
+        v=v_native,
+        prefill_len=int(prefill_len),
+    )
 
 
 def _percentile(values: Sequence[float], q: float) -> float:
@@ -287,12 +407,25 @@ def _summarize_logit_steps(step_rows: Sequence[Dict[str, Any]], *, batch_size: i
 
 
 class _SeedOnlyQwenDecodePatch:
-    def __init__(self, *, policy, original_forward, profile_timing: bool = False):
+    def __init__(
+        self,
+        *,
+        policy,
+        original_forward,
+        profile_timing: bool = False,
+        native_cache: Optional[StreamAttnNativeKVCache] = None,
+        native_cache_hf_sync_layers: Optional[Set[int]] = None,
+    ):
         self.policy = policy
         self.original_forward = original_forward
         self.profile_timing = profile_timing
+        self.native_cache = native_cache
+        self.native_cache_hf_sync_layers = native_cache_hf_sync_layers or set()
         self.call_count = 0
         self.seed_call_count = 0
+        self.native_cache_update_count = 0
+        self.hf_sync_update_count = 0
+        self._native_next_pos = native_cache.prefill_len if native_cache is not None else 0
         self.fallback_reasons: Counter[str] = Counter()
         self.fallback_samples: List[Dict[str, Any]] = []
         self._timing_event_rows: List[Dict[str, torch.cuda.Event]] = []
@@ -380,12 +513,31 @@ class _SeedOnlyQwenDecodePatch:
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
         self._mark(timing_events, "after_rope")
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-        key_states, value_states = past_key_value.update(
-            key_states,
-            value_states,
-            module.layer_idx,
-            cache_kwargs,
-        )
+        if self.native_cache is None:
+            key_states, value_states = past_key_value.update(
+                key_states,
+                value_states,
+                module.layer_idx,
+                cache_kwargs,
+            )
+        else:
+            if int(module.layer_idx) in self.native_cache_hf_sync_layers:
+                past_key_value.update(
+                    key_states,
+                    value_states,
+                    module.layer_idx,
+                    cache_kwargs,
+                )
+                self.hf_sync_update_count += 1
+            native_pos = self._native_next_pos
+            key_states, value_states = self.native_cache.append(
+                int(module.layer_idx),
+                key_states,
+                value_states,
+                native_pos,
+            )
+            self._native_next_pos += 1
+            self.native_cache_update_count += 1
         self._mark(timing_events, "after_cache_update")
 
         q = query_states.transpose(1, 2).contiguous()
@@ -457,6 +609,8 @@ def _patched_seed_only_decode_modules(
     bundle,
     *,
     profile_timing: bool = False,
+    native_cache: Optional[StreamAttnNativeKVCache] = None,
+    native_cache_hf_sync_layers: Optional[Set[int]] = None,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {int(layer_id): module for layer_id, _name, module in _attention_modules(model)}
     patches: Dict[str, _SeedOnlyQwenDecodePatch] = {}
@@ -469,6 +623,8 @@ def _patched_seed_only_decode_modules(
             policy=policy,
             original_forward=module.forward,
             profile_timing=profile_timing,
+            native_cache=native_cache,
+            native_cache_hf_sync_layers=native_cache_hf_sync_layers,
         )
         originals.append((module, module.forward))
         module.forward = types.MethodType(patch.forward, module)
@@ -487,8 +643,14 @@ def _prefill(model, tokens: Dict[str, torch.Tensor]):
 
 def _args_with_steps(args: argparse.Namespace, steps: int) -> argparse.Namespace:
     clone = argparse.Namespace(**vars(args))
+    clone.native_cache_capacity_steps = max(int(args.steps), int(steps))
     clone.steps = int(steps)
     return clone
+
+
+def _native_cache_max_len(tokens: Dict[str, torch.Tensor], args: argparse.Namespace) -> int:
+    capacity_steps = int(getattr(args, "native_cache_capacity_steps", args.steps))
+    return int(tokens["input_ids"].shape[1]) + max(int(args.steps), capacity_steps) + 1
 
 
 def _decode_loop(
@@ -515,13 +677,20 @@ def _decode_loop(
             if fixed_input_tokens is not None:
                 input_token = fixed_input_tokens[step]
             input_tokens.append(input_token.detach().clone())
-            out = model(
-                input_ids=input_token,
-                attention_mask=_append_decode_attention_mask(mask, input_token),
-                past_key_values=past_key_values,
-                use_cache=True,
-                logits_to_keep=1,
-            )
+            model_kwargs = {
+                "input_ids": input_token,
+                "attention_mask": _append_decode_attention_mask(mask, input_token),
+                "past_key_values": past_key_values,
+                "use_cache": True,
+                "logits_to_keep": 1,
+            }
+            if args.explicit_cache_position or args.native_routed_cache:
+                model_kwargs["cache_position"] = torch.tensor(
+                    [mask.shape[1]],
+                    device=input_token.device,
+                    dtype=torch.long,
+                )
+            out = model(**model_kwargs)
             past_key_values = out.past_key_values
             logits = out.logits[:, -1, :].detach()
             logits_by_step.append(logits)
@@ -564,7 +733,19 @@ def _warmup_decode(
             args=warmup_args,
         )
         return {"decode": result, "patch_counts": None}
-    with _patched_seed_only_decode_modules(model, bundle) as patches:
+    native_cache = None
+    if args.native_routed_cache:
+        native_cache = _native_cache_from_hf_cache(
+            prefill.past_key_values,
+            bundle,
+            max_len=_native_cache_max_len(tokens, warmup_args),
+        )
+    with _patched_seed_only_decode_modules(
+        model,
+        bundle,
+        native_cache=native_cache,
+        native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
+    ) as patches:
         result = _decode_loop(
             model=model,
             past_key_values=prefill.past_key_values,
@@ -578,6 +759,8 @@ def _warmup_decode(
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "native_cache_update_calls": patch.native_cache_update_count,
+            "hf_sync_update_calls": patch.hf_sync_update_count,
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -682,6 +865,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     dtype = _dtype(args.dtype)
     bundle = _route_bundle_from_args(args)
     bundle, layer_seed_overrides = apply_layer_seed_overrides(bundle, args.layer_seed_overrides)
+    native_cache_hf_sync_layers = parse_layer_id_set(args.native_cache_hf_sync_layers)
     prompt_rows = _prompts_from_args(args)
 
     AutoModelForCausalLM, AutoTokenizer = _import_transformers()
@@ -749,11 +933,20 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     print("[route-bundle-decode] dense prefill for StreamAttn cache", flush=True)
     seed_prefill = _prefill(model, tokens)
     seed_prefill_cache = _cache_summary(seed_prefill.past_key_values)
+    native_cache = None
+    if args.native_routed_cache:
+        native_cache = _native_cache_from_hf_cache(
+            seed_prefill.past_key_values,
+            bundle,
+            max_len=_native_cache_max_len(tokens, args),
+        )
     print("[route-bundle-decode] timing StreamAttn seed-only bundle decode", flush=True)
     with _patched_seed_only_decode_modules(
         model,
         bundle,
         profile_timing=args.profile_patch_timing,
+        native_cache=native_cache,
+        native_cache_hf_sync_layers=native_cache_hf_sync_layers,
     ) as patches:
         seed = _decode_loop(
             model=model,
@@ -774,6 +967,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "native_cache_update_calls": patch.native_cache_update_count,
+            "hf_sync_update_calls": patch.hf_sync_update_count,
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -793,6 +988,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "layers": bundle.layer_ids,
             "seed_configs": [_policy_seed_config(policy) for policy in bundle.policies],
             "layer_seed_overrides": layer_seed_overrides,
+            "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
+            "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
             "batch": len(prompt_rows),
@@ -863,6 +1060,24 @@ def main() -> None:
     parser.add_argument("--max-logprob-delta", type=float, default=2.0e-3)
     parser.add_argument("--use-safetensors", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--trust-remote-code", action="store_true")
+    parser.add_argument(
+        "--explicit-cache-position",
+        action="store_true",
+        help="Pass cache_position explicitly during decode instead of relying on HF cache length.",
+    )
+    parser.add_argument(
+        "--native-routed-cache",
+        action="store_true",
+        help="Use preallocated StreamAttn BHND cache for routed layers and bypass HF cache update there.",
+    )
+    parser.add_argument(
+        "--native-cache-hf-sync-layers",
+        default="",
+        help=(
+            "Comma-separated routed layer ids that still call HF cache update while native cache "
+            "serves seed-only reads. Useful for keeping HF mask/cache-length bookkeeping alive."
+        ),
+    )
     parser.add_argument(
         "--profile-patch-timing",
         action="store_true",

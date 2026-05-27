@@ -256,6 +256,25 @@ The B4 promotion is backed by `artifacts/seed_only_direct_below8_h100_gate.json`
 for runtime and `artifacts/gate0/seed_only_b4_closed_loop_h100.json` for
 32-step teacher-forced, greedy, coupled top-p, and forced-same-token safety.
 
+The first actual-model decode speedup for the Qwen2.5-3B strict route uses the
+native routed cache prototype:
+
+```bash
+modal run benchmarks/modal_seed_only_route_bundle_decode.py \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --layers 0,14,16,24,26,27,35 \
+  --no-use-packaged-policies \
+  --batch-size 8 \
+  --max-seq 32768 \
+  --steps 32 \
+  --native-routed-cache \
+  --native-cache-hf-sync-layers 0
+```
+
+On H100 this measured `1.132x` full-model decode speedup with strict safety
+passing. The remaining layer-0 HF sync is a temporary cache/mask bookkeeping
+bridge; the next engine target is full StreamAttn cache ownership.
+
 
 ## API Reference
 
