@@ -140,6 +140,53 @@ service speedup:                     1.60x
 planned-direct speedup:              1.72x
 ```
 
+Actual model decode gate:
+
+```text
+benchmark: use_cache=True Qwen2.5-3B-Instruct decode
+route:     patch L0, L14, L16, L24, L26, L27, L35 attention modules
+kernel:    seed-only cache-position BHND path, reading HF [B,Hkv,N,D] cache directly
+steps:     32
+kv_len:    32768
+dtype:     fp16
+device:    H100
+```
+
+The B4 strict bundle is safety-clean but not full-model-runtime positive in the
+HF decode loop:
+
+```text
+B4 dense model decode:      984.884695 ms total / 30.777647 ms per token
+B4 StreamAttn model decode: 1027.601603 ms total / 32.112550 ms per token
+B4 speedup:                 0.958x
+
+top1 changes:               0
+sample token changes:       0
+KL max:                     9.619912e-05
+```
+
+The same strict bundle becomes positive at B8:
+
+```text
+B8 dense model decode:      924.237867 ms total / 28.882433 ms per token
+B8 StreamAttn model decode: 902.242669 ms total / 28.195083 ms per token
+B8 speedup:                 1.024x
+
+top1 changes:               0
+sample token changes:       0
+KL max:                     9.801686e-05
+```
+
+This is the first actual-model decode win: it is small, but it is not an
+isolated attention-call estimate. The route now patches real Qwen attention
+modules during `use_cache=True` generation, updates the HF cache, and preserves
+distribution gates over the measured decode loop.
+
+The B4/B8 split is important. Selected attention calls are strongly positive at
+B4, but full-model decode includes MLPs, layer norms, Python/HF overhead, cache
+updates, and all non-routed layers. The strict bundle needs B8 before the
+attention savings are visible at total-model level.
+
 Decision:
 
 ```text
@@ -152,4 +199,8 @@ keep L2 and L18 out of the registry until they pass stricter follow-up gates
 keep L29 as an isolated green layer, but exclude it from the first strict multi-layer route bundle
 
 do not build split-seed for these cells; direct seed is already profitable
+
+for actual model decode, route the strict bundle at B8+ first; keep B4 as an
+attention-kernel-positive but full-model-negative cell until either more layers
+are green or the integrated runner overhead is lower
 ```

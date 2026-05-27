@@ -127,6 +127,281 @@ if TRITON_AVAILABLE:
             tl.store(RawStats + stats_base + 3, tl.full([], MIDDLE_SEED_BLOCKS, dtype=tl.int32))
 
     @triton.jit
+    def _seed_only_dynamic_n_kernel(
+        Q,
+        K,
+        V,
+        Out,
+        N,
+        RECENT_START,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SCALE: tl.constexpr,
+        SINK_BLOCKS: tl.constexpr,
+        RECENT_BLOCKS: tl.constexpr,
+        MIDDLE_SEED_BLOCKS: tl.constexpr,
+        BLOCK_ORDER: tl.constexpr,
+        PV_USE_BF16: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_d = tl.arange(0, D)
+        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
+
+        running_max = tl.full([], -float("inf"), dtype=tl.float32)
+        acc_den = tl.zeros([], dtype=tl.float32)
+        acc_num = tl.zeros([D], dtype=tl.float32)
+
+        for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
+            if iter_idx < SINK_BLOCKS:
+                block_idx = iter_idx
+            elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
+                recent_pos = iter_idx - SINK_BLOCKS
+                block_idx = RECENT_START + recent_pos
+            else:
+                middle_pos = iter_idx - SINK_BLOCKS - RECENT_BLOCKS
+                if BLOCK_ORDER == 0:  # sequential
+                    block_idx = SINK_BLOCKS + middle_pos
+                else:  # recent_first / sink_recent_first
+                    block_idx = RECENT_START - 1 - middle_pos
+
+            start_n = block_idx * TILE_N
+            block_len_i = tl.minimum(TILE_N, N - start_n)
+            offs_n = start_n + tl.arange(0, TILE_N)
+            col_mask = tl.arange(0, TILE_N) < block_len_i
+            k_tile = tl.load(
+                K
+                + off_b * N * H_KV * D
+                + offs_n[:, None] * H_KV * D
+                + off_kv_h * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+            qk = tl.where(col_mask, qk, -float("inf"))
+            tile_max = tl.max(qk, axis=0)
+            tile_valid = tile_max > -float("inf")
+            prev_valid = acc_den > 0.0
+            new_valid = prev_valid | tile_valid
+            new_max = tl.maximum(running_max, tile_max)
+            safe_new_max = tl.where(new_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+            p = tl.exp(qk - safe_new_max)
+            p = tl.where(qk > -float("inf"), p, 0.0)
+            v_tile = tl.load(
+                V
+                + off_b * N * H_KV * D
+                + offs_n[:, None] * H_KV * D
+                + off_kv_h * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            if PV_USE_BF16:
+                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+            else:
+                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+            acc_den = acc_den * correction + tl.sum(p, axis=0)
+            running_max = tl.where(new_valid, new_max, running_max)
+
+        out = acc_num / acc_den
+        out = tl.where(acc_den > 0.0, out, 0.0)
+        tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
+
+    @triton.jit
+    def _seed_only_dynamic_n_bhnd_kernel(
+        Q,
+        K,
+        V,
+        Out,
+        N,
+        RECENT_START,
+        K_STRIDE_B,
+        K_STRIDE_H,
+        K_STRIDE_N,
+        K_STRIDE_D,
+        V_STRIDE_B,
+        V_STRIDE_H,
+        V_STRIDE_N,
+        V_STRIDE_D,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SCALE: tl.constexpr,
+        SINK_BLOCKS: tl.constexpr,
+        RECENT_BLOCKS: tl.constexpr,
+        MIDDLE_SEED_BLOCKS: tl.constexpr,
+        BLOCK_ORDER: tl.constexpr,
+        PV_USE_BF16: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_d = tl.arange(0, D)
+        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
+
+        running_max = tl.full([], -float("inf"), dtype=tl.float32)
+        acc_den = tl.zeros([], dtype=tl.float32)
+        acc_num = tl.zeros([D], dtype=tl.float32)
+
+        for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
+            if iter_idx < SINK_BLOCKS:
+                block_idx = iter_idx
+            elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
+                recent_pos = iter_idx - SINK_BLOCKS
+                block_idx = RECENT_START + recent_pos
+            else:
+                middle_pos = iter_idx - SINK_BLOCKS - RECENT_BLOCKS
+                if BLOCK_ORDER == 0:  # sequential
+                    block_idx = SINK_BLOCKS + middle_pos
+                else:  # recent_first / sink_recent_first
+                    block_idx = RECENT_START - 1 - middle_pos
+
+            start_n = block_idx * TILE_N
+            block_len_i = tl.minimum(TILE_N, N - start_n)
+            offs_n = start_n + tl.arange(0, TILE_N)
+            col_mask = tl.arange(0, TILE_N) < block_len_i
+            k_tile = tl.load(
+                K
+                + off_b * K_STRIDE_B
+                + off_kv_h * K_STRIDE_H
+                + offs_n[:, None] * K_STRIDE_N
+                + offs_d[None, :] * K_STRIDE_D,
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+            qk = tl.where(col_mask, qk, -float("inf"))
+            tile_max = tl.max(qk, axis=0)
+            tile_valid = tile_max > -float("inf")
+            prev_valid = acc_den > 0.0
+            new_valid = prev_valid | tile_valid
+            new_max = tl.maximum(running_max, tile_max)
+            safe_new_max = tl.where(new_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+            p = tl.exp(qk - safe_new_max)
+            p = tl.where(qk > -float("inf"), p, 0.0)
+            v_tile = tl.load(
+                V
+                + off_b * V_STRIDE_B
+                + off_kv_h * V_STRIDE_H
+                + offs_n[:, None] * V_STRIDE_N
+                + offs_d[None, :] * V_STRIDE_D,
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            if PV_USE_BF16:
+                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+            else:
+                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+            acc_den = acc_den * correction + tl.sum(p, axis=0)
+            running_max = tl.where(new_valid, new_max, running_max)
+
+        out = acc_num / acc_den
+        out = tl.where(acc_den > 0.0, out, 0.0)
+        tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
+
+    @triton.jit
+    def _seed_only_cachepos_bhnd_kernel(
+        Q,
+        K,
+        V,
+        Out,
+        CachePosition,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SCALE: tl.constexpr,
+        SINK_BLOCKS: tl.constexpr,
+        RECENT_BLOCKS: tl.constexpr,
+        MIDDLE_SEED_BLOCKS: tl.constexpr,
+        BLOCK_ORDER: tl.constexpr,
+        PV_USE_BF16: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_d = tl.arange(0, D)
+        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
+
+        n = tl.load(CachePosition).to(tl.int32) + 1
+        num_blocks = (n + TILE_N - 1) // TILE_N
+        recent_start = num_blocks - RECENT_BLOCKS
+
+        running_max = tl.full([], -float("inf"), dtype=tl.float32)
+        acc_den = tl.zeros([], dtype=tl.float32)
+        acc_num = tl.zeros([D], dtype=tl.float32)
+
+        for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
+            if iter_idx < SINK_BLOCKS:
+                block_idx = tl.full([], iter_idx, dtype=tl.int32)
+            elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
+                recent_pos = tl.full([], iter_idx - SINK_BLOCKS, dtype=tl.int32)
+                block_idx = recent_start + recent_pos
+            else:
+                middle_pos = tl.full([], iter_idx - SINK_BLOCKS - RECENT_BLOCKS, dtype=tl.int32)
+                if BLOCK_ORDER == 0:  # sequential
+                    block_idx = SINK_BLOCKS + middle_pos
+                else:  # recent_first / sink_recent_first
+                    block_idx = recent_start - 1 - middle_pos
+
+            start_n = block_idx * TILE_N
+            block_len_i = tl.minimum(TILE_N, n - start_n)
+            offs_n = start_n + tl.arange(0, TILE_N)
+            col_mask = tl.arange(0, TILE_N) < block_len_i
+            k_tile = tl.load(
+                K
+                + off_b * H_KV * n * D
+                + off_kv_h * n * D
+                + offs_n[:, None] * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+            qk = tl.where(col_mask, qk, -float("inf"))
+            tile_max = tl.max(qk, axis=0)
+            tile_valid = tile_max > -float("inf")
+            prev_valid = acc_den > 0.0
+            new_valid = prev_valid | tile_valid
+            new_max = tl.maximum(running_max, tile_max)
+            safe_new_max = tl.where(new_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+            p = tl.exp(qk - safe_new_max)
+            p = tl.where(qk > -float("inf"), p, 0.0)
+            v_tile = tl.load(
+                V
+                + off_b * H_KV * n * D
+                + off_kv_h * n * D
+                + offs_n[:, None] * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            if PV_USE_BF16:
+                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+            else:
+                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+            acc_den = acc_den * correction + tl.sum(p, axis=0)
+            running_max = tl.where(new_valid, new_max, running_max)
+
+        out = acc_num / acc_den
+        out = tl.where(acc_den > 0.0, out, 0.0)
+        tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
+
+    @triton.jit
     def _seed_only_selected_kernel(
         Q,
         K,
@@ -673,6 +948,256 @@ def gate0_seed_only_attention_triton_forward_out(
         BLOCK_ORDER=_block_order_id(block_order),
         PV_USE_BF16=value.dtype is torch.bfloat16,
         HAS_STATS=False,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
+def gate0_seed_only_attention_triton_forward_out_dynamic_n(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    block_order: str = "recent_first",
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Run seed-only decode with dynamic KV length.
+
+    This is intended for actual `use_cache=True` generation where `seq_k`
+    increases every token.  The regular launch specializes on `N` and
+    `RECENT_START`; this variant keeps those values as runtime scalars so a
+    steady-state decode loop does not JIT-compile a new kernel per token.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    if not all(t.is_cuda for t in (query, key, value, output)):
+        raise RuntimeError("gate0_seed_only_attention_triton_forward_out_dynamic_n requires CUDA tensors")
+    if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+        raise ValueError("query, key, and value must be [batch, seq, heads, dim]")
+    if query.shape[1] != 1:
+        raise ValueError("seed-only Gate-0 only supports query_len == 1")
+    if output.shape != query.shape:
+        raise ValueError("output must have the same shape as query")
+    if not output.is_contiguous():
+        raise ValueError("output must be contiguous")
+    if key.shape != value.shape:
+        raise ValueError("key and value must have the same shape")
+    if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
+    if query.shape[2] % key.shape[2] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if sink_blocks < 0 or recent_blocks < 0 or middle_seed_blocks < 0:
+        raise ValueError("seed block counts must be non-negative")
+
+    query = query.contiguous()
+    key = key.contiguous()
+    value = value.contiguous()
+    batch, _seq_q, heads, dim = query.shape
+    seq_k = key.shape[1]
+    kv_heads = key.shape[2]
+    group_size = heads // kv_heads
+    num_blocks = triton.cdiv(seq_k, block_size)
+    if sink_blocks + recent_blocks > num_blocks:
+        raise ValueError("sink_blocks + recent_blocks must not exceed K blocks")
+    middle_blocks = num_blocks - sink_blocks - recent_blocks
+    if middle_seed_blocks > middle_blocks:
+        raise ValueError("middle_seed_blocks must be within the middle block count")
+
+    score_scale = 1.0 / math.sqrt(dim)
+    recent_start = num_blocks - recent_blocks
+    _seed_only_dynamic_n_kernel[(batch, heads)](
+        query,
+        key,
+        value,
+        output,
+        seq_k,
+        int(recent_start),
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=group_size,
+        D=dim,
+        TILE_N=block_size,
+        SCALE=score_scale,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=_block_order_id(block_order),
+        PV_USE_BF16=value.dtype is torch.bfloat16,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
+def gate0_seed_only_attention_triton_forward_out_dynamic_n_bhnd(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    block_order: str = "recent_first",
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Run seed-only decode against Hugging Face cache layout `[B, Hkv, N, D]`.
+
+    This avoids materializing a full `[B, N, Hkv, D]` transpose during actual
+    model decode.  KV strides are passed as runtime scalars so dynamic-cache
+    sequence growth does not force per-token recompilation.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    if not all(t.is_cuda for t in (query, key, value, output)):
+        raise RuntimeError("gate0_seed_only_attention_triton_forward_out_dynamic_n_bhnd requires CUDA tensors")
+    if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+        raise ValueError("query must be [batch, 1, heads, dim], key/value must be [batch, kv_heads, seq, dim]")
+    if query.shape[1] != 1:
+        raise ValueError("seed-only Gate-0 only supports query_len == 1")
+    if output.shape != query.shape:
+        raise ValueError("output must have the same shape as query")
+    if not query.is_contiguous() or not output.is_contiguous():
+        raise ValueError("query and output must be contiguous")
+    if key.shape != value.shape:
+        raise ValueError("key and value must have the same shape")
+    if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
+    if query.shape[2] % key.shape[1] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if sink_blocks < 0 or recent_blocks < 0 or middle_seed_blocks < 0:
+        raise ValueError("seed block counts must be non-negative")
+
+    batch, _seq_q, heads, dim = query.shape
+    kv_heads = key.shape[1]
+    seq_k = key.shape[2]
+    group_size = heads // kv_heads
+    num_blocks = triton.cdiv(seq_k, block_size)
+    if sink_blocks + recent_blocks > num_blocks:
+        raise ValueError("sink_blocks + recent_blocks must not exceed K blocks")
+    middle_blocks = num_blocks - sink_blocks - recent_blocks
+    if middle_seed_blocks > middle_blocks:
+        raise ValueError("middle_seed_blocks must be within the middle block count")
+
+    score_scale = 1.0 / math.sqrt(dim)
+    recent_start = num_blocks - recent_blocks
+    _seed_only_dynamic_n_bhnd_kernel[(batch, heads)](
+        query,
+        key,
+        value,
+        output,
+        seq_k,
+        int(recent_start),
+        key.stride(0),
+        key.stride(1),
+        key.stride(2),
+        key.stride(3),
+        value.stride(0),
+        value.stride(1),
+        value.stride(2),
+        value.stride(3),
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=group_size,
+        D=dim,
+        TILE_N=block_size,
+        SCALE=score_scale,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=_block_order_id(block_order),
+        PV_USE_BF16=value.dtype is torch.bfloat16,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
+def gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    output: torch.Tensor,
+    cache_position: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    block_order: str = "recent_first",
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Run seed-only decode from `[B, Hkv, N, D]` cache using CUDA cache position.
+
+    This is the model-decode steady-state path: KV length is read from
+    `cache_position` on device, so generation steps with growing cache lengths
+    reuse the same compiled kernel.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    if not all(t.is_cuda for t in (query, key, value, output, cache_position)):
+        raise RuntimeError("gate0_seed_only_attention_triton_forward_out_cachepos_bhnd requires CUDA tensors")
+    if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+        raise ValueError("query must be [batch, 1, heads, dim], key/value must be [batch, kv_heads, seq, dim]")
+    if query.shape[1] != 1:
+        raise ValueError("seed-only Gate-0 only supports query_len == 1")
+    if output.shape != query.shape:
+        raise ValueError("output must have the same shape as query")
+    if not query.is_contiguous() or not output.is_contiguous():
+        raise ValueError("query and output must be contiguous")
+    if not key.is_contiguous() or not value.is_contiguous():
+        raise ValueError("key/value must be contiguous for cache-position BHND decode")
+    if key.shape != value.shape:
+        raise ValueError("key and value must have the same shape")
+    if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+        raise ValueError("query/key/value must have matching batch and dim")
+    if query.shape[2] % key.shape[1] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    if cache_position.numel() < 1:
+        raise ValueError("cache_position must contain at least one element")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if sink_blocks < 0 or recent_blocks < 0 or middle_seed_blocks < 0:
+        raise ValueError("seed block counts must be non-negative")
+
+    batch, _seq_q, heads, dim = query.shape
+    kv_heads = key.shape[1]
+    group_size = heads // kv_heads
+    score_scale = 1.0 / math.sqrt(dim)
+    _seed_only_cachepos_bhnd_kernel[(batch, heads)](
+        query,
+        key,
+        value,
+        output,
+        cache_position,
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=group_size,
+        D=dim,
+        TILE_N=block_size,
+        SCALE=score_scale,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=_block_order_id(block_order),
+        PV_USE_BF16=value.dtype is torch.bfloat16,
         num_warps=num_warps,
         num_stages=num_stages,
     )
