@@ -739,3 +739,78 @@ KL max:            9.80e-05
 This confirms module replacement is semantically sound, but it does not beat the
 best patched native-cache route yet (`1.144x`). The next backend step is deeper
 fusion inside the routed module, not just replacing the Python module object.
+
+## Fused RoPE + Native Append + Seed Probe
+
+The next fusion probe adds:
+
+```text
+--fused-rope-append-seed
+```
+
+for routed layers that are already on the native cache path. It fuses Qwen RoPE,
+native K/V append, and seed-only attention into one Triton launch. Layer 0 still
+uses the HF-sync bridge in the strict Qwen3B route:
+
+```text
+--native-routed-cache
+--native-cache-hf-sync-layers 0
+--fused-rope-append-seed
+```
+
+A focused parity probe validates the fused primitive against the known-good
+non-fused path:
+
+```text
+benchmark: benchmarks/profile_seed_only_fused_rope_parity.py
+modal:     benchmarks/modal_seed_only_fused_rope_parity.py
+artifact:  artifacts/gate0/qwen25_3b_32k_b8_model_decode/fused_rope_append_seed_shared_cos_parity_h100.json
+
+out max abs error:     1.22e-04
+K-store max abs error: 2.44e-04
+V-store max abs error: 0
+passed:                true
+```
+
+The important implementation fix is that Qwen decode can produce RoPE tables
+with shape `[1, 1, D]` and broadcast them across batch. The fused wrapper now
+uses zero batch stride for batch-broadcast cos/sin tables. Without this, the
+fused model route was fast but not safety-clean.
+
+H100 32-step full-model result, Qwen2.5-3B strict 7-layer route, B8, 32K, fp16:
+
+```text
+dense decode:      29.0418 ms/token
+StreamAttn decode: 25.4955 ms/token
+speedup:           1.139x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.80e-05
+```
+
+Diagnostic 8-step patch timing with fusion enabled:
+
+```text
+routed patch time: 1.281 ms/decode step
+
+stage share of routed patch total:
+  cache_update: 43.52%
+  QKV proj:     20.96%
+  seed kernel:  18.72%
+  RoPE:          9.61%
+  output proj:   5.62%
+  layout:        1.58%
+```
+
+Conclusion:
+
+```text
+fused RoPE+append+seed is correct and benchmarkable
+but not yet a clear product-route improvement over the best stable 1.144x path
+```
+
+Keep it behind the experimental flag. The next high-reward systems target
+remains the remaining layer-0 HF sync and broader model-runner overhead, not
+more seed kernel micro-optimization.

@@ -408,6 +408,157 @@ if TRITON_AVAILABLE:
         tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
 
     @triton.jit
+    def _rope_append_seed_only_cachepos_bhnd_kernel(
+        QRaw,
+        KRaw,
+        VRaw,
+        Cos,
+        Sin,
+        KCache,
+        VCache,
+        Out,
+        CachePosition,
+        Q_STRIDE_B: tl.constexpr,
+        Q_STRIDE_H: tl.constexpr,
+        Q_STRIDE_S: tl.constexpr,
+        K_RAW_STRIDE_B: tl.constexpr,
+        K_RAW_STRIDE_H: tl.constexpr,
+        K_RAW_STRIDE_S: tl.constexpr,
+        V_RAW_STRIDE_B: tl.constexpr,
+        V_RAW_STRIDE_H: tl.constexpr,
+        V_RAW_STRIDE_S: tl.constexpr,
+        COS_STRIDE_B: tl.constexpr,
+        COS_STRIDE_S: tl.constexpr,
+        SIN_STRIDE_B: tl.constexpr,
+        SIN_STRIDE_S: tl.constexpr,
+        K_STRIDE_B: tl.constexpr,
+        K_STRIDE_H: tl.constexpr,
+        K_STRIDE_N: tl.constexpr,
+        V_STRIDE_B: tl.constexpr,
+        V_STRIDE_H: tl.constexpr,
+        V_STRIDE_N: tl.constexpr,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SCALE: tl.constexpr,
+        SINK_BLOCKS: tl.constexpr,
+        RECENT_BLOCKS: tl.constexpr,
+        MIDDLE_SEED_BLOCKS: tl.constexpr,
+        BLOCK_ORDER: tl.constexpr,
+        PV_USE_BF16: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_d = tl.arange(0, D)
+        half = D // 2
+        pair_d = (offs_d + half) % D
+        rotate_sign = tl.where(offs_d < half, -1.0, 1.0)
+
+        q_raw = tl.load(QRaw + off_b * Q_STRIDE_B + off_h * Q_STRIDE_H + offs_d)
+        q_pair = tl.load(QRaw + off_b * Q_STRIDE_B + off_h * Q_STRIDE_H + pair_d)
+        k_raw = tl.load(KRaw + off_b * K_RAW_STRIDE_B + off_kv_h * K_RAW_STRIDE_H + offs_d)
+        k_pair = tl.load(KRaw + off_b * K_RAW_STRIDE_B + off_kv_h * K_RAW_STRIDE_H + pair_d)
+        v_current = tl.load(VRaw + off_b * V_RAW_STRIDE_B + off_kv_h * V_RAW_STRIDE_H + offs_d)
+        cos = tl.load(Cos + off_b * COS_STRIDE_B + offs_d)
+        sin = tl.load(Sin + off_b * SIN_STRIDE_B + offs_d)
+
+        q = q_raw * cos + (q_pair * rotate_sign) * sin
+        k_current = k_raw * cos + (k_pair * rotate_sign) * sin
+        pos = tl.load(CachePosition).to(tl.int32)
+        n = pos + 1
+
+        write_kv = (off_h % GROUP_SIZE) == 0
+        tl.store(
+            KCache
+            + off_b * K_STRIDE_B
+            + off_kv_h * K_STRIDE_H
+            + pos * K_STRIDE_N
+            + offs_d,
+            k_current,
+            mask=write_kv,
+        )
+        tl.store(
+            VCache
+            + off_b * V_STRIDE_B
+            + off_kv_h * V_STRIDE_H
+            + pos * V_STRIDE_N
+            + offs_d,
+            v_current,
+            mask=write_kv,
+        )
+
+        num_blocks = (n + TILE_N - 1) // TILE_N
+        recent_start = num_blocks - RECENT_BLOCKS
+
+        running_max = tl.full([], -float("inf"), dtype=tl.float32)
+        acc_den = tl.zeros([], dtype=tl.float32)
+        acc_num = tl.zeros([D], dtype=tl.float32)
+
+        for iter_idx in range(0, SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS):
+            if iter_idx < SINK_BLOCKS:
+                block_idx = tl.full([], iter_idx, dtype=tl.int32)
+            elif iter_idx < SINK_BLOCKS + RECENT_BLOCKS:
+                recent_pos = tl.full([], iter_idx - SINK_BLOCKS, dtype=tl.int32)
+                block_idx = recent_start + recent_pos
+            else:
+                middle_pos = tl.full([], iter_idx - SINK_BLOCKS - RECENT_BLOCKS, dtype=tl.int32)
+                if BLOCK_ORDER == 0:  # sequential
+                    block_idx = SINK_BLOCKS + middle_pos
+                else:  # recent_first / sink_recent_first
+                    block_idx = recent_start - 1 - middle_pos
+
+            start_n = block_idx * TILE_N
+            block_len_i = tl.minimum(TILE_N, n - start_n)
+            offs_n = start_n + tl.arange(0, TILE_N)
+            col_mask = tl.arange(0, TILE_N) < block_len_i
+            current_mask = offs_n == pos
+            k_tile = tl.load(
+                KCache
+                + off_b * K_STRIDE_B
+                + off_kv_h * K_STRIDE_H
+                + offs_n[:, None] * K_STRIDE_N
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            k_tile = tl.where(current_mask[:, None], k_current[None, :], k_tile)
+            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+            qk = tl.where(col_mask, qk, -float("inf"))
+            tile_max = tl.max(qk, axis=0)
+            tile_valid = tile_max > -float("inf")
+            prev_valid = acc_den > 0.0
+            new_valid = prev_valid | tile_valid
+            new_max = tl.maximum(running_max, tile_max)
+            safe_new_max = tl.where(new_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+            p = tl.exp(qk - safe_new_max)
+            p = tl.where(qk > -float("inf"), p, 0.0)
+            v_tile = tl.load(
+                VCache
+                + off_b * V_STRIDE_B
+                + off_kv_h * V_STRIDE_H
+                + offs_n[:, None] * V_STRIDE_N
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            v_tile = tl.where(current_mask[:, None], v_current[None, :], v_tile)
+            if PV_USE_BF16:
+                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+            else:
+                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+            acc_den = acc_den * correction + tl.sum(p, axis=0)
+            running_max = tl.where(new_valid, new_max, running_max)
+
+        out = acc_num / acc_den
+        out = tl.where(acc_den > 0.0, out, 0.0)
+        tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
+
+    @triton.jit
     def _seed_only_selected_kernel(
         Q,
         K,
@@ -1210,6 +1361,125 @@ def gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
         MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
         BLOCK_ORDER=_block_order_id(block_order),
         PV_USE_BF16=value.dtype is torch.bfloat16,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
+def gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd(
+    query_raw: torch.Tensor,
+    key_raw: torch.Tensor,
+    value_raw: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    output: torch.Tensor,
+    cache_position: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    block_order: str = "recent_first",
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Apply Qwen RoPE, append current K/V, and run seed-only decode.
+
+    Inputs use Qwen decode layout before RoPE:
+
+    * `query_raw`: `[batch, q_heads, 1, dim]`
+    * `key_raw`/`value_raw`: `[batch, kv_heads, 1, dim]`
+    * `cos`/`sin`: `[batch, 1, dim]` or compatible contiguous decode slice
+    * `key_cache`/`value_cache`: `[batch, kv_heads, max_len, dim]`
+
+    The kernel stores the current K/V for future steps. For the current step it
+    also overrides reads at `cache_position` with the just-computed K/V, avoiding
+    inter-CTA ordering assumptions inside the single fused launch.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    tensors = (query_raw, key_raw, value_raw, cos, sin, key_cache, value_cache, output, cache_position)
+    if not all(t.is_cuda for t in tensors):
+        raise RuntimeError("fused RoPE append seed-only decode requires CUDA tensors")
+    if query_raw.dim() != 4 or key_raw.dim() != 4 or value_raw.dim() != 4:
+        raise ValueError("query_raw/key_raw/value_raw must be [batch, heads, 1, dim]")
+    if query_raw.shape[2] != 1 or key_raw.shape[2] != 1 or value_raw.shape[2] != 1:
+        raise ValueError("fused RoPE append seed-only decode only supports query_len == 1")
+    if key_cache.dim() != 4 or value_cache.dim() != 4:
+        raise ValueError("key_cache/value_cache must be [batch, kv_heads, seq, dim]")
+    if key_cache.shape != value_cache.shape:
+        raise ValueError("key_cache and value_cache must have the same shape")
+    if key_raw.shape != value_raw.shape:
+        raise ValueError("key_raw and value_raw must have the same shape")
+    if output.shape != (query_raw.shape[0], 1, query_raw.shape[1], query_raw.shape[3]):
+        raise ValueError("output must be [batch, 1, q_heads, dim]")
+    if query_raw.shape[0] != key_cache.shape[0] or query_raw.shape[3] != key_cache.shape[3]:
+        raise ValueError("query/cache batch and dim must match")
+    if query_raw.shape[1] % key_cache.shape[1] != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    if key_raw.shape[1] != key_cache.shape[1]:
+        raise ValueError("current key/value KV heads must match cache KV heads")
+    if cache_position.numel() < 1:
+        raise ValueError("cache_position must contain at least one element")
+    if not output.is_contiguous():
+        raise ValueError("output must be contiguous")
+    if cos.dim() != 3 or sin.dim() != 3:
+        raise ValueError("cos/sin must be [batch_or_1, 1, dim]")
+    if cos.shape[-1] != query_raw.shape[3] or sin.shape[-1] != query_raw.shape[3]:
+        raise ValueError("cos/sin head dimension must match query head dimension")
+    if cos.shape[0] not in (1, query_raw.shape[0]) or sin.shape[0] not in (1, query_raw.shape[0]):
+        raise ValueError("cos/sin batch dimension must be 1 or match query batch")
+
+    batch, heads, _seq_q, dim = query_raw.shape
+    kv_heads = key_cache.shape[1]
+    group_size = heads // kv_heads
+    score_scale = 1.0 / math.sqrt(dim)
+    cos_stride_b = 0 if cos.shape[0] == 1 else cos.stride(0)
+    sin_stride_b = 0 if sin.shape[0] == 1 else sin.stride(0)
+    _rope_append_seed_only_cachepos_bhnd_kernel[(batch, heads)](
+        query_raw,
+        key_raw,
+        value_raw,
+        cos,
+        sin,
+        key_cache,
+        value_cache,
+        output,
+        cache_position,
+        query_raw.stride(0),
+        query_raw.stride(1),
+        query_raw.stride(2),
+        key_raw.stride(0),
+        key_raw.stride(1),
+        key_raw.stride(2),
+        value_raw.stride(0),
+        value_raw.stride(1),
+        value_raw.stride(2),
+        cos_stride_b,
+        cos.stride(1) if cos.dim() > 2 else 0,
+        sin_stride_b,
+        sin.stride(1) if sin.dim() > 2 else 0,
+        key_cache.stride(0),
+        key_cache.stride(1),
+        key_cache.stride(2),
+        value_cache.stride(0),
+        value_cache.stride(1),
+        value_cache.stride(2),
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=group_size,
+        D=dim,
+        TILE_N=block_size,
+        SCALE=score_scale,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
+        BLOCK_ORDER=_block_order_id(block_order),
+        PV_USE_BF16=value_cache.dtype is torch.bfloat16,
         num_warps=num_warps,
         num_stages=num_stages,
     )
