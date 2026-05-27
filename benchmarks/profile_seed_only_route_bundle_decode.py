@@ -212,6 +212,7 @@ class StreamAttnNativeKVCache:
         k: torch.Tensor,
         v: torch.Tensor,
         prefill_len: int,
+        hf_cache: Any = None,
     ):
         if k.shape != v.shape:
             raise ValueError("native K/V cache tensors must have matching shapes")
@@ -222,6 +223,7 @@ class StreamAttnNativeKVCache:
         self.k = k
         self.v = v
         self.prefill_len = int(prefill_len)
+        self.hf_cache = hf_cache
 
     @property
     def max_len(self) -> int:
@@ -237,11 +239,21 @@ class StreamAttnNativeKVCache:
             raise ValueError(f"cache position {pos} exceeds native cache max_len {self.max_len}")
         self.k[row, :, :, pos : pos + 1, :].copy_(key_states)
         self.v[row, :, :, pos : pos + 1, :].copy_(value_states)
+        self.sync_hf_view(layer_id, pos + 1)
         return self.k[row], self.v[row]
 
     def layer_cache(self, layer_id: int):
         row = self.layer_to_index[int(layer_id)]
         return self.k[row], self.v[row]
+
+    def sync_hf_view(self, layer_id: int, length: int) -> None:
+        if self.hf_cache is None:
+            return
+        layer = _cache_layer_object(self.hf_cache, int(layer_id))
+        if hasattr(layer, "keys") and hasattr(layer, "values"):
+            row = self.layer_to_index[int(layer_id)]
+            layer.keys = self.k[row, :, :, : int(length), :]
+            layer.values = self.v[row, :, :, : int(length), :]
 
     def summary(self) -> Dict[str, Any]:
         return {
@@ -255,19 +267,21 @@ class StreamAttnNativeKVCache:
         }
 
 
-def _cache_layer_tensors(cache: Any, layer_id: int):
-    layer = None
+def _cache_layer_object(cache: Any, layer_id: int):
     layers = getattr(cache, "layers", None)
     if layers is not None:
         try:
-            layer = layers[int(layer_id)]
+            return layers[int(layer_id)]
         except Exception as exc:
             raise ValueError(f"could not read HF cache layer {layer_id} from cache.layers") from exc
-    else:
-        try:
-            layer = cache[int(layer_id)]
-        except Exception as exc:
-            raise ValueError(f"could not read HF cache layer {layer_id}") from exc
+    try:
+        return cache[int(layer_id)]
+    except Exception as exc:
+        raise ValueError(f"could not read HF cache layer {layer_id}") from exc
+
+
+def _cache_layer_tensors(cache: Any, layer_id: int):
+    layer = _cache_layer_object(cache, layer_id)
     if isinstance(layer, (tuple, list)) and len(layer) >= 2:
         return layer[0], layer[1]
     keys = getattr(layer, "keys", None)
@@ -277,7 +291,13 @@ def _cache_layer_tensors(cache: Any, layer_id: int):
     raise ValueError(f"unsupported HF cache layer object for layer {layer_id}: {type(layer).__name__}")
 
 
-def _native_cache_from_hf_cache(cache: Any, bundle, *, max_len: int) -> StreamAttnNativeKVCache:
+def _native_cache_from_hf_cache(
+    cache: Any,
+    bundle,
+    *,
+    max_len: int,
+    attach_hf_views: bool = True,
+) -> StreamAttnNativeKVCache:
     if not bundle.policies:
         raise ValueError("route bundle is empty")
     first_k, first_v = _cache_layer_tensors(cache, int(bundle.policies[0].layer_id))
@@ -299,12 +319,59 @@ def _native_cache_from_hf_cache(cache: Any, bundle, *, max_len: int) -> StreamAt
             raise ValueError(f"HF cache shape mismatch for routed layer {policy.layer_id}")
         k_native[row, :, :, :prefill_len, :].copy_(k_layer)
         v_native[row, :, :, :prefill_len, :].copy_(v_layer)
-    return StreamAttnNativeKVCache(
+    native = StreamAttnNativeKVCache(
         layer_ids=[int(policy.layer_id) for policy in bundle.policies],
         k=k_native,
         v=v_native,
         prefill_len=int(prefill_len),
+        hf_cache=cache if attach_hf_views else None,
     )
+    if attach_hf_views:
+        for policy in bundle.policies:
+            native.sync_hf_view(int(policy.layer_id), int(prefill_len))
+    return native
+
+
+@contextmanager
+def _native_cache_mask_bookkeeping(cache: Any, *, enabled: bool):
+    """Override HF mask-size bookkeeping while routed layers own native K/V.
+
+    Qwen's causal-mask helper asks the cache for a global KV length before layer
+    forwards run. If routed layer 0 bypasses HF DynamicCache.update, that length
+    becomes stale. The decode loop already knows the correct max attention-mask
+    length on CPU, so provide it here without paying a layer-0 HF append.
+    """
+
+    if not enabled or cache is None:
+        yield
+        return
+
+    original_get_mask_sizes = getattr(cache, "get_mask_sizes", None)
+    if original_get_mask_sizes is None:
+        yield
+        return
+
+    def get_mask_sizes(self, cache_position, layer_idx):
+        kv_length = getattr(self, "_streamattn_mask_kv_length", None)
+        if kv_length is not None:
+            return int(kv_length), 0
+        return original_get_mask_sizes(cache_position, layer_idx)
+
+    had_length = hasattr(cache, "_streamattn_mask_kv_length")
+    previous_length = getattr(cache, "_streamattn_mask_kv_length", None)
+    cache.get_mask_sizes = types.MethodType(get_mask_sizes, cache)
+    cache._streamattn_mask_kv_length = None
+    try:
+        yield
+    finally:
+        cache.get_mask_sizes = original_get_mask_sizes
+        if had_length:
+            cache._streamattn_mask_kv_length = previous_length
+        else:
+            try:
+                delattr(cache, "_streamattn_mask_kv_length")
+            except AttributeError:
+                pass
 
 
 def _percentile(values: Sequence[float], q: float) -> float:
@@ -690,6 +757,8 @@ def _decode_loop(
                     device=input_token.device,
                     dtype=torch.long,
                 )
+            if hasattr(past_key_values, "_streamattn_mask_kv_length"):
+                past_key_values._streamattn_mask_kv_length = int(mask.shape[1] + input_token.shape[1])
             out = model(**model_kwargs)
             past_key_values = out.past_key_values
             logits = out.logits[:, -1, :].detach()
@@ -739,22 +808,24 @@ def _warmup_decode(
             prefill.past_key_values,
             bundle,
             max_len=_native_cache_max_len(tokens, warmup_args),
+            attach_hf_views=args.native_cache_attach_hf_views,
         )
-    with _patched_seed_only_decode_modules(
-        model,
-        bundle,
-        native_cache=native_cache,
-        native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
-    ) as patches:
-        result = _decode_loop(
-            model=model,
-            past_key_values=prefill.past_key_values,
-            attention_mask=tokens["attention_mask"],
-            first_token=first_token,
-            fixed_input_tokens=None,
-            prompt_rows=prompt_rows,
-            args=warmup_args,
-        )
+    with _native_cache_mask_bookkeeping(prefill.past_key_values, enabled=args.native_routed_cache):
+        with _patched_seed_only_decode_modules(
+            model,
+            bundle,
+            native_cache=native_cache,
+            native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
+        ) as patches:
+            result = _decode_loop(
+                model=model,
+                past_key_values=prefill.past_key_values,
+                attention_mask=tokens["attention_mask"],
+                first_token=first_token,
+                fixed_input_tokens=None,
+                prompt_rows=prompt_rows,
+                args=warmup_args,
+            )
     patch_counts = {
         layer_id: {
             "forward_calls": patch.call_count,
@@ -939,24 +1010,26 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             seed_prefill.past_key_values,
             bundle,
             max_len=_native_cache_max_len(tokens, args),
+            attach_hf_views=args.native_cache_attach_hf_views,
         )
     print("[route-bundle-decode] timing StreamAttn seed-only bundle decode", flush=True)
-    with _patched_seed_only_decode_modules(
-        model,
-        bundle,
-        profile_timing=args.profile_patch_timing,
-        native_cache=native_cache,
-        native_cache_hf_sync_layers=native_cache_hf_sync_layers,
-    ) as patches:
-        seed = _decode_loop(
-            model=model,
-            past_key_values=seed_prefill.past_key_values,
-            attention_mask=tokens["attention_mask"],
-            first_token=first_token,
-            fixed_input_tokens=dense["input_tokens"],
-            prompt_rows=prompt_rows,
-            args=args,
-        )
+    with _native_cache_mask_bookkeeping(seed_prefill.past_key_values, enabled=args.native_routed_cache):
+        with _patched_seed_only_decode_modules(
+            model,
+            bundle,
+            profile_timing=args.profile_patch_timing,
+            native_cache=native_cache,
+            native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+        ) as patches:
+            seed = _decode_loop(
+                model=model,
+                past_key_values=seed_prefill.past_key_values,
+                attention_mask=tokens["attention_mask"],
+                first_token=first_token,
+                fixed_input_tokens=dense["input_tokens"],
+                prompt_rows=prompt_rows,
+                args=args,
+            )
     comparison = _compare_decode_logits(
         dense["logits_by_step"],
         seed["logits_by_step"],
@@ -989,6 +1062,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_configs": [_policy_seed_config(policy) for policy in bundle.policies],
             "layer_seed_overrides": layer_seed_overrides,
             "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
+            "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1076,6 +1150,14 @@ def main() -> None:
         help=(
             "Comma-separated routed layer ids that still call HF cache update while native cache "
             "serves seed-only reads. Useful for keeping HF mask/cache-length bookkeeping alive."
+        ),
+    )
+    parser.add_argument(
+        "--native-cache-attach-hf-views",
+        action="store_true",
+        help=(
+            "Experimental: point HF DynamicCache routed-layer keys/values at native-cache views "
+            "instead of using HF update calls for cache metadata."
         ),
     )
     parser.add_argument(

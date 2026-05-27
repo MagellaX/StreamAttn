@@ -271,7 +271,7 @@ modal run benchmarks/modal_seed_only_route_bundle_decode.py \
   --native-cache-hf-sync-layers 0
 ```
 
-On H100 this measured `1.132x` full-model decode speedup with strict safety
+On H100 this measured `1.144x` full-model decode speedup with strict safety
 passing. The remaining layer-0 HF sync is a temporary cache/mask bookkeeping
 bridge; the next engine target is full StreamAttn cache ownership.
 

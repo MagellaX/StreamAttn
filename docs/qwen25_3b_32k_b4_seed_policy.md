@@ -673,9 +673,9 @@ Critical implementation details:
 H100 result, Qwen2.5-3B strict 7-layer route, B8, 32K, fp16, 32 decode steps:
 
 ```text
-dense decode:      29.3923 ms/token
-StreamAttn decode: 25.9638 ms/token
-speedup:           1.132x
+dense decode:      28.7148 ms/token
+StreamAttn decode: 25.0965 ms/token
+speedup:           1.144x
 
 top1 changes:      0 / 256
 sample changes:    0 / 256
@@ -704,3 +704,15 @@ It also narrows the next systems target:
 remove the remaining layer-0 HF sync path
 then fuse/own RoPE + cache append + seed attention for routed layers
 ```
+
+There is also an experimental no-sync cache-view mode:
+
+```text
+--native-cache-attach-hf-views
+```
+
+It points routed Hugging Face cache layers at StreamAttn native-cache views so
+the cache object stays semantically coherent without `DynamicCache.update` for
+routed layers. This passed strict safety, but the 32-step wall-clock result was
+not yet faster than dense. Treat it as the next native-cache research switch,
+not the product route.

@@ -2,6 +2,7 @@ from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
     _native_cache_from_hf_cache,
+    _native_cache_mask_bookkeeping,
     apply_layer_seed_overrides,
     parse_layer_id_set,
     parse_layer_seed_overrides,
@@ -40,6 +41,23 @@ def test_parse_layer_seed_overrides_positional_fields():
 def test_parse_layer_id_set_accepts_commas_and_semicolons():
     assert parse_layer_id_set("") == set()
     assert parse_layer_id_set("0,14;16") == {0, 14, 16}
+
+
+def test_native_cache_mask_bookkeeping_overrides_and_restores():
+    class DummyCache:
+        def get_mask_sizes(self, cache_position, layer_idx):
+            return 4, 0
+
+    cache = DummyCache()
+    original = cache.get_mask_sizes
+    with _native_cache_mask_bookkeeping(cache, enabled=True):
+        assert cache.get_mask_sizes(None, 0) == (4, 0)
+        cache._streamattn_mask_kv_length = 9
+        assert cache.get_mask_sizes(None, 0) == (9, 0)
+
+    assert cache.get_mask_sizes(None, 0) == (4, 0)
+    assert not hasattr(cache, "_streamattn_mask_kv_length")
+    assert cache.get_mask_sizes.__func__ is original.__func__
 
 
 def test_apply_layer_seed_overrides_rewrites_only_target_layer():
@@ -153,3 +171,40 @@ def test_native_kv_cache_copies_prefill_and_appends():
     k_layer, v_layer = native.append(0, k_new, v_new, 5)
     assert torch.equal(k_layer[:, :, 5:6, :], k_new)
     assert torch.equal(v_layer[:, :, 5:6, :], v_new)
+
+
+def test_native_kv_cache_can_attach_hf_layer_views():
+    import torch
+
+    class Layer:
+        def __init__(self, keys, values):
+            self.keys = keys
+            self.values = values
+
+    class Cache:
+        def __init__(self):
+            self.layers = []
+
+    policies = [Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0)]
+    bundle = RouteBundle(policy_names=["p0"], policies=policies, artifacts=[{}], layer_ids=[0])
+    cache = Cache()
+    cache.layers.append(
+        Layer(
+            torch.ones((1, 2, 4, 3)),
+            torch.full((1, 2, 4, 3), 2.0),
+        )
+    )
+
+    native = _native_cache_from_hf_cache(cache, bundle, max_len=6)
+
+    assert cache.layers[0].keys.shape == (1, 2, 4, 3)
+    assert cache.layers[0].keys.data_ptr() == native.k[0, :, :, :4, :].data_ptr()
+
+    k_new = torch.full((1, 2, 1, 3), 9.0)
+    v_new = torch.full((1, 2, 1, 3), 10.0)
+    native.append(0, k_new, v_new, 4)
+
+    assert cache.layers[0].keys.shape == (1, 2, 5, 3)
+    assert cache.layers[0].keys.data_ptr() == native.k[0, :, :, :5, :].data_ptr()
+    assert torch.equal(cache.layers[0].keys[:, :, 4:5, :], k_new)
+    assert torch.equal(cache.layers[0].values[:, :, 4:5, :], v_new)

@@ -158,6 +158,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--native-routed-cache")
     if kwargs["native_cache_hf_sync_layers"]:
         cmd.extend(["--native-cache-hf-sync-layers", kwargs["native_cache_hf_sync_layers"]])
+    if kwargs["native_cache_attach_hf_views"]:
+        cmd.append("--native-cache-attach-hf-views")
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -207,6 +209,7 @@ def main(
     explicit_cache_position: bool = False,
     native_routed_cache: bool = False,
     native_cache_hf_sync_layers: str = "",
+    native_cache_attach_hf_views: bool = False,
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -245,6 +248,7 @@ def main(
         explicit_cache_position=explicit_cache_position,
         native_routed_cache=native_routed_cache,
         native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+        native_cache_attach_hf_views=native_cache_attach_hf_views,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:
