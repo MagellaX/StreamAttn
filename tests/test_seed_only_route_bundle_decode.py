@@ -2,6 +2,7 @@ from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_seed_only_route_bundle_decode import (
     apply_layer_seed_overrides,
     parse_layer_seed_overrides,
+    summarize_patch_timing_rows,
 )
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
 
@@ -75,3 +76,34 @@ def test_apply_layer_seed_overrides_rewrites_only_target_layer():
     assert updated.policies[1].policy_id == "p2_s32_2_4_10"
     assert summaries[0]["layer_id"] == 2
     assert summaries[0]["new"]["seed_tokens"] == 512
+
+
+def test_summarize_patch_timing_rows_reports_stage_shares():
+    summary = summarize_patch_timing_rows(
+        [
+            {
+                "qkv_ms": 1.0,
+                "rope_ms": 1.0,
+                "cache_update_ms": 1.0,
+                "layout_ms": 1.0,
+                "seed_kernel_ms": 4.0,
+                "output_proj_ms": 2.0,
+                "total_ms": 10.0,
+            },
+            {
+                "qkv_ms": 2.0,
+                "rope_ms": 1.0,
+                "cache_update_ms": 1.0,
+                "layout_ms": 1.0,
+                "seed_kernel_ms": 3.0,
+                "output_proj_ms": 2.0,
+                "total_ms": 10.0,
+            },
+        ]
+    )
+
+    assert summary["call_count"] == 2
+    assert summary["total_ms"]["sum_ms"] == 20.0
+    assert summary["stages"]["seed_kernel_ms"]["sum_ms"] == 7.0
+    assert summary["stages"]["seed_kernel_ms"]["share_of_patch_total"] == 0.35
+    assert summary["stages"]["qkv_ms"]["mean_ms"] == 1.5

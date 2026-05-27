@@ -462,3 +462,73 @@ increase strict-green routed coverage
 or reduce model-runner integration overhead enough that local attention wins
 show up as full-model speed
 ```
+
+## Actual-Model Patch Timing
+
+The actual-model decode runner now has an optional diagnostic mode:
+
+```text
+--profile-patch-timing
+```
+
+It records CUDA-event timings inside each routed seed-only attention patch. This
+is not a release timing path because probes add overhead, but it answers the
+integration question.
+
+Qwen2.5-3B strict 7-layer route, B8, 32K, 8 decode steps:
+
+```text
+bundle routed patch time per decode step: 4.348 ms
+
+stage share of routed patch total:
+  cache_update: 78.77%
+  RoPE:          7.43%
+  QKV proj:      6.61%
+  seed kernel:   4.89%
+  output proj:   1.80%
+  layout:        0.50%
+```
+
+The critical fact is:
+
+```text
+seed_kernel_ms is not the full-model bottleneck
+```
+
+The seed kernel itself accounts for only about `0.213 ms` per decode step across
+all 7 routed layers:
+
+```text
+seed_kernel bundle sum: 1.702 ms over 8 decode steps
+seed_kernel per step:  0.213 ms
+```
+
+The HF cache update path accounts for about `3.425 ms` per decode step across
+the same layers:
+
+```text
+cache_update bundle sum: 27.400 ms over 8 decode steps
+cache_update per step:  3.425 ms
+```
+
+So the current full-model limit is not "make seed-only attention faster." The
+next real backend target is:
+
+```text
+native StreamAttn decode cache/update path
+```
+
+The engine needs to own the decode cache path instead of entering through the
+Hugging Face attention module, calling `past_key_value.update`, then running the
+seed-only kernel. The attention approximation is already cheap; the integration
+around it is now the largest routed-patch cost.
+
+Immediate engineering implication:
+
+```text
+1. keep searching for strict-green layers, but do not expect layer count alone to
+   create a large full-model win
+2. build a native cache/update integration path for routed layers
+3. treat FlashInfer/FA as baselines, but StreamAttn needs its own decode cache
+   lifecycle to convert local kernel wins into model-level speed
+```

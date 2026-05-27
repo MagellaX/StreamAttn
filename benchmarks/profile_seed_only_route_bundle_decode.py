@@ -177,6 +177,46 @@ def apply_layer_seed_overrides(bundle, override_text: str):
     ), summaries
 
 
+_PATCH_TIMING_STAGES = (
+    ("qkv_ms", "start", "after_qkv"),
+    ("rope_ms", "after_qkv", "after_rope"),
+    ("cache_update_ms", "after_rope", "after_cache_update"),
+    ("layout_ms", "after_cache_update", "after_layout"),
+    ("seed_kernel_ms", "after_layout", "after_seed_kernel"),
+    ("output_proj_ms", "after_seed_kernel", "end"),
+)
+
+
+def _percentile(values: Sequence[float], q: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(float(value) for value in values)
+    index = int(round((len(ordered) - 1) * q))
+    return ordered[max(0, min(index, len(ordered) - 1))]
+
+
+def summarize_patch_timing_rows(rows: Sequence[Dict[str, float]]) -> Dict[str, Any]:
+    if not rows:
+        return {"call_count": 0, "stages": {}, "total_ms": {}}
+    keys = [stage[0] for stage in _PATCH_TIMING_STAGES] + ["total_ms"]
+    summary: Dict[str, Any] = {"call_count": len(rows), "stages": {}, "total_ms": {}}
+    total_sum = sum(float(row.get("total_ms", 0.0)) for row in rows)
+    for key in keys:
+        values = [float(row.get(key, 0.0)) for row in rows]
+        item = {
+            "sum_ms": sum(values),
+            "mean_ms": sum(values) / max(1, len(values)),
+            "p50_ms": _percentile(values, 0.50),
+            "p90_ms": _percentile(values, 0.90),
+        }
+        if key != "total_ms":
+            item["share_of_patch_total"] = item["sum_ms"] / max(total_sum, 1.0e-12)
+            summary["stages"][key] = item
+        else:
+            summary["total_ms"] = item
+    return summary
+
+
 def _import_qwen_rotary():
     try:
         from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb
@@ -247,13 +287,32 @@ def _summarize_logit_steps(step_rows: Sequence[Dict[str, Any]], *, batch_size: i
 
 
 class _SeedOnlyQwenDecodePatch:
-    def __init__(self, *, policy, original_forward):
+    def __init__(self, *, policy, original_forward, profile_timing: bool = False):
         self.policy = policy
         self.original_forward = original_forward
+        self.profile_timing = profile_timing
         self.call_count = 0
         self.seed_call_count = 0
         self.fallback_reasons: Counter[str] = Counter()
         self.fallback_samples: List[Dict[str, Any]] = []
+        self._timing_event_rows: List[Dict[str, torch.cuda.Event]] = []
+
+    def _mark(self, events: Optional[Dict[str, torch.cuda.Event]], name: str) -> None:
+        if events is None:
+            return
+        event = torch.cuda.Event(enable_timing=True)
+        event.record()
+        events[name] = event
+
+    def timing_rows(self) -> List[Dict[str, float]]:
+        rows = []
+        for events in self._timing_event_rows:
+            row = {}
+            for key, start_name, end_name in _PATCH_TIMING_STAGES:
+                row[key] = float(events[start_name].elapsed_time(events[end_name]))
+            row["total_ms"] = float(events["start"].elapsed_time(events["end"]))
+            rows.append(row)
+        return rows
 
     def forward(
         self,
@@ -305,14 +364,21 @@ class _SeedOnlyQwenDecodePatch:
                 **kwargs,
             )
 
+        timing_events: Optional[Dict[str, torch.cuda.Event]] = None
+        if self.profile_timing and hidden_states.is_cuda and torch.cuda.is_available():
+            timing_events = {}
+            self._mark(timing_events, "start")
+
         apply_rotary_pos_emb = _import_qwen_rotary()
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, module.head_dim)
         query_states = module.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
         key_states = module.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
         value_states = module.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        self._mark(timing_events, "after_qkv")
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        self._mark(timing_events, "after_rope")
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
         key_states, value_states = past_key_value.update(
             key_states,
@@ -320,11 +386,13 @@ class _SeedOnlyQwenDecodePatch:
             module.layer_idx,
             cache_kwargs,
         )
+        self._mark(timing_events, "after_cache_update")
 
         q = query_states.transpose(1, 2).contiguous()
         k = key_states
         v = value_states
         out = torch.empty_like(q)
+        self._mark(timing_events, "after_layout")
         gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
             q,
             k,
@@ -339,8 +407,12 @@ class _SeedOnlyQwenDecodePatch:
             num_warps=self.policy.num_warps,
             num_stages=self.policy.num_stages,
         )
+        self._mark(timing_events, "after_seed_kernel")
         attn_output = out.reshape(*input_shape, -1).contiguous()
         attn_output = module.o_proj(attn_output)
+        self._mark(timing_events, "end")
+        if timing_events is not None:
+            self._timing_event_rows.append(timing_events)
         self.seed_call_count += 1
         return attn_output, None
 
@@ -383,6 +455,8 @@ def _cache_summary(cache: Any) -> Dict[str, Any]:
 def _patched_seed_only_decode_modules(
     model: torch.nn.Module,
     bundle,
+    *,
+    profile_timing: bool = False,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {int(layer_id): module for layer_id, _name, module in _attention_modules(model)}
     patches: Dict[str, _SeedOnlyQwenDecodePatch] = {}
@@ -391,7 +465,11 @@ def _patched_seed_only_decode_modules(
         module = modules_by_layer.get(int(policy.layer_id))
         if module is None:
             raise ValueError(f"model is missing layer {policy.layer_id}")
-        patch = _SeedOnlyQwenDecodePatch(policy=policy, original_forward=module.forward)
+        patch = _SeedOnlyQwenDecodePatch(
+            policy=policy,
+            original_forward=module.forward,
+            profile_timing=profile_timing,
+        )
         originals.append((module, module.forward))
         module.forward = types.MethodType(patch.forward, module)
         patches[str(policy.layer_id)] = patch
@@ -561,6 +639,42 @@ def _safety_decision(summary: Dict[str, Any], *, args: argparse.Namespace) -> Di
     }
 
 
+def _patch_timing_summary(
+    patches: Dict[str, _SeedOnlyQwenDecodePatch],
+    *,
+    decode_steps: int,
+) -> Optional[Dict[str, Any]]:
+    if not patches or not any(patch._timing_event_rows for patch in patches.values()):
+        return None
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    per_layer = {}
+    bundle_stage_sums: Dict[str, float] = {stage[0]: 0.0 for stage in _PATCH_TIMING_STAGES}
+    bundle_total_ms = 0.0
+    for layer_id, patch in patches.items():
+        rows = patch.timing_rows()
+        summary = summarize_patch_timing_rows(rows)
+        per_layer[layer_id] = summary
+        bundle_total_ms += float(summary.get("total_ms", {}).get("sum_ms", 0.0))
+        for stage_name in bundle_stage_sums:
+            bundle_stage_sums[stage_name] += float(
+                summary.get("stages", {}).get(stage_name, {}).get("sum_ms", 0.0)
+            )
+    return {
+        "note": "CUDA-event diagnostic timing; enabling this changes the measured decode path.",
+        "decode_steps": int(decode_steps),
+        "routed_layer_count": len(per_layer),
+        "bundle_total_patch_ms": bundle_total_ms,
+        "bundle_patch_ms_per_decode_step": bundle_total_ms / max(1, int(decode_steps)),
+        "bundle_stage_sums_ms": bundle_stage_sums,
+        "bundle_stage_share_of_patch_total": {
+            stage_name: value / max(bundle_total_ms, 1.0e-12)
+            for stage_name, value in bundle_stage_sums.items()
+        },
+        "per_layer": per_layer,
+    }
+
+
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
@@ -636,7 +750,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     seed_prefill = _prefill(model, tokens)
     seed_prefill_cache = _cache_summary(seed_prefill.past_key_values)
     print("[route-bundle-decode] timing StreamAttn seed-only bundle decode", flush=True)
-    with _patched_seed_only_decode_modules(model, bundle) as patches:
+    with _patched_seed_only_decode_modules(
+        model,
+        bundle,
+        profile_timing=args.profile_patch_timing,
+    ) as patches:
         seed = _decode_loop(
             model=model,
             past_key_values=seed_prefill.past_key_values,
@@ -661,6 +779,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         }
         for layer_id, patch in patches.items()
     }
+    patch_timing = _patch_timing_summary(patches, decode_steps=args.steps)
     return {
         "schema": "streamattn.seed_only_route_bundle_decode.v1",
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
@@ -696,6 +815,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "safety": comparison["summary"],
         "decision": _safety_decision(comparison["summary"], args=args),
         "patch_counts": patch_counts,
+        "patch_timing": patch_timing,
         "prompts": [{"row": idx, "kind": row["kind"]} for idx, row in enumerate(prompt_rows)],
     }
 
@@ -743,6 +863,11 @@ def main() -> None:
     parser.add_argument("--max-logprob-delta", type=float, default=2.0e-3)
     parser.add_argument("--use-safetensors", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--trust-remote-code", action="store_true")
+    parser.add_argument(
+        "--profile-patch-timing",
+        action="store_true",
+        help="Collect CUDA-event component timings inside each routed seed-only attention patch.",
+    )
     parser.add_argument("--output-json", default="")
     args = parser.parse_args()
 

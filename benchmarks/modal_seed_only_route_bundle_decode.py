@@ -150,6 +150,8 @@ def _run(**kwargs) -> dict[str, Any]:
     ]
     if kwargs["layer_seed_overrides"]:
         cmd.extend(["--layer-seed-overrides", kwargs["layer_seed_overrides"]])
+    if kwargs["profile_patch_timing"]:
+        cmd.append("--profile-patch-timing")
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -195,6 +197,7 @@ def main(
     block_order: str = "recent_first",
     num_warps: int = 4,
     num_stages: int = 2,
+    profile_patch_timing: bool = False,
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -229,6 +232,7 @@ def main(
         block_order=block_order,
         num_warps=num_warps,
         num_stages=num_stages,
+        profile_patch_timing=profile_patch_timing,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:
@@ -244,6 +248,7 @@ def main(
             "safety": result.get("safety"),
             "decision": result.get("decision"),
             "patch_counts": result.get("patch_counts"),
+            "patch_timing": result.get("patch_timing"),
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
