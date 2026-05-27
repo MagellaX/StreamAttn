@@ -209,6 +209,18 @@ L16, L24, L26, L27, L29, and L35. The multi-layer threshold gate in
 all eight cells are already profitable at B4 with the planned direct seed path,
 so these cells do not need the two-kernel split-seed path.
 
+Multi-layer safety is stricter than isolated per-layer safety. For Qwen2.5-3B,
+the strict B4 route bundle is seven layers:
+
+```text
+L0, L14, L16, L24, L26, L27, L35
+```
+
+The all-eight bundle including L29 kept top1/greedy/sample tokens stable but
+exceeded the strict KL gate. The seven-layer bundle passes teacher-forced,
+greedy, and coupled top-p rollout and is captured in
+`stream_attention/policies/qwen25_3b_32k_b4_seed_only_bundle.json`.
+
 To benchmark several validated layers against the same capture, pass `--layers`
 to the Modal threshold runner:
 
@@ -220,6 +232,18 @@ modal run benchmarks/modal_seed_only_wrapper_batch_threshold.py \
   --batch-sizes 4,8 \
   --product-min-batch 4 \
   --output-json artifacts/gate0/qwen25_3b_32k_b4_runtime/threshold_layers_h100.json
+```
+
+To validate a multi-layer route bundle in one model forward path:
+
+```bash
+modal run benchmarks/modal_gate0_seed_only_multi_layer_rollout.py \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --layers 0,14,16,24,26,27,35 \
+  --max-seq 32768 \
+  --batch-size 4 \
+  --steps 32 \
+  --output-json artifacts/gate0/qwen25_3b_32k_b4_multi_layer/drop_l29_rollout_h100.json
 ```
 
 `StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step

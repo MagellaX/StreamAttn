@@ -1,0 +1,83 @@
+{
+  "schema": "streamattn.seed_only_route_bundle.v1",
+  "bundle_id": "qwen25_3b_32k_fp16_b4_seed_only_7layer_v1",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "tensor_space": "post_rope",
+  "kv_len_bucket": 32768,
+  "min_batch": 4,
+  "mode": "multi_layer_seed_only_bundle",
+  "backend_mode": "gate0_seed_only_batched",
+  "seed_only_policy_names": [
+    "qwen25_3b_l0_32k_seed_only_batched",
+    "qwen25_3b_l14_32k_seed_only_batched",
+    "qwen25_3b_l16_32k_seed_only_batched",
+    "qwen25_3b_l24_32k_seed_only_batched",
+    "qwen25_3b_l26_32k_seed_only_batched",
+    "qwen25_3b_l27_32k_seed_only_batched",
+    "qwen25_3b_l35_32k_seed_only_batched"
+  ],
+  "seed_only_layers": [
+    0,
+    14,
+    16,
+    24,
+    26,
+    27,
+    35
+  ],
+  "exact_native_layers": "all non-listed layers",
+  "excluded_green_layer_notes": [
+    {
+      "layer_id": 29,
+      "reason": "all-8 bundle exceeded strict KL gate; layer remains valid as isolated per-layer policy"
+    }
+  ],
+  "safety": {
+    "validation": "multi_layer_teacher_forced_greedy_coupled_top_p_mixed_prompts",
+    "artifact": "artifacts/gate0/qwen25_3b_32k_b4_multi_layer/strict_pass_summary_h100.json",
+    "steps": 32,
+    "top1_changes": 0,
+    "greedy_diverged_rows": 0,
+    "sample_token_changed_count": 0,
+    "min_top5_overlap": 4,
+    "max_kl_observed": 5.374069951358251e-05,
+    "max_target_logprob_delta_observed": 0.0002615349367260933,
+    "gates": {
+      "greedy_diverged_rows": 0,
+      "max_kl": 0.0001,
+      "max_logprob_delta": 0.002,
+      "min_topk_overlap": 4,
+      "sample_token_changes": 0,
+      "top1_changes": 0
+    },
+    "passed": true
+  },
+  "timing": {
+    "source": "packaged per-layer H100 thresholds; selected attention layers only",
+    "flashinfer_selected_layers_ms": 0.3870399951934814,
+    "streamattn_service_selected_layers_ms": 0.2422591996192932,
+    "streamattn_planned_direct_selected_layers_ms": 0.22512320280075074,
+    "service_speedup_vs_flashinfer_selected_layers": 1.5976276475845257,
+    "planned_direct_speedup_vs_flashinfer_selected_layers": 1.7192363575958804
+  },
+  "diagnostics": {
+    "all_8_green_layers": {
+      "layers": [
+        0,
+        14,
+        16,
+        24,
+        26,
+        27,
+        29,
+        35
+      ],
+      "passed_strict_gate": false,
+      "max_kl_observed": 0.00015394460933748633,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0
+    }
+  },
+  "fallback": "exact_native"
+}

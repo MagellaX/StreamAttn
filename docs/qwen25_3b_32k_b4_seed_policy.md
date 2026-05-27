@@ -91,12 +91,65 @@ limited to early layers, and every packaged cell is already B4-profitable with
 the existing head-private direct seed kernel. That means split-seed should stay
 reserved for B1/B2 and for future safety-positive/runtime-negative cells.
 
+## Multi-Layer Route Bundle
+
+Isolated per-layer safety is not enough for product routing, so the follow-up
+gate patched all selected layers in the same forward path.
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b4_multi_layer/strict_pass_summary_h100.json
+stream_attention/policies/qwen25_3b_32k_b4_seed_only_bundle.json
+```
+
+All eight packaged green layers:
+
+```text
+layers: [0, 14, 16, 24, 26, 27, 29, 35]
+result: strict KL gate failed
+KL max: 1.539446e-04
+top1 changes: 0
+greedy diverged rows: 0
+sample token changes: 0
+```
+
+The behavior stayed stable, but the route is not strict-registry clean because
+`1.539446e-04 > 1.0e-04`.
+
+Strict-pass route bundle:
+
+```text
+layers: [0, 14, 16, 24, 26, 27, 35]
+excluded from bundle: L29
+KL max: 5.374070e-05
+top1 changes: 0
+top5 overlap min: 4
+greedy diverged rows: 0
+sample token changes: 0
+target logprob delta max: 2.615349e-04
+```
+
+Selected-layer attention timing estimate for the strict bundle:
+
+```text
+FlashInfer selected layers:          0.387040 ms
+StreamAttn service selected layers:  0.242259 ms
+planned-direct selected layers:      0.225123 ms
+service speedup:                     1.60x
+planned-direct speedup:              1.72x
+```
+
 Decision:
 
 ```text
 package Qwen2.5-3B B4 policies for L0, L14, L16, L24, L26, L27, L29, L35
 
+package Qwen2.5-3B B4 strict multi-layer route bundle for L0, L14, L16, L24, L26, L27, L35
+
 keep L2 and L18 out of the registry until they pass stricter follow-up gates
+
+keep L29 as an isolated green layer, but exclude it from the first strict multi-layer route bundle
 
 do not build split-seed for these cells; direct seed is already profitable
 ```
