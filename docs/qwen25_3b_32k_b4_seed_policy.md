@@ -258,6 +258,83 @@ the right answer yet: it barely improves full-model timing and breaks strict
 KL. L29 needs either a safer layer-specific seed schedule or should stay out of
 the strict bundle.
 
+## Marginal Route Search
+
+The route optimizer now evaluates actual full-model decode marginals in one
+model load:
+
+```text
+benchmark: benchmarks/profile_seed_only_model_decode_marginals.py
+modal:     benchmarks/modal_seed_only_model_decode_marginals.py
+artifact:  artifacts/gate0/qwen25_3b_32k_b8_model_decode/marginals_base_add_leaveout_8step_h100.json
+```
+
+The 8-step marginal run is a ranking pass, not a release gate. It found that
+`L2`, `L18`, and `L29` can look attractive in short decode:
+
+```text
+base strict 7-layer route:
+  speedup: 1.011x
+  KL max:  2.590e-05
+
+base + L2:
+  speedup: 1.028x
+  KL max:  3.127e-05
+  short-run recommendation: candidate_add
+
+base + L18:
+  speedup: 1.025x
+  KL max:  2.882e-05
+  short-run recommendation: candidate_add
+
+base + L29:
+  speedup: 1.028x
+  KL max:  5.361e-05
+  short-run recommendation: candidate_add
+```
+
+The 32-step gates are stricter and rejected the naive additions:
+
+```text
+base + L2 + L18, S384:
+  speedup: 1.020x
+  KL max:  1.792e-04
+  decision: reject_safety
+
+base + L2, S384:
+  speedup: 1.026x
+  KL max:  1.016e-04
+  decision: reject_safety by a narrow margin
+
+base + L18, S384:
+  speedup: 1.008x
+  KL max:  1.778e-04
+  decision: reject_safety
+```
+
+The one promising repair is L2 with a larger seed schedule:
+
+```text
+base + L2, S512:
+  seed config: sink=2, recent=4, middle=10, block_size=32
+  speedup:     1.021x
+  KL max:      9.374e-05
+  decision:    strict pass
+```
+
+This run used S512 for all routed layers because the ad-hoc benchmark applies
+one seed config to the whole route. The next useful implementation is
+per-layer seed configs inside the actual-model decode route, so only L2 pays the
+larger seed schedule while the already-safe strict layers stay on S384.
+
+Current marginal read:
+
+```text
+L29: do not add; strict-safety-negative at 32 steps
+L18: do not add; safety-negative and weak full-model gain
+L2:  promising borderline layer; needs per-layer S512 policy test
+```
+
 Decision:
 
 ```text
@@ -277,4 +354,7 @@ are green or the integrated runner overhead is lower
 
 do not add L29 to the strict B8 actual-model route without retuning its seed
 schedule; the all-8 route is runtime-positive but strict-safety-negative
+
+next route-optimizer target: per-layer seed configs, starting with strict
+bundle S384 + L2 S512
 ```

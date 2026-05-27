@@ -1,4 +1,4 @@
-"""Modal runner for end-to-end seed-only route-bundle decode timing."""
+"""Modal runner for actual-model seed-only decode marginal profiling."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import modal
 
 
-app = modal.App("streamattn-seed-only-route-bundle-decode")
+app = modal.App("streamattn-seed-only-model-decode-marginals")
 
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
@@ -52,7 +52,7 @@ def _json_from_output(output: str) -> dict[str, Any]:
 
 
 def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict[str, Any]:
-    print(f"[modal-route-bundle-decode] running: {' '.join(cmd[:5])} ...", flush=True)
+    print(f"[modal-model-decode-marginals] running: {' '.join(cmd[:5])} ...", flush=True)
     process = subprocess.Popen(
         cmd,
         cwd="/root/StreamAttn",
@@ -88,13 +88,17 @@ def _run(**kwargs) -> dict[str, Any]:
     cmd = [
         "python",
         "-u",
-        "/root/StreamAttn/benchmarks/profile_seed_only_route_bundle_decode.py",
+        "/root/StreamAttn/benchmarks/profile_seed_only_model_decode_marginals.py",
         "--model",
         kwargs["model"],
-        "--layers",
-        kwargs["layers"],
-        "--policy-names",
-        kwargs["policy_names"],
+        "--base-layers",
+        kwargs["base_layers"],
+        "--candidate-layers",
+        kwargs["candidate_layers"],
+        "--case-modes",
+        kwargs["case_modes"],
+        "--max-cases",
+        str(kwargs["max_cases"]),
         "--prompt-kinds",
         kwargs["prompt_kinds"],
         "--prompt-repeat",
@@ -127,35 +131,17 @@ def _run(**kwargs) -> dict[str, Any]:
         str(kwargs["sample_top_k"]),
         "--sample-seed",
         str(kwargs["sample_seed"]),
-        "--q-heads",
-        str(kwargs["q_heads"]),
-        "--kv-heads",
-        str(kwargs["kv_heads"]),
-        "--head-dim",
-        str(kwargs["head_dim"]),
-        "--block-size",
-        str(kwargs["block_size"]),
-        "--sink-blocks",
-        str(kwargs["sink_blocks"]),
-        "--recent-blocks",
-        str(kwargs["recent_blocks"]),
-        "--middle-seed-blocks",
-        str(kwargs["middle_seed_blocks"]),
-        "--block-order",
-        kwargs["block_order"],
-        "--num-warps",
-        str(kwargs["num_warps"]),
-        "--num-stages",
-        str(kwargs["num_stages"]),
+        "--assumed-region-speedup",
+        str(kwargs["assumed_region_speedup"]),
+        "--target-speedups",
+        kwargs["target_speedups"],
     ]
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
-    if not kwargs["use_packaged_policies"]:
-        cmd.append("--no-use-packaged-policies")
     return _json_from_cmd(cmd, env=env)
 
 
-@app.function(image=image, gpu="H100", timeout=7200)
+@app.function(image=image, gpu="H100", timeout=14400)
 def profile_h100(**kwargs):
     return _run(**kwargs)
 
@@ -163,14 +149,15 @@ def profile_h100(**kwargs):
 @app.local_entrypoint()
 def main(
     model: str = "Qwen/Qwen2.5-3B-Instruct",
-    layers: str = "0,14,16,24,26,27,35",
-    policy_names: str = "",
-    use_packaged_policies: bool = True,
-    prompt_kinds: str = "needle,code,long_doc,chat_doc",
+    base_layers: str = "0,14,16,24,26,27,35",
+    candidate_layers: str = "0,2,14,16,18,24,26,27,29,35",
+    case_modes: str = "base,add,leave_one_out",
+    max_cases: int = 0,
+    prompt_kinds: str = "needle,code,long_doc,chat_doc,needle,code,long_doc,chat_doc",
     prompt_repeat: int = 3000,
-    batch_size: int = 4,
+    batch_size: int = 8,
     max_seq: int = 32768,
-    steps: int = 32,
+    steps: int = 8,
     warmup_steps: int = 2,
     dtype: str = "fp16",
     attn_implementation: str = "",
@@ -182,23 +169,16 @@ def main(
     sample_top_p: float = 0.95,
     sample_top_k: int = 0,
     sample_seed: int = 1234,
-    q_heads: int = 16,
-    kv_heads: int = 2,
-    head_dim: int = 128,
-    block_size: int = 32,
-    sink_blocks: int = 2,
-    recent_blocks: int = 2,
-    middle_seed_blocks: int = 8,
-    block_order: str = "recent_first",
-    num_warps: int = 4,
-    num_stages: int = 2,
+    assumed_region_speedup: float = 3.0,
+    target_speedups: str = "1.05,1.10,1.20",
     output_json: str = "",
 ):
     result = profile_h100.remote(
         model=model,
-        layers=layers,
-        policy_names=policy_names,
-        use_packaged_policies=use_packaged_policies,
+        base_layers=base_layers,
+        candidate_layers=candidate_layers,
+        case_modes=case_modes,
+        max_cases=max_cases,
         prompt_kinds=prompt_kinds,
         prompt_repeat=prompt_repeat,
         batch_size=batch_size,
@@ -215,16 +195,8 @@ def main(
         sample_top_p=sample_top_p,
         sample_top_k=sample_top_k,
         sample_seed=sample_seed,
-        q_heads=q_heads,
-        kv_heads=kv_heads,
-        head_dim=head_dim,
-        block_size=block_size,
-        sink_blocks=sink_blocks,
-        recent_blocks=recent_blocks,
-        middle_seed_blocks=middle_seed_blocks,
-        block_order=block_order,
-        num_warps=num_warps,
-        num_stages=num_stages,
+        assumed_region_speedup=assumed_region_speedup,
+        target_speedups=target_speedups,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:
@@ -235,12 +207,30 @@ def main(
             "schema": result.get("schema"),
             "model": result.get("model"),
             "shape": result.get("shape"),
-            "route_bundle": result.get("route_bundle"),
-            "timing": result.get("timing"),
-            "safety": result.get("safety"),
-            "decision": result.get("decision"),
-            "patch_counts": result.get("patch_counts"),
+            "dense": result.get("dense"),
+            "base_layers": result.get("base_layers"),
+            "candidate_layers": result.get("candidate_layers"),
+            "coverage": result.get("coverage"),
+            "cases": [
+                {
+                    "name": row["name"],
+                    "kind": row["kind"],
+                    "layers": row["layers"],
+                    "speedup_vs_dense": row["speedup_vs_dense"],
+                    "saved_ms_per_token": row["saved_ms_per_token"],
+                    "kl_max": row["safety"]["kl_max"],
+                    "passed": row["decision"]["passed"],
+                    "recommendation": row["recommendation"],
+                    "marginal_vs_base_ms_total": row["marginal_vs_base_ms_total"],
+                    "marginal_vs_base_kl": row["marginal_vs_base_kl"],
+                }
+                for row in result.get("cases", [])
+            ],
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(text)
+
+
+if __name__ == "__main__":
+    main()
