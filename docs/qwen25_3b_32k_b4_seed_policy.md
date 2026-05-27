@@ -532,3 +532,110 @@ Immediate engineering implication:
 3. treat FlashInfer/FA as baselines, but StreamAttn needs its own decode cache
    lifecycle to convert local kernel wins into model-level speed
 ```
+
+## KV Cache Update Floor
+
+The cache-update floor benchmark isolates update cost from attention:
+
+```text
+benchmark: benchmarks/profile_kv_cache_update_floor.py
+modal:     benchmarks/modal_kv_cache_update_floor.py
+artifact:  artifacts/gate0/qwen25_3b_32k_b8_model_decode/kv_cache_update_floor_7layer_b8_h100.json
+```
+
+Shape:
+
+```text
+Qwen2.5-3B routed shape
+layers:       7
+batch:        8
+kv_heads:     2
+head_dim:     128
+kv_len:       32768
+updates:      8 decode steps
+dtype:        fp16
+device:       H100
+```
+
+Median update floors:
+
+```text
+HF DynamicCache:
+  27.978 ms total / 8 steps
+  3.497 ms per decode step
+
+Static-style index_copy layer loop:
+  1.207 ms total / 8 steps
+  0.151 ms per decode step
+  23.2x faster than HF DynamicCache
+
+Direct slice layer loop:
+  1.621 ms total / 8 steps
+  0.203 ms per decode step
+  17.3x faster than HF DynamicCache
+
+Direct slice batched across routed layers:
+  0.205 ms total / 8 steps
+  0.0256 ms per decode step
+  136.7x faster than HF DynamicCache
+
+Triton append batched across routed layers:
+  0.194 ms total / 8 steps
+  0.0243 ms per decode step
+  143.9x faster than HF DynamicCache
+```
+
+This validates the native-cache thesis. The patch timing measured:
+
+```text
+HF cache_update inside model patch: 3.425 ms per decode step
+```
+
+The standalone floor measured:
+
+```text
+HF DynamicCache floor:             3.497 ms per decode step
+```
+
+Those match closely. So the model-patch timing is not a measurement artifact;
+it is the HF dynamic cache append path.
+
+Projected upside for the B8 strict route:
+
+```text
+current dense decode:       ~28.88 ms/token
+current StreamAttn decode:  ~28.20 ms/token
+cache update tax:            ~3.43 ms/token
+native static update floor:   0.15-0.20 ms/token
+native batched update floor:  ~0.025 ms/token
+```
+
+If routed cache update drops from `~3.43 ms` to even the conservative
+per-layer static-style floor, the rough full-model decode estimate is:
+
+```text
+new StreamAttn ≈ 28.20 - (3.43 - 0.20)
+              ≈ 24.97 ms/token
+
+speedup vs dense ≈ 28.88 / 24.97
+                 ≈ 1.16x
+```
+
+That is the first credible path from a `~1.02x` actual-model win to a material
+full-model decode win without discovering new sparse layers.
+
+Decision:
+
+```text
+next implementation target:
+  StreamAttnNativeKVCache for routed layers
+
+minimum design:
+  K/V cache tensors: [routed_layers, B, Hkv, max_len, D]
+  append API: direct preallocated update
+  seed kernel reads native BHND cache directly
+
+then:
+  replace past_key_value.update for routed layers
+  rerun B8/B16 actual-model decode
+```
