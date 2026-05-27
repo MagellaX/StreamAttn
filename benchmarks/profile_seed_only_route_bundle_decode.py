@@ -21,6 +21,7 @@ import time
 import types
 from collections import Counter
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
@@ -44,6 +45,136 @@ from benchmarks.profile_stream_attn_gate0_wrapper import _dtype  # noqa: E402
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd,
 )
+
+_SEED_OVERRIDE_ALIASES = {
+    "block": "block_size",
+    "block_size": "block_size",
+    "sink": "sink_blocks",
+    "sink_blocks": "sink_blocks",
+    "recent": "recent_blocks",
+    "recent_blocks": "recent_blocks",
+    "middle": "middle_seed_blocks",
+    "middle_seed_blocks": "middle_seed_blocks",
+}
+
+
+def parse_layer_seed_overrides(text: str) -> Dict[int, Dict[str, int]]:
+    """Parse per-layer seed configs.
+
+    Format examples:
+
+        2:sink=2,recent=4,middle=10,block=32
+        2:2,4,10
+        2:32,2,4,10;18:sink=2,recent=6,middle=12
+    """
+
+    overrides: Dict[int, Dict[str, int]] = {}
+    if not text.strip():
+        return overrides
+    for spec in text.split(";"):
+        spec = spec.strip()
+        if not spec:
+            continue
+        if ":" not in spec:
+            raise ValueError(f"invalid layer seed override {spec!r}; expected LAYER:CONFIG")
+        layer_text, config_text = spec.split(":", 1)
+        layer_id = int(layer_text.strip())
+        if layer_id < 0:
+            raise ValueError("layer seed override ids must be non-negative")
+        config_text = config_text.strip()
+        if not config_text:
+            raise ValueError(f"missing seed config for layer {layer_id}")
+        config: Dict[str, int] = {}
+        if "=" not in config_text:
+            values = [int(part.strip()) for part in config_text.split(",") if part.strip()]
+            if len(values) == 3:
+                config = {
+                    "sink_blocks": values[0],
+                    "recent_blocks": values[1],
+                    "middle_seed_blocks": values[2],
+                }
+            elif len(values) == 4:
+                config = {
+                    "block_size": values[0],
+                    "sink_blocks": values[1],
+                    "recent_blocks": values[2],
+                    "middle_seed_blocks": values[3],
+                }
+            else:
+                raise ValueError(
+                    f"positional seed override for layer {layer_id} needs 3 or 4 integers"
+                )
+        else:
+            for part in config_text.split(","):
+                if not part.strip():
+                    continue
+                if "=" not in part:
+                    raise ValueError(f"invalid seed override field {part!r}")
+                key, value = part.split("=", 1)
+                field = _SEED_OVERRIDE_ALIASES.get(key.strip())
+                if field is None:
+                    raise ValueError(f"unknown seed override field {key.strip()!r}")
+                config[field] = int(value.strip())
+        for field, value in config.items():
+            if value <= 0:
+                raise ValueError(f"{field} override for layer {layer_id} must be positive")
+        overrides[layer_id] = config
+    return overrides
+
+
+def _policy_seed_config(policy) -> Dict[str, Any]:
+    return {
+        "layer_id": int(policy.layer_id),
+        "policy_id": policy.policy_id,
+        "block_size": int(policy.block_size),
+        "sink_blocks": int(policy.sink_blocks),
+        "recent_blocks": int(policy.recent_blocks),
+        "middle_seed_blocks": int(policy.middle_seed_blocks),
+        "seed_tokens": int(policy.block_size)
+        * int(policy.sink_blocks + policy.recent_blocks + policy.middle_seed_blocks),
+        "block_order": policy.block_order,
+        "num_warps": int(policy.num_warps),
+        "num_stages": int(policy.num_stages),
+    }
+
+
+def apply_layer_seed_overrides(bundle, override_text: str):
+    overrides = parse_layer_seed_overrides(override_text)
+    if not overrides:
+        return bundle, []
+    policies_by_layer = {int(policy.layer_id): policy for policy in bundle.policies}
+    unknown_layers = sorted(set(overrides) - set(policies_by_layer))
+    if unknown_layers:
+        raise ValueError(f"seed overrides target non-routed layers: {unknown_layers}")
+
+    policies = []
+    summaries = []
+    for policy in bundle.policies:
+        config = overrides.get(int(policy.layer_id))
+        if not config:
+            policies.append(policy)
+            continue
+        suffix = (
+            f"s{config.get('block_size', policy.block_size)}_"
+            f"{config.get('sink_blocks', policy.sink_blocks)}_"
+            f"{config.get('recent_blocks', policy.recent_blocks)}_"
+            f"{config.get('middle_seed_blocks', policy.middle_seed_blocks)}"
+        )
+        updated = replace(policy, **config, policy_id=f"{policy.policy_id}_{suffix}")
+        policies.append(updated)
+        summaries.append(
+            {
+                "layer_id": int(updated.layer_id),
+                "old": _policy_seed_config(policy),
+                "new": _policy_seed_config(updated),
+            }
+        )
+    return type(bundle)(
+        policy_names=[policy.policy_id for policy in policies],
+        policies=policies,
+        artifacts=bundle.artifacts,
+        layer_ids=[int(policy.layer_id) for policy in policies],
+    ), summaries
 
 
 def _import_qwen_rotary():
@@ -436,6 +567,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     device = torch.device(args.device)
     dtype = _dtype(args.dtype)
     bundle = _route_bundle_from_args(args)
+    bundle, layer_seed_overrides = apply_layer_seed_overrides(bundle, args.layer_seed_overrides)
     prompt_rows = _prompts_from_args(args)
 
     AutoModelForCausalLM, AutoTokenizer = _import_transformers()
@@ -540,6 +672,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "policy_names": bundle.policy_names,
             "policy_ids": [policy.policy_id for policy in bundle.policies],
             "layers": bundle.layer_ids,
+            "seed_configs": [_policy_seed_config(policy) for policy in bundle.policies],
+            "layer_seed_overrides": layer_seed_overrides,
         },
         "shape": {
             "batch": len(prompt_rows),
@@ -592,6 +726,14 @@ def main() -> None:
     parser.add_argument("--sink-blocks", type=int, default=2)
     parser.add_argument("--recent-blocks", type=int, default=2)
     parser.add_argument("--middle-seed-blocks", type=int, default=8)
+    parser.add_argument(
+        "--layer-seed-overrides",
+        default="",
+        help=(
+            "Semicolon-separated per-layer seed overrides, for example "
+            "'2:sink=2,recent=4,middle=10,block=32;18:2,6,12'."
+        ),
+    )
     parser.add_argument("--block-order", choices=["sequential", "recent_first", "sink_recent_first"], default="recent_first")
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=2)

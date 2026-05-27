@@ -358,3 +358,107 @@ schedule; the all-8 route is runtime-positive but strict-safety-negative
 next route-optimizer target: per-layer seed configs, starting with strict
 bundle S384 + L2 S512
 ```
+
+## Per-Layer Seed Config Test
+
+The actual-model decode runner now supports per-layer seed overrides, so a
+bundle can keep already-safe layers on S384 while giving only a borderline
+layer a larger seed window:
+
+```text
+--layer-seed-overrides "2:sink=2,recent=4,middle=10,block=32"
+```
+
+This tested the strongest L2 hypothesis:
+
+```text
+base strict S384 layers:
+  [0,14,16,24,26,27,35]
+
+add L2 with S512 only:
+  [0,2,14,16,24,26,27,35]
+```
+
+Result:
+
+```text
+B8 mixed S384/S512 dense model decode:      908.180751 ms total / 28.380648 ms per token
+B8 mixed S384/S512 StreamAttn model decode: 889.789777 ms total / 27.805931 ms per token
+B8 mixed S384/S512 speedup:                 1.0207x
+
+top1 changes:                               0
+sample token changes:                       0
+top5 overlap min:                           4
+max target logprob delta:                   2.83e-04
+KL max:                                     1.019203e-04  # misses strict gate by 1.92e-06
+```
+
+So L2 is still not a strict-route addition at 32 decode steps. It is extremely
+close on distribution safety, but it does not improve full-model speed enough
+to justify loosening the product gate.
+
+Replacement tests were also run with L2 S512 replacing one low-utility strict
+layer:
+
+```text
+replace L14 with L2 S512:
+  speedup: 1.022x
+  KL max:  1.497e-04
+  decision: reject_safety
+
+replace L27 with L2 S512:
+  speedup: 1.018x
+  KL max:  3.909e-05
+  decision: strict pass
+
+replace L35 with L2 S512:
+  speedup: 1.014x
+  KL max:  1.072e-04
+  decision: reject_safety
+```
+
+The only strict-safe replacement was `L27 -> L2`, but it was slower than the
+current strict bundle. That gives a clean decision:
+
+```text
+do not add L2 to the strict route yet
+do not replace a strict layer with L2 yet
+keep per-layer seed config support for the compiler
+```
+
+## B16 Actual-Model Decode
+
+The strict 7-layer route also passes at B16:
+
+```text
+B16 strict dense model decode:      1559.918921 ms total / 48.747466 ms per token
+B16 strict StreamAttn model decode: 1519.849307 ms total / 47.495291 ms per token
+B16 strict speedup:                 1.026x
+
+top1 changes:                       0
+sample token changes:               0
+top5 overlap min:                   4
+KL max:                             9.624708e-05
+```
+
+The B8-to-B16 movement is positive but small. That means batch scaling alone
+does not solve full-model speed. The limiting term is still effective routed
+coverage:
+
+```text
+S_total = 1.026
+S_region assumed = 3
+
+f = (1 - 1 / 1.026) / (1 - 1 / 3)
+  = 3.80% effective accelerated fraction
+```
+
+Compared with B8's `3.57%`, B16 only raises effective coverage by about
+`0.23 percentage points`. The next high-value work is therefore not another
+borderline sparse layer. It is:
+
+```text
+increase strict-green routed coverage
+or reduce model-runner integration overhead enough that local attention wins
+show up as full-model speed
+```

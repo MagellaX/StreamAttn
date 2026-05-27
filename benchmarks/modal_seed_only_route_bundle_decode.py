@@ -148,6 +148,8 @@ def _run(**kwargs) -> dict[str, Any]:
         "--num-stages",
         str(kwargs["num_stages"]),
     ]
+    if kwargs["layer_seed_overrides"]:
+        cmd.extend(["--layer-seed-overrides", kwargs["layer_seed_overrides"]])
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -189,6 +191,7 @@ def main(
     sink_blocks: int = 2,
     recent_blocks: int = 2,
     middle_seed_blocks: int = 8,
+    layer_seed_overrides: str = "",
     block_order: str = "recent_first",
     num_warps: int = 4,
     num_stages: int = 2,
@@ -222,6 +225,7 @@ def main(
         sink_blocks=sink_blocks,
         recent_blocks=recent_blocks,
         middle_seed_blocks=middle_seed_blocks,
+        layer_seed_overrides=layer_seed_overrides,
         block_order=block_order,
         num_warps=num_warps,
         num_stages=num_stages,
