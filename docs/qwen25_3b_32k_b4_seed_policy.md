@@ -1124,3 +1124,74 @@ ring-buffer style:
 
 Otherwise, move the systems focus back to the native routed QKV/o_proj path.
 ```
+
+### Fused Recent-Ring Append Probe
+
+The next packed-cache probe implemented the only packed update that could
+plausibly win: write one current K/V token into the packed recent ring and run
+packed seed attention in the same Triton launch:
+
+```text
+gate0_seed_only_packed_ring_append_triton_forward_out:
+  write current K/V into packed recent slot
+  read fixed sink/middle seed slots
+  read packed recent ring as an unordered seed set
+  run online-softmax seed attention
+```
+
+The recent ring does not need chronological read order because softmax
+attention over paired seed K/V tokens is permutation-invariant.  This is a
+synthetic cost probe; it changes the recent seed schedule from the original
+block-recent policy, so model-level logit safety would need a separate replay
+before integration.
+
+Benchmark artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_seed_cache_ring_append_probe_h100.json
+```
+
+H100 result, same Qwen3B shape:
+
+```text
+B=4:
+  current full-cache seed:       0.03970 ms
+  packed seed kernel:            0.02913 ms
+  fused ring append + packed:    0.03916 ms
+  ring total speedup:            1.014x
+
+B=8:
+  current full-cache seed:       0.03845 ms
+  packed seed kernel:            0.02908 ms
+  fused ring append + packed:    0.03742 ms
+  ring total speedup:            1.027x
+
+B=16:
+  current full-cache seed:       0.03864 ms
+  packed seed kernel:            0.03788 ms
+  fused ring append + packed:    0.03865 ms
+  ring total speedup:            1.000x
+```
+
+Correctness against the same packed-ring state is exact:
+
+```text
+ring_fused_vs_packed_after_ring max error: 0
+```
+
+Conclusion:
+
+```text
+The packed-cache moat is real but currently small:
+  per-token fused ring is only ~1.01-1.03x faster than the full-cache seed
+  kernel at B4/B8 and neutral at B16.
+
+Do not integrate packed ring into the model route yet.
+
+Next packed-cache work, if any, should be kernel-shape tuning:
+  [B,Hq,D,S] layout
+  lower-warps packed/ring variants
+  fast-math seed-only
+
+Otherwise, the higher expected payoff is native routed QKV/o_proj ownership.
+```

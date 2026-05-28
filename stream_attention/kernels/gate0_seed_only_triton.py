@@ -606,6 +606,87 @@ if TRITON_AVAILABLE:
         tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
 
     @triton.jit
+    def _packed_ring_append_seed_only_bhsd_kernel(
+        Q,
+        KCurrent,
+        VCurrent,
+        KSeed,
+        VSeed,
+        Out,
+        RingWriteIndex,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        SEED_TOKENS: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SINK_TOKENS: tl.constexpr,
+        RECENT_TOKENS: tl.constexpr,
+        SCALE: tl.constexpr,
+        PV_USE_BF16: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_d = tl.arange(0, D)
+
+        q = tl.load(Q + off_b * H * D + off_h * D + offs_d)
+        k_current = tl.load(KCurrent + off_b * H_KV * D + off_kv_h * D + offs_d)
+        v_current = tl.load(VCurrent + off_b * H_KV * D + off_kv_h * D + offs_d)
+
+        ring_idx = tl.load(RingWriteIndex).to(tl.int32) % RECENT_TOKENS
+        write_s = SINK_TOKENS + ring_idx
+        seed_base = off_b * H * SEED_TOKENS * D + off_h * SEED_TOKENS * D
+        tl.store(KSeed + seed_base + write_s * D + offs_d, k_current)
+        tl.store(VSeed + seed_base + write_s * D + offs_d, v_current)
+
+        running_max = tl.full([], -float("inf"), dtype=tl.float32)
+        acc_den = tl.zeros([], dtype=tl.float32)
+        acc_num = tl.zeros([D], dtype=tl.float32)
+
+        for start_s in range(0, SEED_TOKENS, TILE_N):
+            offs_s = start_s + tl.arange(0, TILE_N)
+            col_mask = offs_s < SEED_TOKENS
+            k_tile = tl.load(
+                KSeed
+                + seed_base
+                + offs_s[:, None] * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            qk = tl.sum(q[None, :].to(tl.float32) * k_tile.to(tl.float32), axis=1) * SCALE
+            qk = tl.where(col_mask, qk, -float("inf"))
+            tile_max = tl.max(qk, axis=0)
+            tile_valid = tile_max > -float("inf")
+            prev_valid = acc_den > 0.0
+            new_valid = prev_valid | tile_valid
+            new_max = tl.maximum(running_max, tile_max)
+            safe_new_max = tl.where(new_valid, new_max, 0.0)
+            correction = tl.where(prev_valid, tl.exp(running_max - safe_new_max), 0.0)
+            p = tl.exp(qk - safe_new_max)
+            p = tl.where(qk > -float("inf"), p, 0.0)
+            v_tile = tl.load(
+                VSeed
+                + seed_base
+                + offs_s[:, None] * D
+                + offs_d[None, :],
+                mask=col_mask[:, None],
+                other=0.0,
+            )
+            if PV_USE_BF16:
+                weighted = p[:, None].to(tl.bfloat16) * v_tile.to(tl.bfloat16)
+            else:
+                weighted = p[:, None].to(tl.float16) * v_tile.to(tl.float16)
+            acc_num = acc_num * correction + tl.sum(weighted.to(tl.float32), axis=0)
+            acc_den = acc_den * correction + tl.sum(p, axis=0)
+            running_max = tl.where(new_valid, new_max, running_max)
+
+        out = acc_num / acc_den
+        out = tl.where(acc_den > 0.0, out, 0.0)
+        tl.store(Out + off_b * H * D + off_h * D + offs_d, out)
+
+    @triton.jit
     def _rope_append_seed_only_cachepos_bhnd_kernel(
         QRaw,
         KRaw,
@@ -1776,6 +1857,92 @@ def gate0_seed_only_attention_packed_bhsd_triton_forward_out(
         D=dim,
         SEED_TOKENS=seed_tokens,
         TILE_N=block_size,
+        SCALE=score_scale,
+        PV_USE_BF16=v_seed.dtype is torch.bfloat16,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return output
+
+
+def gate0_seed_only_packed_ring_append_triton_forward_out(
+    query: torch.Tensor,
+    key_current: torch.Tensor,
+    value_current: torch.Tensor,
+    k_seed: torch.Tensor,
+    v_seed: torch.Tensor,
+    output: torch.Tensor,
+    ring_write_index: torch.Tensor,
+    *,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> torch.Tensor:
+    """Append current K/V to a packed recent ring and run seed attention.
+
+    The packed cache layout is ``[B,Hq,S,D]`` with the recent ring occupying
+    slots ``[sink_blocks * block_size : (sink_blocks + recent_blocks) *
+    block_size)``.  The seed attention reads the ring as an unordered set,
+    which is valid for softmax attention over paired K/V seed tokens.
+    """
+
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    tensors = (query, key_current, value_current, k_seed, v_seed, output, ring_write_index)
+    if not all(t.is_cuda for t in tensors):
+        raise RuntimeError("gate0_seed_only_packed_ring_append_triton_forward_out requires CUDA tensors")
+    if query.dim() != 4 or query.shape[1] != 1:
+        raise ValueError("query must be [batch, 1, heads, dim]")
+    if key_current.dim() != 4 or value_current.dim() != 4:
+        raise ValueError("key_current/value_current must be [batch, 1, kv_heads, dim]")
+    if key_current.shape != value_current.shape:
+        raise ValueError("key_current and value_current must have the same shape")
+    if key_current.shape[1] != 1:
+        raise ValueError("key_current/value_current only support one current token")
+    if output.shape != query.shape:
+        raise ValueError("output must have the same shape as query")
+    if not query.is_contiguous() or not key_current.is_contiguous() or not value_current.is_contiguous():
+        raise ValueError("query/key_current/value_current must be contiguous")
+    if not output.is_contiguous():
+        raise ValueError("output must be contiguous")
+    if k_seed.shape != v_seed.shape or k_seed.dim() != 4:
+        raise ValueError("k_seed/v_seed must be matching [batch, heads, seed_tokens, dim] tensors")
+    if not k_seed.is_contiguous() or not v_seed.is_contiguous():
+        raise ValueError("k_seed/v_seed must be contiguous")
+    if ring_write_index.numel() < 1:
+        raise ValueError("ring_write_index must contain at least one element")
+    batch, _seq_q, heads, dim = query.shape
+    kv_heads = key_current.shape[2]
+    if key_current.shape[0] != batch or key_current.shape[3] != dim:
+        raise ValueError("current K/V must match query batch and dim")
+    if heads % kv_heads != 0:
+        raise ValueError("query heads must be a multiple of KV heads")
+    seed_blocks = sink_blocks + recent_blocks + middle_seed_blocks
+    seed_tokens = seed_blocks * block_size
+    if recent_blocks <= 0:
+        raise ValueError("recent_blocks must be positive for ring append")
+    if k_seed.shape != (batch, heads, seed_tokens, dim):
+        raise ValueError("packed seed tensors must be [batch, q_heads, seed_tokens, dim]")
+    score_scale = 1.0 / math.sqrt(dim)
+    _packed_ring_append_seed_only_bhsd_kernel[(batch, heads)](
+        query,
+        key_current,
+        value_current,
+        k_seed,
+        v_seed,
+        output,
+        ring_write_index,
+        H=heads,
+        H_KV=kv_heads,
+        GROUP_SIZE=heads // kv_heads,
+        D=dim,
+        SEED_TOKENS=seed_tokens,
+        TILE_N=block_size,
+        SINK_TOKENS=sink_blocks * block_size,
+        RECENT_TOKENS=recent_blocks * block_size,
         SCALE=score_scale,
         PV_USE_BF16=v_seed.dtype is torch.bfloat16,
         num_warps=num_warps,

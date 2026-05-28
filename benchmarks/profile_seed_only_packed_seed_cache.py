@@ -29,6 +29,7 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_pack_seed_cache_bhsd,
     gate0_refresh_packed_seed_cache_recent_bhsd,
     gate0_seed_only_attention_packed_bhsd_triton_forward_out,
+    gate0_seed_only_packed_ring_append_triton_forward_out,
     gate0_seed_only_attention_triton_forward_out,
     make_gate0_seed_only_packed_workspace,
 )
@@ -70,6 +71,10 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         v = torch.randn_like(k)
         direct_out = torch.empty_like(q)
         packed_out = torch.empty_like(q)
+        ring_out = torch.empty_like(q)
+        key_current = torch.randn(batch, 1, args.kv_heads, args.dim, device=device, dtype=dtype)
+        value_current = torch.randn_like(key_current)
+        ring_write_index = torch.tensor([0], device=device, dtype=torch.int32)
         workspace = make_gate0_seed_only_packed_workspace(q, seed_tokens=seed_tokens)
         k_seed = workspace["k_seed"]
         v_seed = workspace["v_seed"]
@@ -139,11 +144,30 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             recent_refresh_run()
             return packed_run()
 
+        def ring_append_run() -> torch.Tensor:
+            return gate0_seed_only_packed_ring_append_triton_forward_out(
+                q,
+                key_current,
+                value_current,
+                k_seed,
+                v_seed,
+                ring_out,
+                ring_write_index,
+                block_size=args.block_size,
+                sink_blocks=args.sink_blocks,
+                recent_blocks=args.recent_blocks,
+                middle_seed_blocks=args.middle_seed_blocks,
+                num_warps=args.ring_num_warps,
+                num_stages=args.ring_num_stages,
+            )
+
         direct_ref = direct_run().clone()
         pack_run()
         packed_ref = packed_run().clone()
         recent_refresh_run()
         refreshed_ref = packed_run().clone()
+        ring_ref = ring_append_run().clone()
+        packed_after_ring_ref = packed_run().clone()
         _sync(device)
 
         direct_ms = _time_cuda(direct_run, device=device, warmup=args.warmup, iters=args.iters)
@@ -157,6 +181,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             warmup=args.warmup,
             iters=args.iters,
         )
+        ring_ms = _time_cuda(ring_append_run, device=device, warmup=args.warmup, iters=args.iters)
 
         group_size = args.q_heads // args.kv_heads
         seed_ratio = seed_tokens / float(args.kv_len)
@@ -177,18 +202,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_seed_ms": packed_ms,
             "pack_plus_packed_seed_ms": total_ms,
             "refresh_plus_packed_seed_ms": refresh_total_ms,
+            "ring_append_plus_packed_seed_ms": ring_ms,
             "packed_speedup_vs_direct_kernel_only": direct_ms / packed_ms,
             "packed_total_speedup_vs_direct": direct_ms / total_ms,
             "refresh_total_speedup_vs_direct": direct_ms / refresh_total_ms,
+            "ring_total_speedup_vs_direct": direct_ms / ring_ms,
             "refresh_speedup_vs_full_pack": pack_ms / refresh_ms,
             "packed_vs_direct_seed": _error(packed_ref, direct_ref),
             "refreshed_packed_vs_direct_seed": _error(refreshed_ref, direct_ref),
+            "ring_fused_vs_packed_after_ring": _error(ring_ref, packed_after_ring_ref),
         }
         rows.append(row)
 
     best_kernel = max(rows, key=lambda row: row["packed_speedup_vs_direct_kernel_only"])
     best_total = max(rows, key=lambda row: row["packed_total_speedup_vs_direct"])
     best_refresh_total = max(rows, key=lambda row: row["refresh_total_speedup_vs_direct"])
+    best_ring_total = max(rows, key=lambda row: row["ring_total_speedup_vs_direct"])
     return {
         "schema": "streamattn.seed_only_packed_seed_cache.v1",
         "shape": {
@@ -214,10 +243,13 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "refresh_num_stages": args.refresh_num_stages,
             "packed_num_warps": args.packed_num_warps,
             "packed_num_stages": args.packed_num_stages,
+            "ring_num_warps": args.ring_num_warps,
+            "ring_num_stages": args.ring_num_stages,
         },
         "best_kernel_only": best_kernel,
         "best_total": best_total,
         "best_refresh_total": best_refresh_total,
+        "best_ring_total": best_ring_total,
         "rows": rows,
     }
 
@@ -244,6 +276,8 @@ def main() -> None:
     parser.add_argument("--refresh-num-stages", type=int, default=3)
     parser.add_argument("--packed-num-warps", type=int, default=4)
     parser.add_argument("--packed-num-stages", type=int, default=2)
+    parser.add_argument("--ring-num-warps", type=int, default=4)
+    parser.add_argument("--ring-num-stages", type=int, default=2)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iters", type=int, default=30)
     parser.add_argument("--seed", type=int, default=1234)

@@ -14,6 +14,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
 from stream_attention.kernels.gate0_seed_only_triton import (
     gate0_refresh_packed_seed_cache_recent_bhsd,
+    gate0_seed_only_packed_ring_append_triton_forward_out,
     make_gate0_seed_only_packed_workspace,
 )
 
@@ -241,6 +242,33 @@ def test_refresh_packed_seed_recent_noops_without_recent_blocks():
 
     assert k_seed is workspace["k_seed"]
     assert v_seed is workspace["v_seed"]
+
+
+def test_packed_ring_append_rejects_missing_recent_blocks_without_triton():
+    import pytest
+    import torch
+
+    q = torch.empty((1, 1, 4, 8), dtype=torch.float16)
+    key_current = torch.empty((1, 1, 2, 8), dtype=torch.float16)
+    value_current = torch.empty_like(key_current)
+    workspace = make_gate0_seed_only_packed_workspace(q, seed_tokens=64)
+    out = torch.empty_like(q)
+    ring_index = torch.tensor([0], dtype=torch.int32)
+
+    with pytest.raises(RuntimeError if not q.is_cuda else ValueError):
+        gate0_seed_only_packed_ring_append_triton_forward_out(
+            q,
+            key_current,
+            value_current,
+            workspace["k_seed"],
+            workspace["v_seed"],
+            out,
+            ring_index,
+            block_size=32,
+            sink_blocks=1,
+            recent_blocks=0,
+            middle_seed_blocks=1,
+        )
 
 
 def test_native_kv_cache_copies_prefill_and_appends():
