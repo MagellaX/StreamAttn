@@ -1362,12 +1362,88 @@ unfused routed attention-module structure.
 Next target:
 
 ```text
-Make packed QKV the default native routed Qwen module path, then remove the
-remaining Python/forward patch overhead by running routed layers through the
-StreamAttnQwenAttentionModule replacement path by default.
+Test the native module replacement path with packed QKV enabled by default.
 
-After that, profile whether the next real target is:
-  o_proj integration,
-  seed-kernel retuning under packed-QKV timing,
-  or a deeper fused QKV/RoPE/cache/seed CUDA path.
+If the native module replacement is positive:
+  make it the default routed Qwen path
+
+If it is neutral or negative:
+  keep the monkey-patched forward path as the current best path
+  move to lower-level fusion instead of more Python module restructuring
+```
+
+### Native-Module Packed-QKV Probe
+
+The `StreamAttnQwenAttentionModule` replacement now exposes hot Qwen attention
+attributes directly and auto-enables packed QKV on the native-module path:
+
+```text
+--native-attention-module
+```
+
+is now equivalent to:
+
+```text
+native Qwen attention replacement
++ packed QKV projection
++ native routed cache
++ optional fused RoPE/cache-append/seed attention
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/native_module_packed_qkv_b8_h100.json
+```
+
+H100 B8 result:
+
+```text
+native-module packed-QKV route:
+  dense decode:      31.00900 ms/token
+  StreamAttn decode: 30.01516 ms/token
+  speedup:           1.03311x
+```
+
+Safety stayed strict-clean:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+KL max:            9.655e-05
+```
+
+Conclusion:
+
+```text
+Do not promote StreamAttnQwenAttentionModule as the default path yet.
+
+Replacing the HF attention module is semantically correct, but this version is
+slower than the current best monkey-patched route:
+
+current best packed-QKV patched route: 1.16411x
+native-module packed-QKV route:        1.03311x
+```
+
+The likely issue is that Python-level module replacement does not remove the
+right overhead and may disturb HF's optimized module path.  The next move
+should not be more wrapper reshaping.
+
+Next target:
+
+```text
+Keep current best:
+  monkey-patched routed decode
+  native routed cache
+  fused RoPE/cache-append/seed attention
+  packed QKV projection
+
+Move next to lower-level fused routed attention:
+  packed QKV projection output layout
+  RoPE
+  cache append
+  seed-only attention
+
+in one custom path, without replacing the HF module object.
 ```

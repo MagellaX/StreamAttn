@@ -873,14 +873,27 @@ class StreamAttnQwenAttentionModule(torch.nn.Module):
         super().__init__()
         self.original_module = original_module
         self.patch = patch
-
-    @property
-    def layer_idx(self):
-        return self.original_module.layer_idx
-
-    @property
-    def attention_type(self):
-        return getattr(self.original_module, "attention_type", "full_attention")
+        self.layer_idx = getattr(original_module, "layer_idx", None)
+        self.attention_type = getattr(original_module, "attention_type", "full_attention")
+        self.head_dim = getattr(original_module, "head_dim", None)
+        for attr in (
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "num_heads",
+            "num_key_value_heads",
+            "num_key_value_groups",
+            "scaling",
+            "is_causal",
+            "config",
+        ):
+            if hasattr(original_module, attr):
+                setattr(self, attr, getattr(original_module, attr))
+        if getattr(patch, "packed_qkv_projection", False) and all(
+            hasattr(self, attr) for attr in ("q_proj", "k_proj", "v_proj")
+        ):
+            patch.prepare_packed_qkv(self)
 
     def forward(
         self,
@@ -892,7 +905,7 @@ class StreamAttnQwenAttentionModule(torch.nn.Module):
         **kwargs,
     ):
         return self.patch.forward(
-            self.original_module,
+            self,
             hidden_states,
             position_embeddings=position_embeddings,
             attention_mask=attention_mask,
@@ -961,6 +974,7 @@ def _patched_seed_only_decode_modules(
     }
     patches: Dict[str, _SeedOnlyQwenDecodePatch] = {}
     originals = []
+    effective_packed_qkv_projection = bool(packed_qkv_projection or native_attention_module)
     for policy in bundle.policies:
         item = modules_by_layer.get(int(policy.layer_id))
         if item is None:
@@ -973,15 +987,15 @@ def _patched_seed_only_decode_modules(
             native_cache=native_cache,
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
             fused_rope_append_seed=fused_rope_append_seed,
-            packed_qkv_projection=packed_qkv_projection,
+            packed_qkv_projection=effective_packed_qkv_projection,
         )
-        if packed_qkv_projection:
-            patch.prepare_packed_qkv(module)
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
             originals.append((parent, attr, module))
             setattr(parent, attr, StreamAttnQwenAttentionModule(module, patch))
         else:
+            if effective_packed_qkv_projection:
+                patch.prepare_packed_qkv(module)
             originals.append((module, "forward", module.forward))
             module.forward = types.MethodType(patch.forward, module)
         patches[str(policy.layer_id)] = patch
@@ -1363,7 +1377,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
             "native_attention_module": bool(args.native_attention_module),
             "fused_rope_append_seed": bool(args.fused_rope_append_seed),
-            "packed_qkv_projection": bool(args.packed_qkv_projection),
+            "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1464,7 +1478,10 @@ def main() -> None:
     parser.add_argument(
         "--native-attention-module",
         action="store_true",
-        help="Replace routed Qwen attention modules with StreamAttnQwenAttentionModule during decode.",
+        help=(
+            "Replace routed Qwen attention modules with StreamAttnQwenAttentionModule during decode. "
+            "This native module path pre-packs QKV projection weights by default."
+        ),
     )
     parser.add_argument(
         "--fused-rope-append-seed",

@@ -419,3 +419,37 @@ def test_streamattn_qwen_attention_module_delegates_patch():
     assert patch.called
     assert weights is None
     assert torch.equal(out, torch.ones_like(hidden))
+
+
+def test_streamattn_qwen_attention_module_exposes_hot_projection_attrs():
+    import torch
+
+    class Original(torch.nn.Module):
+        layer_idx = 3
+        attention_type = "full_attention"
+        head_dim = 4
+
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(8, 8)
+            self.k_proj = torch.nn.Linear(8, 4)
+            self.v_proj = torch.nn.Linear(8, 4)
+            self.o_proj = torch.nn.Linear(8, 8)
+
+        def forward(self, *args, **kwargs):
+            raise AssertionError("fallback should not run")
+
+    patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=3),
+        original_forward=lambda *args, **kwargs: None,
+        packed_qkv_projection=True,
+    )
+    original = Original()
+    wrapper = StreamAttnQwenAttentionModule(original, patch)
+
+    assert wrapper.layer_idx == 3
+    assert wrapper.attention_type == "full_attention"
+    assert wrapper.head_dim == 4
+    assert wrapper.q_proj is original.q_proj
+    assert wrapper.o_proj is original.o_proj
+    assert patch._packed_qkv_weight is not None
