@@ -5,6 +5,7 @@ import pytest
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import _validate_route_bundle
 from benchmarks.profile_gate0_seed_only_closed_loop_rollout import _prompt_rows_from_file
+from benchmarks.profile_gate0_seed_only_closed_loop_rollout import _prompts_from_args
 from benchmarks.build_seed_policy_stress_prompts import BUCKETS, build_rows
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
@@ -119,6 +120,21 @@ def test_prompt_rows_from_jsonl_preserves_stress_metadata(tmp_path):
             "risk": "identifier",
         }
     ]
+
+
+def test_prompts_from_args_cycles_prompt_kinds_to_batch_size():
+    import argparse
+
+    rows = _prompts_from_args(
+        argparse.Namespace(
+            prompt_file="",
+            prompt_kinds="needle,code",
+            batch_size=5,
+            prompt_repeat=1,
+        )
+    )
+
+    assert [row["kind"] for row in rows] == ["needle", "code", "needle", "code", "needle"]
 
 
 def test_build_seed_policy_stress_prompts_covers_all_buckets():
@@ -877,6 +893,33 @@ def test_seed_only_qwen_patch_packed_qkv_prepares_lazily():
     assert q.shape == (2, 2, 1, 4)
     assert k.shape == (2, 1, 1, 4)
     assert v.shape == (2, 1, 1, 4)
+
+
+def test_seed_only_qwen_patch_direct_o_proj_matches_module():
+    import torch
+
+    class DummyAttention(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.o_proj = torch.nn.Linear(8, 8)
+
+    module = DummyAttention()
+    attn_output = torch.randn(2, 1, 8)
+    module_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        direct_o_proj=False,
+    )
+    direct_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        direct_o_proj=True,
+    )
+
+    torch.testing.assert_close(
+        direct_patch._o_projection(module, attn_output),
+        module_patch._o_projection(module, attn_output),
+    )
 
 
 def test_packed_seed_workspace_shape():

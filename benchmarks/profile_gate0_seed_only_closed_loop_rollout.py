@@ -89,7 +89,8 @@ def _prompts_from_args(args: argparse.Namespace) -> List[Dict[str, str]]:
 
     kinds = _parse_prompt_kinds(args.prompt_kinds)
     prompts = []
-    for kind in kinds[: args.batch_size]:
+    for idx in range(int(args.batch_size)):
+        kind = kinds[idx % len(kinds)]
         prompt = (_prompt_for_kind(kind).strip() + " ") * max(1, int(args.prompt_repeat))
         prompts.append({"kind": kind, "prompt": prompt.strip()})
     if not prompts:

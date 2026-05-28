@@ -176,6 +176,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--packed-qkv-projection")
     if kwargs["packed_qkv_fused_input"]:
         cmd.append("--packed-qkv-fused-input")
+    if kwargs["direct_o_proj"]:
+        cmd.append("--direct-o-proj")
     if kwargs["allow_mixed_seed_configs"]:
         cmd.append("--allow-mixed-seed-configs")
     if not kwargs["product_strict"]:
@@ -239,6 +241,7 @@ def main(
     fused_rope_append_seed: bool = False,
     packed_qkv_projection: bool = False,
     packed_qkv_fused_input: bool = False,
+    direct_o_proj: bool = False,
     allow_mixed_seed_configs: bool = False,
     output_json: str = "",
 ):
@@ -288,6 +291,7 @@ def main(
         fused_rope_append_seed=fused_rope_append_seed,
         packed_qkv_projection=packed_qkv_projection,
         packed_qkv_fused_input=packed_qkv_fused_input,
+        direct_o_proj=direct_o_proj,
         allow_mixed_seed_configs=allow_mixed_seed_configs,
     )
     text = json.dumps(result, indent=2, sort_keys=True)

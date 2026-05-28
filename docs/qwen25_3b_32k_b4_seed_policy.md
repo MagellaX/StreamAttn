@@ -1515,6 +1515,86 @@ either:
 2. expand strict-green routed coverage so the accelerated fraction f increases.
 ```
 
+### Direct o_proj Ownership Probe
+
+The route benchmark now supports:
+
+```text
+--direct-o-proj
+```
+
+This applies the routed attention output projection with direct `F.linear`
+against `o_proj.weight` and `o_proj.bias`, bypassing `module.o_proj(...)`
+dispatch in the decode patch.  It is mathematically identical to the module
+path for Qwen's standard linear projection.
+
+This commit also fixes a benchmark footgun: synthetic prompt-kind batches now
+cycle prompt kinds up to `--batch-size`.  Before this fix, the default
+`needle,code,long_doc,chat_doc` prompt list produced only four rows even when
+`--batch-size 8` was requested.
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_qkv_route_b8_h100_rerun_promptcycle.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/direct_o_proj_packed_qkv_route_b8_h100.json
+```
+
+Paired H100 B8 result after prompt cycling:
+
+```text
+baseline packed-QKV route:
+  dense decode:      28.64356 ms/token
+  StreamAttn decode: 24.71644 ms/token
+  speedup:           1.15889x
+
+direct-o-proj packed-QKV route:
+  dense decode:      28.29044 ms/token
+  StreamAttn decode: 24.46827 ms/token
+  speedup:           1.15621x
+```
+
+Direct `o_proj` therefore improved the candidate StreamAttn decode path by:
+
+```text
+24.71644 / 24.46827 = 1.01014x
+absolute saved:       0.24817 ms/token
+```
+
+Safety stayed strict-clean:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+KL max:            9.655e-05
+```
+
+Conclusion:
+
+```text
+Direct o_proj is safe and gives a small real routed-path speed win.
+
+The headline speedup moved less because dense baseline timing varied between
+runs, but the candidate StreamAttn decode time improved in the paired rerun.
+Keep the switch explicit for now and use it in the current best validated-route
+systems path:
+
+  native routed cache
+  fused RoPE/cache-append/seed attention
+  packed QKV projection
+  direct o_proj
+```
+
+Next systems target:
+
+```text
+The easy module-dispatch ownership wins are now mostly exhausted.
+Further product-speed work needs either:
+  1. lower-level output-projection fusion/custom GEMV for decode batch shapes, or
+  2. more strict-green routed coverage to increase the accelerated fraction f.
+```
+
 ### L2 S640 8-Layer Candidate Route
 
 The route-optimizer branch tested whether the known borderline L2 layer can be
