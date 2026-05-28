@@ -1447,3 +1447,70 @@ Move next to lower-level fused routed attention:
 
 in one custom path, without replacing the HF module object.
 ```
+
+### Packed-QKV Fused-Input Probe
+
+The fused RoPE/cache-append/seed kernel now has an experimental entry point
+that consumes the packed QKV projection output directly:
+
+```text
+--packed-qkv-projection
+--packed-qkv-fused-input
+```
+
+This removes the Python-side `split`/`view` tensors before the fused seed-only
+decode.  It is still the monkey-patched routed decode path, not the native
+module replacement.
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_qkv_fused_input_b8_h100.json
+```
+
+H100 B8 result:
+
+```text
+packed-QKV fused-input route:
+  dense decode:      28.66224 ms/token
+  StreamAttn decode: 24.89656 ms/token
+  speedup:           1.15125x
+```
+
+Safety stayed strict-clean:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+KL max:            9.655e-05
+```
+
+All routed layers used the new path:
+
+```text
+packed_qkv_projection:  true
+packed_qkv_fused_input: true
+fallbacks:              none
+```
+
+Conclusion:
+
+```text
+Do not promote packed-QKV fused-input as the default route yet.
+
+It is safe and positive, but slower than the current best patched packed-QKV
+route:
+
+current best packed-QKV patched route: 1.16411x
+packed-QKV fused-input route:          1.15125x
+```
+
+This means the remaining overhead is not just Python `split`/`view` construction
+between packed QKV and the fused seed kernel.  The next higher-signal work is
+either:
+
+```text
+1. fuse output projection / residual-adjacent writeback for routed layers, or
+2. expand strict-green routed coverage so the accelerated fraction f increases.
+```

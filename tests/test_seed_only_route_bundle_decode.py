@@ -242,6 +242,36 @@ def test_seed_only_qwen_patch_packed_qkv_matches_separate_projection():
         torch.testing.assert_close(packed_tensor, separate_tensor)
 
 
+def test_seed_only_qwen_patch_packed_qkv_prepares_lazily():
+    import torch
+
+    class DummyAttention(torch.nn.Module):
+        head_dim = 4
+
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(8, 8, bias=True)
+            self.k_proj = torch.nn.Linear(8, 4, bias=True)
+            self.v_proj = torch.nn.Linear(8, 4, bias=True)
+
+    module = DummyAttention()
+    hidden = torch.randn(2, 1, 8)
+    hidden_shape = (2, 1, -1, module.head_dim)
+    patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        packed_qkv_projection=True,
+    )
+
+    assert patch._packed_qkv_weight is None
+    q, k, v = patch._qkv_projection(module, hidden, hidden_shape)
+
+    assert patch._packed_qkv_weight is not None
+    assert q.shape == (2, 2, 1, 4)
+    assert k.shape == (2, 1, 1, 4)
+    assert v.shape == (2, 1, 1, 4)
+
+
 def test_packed_seed_workspace_shape():
     import torch
 

@@ -43,6 +43,7 @@ from benchmarks.profile_gate0_seed_only_multi_layer_rollout import (  # noqa: E4
 from benchmarks.profile_real_llm_gate1_heads import _attention_modules, _import_transformers  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype  # noqa: E402
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
+    gate0_seed_only_rope_append_packed_qkv_triton_forward_out_cachepos_bhnd,
     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd,
     gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd,
 )
@@ -547,6 +548,7 @@ class _SeedOnlyQwenDecodePatch:
         native_cache_hf_sync_layers: Optional[Set[int]] = None,
         fused_rope_append_seed: bool = False,
         packed_qkv_projection: bool = False,
+        packed_qkv_fused_input: bool = False,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -555,6 +557,7 @@ class _SeedOnlyQwenDecodePatch:
         self.native_cache_hf_sync_layers = native_cache_hf_sync_layers or set()
         self.fused_rope_append_seed = fused_rope_append_seed
         self.packed_qkv_projection = packed_qkv_projection
+        self.packed_qkv_fused_input = packed_qkv_fused_input
         self.call_count = 0
         self.seed_call_count = 0
         self.native_cache_update_count = 0
@@ -603,6 +606,12 @@ class _SeedOnlyQwenDecodePatch:
         )
         self._packed_qkv_module_id = id(module)
 
+    def _packed_qkv_linear(self, module: torch.nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
+        if self._packed_qkv_weight is None or self._packed_qkv_module_id != id(module):
+            self.prepare_packed_qkv(module)
+        assert self._packed_qkv_weight is not None
+        return F.linear(hidden_states, self._packed_qkv_weight, self._packed_qkv_bias)
+
     def _qkv_projection(
         self,
         module: torch.nn.Module,
@@ -615,15 +624,9 @@ class _SeedOnlyQwenDecodePatch:
                 module.k_proj(hidden_states).view(hidden_shape).transpose(1, 2),
                 module.v_proj(hidden_states).view(hidden_shape).transpose(1, 2),
             )
-        if self._packed_qkv_weight is None or self._packed_qkv_module_id != id(module):
-            self.prepare_packed_qkv(module)
-        assert self._packed_qkv_weight is not None
+        packed = self._packed_qkv_linear(module, hidden_states)
         assert self._packed_qkv_sizes is not None
-        q, k, v = torch.split(
-            F.linear(hidden_states, self._packed_qkv_weight, self._packed_qkv_bias),
-            self._packed_qkv_sizes,
-            dim=-1,
-        )
+        q, k, v = torch.split(packed, self._packed_qkv_sizes, dim=-1)
         return (
             q.view(hidden_shape).transpose(1, 2),
             k.view(hidden_shape).transpose(1, 2),
@@ -721,42 +724,38 @@ class _SeedOnlyQwenDecodePatch:
             timing_events = {}
             self._mark(timing_events, "start")
 
-        apply_rotary_pos_emb = _import_qwen_rotary()
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, module.head_dim)
-        query_states, key_states, value_states = self._qkv_projection(
-            module,
-            hidden_states,
-            hidden_shape,
-        )
-        self._mark(timing_events, "after_qkv")
         cos, sin = position_embeddings
         use_fused_rope_append_seed = (
             self.fused_rope_append_seed
             and self.native_cache is not None
             and int(module.layer_idx) not in self.native_cache_hf_sync_layers
         )
-        if not use_fused_rope_append_seed:
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-        self._mark(timing_events, "after_rope")
-        cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-        if use_fused_rope_append_seed:
+        use_packed_qkv_fused_input = (
+            use_fused_rope_append_seed
+            and self.packed_qkv_projection
+            and self.packed_qkv_fused_input
+        )
+        if use_packed_qkv_fused_input:
+            packed_qkv = self._packed_qkv_linear(module, hidden_states)
+            self._mark(timing_events, "after_qkv")
+            self._mark(timing_events, "after_rope")
             native_pos = self._native_next_pos
             key_cache, value_cache = self.native_cache.layer_cache(int(module.layer_idx))
-            q = query_states
+            assert self._packed_qkv_sizes is not None
+            q_heads = int(self._packed_qkv_sizes[0] // module.head_dim)
             out = self._output_buffer(
                 batch=hidden_states.shape[0],
-                q_heads=query_states.shape[1],
+                q_heads=q_heads,
                 head_dim=module.head_dim,
                 device=hidden_states.device,
                 dtype=hidden_states.dtype,
             )
             self._mark(timing_events, "after_cache_update")
             self._mark(timing_events, "after_layout")
-            gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd(
-                q,
-                key_states,
-                value_states,
+            gate0_seed_only_rope_append_packed_qkv_triton_forward_out_cachepos_bhnd(
+                packed_qkv,
                 cos,
                 sin,
                 key_cache,
@@ -775,88 +774,135 @@ class _SeedOnlyQwenDecodePatch:
             self._native_next_pos += 1
             self.native_cache_update_count += 1
             self._mark(timing_events, "after_seed_kernel")
-        elif self.native_cache is None:
-            key_states, value_states = past_key_value.update(
-                key_states,
-                value_states,
-                module.layer_idx,
-                cache_kwargs,
-            )
         else:
-            if int(module.layer_idx) in self.native_cache_hf_sync_layers:
-                past_key_value.update(
+            apply_rotary_pos_emb = _import_qwen_rotary()
+            query_states, key_states, value_states = self._qkv_projection(
+                module,
+                hidden_states,
+                hidden_shape,
+            )
+            self._mark(timing_events, "after_qkv")
+            if not use_fused_rope_append_seed:
+                query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+            self._mark(timing_events, "after_rope")
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            if use_fused_rope_append_seed:
+                native_pos = self._native_next_pos
+                key_cache, value_cache = self.native_cache.layer_cache(int(module.layer_idx))
+                q = query_states
+                out = self._output_buffer(
+                    batch=hidden_states.shape[0],
+                    q_heads=query_states.shape[1],
+                    head_dim=module.head_dim,
+                    device=hidden_states.device,
+                    dtype=hidden_states.dtype,
+                )
+                self._mark(timing_events, "after_cache_update")
+                self._mark(timing_events, "after_layout")
+                gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd(
+                    q,
+                    key_states,
+                    value_states,
+                    cos,
+                    sin,
+                    key_cache,
+                    value_cache,
+                    out,
+                    cache_position,
+                    block_size=self.policy.block_size,
+                    sink_blocks=self.policy.sink_blocks,
+                    recent_blocks=self.policy.recent_blocks,
+                    middle_seed_blocks=self.policy.middle_seed_blocks,
+                    block_order=self.policy.block_order,
+                    num_warps=self.policy.num_warps,
+                    num_stages=self.policy.num_stages,
+                )
+                self.native_cache.sync_hf_view(int(module.layer_idx), native_pos + 1)
+                self._native_next_pos += 1
+                self.native_cache_update_count += 1
+                self._mark(timing_events, "after_seed_kernel")
+            elif self.native_cache is None:
+                key_states, value_states = past_key_value.update(
                     key_states,
                     value_states,
                     module.layer_idx,
                     cache_kwargs,
                 )
-                self.hf_sync_update_count += 1
-            native_pos = self._native_next_pos
-            key_states, value_states = self.native_cache.append(
-                int(module.layer_idx),
-                key_states,
-                value_states,
-                native_pos,
-            )
-            self._native_next_pos += 1
-            self.native_cache_update_count += 1
-            self._mark(timing_events, "after_cache_update")
+            else:
+                if int(module.layer_idx) in self.native_cache_hf_sync_layers:
+                    past_key_value.update(
+                        key_states,
+                        value_states,
+                        module.layer_idx,
+                        cache_kwargs,
+                    )
+                    self.hf_sync_update_count += 1
+                native_pos = self._native_next_pos
+                key_states, value_states = self.native_cache.append(
+                    int(module.layer_idx),
+                    key_states,
+                    value_states,
+                    native_pos,
+                )
+                self._native_next_pos += 1
+                self.native_cache_update_count += 1
+                self._mark(timing_events, "after_cache_update")
 
-            q = query_states.transpose(1, 2).contiguous()
-            k = key_states
-            v = value_states
-            out = self._output_buffer(
-                batch=hidden_states.shape[0],
-                q_heads=query_states.shape[1],
-                head_dim=module.head_dim,
-                device=hidden_states.device,
-                dtype=hidden_states.dtype,
-            )
-            self._mark(timing_events, "after_layout")
-            gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                q,
-                k,
-                v,
-                out,
-                cache_position,
-                block_size=self.policy.block_size,
-                sink_blocks=self.policy.sink_blocks,
-                recent_blocks=self.policy.recent_blocks,
-                middle_seed_blocks=self.policy.middle_seed_blocks,
-                block_order=self.policy.block_order,
-                num_warps=self.policy.num_warps,
-                num_stages=self.policy.num_stages,
-            )
-            self._mark(timing_events, "after_seed_kernel")
-        if not use_fused_rope_append_seed and self.native_cache is None:
-            self._mark(timing_events, "after_cache_update")
+                q = query_states.transpose(1, 2).contiguous()
+                k = key_states
+                v = value_states
+                out = self._output_buffer(
+                    batch=hidden_states.shape[0],
+                    q_heads=query_states.shape[1],
+                    head_dim=module.head_dim,
+                    device=hidden_states.device,
+                    dtype=hidden_states.dtype,
+                )
+                self._mark(timing_events, "after_layout")
+                gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+                    q,
+                    k,
+                    v,
+                    out,
+                    cache_position,
+                    block_size=self.policy.block_size,
+                    sink_blocks=self.policy.sink_blocks,
+                    recent_blocks=self.policy.recent_blocks,
+                    middle_seed_blocks=self.policy.middle_seed_blocks,
+                    block_order=self.policy.block_order,
+                    num_warps=self.policy.num_warps,
+                    num_stages=self.policy.num_stages,
+                )
+                self._mark(timing_events, "after_seed_kernel")
+            if not use_fused_rope_append_seed and self.native_cache is None:
+                self._mark(timing_events, "after_cache_update")
 
-            q = query_states.transpose(1, 2).contiguous()
-            k = key_states
-            v = value_states
-            out = self._output_buffer(
-                batch=hidden_states.shape[0],
-                q_heads=query_states.shape[1],
-                head_dim=module.head_dim,
-                device=hidden_states.device,
-                dtype=hidden_states.dtype,
-            )
-            self._mark(timing_events, "after_layout")
-            gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                q,
-                k,
-                v,
-                out,
-                cache_position,
-                block_size=self.policy.block_size,
-                sink_blocks=self.policy.sink_blocks,
-                recent_blocks=self.policy.recent_blocks,
-                middle_seed_blocks=self.policy.middle_seed_blocks,
-                block_order=self.policy.block_order,
-                num_warps=self.policy.num_warps,
-                num_stages=self.policy.num_stages,
-            )
-            self._mark(timing_events, "after_seed_kernel")
+                q = query_states.transpose(1, 2).contiguous()
+                k = key_states
+                v = value_states
+                out = self._output_buffer(
+                    batch=hidden_states.shape[0],
+                    q_heads=query_states.shape[1],
+                    head_dim=module.head_dim,
+                    device=hidden_states.device,
+                    dtype=hidden_states.dtype,
+                )
+                self._mark(timing_events, "after_layout")
+                gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+                    q,
+                    k,
+                    v,
+                    out,
+                    cache_position,
+                    block_size=self.policy.block_size,
+                    sink_blocks=self.policy.sink_blocks,
+                    recent_blocks=self.policy.recent_blocks,
+                    middle_seed_blocks=self.policy.middle_seed_blocks,
+                    block_order=self.policy.block_order,
+                    num_warps=self.policy.num_warps,
+                    num_stages=self.policy.num_stages,
+                )
+                self._mark(timing_events, "after_seed_kernel")
         attn_output = out.reshape(*input_shape, -1).contiguous()
         attn_output = module.o_proj(attn_output)
         self._mark(timing_events, "end")
@@ -968,6 +1014,7 @@ def _patched_seed_only_decode_modules(
     native_attention_module: bool = False,
     fused_rope_append_seed: bool = False,
     packed_qkv_projection: bool = False,
+    packed_qkv_fused_input: bool = False,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -988,6 +1035,7 @@ def _patched_seed_only_decode_modules(
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
             fused_rope_append_seed=fused_rope_append_seed,
             packed_qkv_projection=effective_packed_qkv_projection,
+            packed_qkv_fused_input=packed_qkv_fused_input,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1123,6 +1171,7 @@ def _warmup_decode(
             native_attention_module=args.native_attention_module,
             fused_rope_append_seed=args.fused_rope_append_seed,
             packed_qkv_projection=args.packed_qkv_projection,
+            packed_qkv_fused_input=args.packed_qkv_fused_input,
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1140,6 +1189,7 @@ def _warmup_decode(
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
+            "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1331,6 +1381,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             native_attention_module=args.native_attention_module,
             fused_rope_append_seed=args.fused_rope_append_seed,
             packed_qkv_projection=args.packed_qkv_projection,
+            packed_qkv_fused_input=args.packed_qkv_fused_input,
         ) as patches:
             seed = _decode_loop(
                 model=model,
@@ -1354,6 +1405,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
+            "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1378,6 +1430,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "native_attention_module": bool(args.native_attention_module),
             "fused_rope_append_seed": bool(args.fused_rope_append_seed),
             "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
+            "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1497,6 +1550,14 @@ def main() -> None:
         help=(
             "Prepack routed q/k/v projection weights and use one packed QKV F.linear during "
             "decode instead of three separate q_proj/k_proj/v_proj calls."
+        ),
+    )
+    parser.add_argument(
+        "--packed-qkv-fused-input",
+        action="store_true",
+        help=(
+            "Experimental: when used with --packed-qkv-projection and --fused-rope-append-seed, "
+            "pass the packed QKV projection output directly into the fused Triton decode kernel."
         ),
     )
     parser.add_argument(
