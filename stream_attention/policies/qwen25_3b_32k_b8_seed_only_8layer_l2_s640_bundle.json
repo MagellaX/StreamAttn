@@ -1,0 +1,68 @@
+{
+  "schema": "streamattn.seed_only_route_bundle.v1",
+  "bundle_id": "qwen25_3b_32k_fp16_b8_seed_only_8layer_l2_s640_v1",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "tensor_space": "post_rope",
+  "kv_len_bucket": 32768,
+  "min_batch": 8,
+  "mode": "multi_layer_seed_only_bundle",
+  "backend_mode": "gate0_seed_only_batched",
+  "seed_only_policy_names": [
+    "qwen25_3b_l0_32k_seed_only_batched",
+    "qwen25_3b_l2_s640_32k_seed_only_batched",
+    "qwen25_3b_l14_32k_seed_only_batched",
+    "qwen25_3b_l16_32k_seed_only_batched",
+    "qwen25_3b_l24_32k_seed_only_batched",
+    "qwen25_3b_l26_32k_seed_only_batched",
+    "qwen25_3b_l27_32k_seed_only_batched",
+    "qwen25_3b_l35_32k_seed_only_batched"
+  ],
+  "seed_only_layers": [
+    0,
+    2,
+    14,
+    16,
+    24,
+    26,
+    27,
+    35
+  ],
+  "layer_seed_overrides": [
+    {
+      "layer_id": 2,
+      "block_size": 32,
+      "sink_blocks": 2,
+      "recent_blocks": 6,
+      "middle_seed_blocks": 12,
+      "seed_tokens": 640
+    }
+  ],
+  "exact_native_layers": "all non-listed layers",
+  "safety": {
+    "validation": "actual_model_decode_teacher_forced_coupled_top_p_mixed_prompts",
+    "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s640_packed_qkv_route_b8_h100.json",
+    "steps": 32,
+    "top1_changes": 0,
+    "sample_token_changed_count": 0,
+    "min_top5_overlap": 4,
+    "max_kl_observed": 9.946034697350115e-05,
+    "max_target_logprob_delta_observed": 0.0002739147166721523,
+    "gates": {
+      "max_kl": 0.0001,
+      "max_logprob_delta": 0.002,
+      "min_topk_overlap": 4,
+      "sample_token_changes": 0,
+      "top1_changes": 0
+    },
+    "passed": true
+  },
+  "timing": {
+    "dense_decode_ms_per_token": 28.935359750000167,
+    "streamattn_decode_ms_per_token": 24.150852937499856,
+    "speedup_vs_dense_decode": 1.1981092272344238,
+    "current_best_7layer_speedup_vs_dense_decode": 1.16411
+  },
+  "status": "candidate",
+  "fallback": "exact_native"
+}

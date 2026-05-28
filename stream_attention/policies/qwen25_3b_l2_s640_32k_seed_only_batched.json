@@ -1,0 +1,78 @@
+{
+  "schema": "streamattn.gate0.seed_only_batched_policy.v1",
+  "policy_id": "qwen25_3b_l2_s640_32k_fp16_b8_seed_only_v1",
+  "mode": "all_seed_only",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "layer_id": 2,
+  "tensor_space": "post_rope",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 8,
+  "shape": {
+    "batch": 8,
+    "q_heads": 16,
+    "true_kv_heads": 2,
+    "dim": 128,
+    "kv_len": 32768,
+    "dtype": "fp16"
+  },
+  "seed_config": {
+    "block_size": 32,
+    "sink_blocks": 2,
+    "recent_blocks": 6,
+    "middle_seed_blocks": 12,
+    "block_order": "recent_first",
+    "num_warps": 4,
+    "num_stages": 2
+  },
+  "safety": {
+    "gate": "distribution_aware",
+    "status": "candidate_bundle_validated",
+    "top1_must_match": true,
+    "min_top5_overlap": 4,
+    "max_kl": 0.0001,
+    "max_logit_delta": 9.0,
+    "max_logprob_delta": 0.002,
+    "validated_rollout_steps": 32,
+    "actual_model_bundle_b8_32": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s640_packed_qkv_route_b8_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc",
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 256,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 9.946034697350115e-05,
+      "target_logprob_delta_max": 0.0002739147166721523,
+      "reference_top1_margin_min": 5.578125
+    }
+  },
+  "timing": {
+    "actual_model_bundle_streamattn_ms_per_token": 24.150852937499856,
+    "actual_model_bundle_dense_ms_per_token": 28.935359750000167,
+    "actual_model_bundle_speedup_vs_dense": 1.1981092272344238,
+    "actual_model_bundle_layers": [
+      0,
+      2,
+      14,
+      16,
+      24,
+      26,
+      27,
+      35
+    ]
+  },
+  "kernel_modes": {
+    "batch_ge_8": "head_private_direct_seed",
+    "batch_lt_8": "exact_native"
+  },
+  "fallback": "exact_native"
+}

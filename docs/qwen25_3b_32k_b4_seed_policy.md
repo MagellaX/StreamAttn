@@ -1514,3 +1514,80 @@ either:
 1. fuse output projection / residual-adjacent writeback for routed layers, or
 2. expand strict-green routed coverage so the accelerated fraction f increases.
 ```
+
+### L2 S640 8-Layer Candidate Route
+
+The route-optimizer branch tested whether the known borderline L2 layer can be
+added to the strict 7-layer route with a larger, layer-specific seed budget.
+This uses the current best systems path:
+
+```text
+native routed cache
+fused RoPE/cache-append/seed attention
+packed QKV projection
+```
+
+The candidate route is:
+
+```text
+layers: 0, 2, 14, 16, 24, 26, 27, 35
+L2 seed: S640 = block_size 32 * (sink 2 + recent 6 + middle 12)
+all other routed layers: S384
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s512_packed_qkv_route_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s640_packed_qkv_route_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s768_packed_qkv_route_b8_h100.json
+```
+
+Results:
+
+```text
+L2 S512:
+  StreamAttn decode: 24.02271 ms/token
+  speedup:           1.18825x
+  KL max:            1.05663e-04
+  strict gate:       failed KL only
+
+L2 S640:
+  dense decode:      28.93536 ms/token
+  StreamAttn decode: 24.15085 ms/token
+  speedup:           1.19811x
+  KL max:            9.94603e-05
+  strict gate:       passed
+
+L2 S768:
+  dense decode:      28.83044 ms/token
+  StreamAttn decode: 24.23561 ms/token
+  speedup:           1.18959x
+  KL max:            9.86106e-05
+  strict gate:       passed
+```
+
+All three routes had:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+```
+
+Conclusion:
+
+```text
+Package L2 S640 as a candidate B8 policy, not as default green.
+```
+
+S640 is the best strict candidate by speed, improving the current best B8
+actual-model route:
+
+```text
+current best 7-layer packed-QKV route: 1.16411x
+8-layer L2 S640 candidate route:      1.19811x
+```
+
+The margin is still tight against the `1e-4` KL gate, so it should stay explicit
+candidate policy/bundle until it gets broader prompt-suite validation.
