@@ -546,6 +546,7 @@ class _SeedOnlyQwenDecodePatch:
         native_cache: Optional[StreamAttnNativeKVCache] = None,
         native_cache_hf_sync_layers: Optional[Set[int]] = None,
         fused_rope_append_seed: bool = False,
+        packed_qkv_projection: bool = False,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -553,6 +554,7 @@ class _SeedOnlyQwenDecodePatch:
         self.native_cache = native_cache
         self.native_cache_hf_sync_layers = native_cache_hf_sync_layers or set()
         self.fused_rope_append_seed = fused_rope_append_seed
+        self.packed_qkv_projection = packed_qkv_projection
         self.call_count = 0
         self.seed_call_count = 0
         self.native_cache_update_count = 0
@@ -562,6 +564,71 @@ class _SeedOnlyQwenDecodePatch:
         self.fallback_samples: List[Dict[str, Any]] = []
         self._timing_event_rows: List[Dict[str, torch.cuda.Event]] = []
         self._out_buffer: Optional[torch.Tensor] = None
+        self._packed_qkv_weight: Optional[torch.Tensor] = None
+        self._packed_qkv_bias: Optional[torch.Tensor] = None
+        self._packed_qkv_sizes: Optional[tuple[int, int, int]] = None
+        self._packed_qkv_module_id: Optional[int] = None
+
+    @staticmethod
+    def _linear_bias(linear: torch.nn.Module) -> Optional[torch.Tensor]:
+        bias = getattr(linear, "bias", None)
+        return bias if isinstance(bias, torch.Tensor) else None
+
+    def prepare_packed_qkv(self, module: torch.nn.Module) -> None:
+        """Prepack q/k/v projection weights for the routed decode loop."""
+
+        weights = [module.q_proj.weight, module.k_proj.weight, module.v_proj.weight]
+        weight = torch.cat(weights, dim=0).contiguous()
+        biases = [
+            self._linear_bias(module.q_proj),
+            self._linear_bias(module.k_proj),
+            self._linear_bias(module.v_proj),
+        ]
+        if any(bias is not None for bias in biases):
+            packed_biases = [
+                bias
+                if bias is not None
+                else torch.zeros(linear.out_features, device=weight.device, dtype=weight.dtype)
+                for bias, linear in zip(biases, (module.q_proj, module.k_proj, module.v_proj))
+            ]
+            packed_bias = torch.cat(packed_biases, dim=0).contiguous()
+        else:
+            packed_bias = None
+        self._packed_qkv_weight = weight
+        self._packed_qkv_bias = packed_bias
+        self._packed_qkv_sizes = (
+            int(module.q_proj.out_features),
+            int(module.k_proj.out_features),
+            int(module.v_proj.out_features),
+        )
+        self._packed_qkv_module_id = id(module)
+
+    def _qkv_projection(
+        self,
+        module: torch.nn.Module,
+        hidden_states: torch.Tensor,
+        hidden_shape: tuple,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.packed_qkv_projection:
+            return (
+                module.q_proj(hidden_states).view(hidden_shape).transpose(1, 2),
+                module.k_proj(hidden_states).view(hidden_shape).transpose(1, 2),
+                module.v_proj(hidden_states).view(hidden_shape).transpose(1, 2),
+            )
+        if self._packed_qkv_weight is None or self._packed_qkv_module_id != id(module):
+            self.prepare_packed_qkv(module)
+        assert self._packed_qkv_weight is not None
+        assert self._packed_qkv_sizes is not None
+        q, k, v = torch.split(
+            F.linear(hidden_states, self._packed_qkv_weight, self._packed_qkv_bias),
+            self._packed_qkv_sizes,
+            dim=-1,
+        )
+        return (
+            q.view(hidden_shape).transpose(1, 2),
+            k.view(hidden_shape).transpose(1, 2),
+            v.view(hidden_shape).transpose(1, 2),
+        )
 
     def _mark(self, events: Optional[Dict[str, torch.cuda.Event]], name: str) -> None:
         if events is None:
@@ -657,9 +724,11 @@ class _SeedOnlyQwenDecodePatch:
         apply_rotary_pos_emb = _import_qwen_rotary()
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, module.head_dim)
-        query_states = module.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        key_states = module.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        value_states = module.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        query_states, key_states, value_states = self._qkv_projection(
+            module,
+            hidden_states,
+            hidden_shape,
+        )
         self._mark(timing_events, "after_qkv")
         cos, sin = position_embeddings
         use_fused_rope_append_seed = (
@@ -885,6 +954,7 @@ def _patched_seed_only_decode_modules(
     native_cache_hf_sync_layers: Optional[Set[int]] = None,
     native_attention_module: bool = False,
     fused_rope_append_seed: bool = False,
+    packed_qkv_projection: bool = False,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -903,7 +973,10 @@ def _patched_seed_only_decode_modules(
             native_cache=native_cache,
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
             fused_rope_append_seed=fused_rope_append_seed,
+            packed_qkv_projection=packed_qkv_projection,
         )
+        if packed_qkv_projection:
+            patch.prepare_packed_qkv(module)
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
             originals.append((parent, attr, module))
@@ -1035,6 +1108,7 @@ def _warmup_decode(
             native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
             native_attention_module=args.native_attention_module,
             fused_rope_append_seed=args.fused_rope_append_seed,
+            packed_qkv_projection=args.packed_qkv_projection,
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1051,6 +1125,7 @@ def _warmup_decode(
             "seed_only_decode_calls": patch.seed_call_count,
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
+            "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1241,6 +1316,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
             native_attention_module=args.native_attention_module,
             fused_rope_append_seed=args.fused_rope_append_seed,
+            packed_qkv_projection=args.packed_qkv_projection,
         ) as patches:
             seed = _decode_loop(
                 model=model,
@@ -1263,6 +1339,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_only_decode_calls": patch.seed_call_count,
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
+            "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1286,6 +1363,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
             "native_attention_module": bool(args.native_attention_module),
             "fused_rope_append_seed": bool(args.fused_rope_append_seed),
+            "packed_qkv_projection": bool(args.packed_qkv_projection),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1394,6 +1472,14 @@ def main() -> None:
         help=(
             "Experimental: for native-cache routed layers not using HF sync, fuse Qwen RoPE, "
             "native K/V append, and seed-only attention into one Triton launch."
+        ),
+    )
+    parser.add_argument(
+        "--packed-qkv-projection",
+        action="store_true",
+        help=(
+            "Prepack routed q/k/v projection weights and use one packed QKV F.linear during "
+            "decode instead of three separate q_proj/k_proj/v_proj calls."
         ),
     )
     parser.add_argument(

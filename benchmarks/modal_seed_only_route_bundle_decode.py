@@ -164,6 +164,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--native-attention-module")
     if kwargs["fused_rope_append_seed"]:
         cmd.append("--fused-rope-append-seed")
+    if kwargs["packed_qkv_projection"]:
+        cmd.append("--packed-qkv-projection")
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -216,6 +218,7 @@ def main(
     native_cache_attach_hf_views: bool = False,
     native_attention_module: bool = False,
     fused_rope_append_seed: bool = False,
+    packed_qkv_projection: bool = False,
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -257,6 +260,7 @@ def main(
         native_cache_attach_hf_views=native_cache_attach_hf_views,
         native_attention_module=native_attention_module,
         fused_rope_append_seed=fused_rope_append_seed,
+        packed_qkv_projection=packed_qkv_projection,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:

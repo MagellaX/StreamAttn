@@ -208,6 +208,40 @@ def test_seed_only_qwen_patch_reuses_output_buffer():
     assert resized.data_ptr() != first.data_ptr()
 
 
+def test_seed_only_qwen_patch_packed_qkv_matches_separate_projection():
+    import torch
+
+    class DummyAttention(torch.nn.Module):
+        head_dim = 4
+
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(8, 8, bias=True)
+            self.k_proj = torch.nn.Linear(8, 4, bias=True)
+            self.v_proj = torch.nn.Linear(8, 4, bias=True)
+
+    module = DummyAttention()
+    hidden = torch.randn(2, 1, 8)
+    hidden_shape = (2, 1, -1, module.head_dim)
+
+    separate_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+    )
+    packed_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        packed_qkv_projection=True,
+    )
+    packed_patch.prepare_packed_qkv(module)
+
+    separate = separate_patch._qkv_projection(module, hidden, hidden_shape)
+    packed = packed_patch._qkv_projection(module, hidden, hidden_shape)
+
+    for packed_tensor, separate_tensor in zip(packed, separate):
+        torch.testing.assert_close(packed_tensor, separate_tensor)
+
+
 def test_packed_seed_workspace_shape():
     import torch
 

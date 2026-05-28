@@ -1291,3 +1291,83 @@ StreamAttnQwenAttention decode path:
 Only after this path is measured should we fuse o_proj or revisit packed seed
 cache tuning.
 ```
+
+### Packed-QKV Routed Decode Probe
+
+The route benchmark now supports:
+
+```text
+--packed-qkv-projection
+```
+
+This pre-packs each routed layer's Q/K/V projection weights once, then runs one
+packed QKV `F.linear` in the decode path before splitting and viewing Q/K/V.
+The rest of the route is unchanged:
+
+```text
+packed QKV projection
+RoPE + native cache append + seed-only attention fused kernel
+existing o_proj
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_qkv_route_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/native_fused_route_b8_h100_rerun.json
+```
+
+Paired H100 B8 result:
+
+```text
+baseline native-cache + fused RoPE/append/seed:
+  dense decode:      28.52346 ms/token
+  StreamAttn decode: 24.84726 ms/token
+  speedup:           1.14795x
+
+packed-QKV native-cache + fused RoPE/append/seed:
+  dense decode:      28.62247 ms/token
+  StreamAttn decode: 24.58753 ms/token
+  speedup:           1.16411x
+```
+
+Packed QKV therefore improved the StreamAttn decode path by:
+
+```text
+24.84726 / 24.58753 = 1.0106x
+absolute saved:       0.25973 ms/token
+```
+
+Safety stayed strict-clean:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+KL max:            9.655e-05
+```
+
+Conclusion:
+
+```text
+Packed QKV is a real end-to-end model-decode win, but it is not the next
+giant lever by itself.
+
+The projection-floor probe predicted ~0.44 ms/token route-level savings, while
+the full-model route captured ~0.26 ms/token.  That gap means the remaining
+cost is now split across seed kernel, o_proj, Python/module overhead, and
+unfused routed attention-module structure.
+```
+
+Next target:
+
+```text
+Make packed QKV the default native routed Qwen module path, then remove the
+remaining Python/forward patch overhead by running routed layers through the
+StreamAttnQwenAttentionModule replacement path by default.
+
+After that, profile whether the next real target is:
+  o_proj integration,
+  seed-kernel retuning under packed-QKV timing,
+  or a deeper fused QKV/RoPE/cache/seed CUDA path.
+```
