@@ -561,6 +561,7 @@ class _SeedOnlyQwenDecodePatch:
         self.fallback_reasons: Counter[str] = Counter()
         self.fallback_samples: List[Dict[str, Any]] = []
         self._timing_event_rows: List[Dict[str, torch.cuda.Event]] = []
+        self._out_buffer: Optional[torch.Tensor] = None
 
     def _mark(self, events: Optional[Dict[str, torch.cuda.Event]], name: str) -> None:
         if events is None:
@@ -568,6 +569,25 @@ class _SeedOnlyQwenDecodePatch:
         event = torch.cuda.Event(enable_timing=True)
         event.record()
         events[name] = event
+
+    def _output_buffer(
+        self,
+        *,
+        batch: int,
+        q_heads: int,
+        head_dim: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        shape = (int(batch), 1, int(q_heads), int(head_dim))
+        if (
+            self._out_buffer is None
+            or tuple(self._out_buffer.shape) != shape
+            or self._out_buffer.device != device
+            or self._out_buffer.dtype != dtype
+        ):
+            self._out_buffer = torch.empty(shape, device=device, dtype=dtype)
+        return self._out_buffer
 
     def timing_rows(self) -> List[Dict[str, float]]:
         rows = []
@@ -655,8 +675,10 @@ class _SeedOnlyQwenDecodePatch:
             native_pos = self._native_next_pos
             key_cache, value_cache = self.native_cache.layer_cache(int(module.layer_idx))
             q = query_states
-            out = torch.empty(
-                (hidden_states.shape[0], 1, query_states.shape[1], module.head_dim),
+            out = self._output_buffer(
+                batch=hidden_states.shape[0],
+                q_heads=query_states.shape[1],
+                head_dim=module.head_dim,
                 device=hidden_states.device,
                 dtype=hidden_states.dtype,
             )
@@ -714,7 +736,13 @@ class _SeedOnlyQwenDecodePatch:
             q = query_states.transpose(1, 2).contiguous()
             k = key_states
             v = value_states
-            out = torch.empty_like(q)
+            out = self._output_buffer(
+                batch=hidden_states.shape[0],
+                q_heads=query_states.shape[1],
+                head_dim=module.head_dim,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype,
+            )
             self._mark(timing_events, "after_layout")
             gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
                 q,
@@ -737,7 +765,13 @@ class _SeedOnlyQwenDecodePatch:
             q = query_states.transpose(1, 2).contiguous()
             k = key_states
             v = value_states
-            out = torch.empty_like(q)
+            out = self._output_buffer(
+                batch=hidden_states.shape[0],
+                q_heads=query_states.shape[1],
+                head_dim=module.head_dim,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype,
+            )
             self._mark(timing_events, "after_layout")
             gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
                 q,

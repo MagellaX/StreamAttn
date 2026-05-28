@@ -908,3 +908,73 @@ the stack:
 2. reduce QKV projection/layout overhead in the routed module path
 3. expand strict-green routed layer coverage
 ```
+
+## Fused Route Tuning Follow-up
+
+After the no-sync fused route became the product leader, two obvious low-level
+knobs were tested before changing the route default:
+
+```text
+baseline product route:
+  --native-routed-cache
+  --fused-rope-append-seed
+  --num-warps 4
+
+H100 32-step result:
+  dense decode:      29.0048 ms/token
+  StreamAttn decode: 24.9490 ms/token
+  speedup:           1.163x
+  KL max:            9.66e-05
+```
+
+Reducing the fused seed kernel to two warps slightly improved the diagnostic
+patch timer, but it did not improve the actual model route:
+
+```text
+--num-warps 2
+
+dense decode:      28.9397 ms/token
+StreamAttn decode: 25.2347 ms/token
+speedup:           1.147x
+top1/sample:       0 / 256 changes
+KL max:            9.70e-05
+```
+
+The native attention-module replacement is also semantically clean on the
+no-sync fused path, but does not beat the current patched route:
+
+```text
+--native-attention-module
+
+dense decode:      28.7688 ms/token
+StreamAttn decode: 24.7750 ms/token
+speedup:           1.161x
+top1/sample:       0 / 256 changes
+KL max:            9.66e-05
+```
+
+The routed Qwen patch now reuses its internal `[B,1,Hq,D]` attention output
+workspace instead of allocating a fresh tensor on every routed decode call.
+This is allocation hygiene and is covered by a unit test, but the 32-step H100
+route did not show a product speedup from it:
+
+```text
+workspace reuse, --num-warps 4
+
+dense decode:      28.9770 ms/token
+StreamAttn decode: 25.3362 ms/token
+speedup:           1.144x
+top1/sample:       0 / 256 changes
+KL max:            9.66e-05
+```
+
+Conclusion:
+
+```text
+keep the current default:
+  native cache + fused RoPE/append/seed + 4-warps
+
+do not spend more time on tiny workspace or warp-count knobs yet.
+The next material systems lever is owning/fusing the routed QKV and output
+projection path rather than patching around Hugging Face modules.
+```

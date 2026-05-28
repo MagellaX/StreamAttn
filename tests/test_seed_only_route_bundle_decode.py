@@ -2,6 +2,7 @@ from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
     StreamAttnQwenAttentionModule,
+    _SeedOnlyQwenDecodePatch,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
@@ -165,6 +166,41 @@ def test_summarize_patch_timing_rows_reports_stage_shares():
     assert summary["stages"]["seed_kernel_ms"]["sum_ms"] == 7.0
     assert summary["stages"]["seed_kernel_ms"]["share_of_patch_total"] == 0.35
     assert summary["stages"]["qkv_ms"]["mean_ms"] == 1.5
+
+
+def test_seed_only_qwen_patch_reuses_output_buffer():
+    import torch
+
+    patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+    )
+
+    first = patch._output_buffer(
+        batch=2,
+        q_heads=4,
+        head_dim=8,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    second = patch._output_buffer(
+        batch=2,
+        q_heads=4,
+        head_dim=8,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    resized = patch._output_buffer(
+        batch=3,
+        q_heads=4,
+        head_dim=8,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+
+    assert second.data_ptr() == first.data_ptr()
+    assert resized.shape == (3, 1, 4, 8)
+    assert resized.data_ptr() != first.data_ptr()
 
 
 def test_native_kv_cache_copies_prefill_and_appends():
