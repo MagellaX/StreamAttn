@@ -978,3 +978,86 @@ do not spend more time on tiny workspace or warp-count knobs yet.
 The next material systems lever is owning/fusing the routed QKV and output
 projection path rather than patching around Hugging Face modules.
 ```
+
+## Packed Head-Private Seed Cache Probe
+
+The next StreamAttn-specific dataflow question was whether the seed cache
+should be physically duplicated per Q head.  For Qwen2.5-3B:
+
+```text
+Hq = 16
+Hkv = 2
+G = 8
+S = 384
+N = 32768
+
+G * S/N = 8 * 384 / 32768 = 9.375%
+```
+
+So duplicating seed K/V per Q head still touches less than 10% of dense exact
+K/V traffic.  The probe added two kernels:
+
+```text
+gate0_pack_seed_cache_bhsd:
+  full K/V [B,N,Hkv,D] -> packed seed K/V [B,Hq,S,D]
+
+gate0_seed_only_attention_packed_bhsd_triton_forward_out:
+  online-softmax seed attention from [B,Hq,S,D]
+```
+
+Benchmark:
+
+```text
+modal:    benchmarks/modal_seed_only_packed_seed_cache.py
+profile:  benchmarks/profile_seed_only_packed_seed_cache.py
+artifact: artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_seed_cache_probe_h100.json
+```
+
+H100 synthetic Qwen3B-shape result, fp16, `N=32768`, `D=128`, `Hq=16`,
+`Hkv=2`, `S=384`:
+
+```text
+B=4:
+  current full-cache seed: 0.03992 ms
+  packed seed kernel:      0.02961 ms
+  raw packed speedup:      1.35x
+  pack + packed total:     0.06282 ms
+  total vs current:        0.64x
+  max error vs current:    1.53e-05
+
+B=8:
+  current full-cache seed: 0.03778 ms
+  packed seed kernel:      0.02857 ms
+  raw packed speedup:      1.32x
+  pack + packed total:     0.06151 ms
+  total vs current:        0.61x
+  max error vs current:    0
+
+B=16:
+  current full-cache seed: 0.03891 ms
+  packed seed kernel:      0.03808 ms
+  raw packed speedup:      1.02x
+  pack + packed total:     0.06404 ms
+  total vs current:        0.61x
+  max error vs current:    1.22e-04
+```
+
+Conclusion:
+
+```text
+Packed head-private seed reads are real:
+  B4/B8 raw seed kernel improves by ~1.3x.
+
+Naive full repacking every decode step is not viable:
+  pack cost erases the win.
+
+The next packed-cache experiment should maintain the packed seed window
+incrementally:
+  fixed sink/middle seed regions
+  recent ring or recent append region
+  no full seed-window rebuild per step
+```
+
+This is a useful positive/negative result.  It validates the `G*S/N` dataflow
+edge, but only if StreamAttn owns a persistent packed seed-window cache rather
+than rebuilding it from the full cache every token.

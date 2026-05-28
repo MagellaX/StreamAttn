@@ -12,6 +12,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     summarize_patch_timing_rows,
 )
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
+from stream_attention.kernels.gate0_seed_only_triton import make_gate0_seed_only_packed_workspace
 
 
 def test_parse_layer_seed_overrides_named_fields():
@@ -201,6 +202,18 @@ def test_seed_only_qwen_patch_reuses_output_buffer():
     assert second.data_ptr() == first.data_ptr()
     assert resized.shape == (3, 1, 4, 8)
     assert resized.data_ptr() != first.data_ptr()
+
+
+def test_packed_seed_workspace_shape():
+    import torch
+
+    q = torch.empty((2, 1, 4, 8), dtype=torch.float16)
+
+    workspace = make_gate0_seed_only_packed_workspace(q, seed_tokens=96)
+
+    assert workspace["k_seed"].shape == (2, 4, 96, 8)
+    assert workspace["v_seed"].shape == (2, 4, 96, 8)
+    assert workspace["k_seed"].dtype == q.dtype
 
 
 def test_native_kv_cache_copies_prefill_and_appends():
