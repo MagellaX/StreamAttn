@@ -98,6 +98,10 @@ def _run(**kwargs) -> dict[str, Any]:
         str(kwargs["pack_num_warps"]),
         "--pack-num-stages",
         str(kwargs["pack_num_stages"]),
+        "--refresh-num-warps",
+        str(kwargs["refresh_num_warps"]),
+        "--refresh-num-stages",
+        str(kwargs["refresh_num_stages"]),
         "--packed-num-warps",
         str(kwargs["packed_num_warps"]),
         "--packed-num-stages",
@@ -139,6 +143,8 @@ def main(
     direct_num_stages: int = 2,
     pack_num_warps: int = 4,
     pack_num_stages: int = 3,
+    refresh_num_warps: int = 4,
+    refresh_num_stages: int = 3,
     packed_num_warps: int = 4,
     packed_num_stages: int = 2,
     warmup: int = 5,
@@ -164,6 +170,8 @@ def main(
         direct_num_stages=direct_num_stages,
         pack_num_warps=pack_num_warps,
         pack_num_stages=pack_num_stages,
+        refresh_num_warps=refresh_num_warps,
+        refresh_num_stages=refresh_num_stages,
         packed_num_warps=packed_num_warps,
         packed_num_stages=packed_num_stages,
         warmup=warmup,
@@ -180,6 +188,7 @@ def main(
             "shape": result.get("shape"),
             "best_kernel_only": result.get("best_kernel_only"),
             "best_total": result.get("best_total"),
+            "best_refresh_total": result.get("best_refresh_total"),
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

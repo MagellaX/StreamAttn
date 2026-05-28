@@ -12,7 +12,10 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     summarize_patch_timing_rows,
 )
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
-from stream_attention.kernels.gate0_seed_only_triton import make_gate0_seed_only_packed_workspace
+from stream_attention.kernels.gate0_seed_only_triton import (
+    gate0_refresh_packed_seed_cache_recent_bhsd,
+    make_gate0_seed_only_packed_workspace,
+)
 
 
 def test_parse_layer_seed_overrides_named_fields():
@@ -214,6 +217,30 @@ def test_packed_seed_workspace_shape():
     assert workspace["k_seed"].shape == (2, 4, 96, 8)
     assert workspace["v_seed"].shape == (2, 4, 96, 8)
     assert workspace["k_seed"].dtype == q.dtype
+
+
+def test_refresh_packed_seed_recent_noops_without_recent_blocks():
+    import torch
+
+    key = torch.empty((1, 64, 2, 8), dtype=torch.float16)
+    value = torch.empty_like(key)
+    q = torch.empty((1, 1, 4, 8), dtype=torch.float16)
+    workspace = make_gate0_seed_only_packed_workspace(q, seed_tokens=64)
+
+    k_seed, v_seed = gate0_refresh_packed_seed_cache_recent_bhsd(
+        key,
+        value,
+        workspace["k_seed"],
+        workspace["v_seed"],
+        q_heads=4,
+        block_size=32,
+        sink_blocks=1,
+        recent_blocks=0,
+        middle_seed_blocks=1,
+    )
+
+    assert k_seed is workspace["k_seed"]
+    assert v_seed is workspace["v_seed"]
 
 
 def test_native_kv_cache_copies_prefill_and_appends():

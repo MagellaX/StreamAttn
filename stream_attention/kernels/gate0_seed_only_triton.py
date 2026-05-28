@@ -480,6 +480,66 @@ if TRITON_AVAILABLE:
         )
 
     @triton.jit
+    def _refresh_packed_seed_cache_recent_bhsd_kernel(
+        K,
+        V,
+        KSeed,
+        VSeed,
+        N: tl.constexpr,
+        H: tl.constexpr,
+        H_KV: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
+        D: tl.constexpr,
+        TILE_N: tl.constexpr,
+        SINK_BLOCKS: tl.constexpr,
+        RECENT_BLOCKS: tl.constexpr,
+        RECENT_START: tl.constexpr,
+        MIDDLE_SEED_BLOCKS: tl.constexpr,
+    ):
+        off_b = tl.program_id(0)
+        off_h = tl.program_id(1)
+        recent_pos = tl.program_id(2)
+        off_kv_h = off_h // GROUP_SIZE
+        offs_n = tl.arange(0, TILE_N)
+        offs_d = tl.arange(0, D)
+
+        src_block = RECENT_START + recent_pos
+        dst_block = SINK_BLOCKS + recent_pos
+        src_n = src_block * TILE_N + offs_n
+        dst_s = dst_block * TILE_N + offs_n
+        col_mask = src_n < N
+        k_tile = tl.load(
+            K
+            + off_b * N * H_KV * D
+            + src_n[:, None] * H_KV * D
+            + off_kv_h * D
+            + offs_d[None, :],
+            mask=col_mask[:, None],
+            other=0.0,
+        )
+        v_tile = tl.load(
+            V
+            + off_b * N * H_KV * D
+            + src_n[:, None] * H_KV * D
+            + off_kv_h * D
+            + offs_d[None, :],
+            mask=col_mask[:, None],
+            other=0.0,
+        )
+        seed_tokens = (SINK_BLOCKS + RECENT_BLOCKS + MIDDLE_SEED_BLOCKS) * TILE_N
+        dst_base = off_b * H * seed_tokens * D + off_h * seed_tokens * D
+        tl.store(
+            KSeed + dst_base + dst_s[:, None] * D + offs_d[None, :],
+            k_tile,
+            mask=col_mask[:, None],
+        )
+        tl.store(
+            VSeed + dst_base + dst_s[:, None] * D + offs_d[None, :],
+            v_tile,
+            mask=col_mask[:, None],
+        )
+
+    @triton.jit
     def _seed_only_packed_bhsd_kernel(
         Q,
         KSeed,
@@ -1592,6 +1652,82 @@ def gate0_pack_seed_cache_bhsd(
         RECENT_START=int(recent_start),
         MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
         BLOCK_ORDER=_block_order_id(block_order),
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+    return k_seed, v_seed
+
+
+def gate0_refresh_packed_seed_cache_recent_bhsd(
+    key: torch.Tensor,
+    value: torch.Tensor,
+    k_seed: torch.Tensor,
+    v_seed: torch.Tensor,
+    *,
+    q_heads: int,
+    block_size: int = 32,
+    sink_blocks: int = 2,
+    recent_blocks: int = 2,
+    middle_seed_blocks: int = 8,
+    num_warps: int = 4,
+    num_stages: int = 3,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Refresh only the recent region in packed ``[B,Hq,S,D]`` seed K/V.
+
+    This probes the persistent packed-cache strategy: sink and middle seed
+    regions can stay fixed while the recent seed blocks are maintained
+    incrementally instead of rebuilding the whole packed seed cache.
+    """
+
+    if recent_blocks <= 0:
+        return k_seed, v_seed
+    if not TRITON_AVAILABLE:
+        raise RuntimeError("Triton is not available")
+    if not all(t.is_cuda for t in (key, value, k_seed, v_seed)):
+        raise RuntimeError("gate0_refresh_packed_seed_cache_recent_bhsd requires CUDA tensors")
+    if key.dim() != 4 or value.dim() != 4:
+        raise ValueError("key/value must be [batch, seq, kv_heads, dim]")
+    if key.shape != value.shape:
+        raise ValueError("key and value must have the same shape")
+    if not key.is_contiguous() or not value.is_contiguous():
+        raise ValueError("key/value must be contiguous NHD tensors")
+    if k_seed.shape != v_seed.shape:
+        raise ValueError("k_seed and v_seed must have the same shape")
+    if k_seed.dim() != 4:
+        raise ValueError("k_seed/v_seed must be [batch, q_heads, seed_tokens, dim]")
+    batch, seq_k, kv_heads, dim = key.shape
+    seed_blocks = sink_blocks + recent_blocks + middle_seed_blocks
+    seed_tokens = seed_blocks * block_size
+    if k_seed.shape != (batch, int(q_heads), seed_tokens, dim):
+        raise ValueError("packed seed workspace must be [batch, q_heads, seed_tokens, dim]")
+    if q_heads % kv_heads != 0:
+        raise ValueError("q_heads must be a multiple of kv_heads")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if sink_blocks < 0 or recent_blocks < 0 or middle_seed_blocks < 0:
+        raise ValueError("seed block counts must be non-negative")
+    num_blocks = triton.cdiv(seq_k, block_size)
+    if sink_blocks + recent_blocks > num_blocks:
+        raise ValueError("sink_blocks + recent_blocks must not exceed K blocks")
+    middle_blocks = num_blocks - sink_blocks - recent_blocks
+    if middle_seed_blocks > middle_blocks:
+        raise ValueError("middle_seed_blocks must be within the middle block count")
+    recent_start = num_blocks - recent_blocks
+    _refresh_packed_seed_cache_recent_bhsd_kernel[(batch, int(q_heads), int(recent_blocks))](
+        key,
+        value,
+        k_seed,
+        v_seed,
+        N=seq_k,
+        H=int(q_heads),
+        H_KV=kv_heads,
+        GROUP_SIZE=int(q_heads) // kv_heads,
+        D=dim,
+        TILE_N=block_size,
+        SINK_BLOCKS=int(sink_blocks),
+        RECENT_BLOCKS=int(recent_blocks),
+        RECENT_START=int(recent_start),
+        MIDDLE_SEED_BLOCKS=int(middle_seed_blocks),
         num_warps=num_warps,
         num_stages=num_stages,
     )

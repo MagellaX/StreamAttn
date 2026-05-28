@@ -27,6 +27,7 @@ if str(REPO_ROOT) not in sys.path:
 from benchmarks.profile_stream_attn_gate0_wrapper import _error, _sync, _time_cuda  # noqa: E402
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_pack_seed_cache_bhsd,
+    gate0_refresh_packed_seed_cache_recent_bhsd,
     gate0_seed_only_attention_packed_bhsd_triton_forward_out,
     gate0_seed_only_attention_triton_forward_out,
     make_gate0_seed_only_packed_workspace,
@@ -104,6 +105,21 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 num_stages=args.pack_num_stages,
             )
 
+        def recent_refresh_run() -> tuple[torch.Tensor, torch.Tensor]:
+            return gate0_refresh_packed_seed_cache_recent_bhsd(
+                k,
+                v,
+                k_seed,
+                v_seed,
+                q_heads=args.q_heads,
+                block_size=args.block_size,
+                sink_blocks=args.sink_blocks,
+                recent_blocks=args.recent_blocks,
+                middle_seed_blocks=args.middle_seed_blocks,
+                num_warps=args.refresh_num_warps,
+                num_stages=args.refresh_num_stages,
+            )
+
         def packed_run() -> torch.Tensor:
             return gate0_seed_only_attention_packed_bhsd_triton_forward_out(
                 q,
@@ -119,15 +135,28 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             pack_run()
             return packed_run()
 
+        def refresh_plus_packed_run() -> torch.Tensor:
+            recent_refresh_run()
+            return packed_run()
+
         direct_ref = direct_run().clone()
         pack_run()
         packed_ref = packed_run().clone()
+        recent_refresh_run()
+        refreshed_ref = packed_run().clone()
         _sync(device)
 
         direct_ms = _time_cuda(direct_run, device=device, warmup=args.warmup, iters=args.iters)
         pack_ms = _time_cuda(pack_run, device=device, warmup=args.warmup, iters=args.iters)
+        refresh_ms = _time_cuda(recent_refresh_run, device=device, warmup=args.warmup, iters=args.iters)
         packed_ms = _time_cuda(packed_run, device=device, warmup=args.warmup, iters=args.iters)
         total_ms = _time_cuda(pack_plus_packed_run, device=device, warmup=args.warmup, iters=args.iters)
+        refresh_total_ms = _time_cuda(
+            refresh_plus_packed_run,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
 
         group_size = args.q_heads // args.kv_heads
         seed_ratio = seed_tokens / float(args.kv_len)
@@ -144,16 +173,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "head_private_kv_byte_ratio": duplicate_ratio,
             "direct_full_cache_seed_ms": direct_ms,
             "pack_seed_cache_ms": pack_ms,
+            "refresh_recent_seed_cache_ms": refresh_ms,
             "packed_seed_ms": packed_ms,
             "pack_plus_packed_seed_ms": total_ms,
+            "refresh_plus_packed_seed_ms": refresh_total_ms,
             "packed_speedup_vs_direct_kernel_only": direct_ms / packed_ms,
             "packed_total_speedup_vs_direct": direct_ms / total_ms,
+            "refresh_total_speedup_vs_direct": direct_ms / refresh_total_ms,
+            "refresh_speedup_vs_full_pack": pack_ms / refresh_ms,
             "packed_vs_direct_seed": _error(packed_ref, direct_ref),
+            "refreshed_packed_vs_direct_seed": _error(refreshed_ref, direct_ref),
         }
         rows.append(row)
 
     best_kernel = max(rows, key=lambda row: row["packed_speedup_vs_direct_kernel_only"])
     best_total = max(rows, key=lambda row: row["packed_total_speedup_vs_direct"])
+    best_refresh_total = max(rows, key=lambda row: row["refresh_total_speedup_vs_direct"])
     return {
         "schema": "streamattn.seed_only_packed_seed_cache.v1",
         "shape": {
@@ -175,11 +210,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "direct_num_stages": args.direct_num_stages,
             "pack_num_warps": args.pack_num_warps,
             "pack_num_stages": args.pack_num_stages,
+            "refresh_num_warps": args.refresh_num_warps,
+            "refresh_num_stages": args.refresh_num_stages,
             "packed_num_warps": args.packed_num_warps,
             "packed_num_stages": args.packed_num_stages,
         },
         "best_kernel_only": best_kernel,
         "best_total": best_total,
+        "best_refresh_total": best_refresh_total,
         "rows": rows,
     }
 
@@ -202,6 +240,8 @@ def main() -> None:
     parser.add_argument("--direct-num-stages", type=int, default=2)
     parser.add_argument("--pack-num-warps", type=int, default=4)
     parser.add_argument("--pack-num-stages", type=int, default=3)
+    parser.add_argument("--refresh-num-warps", type=int, default=4)
+    parser.add_argument("--refresh-num-stages", type=int, default=3)
     parser.add_argument("--packed-num-warps", type=int, default=4)
     parser.add_argument("--packed-num-stages", type=int, default=2)
     parser.add_argument("--warmup", type=int, default=5)

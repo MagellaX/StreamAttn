@@ -1061,3 +1061,66 @@ incrementally:
 This is a useful positive/negative result.  It validates the `G*S/N` dataflow
 edge, but only if StreamAttn owns a persistent packed seed-window cache rather
 than rebuilding it from the full cache every token.
+
+### Recent-Block Refresh Probe
+
+The next probe kept the packed seed cache persistent and refreshed only the
+recent seed blocks, leaving sink and middle seed regions fixed:
+
+```text
+gate0_refresh_packed_seed_cache_recent_bhsd:
+  refresh only packed seed slots [sink_blocks : sink_blocks + recent_blocks)
+```
+
+Benchmark artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/packed_seed_cache_recent_refresh_probe_h100.json
+```
+
+H100 result, same Qwen3B shape:
+
+```text
+B=4:
+  current full-cache seed:       0.04021 ms
+  packed seed kernel:            0.02881 ms
+  recent refresh only:           0.03034 ms
+  recent refresh + packed seed:  0.05860 ms
+  total vs current:              0.69x
+
+B=8:
+  current full-cache seed:       0.03676 ms
+  packed seed kernel:            0.02624 ms
+  recent refresh only:           0.02681 ms
+  recent refresh + packed seed:  0.05621 ms
+  total vs current:              0.65x
+
+B=16:
+  current full-cache seed:       0.03553 ms
+  packed seed kernel:            0.03817 ms
+  recent refresh only:           0.02579 ms
+  recent refresh + packed seed:  0.05200 ms
+  total vs current:              0.68x
+```
+
+The recent-block refresh kernel was only about `1.06-1.13x` cheaper than full
+seed repacking, because it still copies complete recent blocks across every
+Q head:
+
+```text
+recent_blocks * block_size * B * Hq * D
+```
+
+Conclusion:
+
+```text
+block-level packed-cache refresh is not enough.
+
+The packed-cache route only remains interesting if the update is per-token or
+ring-buffer style:
+  update current token only
+  avoid refreshing entire recent blocks
+  teach the packed seed kernel to read recent slots in logical ring order
+
+Otherwise, move the systems focus back to the native routed QKV/o_proj path.
+```
