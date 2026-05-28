@@ -1195,3 +1195,99 @@ Next packed-cache work, if any, should be kernel-shape tuning:
 
 Otherwise, the higher expected payoff is native routed QKV/o_proj ownership.
 ```
+
+### Routed Projection Floor Probe
+
+The next probe measured whether the routed QKV/o_proj path is real GEMM work
+or avoidable projection/module dispatch overhead.  It compares:
+
+```text
+existing module q_proj/k_proj/v_proj + decode views
+direct F.linear q/k/v
+single packed QKV F.linear + decode views
+module o_proj
+direct F.linear o_proj
+```
+
+Benchmark artifact:
+
+```text
+artifacts/qwen_routed_projection_floor_h100.json
+```
+
+Shape:
+
+```text
+model: Qwen2.5-3B-Instruct
+layers: [0,14,16,24,26,27,35]
+hidden: 2048
+q_out: 2048
+k_out/v_out: 256
+Hq/Hkv/head_dim: 16/2/128
+dtype: fp16
+device: H100
+```
+
+H100 route-level projection floor:
+
+```text
+B=4:
+  current qkv+o projection floor: 0.90961 ms
+  packed-QKV qkv+o floor:         0.46618 ms
+  projected savings:              0.44343 ms
+  projection-floor speedup:        1.95x
+
+B=8:
+  current qkv+o projection floor: 0.90541 ms
+  packed-QKV qkv+o floor:         0.46195 ms
+  projected savings:              0.44347 ms
+  projection-floor speedup:        1.96x
+
+B=16:
+  current qkv+o projection floor: 0.94189 ms
+  packed-QKV qkv+o floor:         0.47776 ms
+  projected savings:              0.46413 ms
+  projection-floor speedup:        1.97x
+```
+
+Per-layer means at B8:
+
+```text
+qkv module + decode views: 0.10026 ms
+packed QKV + decode views: 0.04004 ms
+module o_proj:             0.02909 ms
+direct F.linear o_proj:    0.02595 ms
+```
+
+Correctness against the module path is exact for this projection-only probe:
+
+```text
+qkv packed vs module max error: 0
+o F.linear vs module max error: 0
+```
+
+Conclusion:
+
+```text
+The next real systems lever is packed QKV ownership inside a native routed
+Qwen attention module.
+
+o_proj is already close to its direct F.linear floor, so it is not the first
+target.  The avoidable waste is three separate Q/K/V projection launches and
+their decode reshaping path.
+```
+
+Next implementation target:
+
+```text
+StreamAttnQwenAttention decode path:
+  one packed QKV projection
+  split/view q/k/v
+  RoPE
+  native cache append
+  seed-only attention
+  existing o_proj first
+
+Only after this path is measured should we fuse o_proj or revisit packed seed
+cache tuning.
+```
