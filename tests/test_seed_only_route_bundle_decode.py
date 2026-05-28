@@ -1,4 +1,5 @@
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
+from benchmarks.profile_gate0_seed_only_multi_layer_rollout import _validate_route_bundle
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
     StreamAttnQwenAttentionModule,
@@ -140,6 +141,53 @@ def test_apply_layer_seed_overrides_rewrites_only_target_layer():
     assert updated.policies[1].policy_id == "p2_s32_2_4_10"
     assert summaries[0]["layer_id"] == 2
     assert summaries[0]["new"]["seed_tokens"] == 512
+
+
+def test_validate_route_bundle_allows_explicit_mixed_seed_configs():
+    import argparse
+    import pytest
+
+    policies = [
+        Gate0SeedOnlyBatchedPolicy(
+            policy_id="p0",
+            model_id="m",
+            layer_id=0,
+            dtype="fp16",
+            kv_len_bucket=32768,
+            min_batch=8,
+            heads=16,
+            kv_heads=2,
+            dim=128,
+            recent_blocks=2,
+            middle_seed_blocks=8,
+        ),
+        Gate0SeedOnlyBatchedPolicy(
+            policy_id="p2_s640",
+            model_id="m",
+            layer_id=2,
+            dtype="fp16",
+            kv_len_bucket=32768,
+            min_batch=8,
+            heads=16,
+            kv_heads=2,
+            dim=128,
+            recent_blocks=6,
+            middle_seed_blocks=12,
+        ),
+    ]
+    args = argparse.Namespace(
+        model="m",
+        dtype="fp16",
+        max_seq=32768,
+        batch_size=8,
+        allow_mixed_seed_configs=False,
+    )
+
+    with pytest.raises(ValueError, match="inconsistent seed field"):
+        _validate_route_bundle(policies, args=args)
+
+    args.allow_mixed_seed_configs = True
+    _validate_route_bundle(policies, args=args)
 
 
 def test_summarize_patch_timing_rows_reports_stage_shares():

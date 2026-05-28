@@ -1575,6 +1575,36 @@ sample changes:    0 / 256
 top5 overlap min:  4/5
 ```
 
+The packaged mixed-seed candidate route was then rerun on an all-`chat_doc`
+batch, because `chat_doc` produced the worst KL row in prior mixed runs.
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/l2_s640_all_chatdoc_b8_h100.json
+```
+
+Packaged mixed-seed command shape:
+
+```text
+--policy-names qwen25_3b_l0_32k_seed_only_batched,...
+--policy-names ...,qwen25_3b_l2_s640_32k_seed_only_batched,...
+--allow-mixed-seed-configs
+```
+
+All-`chat_doc` H100 B8 result:
+
+```text
+dense decode:      29.01427 ms/token
+StreamAttn decode: 25.00257 ms/token
+speedup:           1.16045x
+KL max:            9.94603e-05
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+strict gate:       passed
+```
+
 Conclusion:
 
 ```text

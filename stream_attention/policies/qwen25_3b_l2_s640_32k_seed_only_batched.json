@@ -53,6 +53,26 @@
       "kl_max": 9.946034697350115e-05,
       "target_logprob_delta_max": 0.0002739147166721523,
       "reference_top1_margin_min": 5.578125
+    },
+    "actual_model_all_chatdoc_b8_32": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/l2_s640_all_chatdoc_b8_h100.json",
+      "prompt_kinds": [
+        "chat_doc",
+        "chat_doc",
+        "chat_doc",
+        "chat_doc",
+        "chat_doc",
+        "chat_doc",
+        "chat_doc",
+        "chat_doc"
+      ],
+      "cases": 256,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 9.946034697350115e-05,
+      "target_logprob_delta_max": 0.0002721798373386264,
+      "reference_top1_margin_min": 7.46875
     }
   },
   "timing": {

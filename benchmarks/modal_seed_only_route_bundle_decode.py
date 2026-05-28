@@ -168,6 +168,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--packed-qkv-projection")
     if kwargs["packed_qkv_fused_input"]:
         cmd.append("--packed-qkv-fused-input")
+    if kwargs["allow_mixed_seed_configs"]:
+        cmd.append("--allow-mixed-seed-configs")
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -222,6 +224,7 @@ def main(
     fused_rope_append_seed: bool = False,
     packed_qkv_projection: bool = False,
     packed_qkv_fused_input: bool = False,
+    allow_mixed_seed_configs: bool = False,
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -265,6 +268,7 @@ def main(
         fused_rope_append_seed=fused_rope_append_seed,
         packed_qkv_projection=packed_qkv_projection,
         packed_qkv_fused_input=packed_qkv_fused_input,
+        allow_mixed_seed_configs=allow_mixed_seed_configs,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:

@@ -42,6 +42,17 @@
   "safety": {
     "validation": "actual_model_decode_teacher_forced_coupled_top_p_mixed_prompts",
     "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/ad_hoc_l2_s640_packed_qkv_route_b8_h100.json",
+    "stress_artifacts": [
+      {
+        "name": "all_chat_doc",
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/l2_s640_all_chatdoc_b8_h100.json",
+        "top1_changes": 0,
+        "sample_token_changed_count": 0,
+        "min_top5_overlap": 4,
+        "max_kl_observed": 9.946034697350115e-05,
+        "passed": true
+      }
+    ],
     "steps": 32,
     "top1_changes": 0,
     "sample_token_changed_count": 0,
@@ -61,7 +72,10 @@
     "dense_decode_ms_per_token": 28.935359750000167,
     "streamattn_decode_ms_per_token": 24.150852937499856,
     "speedup_vs_dense_decode": 1.1981092272344238,
-    "current_best_7layer_speedup_vs_dense_decode": 1.16411
+    "current_best_7layer_speedup_vs_dense_decode": 1.16411,
+    "all_chatdoc_dense_decode_ms_per_token": 29.014270906249973,
+    "all_chatdoc_streamattn_decode_ms_per_token": 25.00256893749997,
+    "all_chatdoc_speedup_vs_dense_decode": 1.1604515911456232
   },
   "status": "candidate",
   "fallback": "exact_native"

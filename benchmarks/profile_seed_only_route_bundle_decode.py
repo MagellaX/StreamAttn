@@ -1431,6 +1431,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "fused_rope_append_seed": bool(args.fused_rope_append_seed),
             "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
             "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
+            "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
         },
         "shape": {
@@ -1558,6 +1559,14 @@ def main() -> None:
         help=(
             "Experimental: when used with --packed-qkv-projection and --fused-rope-append-seed, "
             "pass the packed QKV projection output directly into the fused Triton decode kernel."
+        ),
+    )
+    parser.add_argument(
+        "--allow-mixed-seed-configs",
+        action="store_true",
+        help=(
+            "Allow explicit policy-name bundles to contain per-layer seed configs. "
+            "Use for candidate routes such as Qwen3B L2 S640 plus S384 layers."
         ),
     )
     parser.add_argument(

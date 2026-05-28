@@ -178,18 +178,19 @@ def _validate_route_bundle(policies: Sequence[Gate0SeedOnlyBatchedPolicy], *, ar
             mismatches.append("batch_below_min")
         if mismatches:
             raise ValueError(f"policy {policy.policy_id} mismatches route: {','.join(mismatches)}")
-        seed_fields = (
-            "block_size",
-            "sink_blocks",
-            "recent_blocks",
-            "middle_seed_blocks",
-            "block_order",
-            "num_warps",
-            "num_stages",
-        )
-        for field in seed_fields:
-            if getattr(policy, field) != getattr(first, field):
-                raise ValueError(f"policy {policy.policy_id} has inconsistent seed field {field}")
+        if not bool(getattr(args, "allow_mixed_seed_configs", False)):
+            seed_fields = (
+                "block_size",
+                "sink_blocks",
+                "recent_blocks",
+                "middle_seed_blocks",
+                "block_order",
+                "num_warps",
+                "num_stages",
+            )
+            for field in seed_fields:
+                if getattr(policy, field) != getattr(first, field):
+                    raise ValueError(f"policy {policy.policy_id} has inconsistent seed field {field}")
 
 
 def _apply_policy_defaults(args: argparse.Namespace, bundle: RouteBundle) -> None:
