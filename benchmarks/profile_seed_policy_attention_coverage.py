@@ -52,6 +52,17 @@ from stream_attention.decode import load_packaged_gate0_seed_only_batched_policy
 
 
 DEFAULT_TARGET_BUCKETS = ("chat_instruction", "noisy_neartie", "json_tool", "needle_rag")
+DEFAULT_SELECTOR_PROFILES = ("fixed_policy",)
+SELECTOR_PROFILES = frozenset(
+    {
+        "fixed_policy",
+        "support_block_oracle",
+        "qk_block_max",
+        "exact_mass_oracle",
+        "support_mass_oracle",
+        "value_residual_oracle",
+    }
+)
 
 
 @dataclass
@@ -77,6 +88,16 @@ class CaptureState:
 
 def _parse_ints(text: str) -> List[int]:
     return [int(part.strip()) for part in text.replace(";", ",").split(",") if part.strip()]
+
+
+def _parse_selector_profiles(text: str) -> List[str]:
+    profiles = [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
+    if not profiles:
+        profiles = list(DEFAULT_SELECTOR_PROFILES)
+    unknown = sorted(set(profiles) - SELECTOR_PROFILES)
+    if unknown:
+        raise ValueError(f"unknown selector profiles: {unknown}; supported={sorted(SELECTOR_PROFILES)}")
+    return profiles
 
 
 def _policy_bundle_for_layers(layers: Sequence[int]) -> RouteBundle:
@@ -120,6 +141,197 @@ def _seed_indices(
                 seen.add(idx)
                 indices.append(idx)
     return torch.tensor(sorted(indices), dtype=torch.long)
+
+
+def _policy_seed_blocks(
+    *,
+    seq_len: int,
+    block_size: int,
+    sink_blocks: int,
+    recent_blocks: int,
+    middle_seed_blocks: int,
+    block_order: str,
+    include_middle: bool = True,
+) -> List[int]:
+    num_blocks = math.ceil(seq_len / block_size)
+    recent_start = num_blocks - recent_blocks
+    blocks: List[int] = []
+    blocks.extend(range(0, sink_blocks))
+    blocks.extend(range(recent_start, num_blocks))
+    if include_middle:
+        if block_order == "sequential":
+            blocks.extend(range(sink_blocks, sink_blocks + middle_seed_blocks))
+        else:
+            blocks.extend(range(recent_start - 1, recent_start - 1 - middle_seed_blocks, -1))
+    seen = set()
+    valid = []
+    for block in blocks:
+        if block < 0 or block >= num_blocks or block in seen:
+            continue
+        seen.add(block)
+        valid.append(int(block))
+    return valid
+
+
+def _seed_mask_from_blocks(
+    *,
+    seq_len: int,
+    block_size: int,
+    blocks: Sequence[int],
+    device: torch.device,
+) -> torch.Tensor:
+    mask = torch.zeros(seq_len, device=device, dtype=torch.bool)
+    for block in blocks:
+        start = int(block) * block_size
+        end = min(seq_len, start + block_size)
+        if start < seq_len:
+            mask[start:end] = True
+    return mask
+
+
+def _block_scores_from_values(values: torch.Tensor, *, block_size: int) -> Dict[int, float]:
+    scores: Dict[int, float] = {}
+    seq_len = int(values.shape[0])
+    num_blocks = math.ceil(seq_len / block_size)
+    for block in range(num_blocks):
+        start = block * block_size
+        end = min(seq_len, start + block_size)
+        if start >= end:
+            continue
+        scores[block] = float(values[start:end].float().sum().item())
+    return scores
+
+
+def _block_max_scores(values: torch.Tensor, *, block_size: int) -> Dict[int, float]:
+    scores: Dict[int, float] = {}
+    seq_len = int(values.shape[0])
+    num_blocks = math.ceil(seq_len / block_size)
+    for block in range(num_blocks):
+        start = block * block_size
+        end = min(seq_len, start + block_size)
+        if start >= end:
+            continue
+        scores[block] = float(values[start:end].float().max().item())
+    return scores
+
+
+def _block_value_scores(probs: torch.Tensor, v: torch.Tensor, *, block_size: int) -> Dict[int, float]:
+    scores: Dict[int, float] = {}
+    seq_len = int(probs.shape[0])
+    num_blocks = math.ceil(seq_len / block_size)
+    weighted_v = probs[:, None].float() * v.float()
+    for block in range(num_blocks):
+        start = block * block_size
+        end = min(seq_len, start + block_size)
+        if start >= end:
+            continue
+        scores[block] = float(torch.linalg.vector_norm(weighted_v[start:end].sum(dim=0)).item())
+    return scores
+
+
+def _select_middle_blocks(
+    scores: Dict[int, float],
+    *,
+    base_blocks: Sequence[int],
+    fixed_middle_blocks: Sequence[int],
+    middle_seed_blocks: int,
+) -> List[int]:
+    base = set(int(block) for block in base_blocks)
+    selected: List[int] = []
+    for block, score in sorted(scores.items(), key=lambda item: (-float(item[1]), int(item[0]))):
+        if block in base or block in selected:
+            continue
+        if score <= 0.0:
+            continue
+        selected.append(int(block))
+        if len(selected) >= middle_seed_blocks:
+            return selected
+    for block in fixed_middle_blocks:
+        if block in base or block in selected:
+            continue
+        selected.append(int(block))
+        if len(selected) >= middle_seed_blocks:
+            break
+    return selected
+
+
+def _selector_seed_masks(
+    *,
+    scores: torch.Tensor,
+    probs: torch.Tensor,
+    v: torch.Tensor,
+    support_mask: torch.Tensor,
+    distractor_mask: torch.Tensor,
+    policy: Any,
+    selector_profiles: Sequence[str],
+) -> Dict[str, Dict[str, Any]]:
+    seq_len = int(probs.shape[0])
+    block_size = int(policy.block_size)
+    base_blocks = _policy_seed_blocks(
+        seq_len=seq_len,
+        block_size=block_size,
+        sink_blocks=int(policy.sink_blocks),
+        recent_blocks=int(policy.recent_blocks),
+        middle_seed_blocks=int(policy.middle_seed_blocks),
+        block_order=str(policy.block_order),
+        include_middle=False,
+    )
+    fixed_blocks = _policy_seed_blocks(
+        seq_len=seq_len,
+        block_size=block_size,
+        sink_blocks=int(policy.sink_blocks),
+        recent_blocks=int(policy.recent_blocks),
+        middle_seed_blocks=int(policy.middle_seed_blocks),
+        block_order=str(policy.block_order),
+        include_middle=True,
+    )
+    fixed_middle_blocks = [block for block in fixed_blocks if block not in set(base_blocks)]
+    support_values = support_mask.float()
+    distractor_values = distractor_mask.float()
+    support_count_scores = _block_scores_from_values(
+        support_values - 0.25 * distractor_values,
+        block_size=block_size,
+    )
+    qk_scores = _block_max_scores(scores, block_size=block_size)
+    exact_mass_scores = _block_scores_from_values(probs, block_size=block_size)
+    support_mass_scores = _block_scores_from_values(
+        probs * support_values - 0.25 * probs * distractor_values,
+        block_size=block_size,
+    )
+    value_scores = _block_value_scores(probs, v, block_size=block_size)
+    score_by_selector = {
+        "support_block_oracle": support_count_scores,
+        "qk_block_max": qk_scores,
+        "exact_mass_oracle": exact_mass_scores,
+        "support_mass_oracle": support_mass_scores,
+        "value_residual_oracle": value_scores,
+    }
+    out: Dict[str, Dict[str, Any]] = {}
+    for selector in selector_profiles:
+        if selector == "fixed_policy":
+            blocks = fixed_blocks
+        else:
+            middle_blocks = _select_middle_blocks(
+                score_by_selector[selector],
+                base_blocks=base_blocks,
+                fixed_middle_blocks=fixed_middle_blocks,
+                middle_seed_blocks=int(policy.middle_seed_blocks),
+            )
+            blocks = list(base_blocks) + middle_blocks
+        mask = _seed_mask_from_blocks(
+            seq_len=seq_len,
+            block_size=block_size,
+            blocks=blocks,
+            device=probs.device,
+        )
+        out[selector] = {
+            "mask": mask,
+            "selected_blocks": [int(block) for block in blocks],
+            "middle_blocks": [int(block) for block in blocks if block not in set(base_blocks)],
+            "overlap_with_fixed_blocks": len(set(blocks) & set(fixed_blocks)),
+            "fixed_block_count": len(fixed_blocks),
+        }
+    return out
 
 
 def _find_spans(text: str, terms: Iterable[str]) -> List[tuple[int, int]]:
@@ -281,6 +493,23 @@ def _capture_metrics_for_head(
 ) -> tuple[Dict[str, float], torch.Tensor]:
     scores = torch.matmul(k.float(), q.float()) / math.sqrt(q.shape[-1])
     probs = torch.softmax(scores, dim=0)
+    return _capture_metrics_from_probs(
+        probs=probs,
+        v=v,
+        seed_mask=seed_mask,
+        support_mask=support_mask,
+        distractor_mask=distractor_mask,
+    ), probs.detach().cpu()
+
+
+def _capture_metrics_from_probs(
+    *,
+    probs: torch.Tensor,
+    v: torch.Tensor,
+    seed_mask: torch.Tensor,
+    support_mask: torch.Tensor,
+    distractor_mask: torch.Tensor,
+) -> Dict[str, float]:
     omitted_mask = ~seed_mask
     support_in = probs[seed_mask & support_mask].sum()
     support_out = probs[omitted_mask & support_mask].sum()
@@ -304,7 +533,7 @@ def _capture_metrics_for_head(
         "delta_collapse": float((delta_full - delta_seed).item()),
         "value_residual_ratio": float(value_residual_ratio.item()),
     }
-    return metrics, probs.detach().cpu()
+    return metrics
 
 
 def _js_divergence(p: torch.Tensor, q: torch.Tensor) -> float:
@@ -368,6 +597,7 @@ def _register_coverage_hooks(
     prompt_rows: Sequence[Dict[str, str]],
     role_masks: Sequence[Dict[str, torch.Tensor]],
     policies_by_layer: Dict[int, Any],
+    selector_profiles: Sequence[str],
     native_cache,
     rows_out: List[Dict[str, Any]],
     probs_out: Dict[tuple, torch.Tensor],
@@ -456,32 +686,52 @@ def _register_coverage_hooks(
                 )
                 for head in range(q.shape[1]):
                     kv_head = int(head // group_size)
-                    metrics, probs = _capture_metrics_for_head(
-                        q=q[row, head, 0, :],
-                        k=k_all[row, kv_head, :, :],
-                        v=v_all[row, kv_head, :, :],
-                        seed_mask=seed_mask,
+                    q_row = q[row, head, 0, :]
+                    k_row = k_all[row, kv_head, :, :]
+                    v_row = v_all[row, kv_head, :, :]
+                    scores = torch.matmul(k_row.float(), q_row.float()) / math.sqrt(q_row.shape[-1])
+                    probs = torch.softmax(scores, dim=0)
+                    key = (step, _layer_id, row, head)
+                    probs_out[(state.condition, *key)] = probs.detach().cpu()
+                    state.bump("captured_heads", str(_layer_id))
+                    selector_masks = _selector_seed_masks(
+                        scores=scores,
+                        probs=probs,
+                        v=v_row,
                         support_mask=support_mask,
                         distractor_mask=distractor_mask,
+                        policy=_policy,
+                        selector_profiles=selector_profiles,
                     )
-                    key = (step, _layer_id, row, head)
-                    probs_out[(state.condition, *key)] = probs
-                    state.bump("captured_heads", str(_layer_id))
-                    rows_out.append(
-                        {
-                            "condition": state.condition,
-                            "step": step,
-                            "layer": _layer_id,
-                            "row": int(row),
-                            "head": int(head),
-                            "kv_head": kv_head,
-                            "bucket": prompt_rows[row].get("bucket", prompt_rows[row].get("kind", "")),
-                            "prompt_id": prompt_rows[row].get("id", ""),
-                            "seq_len": seq_len,
-                            "seed_tokens": int(seed_mask.sum().item()),
-                            **metrics,
-                        }
-                    )
+                    for selector, selector_payload in selector_masks.items():
+                        selector_mask = selector_payload["mask"]
+                        metrics = _capture_metrics_from_probs(
+                            probs=probs,
+                            v=v_row,
+                            seed_mask=selector_mask,
+                            support_mask=support_mask,
+                            distractor_mask=distractor_mask,
+                        )
+                        rows_out.append(
+                            {
+                                "condition": state.condition,
+                                "selector": selector,
+                                "step": step,
+                                "layer": _layer_id,
+                                "row": int(row),
+                                "head": int(head),
+                                "kv_head": kv_head,
+                                "bucket": prompt_rows[row].get("bucket", prompt_rows[row].get("kind", "")),
+                                "prompt_id": prompt_rows[row].get("id", ""),
+                                "seq_len": seq_len,
+                                "seed_tokens": int(selector_mask.sum().item()),
+                                "selected_blocks": selector_payload["selected_blocks"],
+                                "middle_blocks": selector_payload["middle_blocks"],
+                                "overlap_with_fixed_blocks": selector_payload["overlap_with_fixed_blocks"],
+                                "fixed_block_count": selector_payload["fixed_block_count"],
+                                **metrics,
+                            }
+                        )
 
         handles.append(module.register_forward_pre_hook(hook, with_kwargs=True))
     return handles
@@ -560,7 +810,7 @@ def _dense_tokens(
 
 def _aggregate_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     grouped: Dict[str, Dict[str, Any]] = {}
-    for key_name in ("condition", "bucket", "layer"):
+    for key_name in ("condition", "bucket", "layer", "selector"):
         values = sorted({str(row[key_name]) for row in rows})
         grouped[f"by_{key_name}"] = {}
         for value in values:
@@ -597,6 +847,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     target_layers = _parse_ints(args.target_layers)
     routed_layers = _parse_ints(args.routed_layers)
     target_buckets = {part.strip() for part in args.target_buckets.split(",") if part.strip()}
+    selector_profiles = _parse_selector_profiles(args.selector_profiles)
 
     prompt_rows = _prompts_from_args(args)
     for idx, row in enumerate(prompt_rows):
@@ -658,6 +909,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         prompt_rows=prompt_rows,
         role_masks=role_masks,
         policies_by_layer=policies_by_layer,
+        selector_profiles=selector_profiles,
         native_cache=None,
         rows_out=rows,
         probs_out=probs,
@@ -694,6 +946,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         prompt_rows=prompt_rows,
         role_masks=role_masks,
         policies_by_layer=policies_by_layer,
+        selector_profiles=selector_profiles,
         native_cache=native_cache,
         rows_out=rows,
         probs_out=probs,
@@ -738,6 +991,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "target_layers": target_layers,
         "routed_layers": routed_layers,
         "target_buckets": sorted(target_buckets),
+        "selector_profiles": selector_profiles,
         "row_steps": {str(row): sorted(steps) for row, steps in row_steps.items()},
         "capture_steps": capture_steps,
         "condition_diagnostics": {
@@ -776,6 +1030,15 @@ def main() -> None:
     parser.add_argument("--target-layers", default="24,26,27")
     parser.add_argument("--routed-layers", default="0,14,16,24,26,27,35")
     parser.add_argument("--target-buckets", default="chat_instruction,noisy_neartie,json_tool,needle_rag")
+    parser.add_argument(
+        "--selector-profiles",
+        default="fixed_policy",
+        help=(
+            "Comma-separated seed selector profiles to simulate: fixed_policy, "
+            "support_block_oracle, qk_block_max, exact_mass_oracle, "
+            "support_mass_oracle, value_residual_oracle."
+        ),
+    )
     parser.add_argument("--failure-artifact", default="")
     parser.add_argument("--include-step0", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-rows", type=int, default=0)

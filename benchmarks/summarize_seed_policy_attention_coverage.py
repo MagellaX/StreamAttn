@@ -82,8 +82,14 @@ def summarize_payload(path: Path) -> Dict[str, Any]:
         "target_layers": payload.get("target_layers", []),
         "routed_layers": payload.get("routed_layers", []),
         "target_buckets": payload.get("target_buckets", []),
+        "selector_profiles": payload.get("selector_profiles", []),
         "capture_steps": payload.get("capture_steps", []),
         "overall": _metric_summary(rows),
+        "by_selector": _group(rows, ("selector",)) if rows and "selector" in rows[0] else [],
+        "by_selector_bucket": _group(rows, ("selector", "bucket")) if rows and "selector" in rows[0] else [],
+        "by_selector_layer_bucket": (
+            _group(rows, ("selector", "layer", "bucket")) if rows and "selector" in rows[0] else []
+        ),
         "by_layer_bucket_condition": _group(rows, ("layer", "bucket", "condition")),
         "by_layer_bucket": _group(rows, ("layer", "bucket")),
         "by_bucket_condition": _group(rows, ("bucket", "condition")),

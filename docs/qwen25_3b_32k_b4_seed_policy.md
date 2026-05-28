@@ -2081,6 +2081,77 @@ Next action:
    online verifier, not S640/S768 brute force.
 ```
 
+### Support-Aware Selector Simulation
+
+The coverage profiler now supports selector simulation on the same captured
+exact attention rows:
+
+```text
+--selector-profiles fixed_policy,support_block_oracle,qk_block_max,exact_mass_oracle,support_mass_oracle,value_residual_oracle
+```
+
+This is not a production route.  It is a diagnostic upper-bound tool for
+answering:
+
+```text
+Would a different seed selector reduce omitted mass / support loss / value
+residual on the same failing rows?
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/support_selector_l26_l27_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/support_selector_l26_l27_b8_h100_summary.json
+```
+
+Scope:
+
+```text
+target layers:  L26, L27
+routed layers:  [0,14,16,24,26,27,35]
+target buckets: chat_instruction, json_tool, needle_rag, noisy_neartie
+selected rows:  failing stress rows from strict7 stress gate
+capture steps:  [0,1,2,5,11,21]
+conditions:     dense_conditioned, route_conditioned
+```
+
+Selector-level result:
+
+| Selector | Omitted P95 | Support-Out P95 | Delta-Collapse P95 | Value-Residual P95 | Read |
+|---|---:|---:|---:|---:|---|
+| fixed_policy | 0.8054 | 0.2594 | 0.2543 | 0.9057 | current failure baseline |
+| support_block_oracle | 0.7561 | 0.2597 | 0.2491 | 0.8787 | label-only support blocks barely help |
+| support_mass_oracle | 0.7759 | 0.1892 | 0.1890 | 0.8819 | support-aware upper bound helps support loss but not value residual |
+| qk_block_max | 0.5939 | 0.2009 | 0.2009 | 0.7426 | query-score selector nearly matches exact/value oracles |
+| exact_mass_oracle | 0.5865 | 0.2080 | 0.2080 | 0.7386 | exact attention-mass upper bound |
+| value_residual_oracle | 0.5865 | 0.2075 | 0.2075 | 0.7360 | value-impact upper bound |
+
+Interpretation:
+
+```text
+1. Fixed S384 is genuinely missing high-value mass on L26/L27 stress rows.
+
+2. A prompt-label-only support selector is not enough.  It does not materially
+   reduce support-out or delta-collapse versus fixed_policy, which explains why
+   naive "include support-looking blocks" is unlikely to be robust.
+
+3. qk_block_max is the useful signal.  It cuts omitted mass P95 from 0.8054 to
+   0.5939 and value residual P95 from 0.9057 to 0.7426, close to exact/value
+   oracle ceilings.
+
+4. The next stress-recovery research should therefore be query-aware block
+   selection, not static schedule widening and not label-only support packing.
+```
+
+Next research gate:
+
+```text
+implement candidate qk_block_max selector for L26/L27 stress buckets
+run route-conditioned stress replay
+keep exact-native fallback unless top1/sample/KL gates pass
+```
+
 ### Bucket-Conditioned Route Policy
 
 The repo now contains an explicit bucket-conditioned route artifact and helper:

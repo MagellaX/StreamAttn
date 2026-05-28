@@ -32,8 +32,10 @@ from benchmarks.profile_seed_policy_attention_coverage import (
     _first_cache_position_like,
     _first_positional_tensor_pair,
     _js_divergence,
+    _parse_selector_profiles,
     _row_recommendation,
     _seed_indices,
+    _selector_seed_masks,
     _selected_rows_from_artifact,
     _stress_terms,
 )
@@ -292,6 +294,60 @@ def test_attention_coverage_metrics_and_recommendation():
     assert _row_recommendation(metrics) in {"coverage_repair", "value_sensitive_repair"}
 
 
+def test_attention_coverage_selector_profiles_reject_unknown():
+    assert _parse_selector_profiles("fixed_policy,qk_block_max") == ["fixed_policy", "qk_block_max"]
+
+    with pytest.raises(ValueError, match="unknown selector profiles"):
+        _parse_selector_profiles("fixed_policy,not_a_selector")
+
+
+def test_attention_coverage_support_selector_adds_support_block():
+    import torch
+
+    policy = Gate0SeedOnlyBatchedPolicy(
+        policy_id="p0",
+        model_id="m",
+        layer_id=0,
+        block_size=4,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        block_order="recent_first",
+    )
+    scores = torch.zeros(16)
+    probs = torch.full((16,), 1.0 / 16.0)
+    v = torch.ones((16, 2))
+    support = torch.zeros(16, dtype=torch.bool)
+    support[8:12] = True
+    distractor = torch.zeros(16, dtype=torch.bool)
+
+    masks = _selector_seed_masks(
+        scores=scores,
+        probs=probs,
+        v=v,
+        support_mask=support,
+        distractor_mask=distractor,
+        policy=policy,
+        selector_profiles=["fixed_policy", "support_block_oracle"],
+    )
+
+    assert masks["fixed_policy"]["selected_blocks"] == [0, 3, 2]
+    assert masks["support_block_oracle"]["selected_blocks"] == [0, 3, 2]
+
+    support[4:8] = True
+    masks = _selector_seed_masks(
+        scores=scores,
+        probs=probs,
+        v=v,
+        support_mask=support,
+        distractor_mask=distractor,
+        policy=policy,
+        selector_profiles=["support_block_oracle"],
+    )
+
+    assert masks["support_block_oracle"]["selected_blocks"] == [0, 3, 1]
+
+
 def test_attention_coverage_hook_input_inference():
     import torch
 
@@ -328,6 +384,54 @@ def test_attention_coverage_js_and_summary():
         ]
     )
     assert summary["top_recommendation"] == "coverage_repair"
+
+
+def test_attention_coverage_summarizer_reports_selector_groups(tmp_path):
+    from benchmarks.summarize_seed_policy_attention_coverage import summarize_payload
+
+    path = tmp_path / "coverage.json"
+    path.write_text(
+        json.dumps(
+            {
+                "model": "m",
+                "target_layers": [26],
+                "routed_layers": [26],
+                "target_buckets": ["json_tool"],
+                "selector_profiles": ["fixed_policy", "qk_block_max"],
+                "capture_steps": [0],
+                "rows": [
+                    {
+                        "selector": "fixed_policy",
+                        "layer": 26,
+                        "bucket": "json_tool",
+                        "condition": "dense_conditioned",
+                        "mass_omitted": 0.5,
+                        "support_out_seed": 0.2,
+                        "delta_collapse": 0.2,
+                        "value_residual_ratio": 0.4,
+                        "dense_vs_route_attention_js": 0.0,
+                    },
+                    {
+                        "selector": "qk_block_max",
+                        "layer": 26,
+                        "bucket": "json_tool",
+                        "condition": "dense_conditioned",
+                        "mass_omitted": 0.2,
+                        "support_out_seed": 0.1,
+                        "delta_collapse": 0.1,
+                        "value_residual_ratio": 0.2,
+                        "dense_vs_route_attention_js": 0.0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = summarize_payload(path)
+
+    assert summary["selector_profiles"] == ["fixed_policy", "qk_block_max"]
+    assert {row["selector"] for row in summary["by_selector"]} == {"fixed_policy", "qk_block_max"}
 
 
 def test_repair_sweep_builds_focused_variants():
