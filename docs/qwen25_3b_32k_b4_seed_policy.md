@@ -1974,3 +1974,109 @@ bucket gating:
   noisy_neartie remains exact or confidence-gated until a margin-aware verifier
   exists
 ```
+
+### Targeted Repair Sweep
+
+A minimal H100 repair sweep was added to test whether the attention-coverage
+failure can be fixed by simply widening L26/L27 to S640.
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_repair_sweep/minimal_8step_h100.json
+```
+
+Scope:
+
+```text
+prompt buckets:
+  chat_instruction
+  json_tool
+  needle_rag
+  noisy_neartie
+
+variants:
+  strict_base
+  minus_l26_l27
+  l26_l27_s640
+
+steps:      8
+batch:      8
+warmup:     0
+note:       safety screen only; cold timing is not a promotion metric
+```
+
+Result:
+
+```text
+minus_l26_l27:
+  score:          224.41
+  KL max:         0.0948
+  top1 changes:  2
+  sample changes:6
+  worst bucket:  json_tool
+
+strict_base:
+  score:          973.14
+  KL max:         0.5599
+  top1 changes:  10
+  sample changes:19
+  worst bucket:  chat_instruction
+
+l26_l27_s640:
+  score:          1026.68
+  KL max:         0.6125
+  top1 changes:  10
+  sample changes:19
+  worst bucket:  chat_instruction
+```
+
+Bucket details:
+
+```text
+minus_l26_l27:
+  chat_instruction: top1 0, sample 0, KL 0.0210
+  json_tool:        top1 0, sample 4, KL 0.0948
+  needle_rag:       top1 0, sample 1, KL 0.0165
+  noisy_neartie:    top1 2, sample 1, KL 0.0497
+
+l26_l27_s640:
+  chat_instruction: top1 4, sample 5, KL 0.6125
+  json_tool:        top1 0, sample 8, KL 0.1338
+  needle_rag:       top1 0, sample 3, KL 0.0494
+  noisy_neartie:    top1 6, sample 3, KL 0.2823
+```
+
+Interpretation:
+
+```text
+1. Widening L26/L27 from S384 to S640 does not repair the adversarial route.
+   It slightly worsens the aggregate score in this screen.
+
+2. Removing L26/L27 greatly reduces safety damage, which confirms attribution
+   and attention-coverage diagnostics: these late layers are unsafe for blind
+   seed-only routing on stress buckets.
+
+3. Even minus_l26_l27 does not pass the strict gate.  The remaining failures
+   are concentrated in json_tool and noisy_neartie, so the repair is not just
+   "remove two layers"; bucket-specific exact gating is still needed.
+
+4. The next product-safe policy for these buckets should gate L26/L27 exact,
+   and probably gate noisy_neartie exact until margin-aware verification exists.
+```
+
+Next action:
+
+```text
+1. Promote a bucket policy rule for stress-risk rows:
+     chat_instruction/json_tool/needle_rag -> keep L26/L27 exact
+     noisy_neartie -> exact or confidence-gated
+
+2. Test a speed/safety route with:
+     routed layers [0,14,16,24,35] for stress buckets
+     routed layers [0,14,16,24,26,27,35] only for validated non-stress buckets
+
+3. If we want to recover L26/L27 later, do not use blind wider middle seeds.
+   The next research path is query-aware/support-aware seed selection or an
+   online verifier, not S640/S768 brute force.
+```

@@ -36,6 +36,11 @@ from benchmarks.profile_seed_policy_attention_coverage import (
     _selected_rows_from_artifact,
     _stress_terms,
 )
+from benchmarks.profile_seed_policy_repair_sweep import (
+    STRICT_LAYERS,
+    build_bucket_prompt_pack,
+    build_repair_variants,
+)
 from benchmarks.summarize_seed_policy_attention_coverage import (
     _metric_summary as attention_coverage_metric_summary,
 )
@@ -322,6 +327,45 @@ def test_attention_coverage_js_and_summary():
         ]
     )
     assert summary["top_recommendation"] == "coverage_repair"
+
+
+def test_repair_sweep_builds_focused_variants():
+    variants = {variant.name: variant for variant in build_repair_variants("focused")}
+
+    assert variants["strict_base"].layers == STRICT_LAYERS
+    assert 27 not in variants["minus_l27"].layers
+    assert 26 not in variants["minus_l26_l27"].layers
+    assert 27 not in variants["minus_l26_l27"].layers
+    assert "26:" in variants["l26_l27_s640"].overrides
+    assert "27:" in variants["l26_l27_s640"].overrides
+
+
+def test_repair_sweep_prompt_pack_repeats_target_buckets(tmp_path):
+    rows = [
+        {"id": "chat_0", "bucket": "chat_instruction", "kind": "chat_instruction", "prompt": "chat"},
+        {"id": "json_0", "bucket": "json_tool", "kind": "json_tool", "prompt": "json"},
+        {"id": "code_0", "bucket": "code", "kind": "code", "prompt": "code"},
+    ]
+    source = tmp_path / "prompts.jsonl"
+    source.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    output = tmp_path / "repair.jsonl"
+
+    selected = build_bucket_prompt_pack(
+        source_prompt_file=source,
+        target_buckets=["chat_instruction", "json_tool"],
+        batch_size=5,
+        output_path=output,
+    )
+
+    assert [row["bucket"] for row in selected] == [
+        "chat_instruction",
+        "json_tool",
+        "chat_instruction",
+        "json_tool",
+        "chat_instruction",
+    ]
+    assert selected[0]["repair_source_id"] == "chat_0"
+    assert output.exists()
 
 
 def test_batch_tokens_temporarily_sets_truncation_side():
