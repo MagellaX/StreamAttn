@@ -1842,3 +1842,135 @@ with L26 and L27, then L24, and test:
 3. bucket-conditioned exact fallback for chat_instruction/noisy_neartie/json_tool
 4. attention-mass coverage on failing rows before broader schedule search
 ```
+
+### Prompt-Aware Attention Coverage
+
+The next diagnostic measured exact attention coverage for failing stress rows at
+L24/L26/L27 under both dense-conditioned and route-conditioned states.
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/l24_l26_l27_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/l24_l26_l27_b8_h100_summary.json
+```
+
+Captured rows:
+
+```text
+target layers:  L24, L26, L27
+route layers:   [0, 14, 16, 24, 26, 27, 35]
+target buckets: chat_instruction, json_tool, needle_rag, noisy_neartie
+steps:          [0, 1, 2, 5, 11, 21]
+conditions:     dense_conditioned, route_conditioned
+rows captured:  960
+```
+
+Overall coverage:
+
+```text
+mass omitted p50:        0.1261
+mass omitted p95:        0.7618
+support-out-seed p95:    0.2535
+delta-collapse p95:      0.2458
+value residual p95:      0.8763
+dense/route attention JS p95: 0.0279
+```
+
+Layer/bucket highlights:
+
+```text
+L27 chat_instruction:
+  omitted p95:      0.937
+  support_out p95:  0.202
+  value_resid p95:  0.945
+  route JS p95:     0.0561
+
+L27 json_tool:
+  omitted p95:      0.773
+  support_out p95:  0.333
+  value_resid p95:  0.926
+  route JS p95:     0.0581
+
+L26 chat_instruction:
+  omitted p95:      0.818
+  support_out p95:  0.357
+  value_resid p95:  0.915
+  route JS p95:     0.0045
+
+L26 json_tool:
+  omitted p95:      0.612
+  support_out p95:  0.372
+  value_resid p95:  0.827
+  route JS p95:     0.0367
+
+L24 json_tool:
+  omitted p95:      0.755
+  support_out p95:  0.374
+  value_resid p95:  0.875
+  route JS p95:     0.0475
+```
+
+Bucket-level read:
+
+```text
+chat_instruction:
+  omitted p95:      0.888
+  support_out p95:  0.280
+  value_resid p95:  0.933
+  route JS p95:     0.0352
+
+json_tool:
+  omitted p95:      0.741
+  support_out p95:  0.375
+  value_resid p95:  0.881
+  route JS p95:     0.0475
+
+needle_rag:
+  omitted p95:      0.664
+  support_out p95:  0.169
+  value_resid p95:  0.819
+  route JS p95:     0.0053
+
+noisy_neartie:
+  omitted p95:      0.535
+  support_out p95:  0.073
+  value_resid p95:  0.674
+  route JS p95:     0.0025
+```
+
+Interpretation:
+
+```text
+1. L26/L27 failures are real coverage/value-residual failures, not just
+   low-margin top-k noise.
+
+2. L27 is the strongest route-conditioned drift layer.  Its JS p95 is highest
+   on chat_instruction and json_tool, matching the leave-one-out attribution.
+
+3. L26 has severe support-out-seed and value residual on chat_instruction,
+   json_tool, and needle_rag, but less route-conditioned drift than L27.
+
+4. L24 is not globally bad, but L24/json_tool shows a real coverage and
+   route-drift signature.
+
+5. noisy_neartie is mostly margin/value-sensitive rather than a clean support
+   coverage miss.  Wider seed alone is unlikely to be the right repair there.
+```
+
+Next repair experiments:
+
+```text
+coverage repair:
+  L26/L27: S512, S640, S768 on chat_instruction/json_tool/needle_rag
+  L24:     S512/S640 only for json_tool
+
+composition repair:
+  keep L27 exact for chat_instruction/json_tool
+  test route without L27 but with L26 widened
+  test route without L24 for json_tool
+
+bucket gating:
+  noisy_neartie remains exact or confidence-gated until a margin-aware verifier
+  exists
+```

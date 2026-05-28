@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import _validate_route_bundle
 from benchmarks.profile_gate0_seed_only_closed_loop_rollout import _prompt_rows_from_file
@@ -20,6 +24,20 @@ from benchmarks.profile_seed_only_stress_attribution import (
     RouteSpec,
     build_route_specs,
     failure_score,
+)
+from benchmarks.profile_seed_policy_attention_coverage import (
+    _capture_metrics_for_head,
+    _first_cache_like,
+    _first_cache_position_like,
+    _first_positional_tensor_pair,
+    _js_divergence,
+    _row_recommendation,
+    _seed_indices,
+    _selected_rows_from_artifact,
+    _stress_terms,
+)
+from benchmarks.summarize_seed_policy_attention_coverage import (
+    _metric_summary as attention_coverage_metric_summary,
 )
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
 from stream_attention.kernels.gate0_seed_only_triton import (
@@ -192,6 +210,118 @@ def test_stress_attribution_failure_score_weights_failures():
 
     assert failure_score(safe) == 0.0
     assert failure_score(unsafe) > 35.0
+
+
+def test_attention_coverage_seed_indices_recent_first():
+    seed = _seed_indices(
+        seq_len=320,
+        block_size=32,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=2,
+        block_order="recent_first",
+    )
+
+    assert seed.numel() == 128
+    assert seed[:3].tolist() == [0, 1, 2]
+    assert 224 in seed.tolist()
+    assert 255 in seed.tolist()
+    assert 256 in seed.tolist()
+    assert 319 in seed.tolist()
+
+
+def test_attention_coverage_stress_terms_noisy_neartie():
+    support, distractors = _stress_terms({"bucket": "noisy_neartie", "id": "noisy_neartie_001"})
+
+    assert any("azure" in term for term in support)
+    assert any("amber" in term for term in distractors)
+
+
+def test_attention_coverage_selected_rows_from_artifact(tmp_path):
+    artifact = {
+        "prompts": [
+            {"row": 0, "bucket": "code"},
+            {"row": 1, "bucket": "chat_instruction"},
+        ],
+        "safety": {
+            "by_prompt_bucket": {
+                "chat_instruction": {
+                    "first_divergence": {"rows": [1], "step": 3},
+                    "worst_case_by_kl": {"row": 1},
+                },
+                "code": {"first_divergence": {"rows": [0], "step": 2}},
+            }
+        },
+    }
+    path = tmp_path / "stress.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    selected = _selected_rows_from_artifact(str(path), target_buckets={"chat_instruction"}, include_step0=True)
+
+    assert selected == {1: {0, 3}}
+
+
+def test_attention_coverage_metrics_and_recommendation():
+    import torch
+
+    q = torch.tensor([1.0, 0.0])
+    k = torch.tensor([[4.0, 0.0], [0.0, 1.0], [3.0, 0.0]])
+    v = torch.tensor([[1.0, 0.0], [0.0, 1.0], [10.0, 0.0]])
+    seed_mask = torch.tensor([True, True, False])
+    support_mask = torch.tensor([False, False, True])
+    distractor_mask = torch.tensor([True, False, False])
+
+    metrics, probs = _capture_metrics_for_head(
+        q=q,
+        k=k,
+        v=v,
+        seed_mask=seed_mask,
+        support_mask=support_mask,
+        distractor_mask=distractor_mask,
+    )
+
+    assert probs.shape == (3,)
+    assert metrics["support_out_seed"] > 0.0
+    assert metrics["mass_seed"] + metrics["mass_omitted"] == pytest.approx(1.0)
+    assert _row_recommendation(metrics) in {"coverage_repair", "value_sensitive_repair"}
+
+
+def test_attention_coverage_hook_input_inference():
+    import torch
+
+    class DummyCache:
+        pass
+
+    cache = DummyCache()
+    cache.layers = []
+    pair = (torch.ones(1), torch.zeros(1))
+    cache_pos = torch.tensor([7], dtype=torch.long)
+
+    assert _first_positional_tensor_pair([None, pair]) == pair
+    assert _first_cache_like([None, torch.ones(1), cache]) is cache
+    assert _first_cache_position_like([torch.ones((1, 2)), cache_pos]) is cache_pos
+
+
+def test_attention_coverage_js_and_summary():
+    import torch
+
+    p = torch.tensor([0.8, 0.2])
+    q = torch.tensor([0.5, 0.5])
+    assert _js_divergence(p, p) == pytest.approx(0.0)
+    assert _js_divergence(p, q) > 0.0
+
+    summary = attention_coverage_metric_summary(
+        [
+            {
+                "mass_omitted": 0.3,
+                "support_out_seed": 0.1,
+                "delta_collapse": 0.05,
+                "value_residual_ratio": 0.2,
+                "dense_vs_route_attention_js": 0.01,
+            }
+        ]
+    )
+    assert summary["top_recommendation"] == "coverage_repair"
 
 
 def test_batch_tokens_temporarily_sets_truncation_side():
