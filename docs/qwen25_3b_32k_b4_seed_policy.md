@@ -1700,3 +1700,145 @@ next research is prompt-regime-aware policy robustness:
 3. test larger seed schedules only for the failing prompt buckets/layers
 4. keep the current strict route scoped to the prompt regimes already validated
 ```
+
+### Stress Attribution Screen
+
+An 8-step attribution screen was added for fast safety debugging.  This is not a
+speed-promotion benchmark: `warmup_steps=0` means first-kernel compile/setup can
+pollute timing.  The useful output is the relative safety score.
+
+Failure score:
+
+```text
+10 * top1_changes
++ 10 * sample_changes
++ 1000 * max(0, KL_max - 1e-4)
++ 100 * max(0, target_logprob_delta_max - 2e-3)
++ 5 * max(0, 4 - top5_overlap_min)
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_stress_attribution/leaveout_8step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_stress_attribution/single_8step_h100.json
+```
+
+Leave-one-out result:
+
+```text
+base strict score: 788.14
+
+remove L26:
+  score:          417.75
+  leaveout gain: 370.39
+  top1 changes:  4
+  sample changes:4
+  KL max:        0.2330
+  worst bucket:  noisy_neartie
+
+remove L27:
+  score:          468.55
+  leaveout gain: 319.59
+  top1 changes:  5
+  sample changes:2
+  KL max:        0.3086
+  worst bucket:  chat_instruction
+
+remove L24:
+  score:          605.25
+  leaveout gain: 182.89
+  top1 changes:  7
+  sample changes:4
+  KL max:        0.3961
+  worst bucket:  chat_instruction
+
+remove L0:
+  score:          733.20
+  leaveout gain: 54.94
+
+remove L35:
+  score:          781.78
+  leaveout gain: 6.36
+
+remove L16:
+  score:          794.22
+  leaveout gain: -6.09
+
+remove L14:
+  score:          809.59
+  leaveout gain: -21.45
+```
+
+Single-layer stress result:
+
+```text
+single L26:
+  score:          383.99
+  top1 changes:  3
+  sample changes:1
+  KL max:        0.2890
+  worst bucket:  chat_instruction
+
+single L27:
+  score:          292.08
+  top1 changes:  2
+  sample changes:3
+  KL max:        0.1735
+  worst bucket:  noisy_neartie
+
+single L14:
+  score:          130.45
+  top1 changes:  2
+  sample changes:0
+  KL max:        0.0828
+  worst bucket:  json_tool
+
+single L24:
+  score:          83.92
+  top1 changes:  0
+  sample changes:1
+  KL max:        0.0341
+  worst bucket:  noisy_neartie
+
+single L35:
+  score:          66.57
+  top1 changes:  1
+  sample changes:1
+  KL max:        0.0249
+  worst bucket:  noisy_neartie
+
+single L0:
+  score:          40.53
+  top1 changes:  1
+  sample changes:1
+  KL max:        0.0110
+  worst bucket:  code
+
+single L16:
+  score:          9.00
+  top1 changes:  0
+  sample changes:0
+  KL max:        0.0022
+  worst bucket:  needle_rag
+```
+
+Interpretation:
+
+```text
+Primary stress culprits:   L26, L27
+Secondary culprit:         L24
+Mostly composition-safe:   L16
+Mixed/low marginal value:  L14, L35, L0
+```
+
+No single leave-one-out route repairs the adversarial pack, so the failure is
+compositional.  The next repair should not enlarge every seed schedule.  Start
+with L26 and L27, then L24, and test:
+
+```text
+1. remove L26/L27 for stress-risk buckets
+2. larger seed schedules for L26/L27 only
+3. bucket-conditioned exact fallback for chat_instruction/noisy_neartie/json_tool
+4. attention-mass coverage on failing rows before broader schedule search
+```

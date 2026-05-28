@@ -16,6 +16,11 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     summarize_patch_timing_rows,
 )
 from benchmarks.summarize_seed_policy_stress_replay import summarize_payload
+from benchmarks.profile_seed_only_stress_attribution import (
+    RouteSpec,
+    build_route_specs,
+    failure_score,
+)
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
 from stream_attention.kernels.gate0_seed_only_triton import (
     gate0_refresh_packed_seed_cache_recent_bhsd,
@@ -140,6 +145,53 @@ def test_stress_replay_summarizer_reports_worst_bucket(tmp_path):
     assert summary["passed"] is False
     assert summary["speedup_vs_dense_decode"] == 1.2
     assert summary["worst_bucket"]["bucket"] == "needle"
+
+
+def test_stress_attribution_route_specs_include_leaveouts_and_candidates():
+    specs = build_route_specs(
+        base_layers=[0, 14, 16],
+        route_set="full",
+        add_layers=[2, 29],
+    )
+    by_name = {spec.name: spec.layers for spec in specs}
+
+    assert by_name["strict_base"] == (0, 14, 16)
+    assert by_name["minus_l14"] == (0, 16)
+    assert by_name["single_l16"] == (16,)
+    assert by_name["plus_l2"] == (0, 2, 14, 16)
+    assert by_name["single_l29"] == (29,)
+
+
+def test_stress_attribution_policy_names_and_mixed_seed_detection():
+    strict = RouteSpec("strict", (0, 14))
+    mixed = RouteSpec("mixed", (0, 2, 14))
+
+    assert strict.policy_names == (
+        "qwen25_3b_l0_32k_seed_only_batched,"
+        "qwen25_3b_l14_32k_seed_only_batched"
+    )
+    assert strict.allow_mixed_seed_configs is False
+    assert mixed.allow_mixed_seed_configs is True
+
+
+def test_stress_attribution_failure_score_weights_failures():
+    safe = {
+        "kl_max": 1.0e-5,
+        "target_logprob_delta_max_abs": 1.0e-4,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "topk_overlap_min": 5,
+    }
+    unsafe = {
+        "kl_max": 2.0e-4,
+        "target_logprob_delta_max_abs": 3.0e-3,
+        "top1_changes": 2,
+        "sample_changes": 1,
+        "topk_overlap_min": 3,
+    }
+
+    assert failure_score(safe) == 0.0
+    assert failure_score(unsafe) > 35.0
 
 
 def test_batch_tokens_temporarily_sets_truncation_side():
