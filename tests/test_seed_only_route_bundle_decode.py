@@ -1,9 +1,12 @@
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import RouteBundle
 from benchmarks.profile_gate0_seed_only_multi_layer_rollout import _validate_route_bundle
+from benchmarks.profile_gate0_seed_only_closed_loop_rollout import _prompt_rows_from_file
+from benchmarks.build_seed_policy_stress_prompts import BUCKETS, build_rows
 from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
     StreamAttnQwenAttentionModule,
     _SeedOnlyQwenDecodePatch,
+    _batch_tokens,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
@@ -12,6 +15,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     parse_layer_seed_overrides,
     summarize_patch_timing_rows,
 )
+from benchmarks.summarize_seed_policy_stress_replay import summarize_payload
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
 from stream_attention.kernels.gate0_seed_only_triton import (
     gate0_refresh_packed_seed_cache_recent_bhsd,
@@ -50,6 +54,128 @@ def test_parse_layer_seed_overrides_positional_fields():
 def test_parse_layer_id_set_accepts_commas_and_semicolons():
     assert parse_layer_id_set("") == set()
     assert parse_layer_id_set("0,14;16") == {0, 14, 16}
+
+
+def test_prompt_rows_from_jsonl_preserves_stress_metadata(tmp_path):
+    import json
+
+    path = tmp_path / "stress.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "id": "code_000",
+                "bucket": "code",
+                "language": "python",
+                "risk": "identifier",
+                "prompt": "alpha",
+            }
+        )
+        + "\n"
+        + json.dumps({"id": "math_000", "bucket": "math", "text": "beta"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = _prompt_rows_from_file(str(path), max_rows=1)
+
+    assert rows == [
+        {
+            "kind": "code",
+            "prompt": "alpha",
+            "id": "code_000",
+            "bucket": "code",
+            "language": "python",
+            "risk": "identifier",
+        }
+    ]
+
+
+def test_build_seed_policy_stress_prompts_covers_all_buckets():
+    rows = build_rows(rows_per_bucket=1, target_words=1200)
+
+    assert [row["bucket"] for row in rows] == list(BUCKETS)
+    assert all(row["prompt"] for row in rows)
+    assert {row["kind"] for row in rows} == set(BUCKETS)
+
+
+def test_stress_replay_summarizer_reports_worst_bucket(tmp_path):
+    import json
+
+    path = tmp_path / "stress.json"
+    path.write_text(
+        json.dumps(
+            {
+                "decision": {"passed": False},
+                "route_bundle": {"layers": [0, 2]},
+                "timing": {
+                    "speedup_vs_dense_decode": 1.2,
+                    "dense_decode_ms_per_token": 30.0,
+                    "streamattn_decode_ms_per_token": 25.0,
+                },
+                "safety": {
+                    "case_count": 16,
+                    "kl_max": 0.2,
+                    "kl_p99": 0.1,
+                    "top1_changed_count": 0,
+                    "sample_token_changed_count": 0,
+                    "topk_overlap_min": 3,
+                    "reference_top1_logprob_delta_max_abs": 0.01,
+                    "by_prompt_bucket": {
+                        "code": {"kl_max": 0.01, "kl_p99": 0.01, "topk_overlap_min": 4},
+                        "needle": {
+                            "kl_max": 0.2,
+                            "kl_p99": 0.1,
+                            "topk_overlap_min": 3,
+                            "reference_top1_logprob_delta_max_abs": 0.01,
+                        },
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = summarize_payload(path)
+
+    assert summary["passed"] is False
+    assert summary["speedup_vs_dense_decode"] == 1.2
+    assert summary["worst_bucket"]["bucket"] == "needle"
+
+
+def test_batch_tokens_temporarily_sets_truncation_side():
+    import torch
+
+    class Encoded(dict):
+        def to(self, _device):
+            return self
+
+    class Tokenizer:
+        truncation_side = "right"
+
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, texts, **kwargs):
+            self.calls.append((self.truncation_side, list(texts), kwargs["max_length"]))
+            return Encoded(
+                {
+                    "input_ids": torch.ones((1, kwargs["max_length"]), dtype=torch.long),
+                    "attention_mask": torch.ones((1, kwargs["max_length"]), dtype=torch.long),
+                }
+            )
+
+    tokenizer = Tokenizer()
+
+    _batch_tokens(
+        tokenizer,
+        [{"kind": "stress", "prompt": "alpha"}],
+        max_seq=4,
+        device=torch.device("cpu"),
+        truncation_side="left",
+    )
+
+    assert tokenizer.calls == [("left", ["alpha"], 4)]
+    assert tokenizer.truncation_side == "right"
 
 
 def test_native_cache_mask_bookkeeping_overrides_and_restores():

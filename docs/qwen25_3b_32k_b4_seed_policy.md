@@ -1621,3 +1621,82 @@ current best 7-layer packed-QKV route: 1.16411x
 
 The margin is still tight against the `1e-4` KL gate, so it should stay explicit
 candidate policy/bundle until it gets broader prompt-suite validation.
+
+### Adversarial Stress Prompt Gate
+
+The L2 S640 margin was too thin to promote from the mixed/chat-doc suite alone,
+so a first adversarial prompt-file gate was added.  The stress pack covers:
+
+```text
+code
+math
+chat_instruction
+long_doc
+needle_rag
+multilingual
+json_tool
+noisy_neartie
+```
+
+The route-bundle decode benchmark now accepts JSONL prompts:
+
+```text
+--prompt-file benchmarks/prompts/qwen3b_32k_stress_pack_v1_b8.jsonl
+--prompt-truncation-side left
+```
+
+The truncation side is important.  Stress prompts contain a final query; if the
+tokenizer right-truncates an overlength prompt, the benchmark can drop the final
+query and measure the wrong behavior.  Stress prompt-file gates should use left
+truncation unless the prompt pack is tokenizer-verified to fit within 32K.
+
+Corrected H100 B8 / 32-step stress results:
+
+```text
+8-layer L2 S640 candidate:
+  dense decode:      28.81716 ms/token
+  StreamAttn decode: 24.74280 ms/token
+  speedup:           1.16467x
+  KL max:            5.51536e-01
+  KL p99:            2.83615e-01
+  top1 changes:      21 / 256
+  sample changes:    14 / 256
+  top5 overlap min:  1/5
+  strict gate:       failed
+
+strict 7-layer route:
+  dense decode:      29.01018 ms/token
+  StreamAttn decode: 25.10773 ms/token
+  speedup:           1.15543x
+  KL max:            5.59874e-01
+  KL p99:            2.83572e-01
+  top1 changes:      21 / 256
+  sample changes:    14 / 256
+  top5 overlap min:  1/5
+  strict gate:       failed
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/l2_s640_stress_pack_left_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/strict7_stress_pack_left_b8_h100.json
+```
+
+Conclusion:
+
+```text
+L2 S640 is not the only issue under adversarial final-query prompts.
+The existing strict 7-layer route also fails this stress gate.
+```
+
+So the next research is not kernel tuning and not L2-only schedule repair.  The
+next research is prompt-regime-aware policy robustness:
+
+```text
+1. treat these stress buckets as fallback-dense until policy search repairs them
+2. run per-layer leave-one-out on the stress pack to find which routed layers
+   cause top1/sample drift
+3. test larger seed schedules only for the failing prompt buckets/layers
+4. keep the current strict route scoped to the prompt regimes already validated
+```

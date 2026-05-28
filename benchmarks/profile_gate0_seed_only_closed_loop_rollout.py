@@ -47,7 +47,46 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
 )
 
 
+def _prompt_rows_from_file(path: str, *, max_rows: int = 0) -> List[Dict[str, str]]:
+    prompt_path = Path(path)
+    rows: List[Dict[str, str]] = []
+    for line_idx, raw_line in enumerate(prompt_path.read_text(encoding="utf-8").splitlines()):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if prompt_path.suffix.lower() == ".jsonl":
+            payload = json.loads(line)
+            prompt = str(payload.get("prompt") or payload.get("text") or "")
+            if not prompt:
+                raise ValueError(f"prompt file row {line_idx + 1} has no prompt/text field")
+            row = {
+                "kind": str(payload.get("kind") or payload.get("bucket") or f"file_{len(rows):03d}"),
+                "prompt": prompt,
+            }
+            for key in ("id", "bucket", "language", "risk", "expected_risk", "difficulty"):
+                if key in payload and payload[key] is not None:
+                    row[key] = str(payload[key])
+        else:
+            row = {
+                "kind": f"{prompt_path.stem}_{len(rows):03d}",
+                "prompt": line,
+            }
+        rows.append(row)
+        if max_rows > 0 and len(rows) >= max_rows:
+            break
+    if not rows:
+        raise ValueError(f"prompt file {prompt_path} did not contain any prompts")
+    return rows
+
+
 def _prompts_from_args(args: argparse.Namespace) -> List[Dict[str, str]]:
+    prompt_file = str(getattr(args, "prompt_file", "") or "")
+    if prompt_file:
+        max_prompts = int(getattr(args, "max_prompts", 0) or 0)
+        if max_prompts <= 0:
+            max_prompts = int(getattr(args, "batch_size", 0) or 0)
+        return _prompt_rows_from_file(prompt_file, max_rows=max_prompts)
+
     kinds = _parse_prompt_kinds(args.prompt_kinds)
     prompts = []
     for kind in kinds[: args.batch_size]:
@@ -760,6 +799,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt-kinds", default="needle,code,long_doc,needle,code,long_doc,needle,code")
+    parser.add_argument("--prompt-file", default="")
+    parser.add_argument("--max-prompts", type=int, default=0)
     parser.add_argument("--prompt-repeat", type=int, default=3000)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--model-batch-size", type=int, default=1)

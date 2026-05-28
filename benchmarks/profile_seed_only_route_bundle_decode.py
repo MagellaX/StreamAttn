@@ -476,14 +476,28 @@ def _import_qwen_rotary():
     return apply_rotary_pos_emb
 
 
-def _batch_tokens(tokenizer, prompts: Sequence[Dict[str, str]], *, max_seq: int, device: torch.device):
-    encoded = tokenizer(
-        [row["prompt"] for row in prompts],
-        return_tensors="pt",
-        truncation=True,
-        max_length=max_seq,
-        padding="max_length",
-    ).to(device)
+def _batch_tokens(
+    tokenizer,
+    prompts: Sequence[Dict[str, str]],
+    *,
+    max_seq: int,
+    device: torch.device,
+    truncation_side: str = "",
+):
+    old_truncation_side = getattr(tokenizer, "truncation_side", None)
+    if truncation_side:
+        tokenizer.truncation_side = truncation_side
+    try:
+        encoded = tokenizer(
+            [row["prompt"] for row in prompts],
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_seq,
+            padding="max_length",
+        ).to(device)
+    finally:
+        if truncation_side and old_truncation_side is not None:
+            tokenizer.truncation_side = old_truncation_side
     lengths = encoded["attention_mask"].sum(dim=1)
     if int(lengths.min().item()) != max_seq:
         raise ValueError(
@@ -519,6 +533,8 @@ def _summarize_logit_steps(step_rows: Sequence[Dict[str, Any]], *, batch_size: i
         "batch_size": batch_size,
         "case_count": len(flat),
         "kl_max": max(kl_values) if kl_values else 0.0,
+        "kl_p95": _percentile(kl_values, 0.95),
+        "kl_p99": _percentile(kl_values, 0.99),
         "kl_mean": float(torch.tensor(kl_values).mean().item()) if kl_values else 0.0,
         "max_logit_delta": max(logit_values) if logit_values else 0.0,
         "top1_changed_count": len(top1_changed),
@@ -535,6 +551,32 @@ def _summarize_logit_steps(step_rows: Sequence[Dict[str, Any]], *, batch_size: i
         "first_sample_divergence": first_sample_divergence,
         "worst_case_by_kl": max(flat, key=lambda row: float(row["kl_ref_to_candidate"])) if flat else None,
     }
+
+
+def _summarize_logit_steps_by_field(
+    step_rows: Sequence[Dict[str, Any]],
+    *,
+    field: str,
+) -> Dict[str, Any]:
+    values = sorted(
+        {
+            str(row.get(field, ""))
+            for step in step_rows
+            for row in step["rows"]
+            if row.get(field, "")
+        }
+    )
+    grouped: Dict[str, Any] = {}
+    for value in values:
+        filtered_steps = []
+        row_ids = set()
+        for step in step_rows:
+            rows = [row for row in step["rows"] if str(row.get(field, "")) == value]
+            if rows:
+                filtered_steps.append({**step, "rows": rows})
+                row_ids.update(int(row["row"]) for row in rows)
+        grouped[value] = _summarize_logit_steps(filtered_steps, batch_size=len(row_ids))
+    return grouped
 
 
 class _SeedOnlyQwenDecodePatch:
@@ -1217,14 +1259,21 @@ def _compare_decode_logits(
                     {
                         **row,
                         "prompt_kind": prompt_rows[int(row["row"])]["kind"],
+                        "prompt_id": prompt_rows[int(row["row"])].get("id", ""),
+                        "prompt_bucket": prompt_rows[int(row["row"])].get(
+                            "bucket",
+                            prompt_rows[int(row["row"])]["kind"],
+                        ),
                         "sample_token_changed": bool(changed[int(row["row"])].item()),
                     }
                     for row in rows
                 ],
             }
         )
+    summary = _summarize_logit_steps(steps, batch_size=len(prompt_rows))
+    summary["by_prompt_bucket"] = _summarize_logit_steps_by_field(steps, field="prompt_bucket")
     return {
-        "summary": _summarize_logit_steps(steps, batch_size=len(prompt_rows)),
+        "summary": summary,
         "steps": steps,
     }
 
@@ -1310,7 +1359,14 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         model_kwargs["attn_implementation"] = args.attn_implementation
     model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs).to(device)
     model.eval()
-    tokens = _batch_tokens(tokenizer, prompt_rows, max_seq=args.max_seq, device=device)
+    prompt_truncation_side = args.prompt_truncation_side if args.prompt_file else ""
+    tokens = _batch_tokens(
+        tokenizer,
+        prompt_rows,
+        max_seq=args.max_seq,
+        device=device,
+        truncation_side=prompt_truncation_side,
+    )
     warmup_summary: Dict[str, Any] = {"steps": int(args.warmup_steps)}
 
     if args.warmup_steps > 0:
@@ -1456,7 +1512,22 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         "decision": _safety_decision(comparison["summary"], args=args),
         "patch_counts": patch_counts,
         "patch_timing": patch_timing,
-        "prompts": [{"row": idx, "kind": row["kind"]} for idx, row in enumerate(prompt_rows)],
+        "prompts": [
+            {
+                key: value
+                for key, value in {
+                    "row": idx,
+                    "kind": row.get("kind", ""),
+                    "id": row.get("id", ""),
+                    "bucket": row.get("bucket", ""),
+                    "language": row.get("language", ""),
+                    "risk": row.get("risk") or row.get("expected_risk", ""),
+                    "difficulty": row.get("difficulty", ""),
+                }.items()
+                if value != ""
+            }
+            for idx, row in enumerate(prompt_rows)
+        ],
     }
 
 
@@ -1467,6 +1538,14 @@ def main() -> None:
     parser.add_argument("--policy-names", default="")
     parser.add_argument("--use-packaged-policies", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--prompt-kinds", default="needle,code,long_doc,chat_doc")
+    parser.add_argument("--prompt-file", default="")
+    parser.add_argument("--max-prompts", type=int, default=0)
+    parser.add_argument(
+        "--prompt-truncation-side",
+        choices=["left", "right"],
+        default="right",
+        help="Tokenizer truncation side for --prompt-file rows. Use left to keep final questions.",
+    )
     parser.add_argument("--prompt-repeat", type=int, default=3000)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--device", default="cuda")

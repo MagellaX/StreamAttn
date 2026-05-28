@@ -148,6 +148,12 @@ def _run(**kwargs) -> dict[str, Any]:
         "--num-stages",
         str(kwargs["num_stages"]),
     ]
+    if kwargs["prompt_file"]:
+        cmd.extend(["--prompt-file", kwargs["prompt_file"]])
+    if kwargs["max_prompts"] > 0:
+        cmd.extend(["--max-prompts", str(kwargs["max_prompts"])])
+    if kwargs["prompt_truncation_side"]:
+        cmd.extend(["--prompt-truncation-side", kwargs["prompt_truncation_side"]])
     if kwargs["layer_seed_overrides"]:
         cmd.extend(["--layer-seed-overrides", kwargs["layer_seed_overrides"]])
     if kwargs["profile_patch_timing"]:
@@ -189,6 +195,9 @@ def main(
     policy_names: str = "",
     use_packaged_policies: bool = True,
     prompt_kinds: str = "needle,code,long_doc,chat_doc",
+    prompt_file: str = "",
+    max_prompts: int = 0,
+    prompt_truncation_side: str = "right",
     prompt_repeat: int = 3000,
     batch_size: int = 4,
     max_seq: int = 32768,
@@ -233,6 +242,9 @@ def main(
         policy_names=policy_names,
         use_packaged_policies=use_packaged_policies,
         prompt_kinds=prompt_kinds,
+        prompt_file=prompt_file,
+        max_prompts=max_prompts,
+        prompt_truncation_side=prompt_truncation_side,
         prompt_repeat=prompt_repeat,
         batch_size=batch_size,
         max_seq=max_seq,
@@ -285,6 +297,7 @@ def main(
             "decision": result.get("decision"),
             "patch_counts": result.get("patch_counts"),
             "patch_timing": result.get("patch_timing"),
+            "prompts": result.get("prompts"),
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
