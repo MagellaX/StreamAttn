@@ -46,20 +46,50 @@ def test_parse_layer_id_set_accepts_commas_and_semicolons():
 
 
 def test_native_cache_mask_bookkeeping_overrides_and_restores():
-    class DummyCache:
-        def get_mask_sizes(self, cache_position, layer_idx):
+    class DummyLayer:
+        def get_seq_length(self, cache_position=None):
+            return 4
+
+        def get_mask_sizes(self, cache_position):
             return 4, 0
 
+    class DummyCache:
+        def __init__(self):
+            self.layers = [DummyLayer()]
+
+        def get_seq_length(self, layer_idx=0, cache_position=None):
+            return self.layers[layer_idx].get_seq_length(cache_position)
+
+        def get_mask_sizes(self, cache_position, layer_idx):
+            return self.layers[layer_idx].get_mask_sizes(cache_position)
+
     cache = DummyCache()
-    original = cache.get_mask_sizes
+    original_mask = cache.get_mask_sizes
+    original_seq = cache.get_seq_length
+    original_layer_mask = cache.layers[0].get_mask_sizes
+    original_layer_seq = cache.layers[0].get_seq_length
     with _native_cache_mask_bookkeeping(cache, enabled=True):
         assert cache.get_mask_sizes(None, 0) == (4, 0)
+        assert cache.get_seq_length(0) == 4
+        assert cache.layers[0].get_mask_sizes(None) == (4, 0)
+        assert cache.layers[0].get_seq_length() == 4
+        cache._streamattn_past_kv_length = 8
         cache._streamattn_mask_kv_length = 9
         assert cache.get_mask_sizes(None, 0) == (9, 0)
+        assert cache.get_seq_length(0) == 8
+        assert cache.layers[0].get_mask_sizes(None) == (9, 0)
+        assert cache.layers[0].get_seq_length() == 8
 
     assert cache.get_mask_sizes(None, 0) == (4, 0)
+    assert cache.get_seq_length(0) == 4
+    assert cache.layers[0].get_mask_sizes(None) == (4, 0)
+    assert cache.layers[0].get_seq_length() == 4
     assert not hasattr(cache, "_streamattn_mask_kv_length")
-    assert cache.get_mask_sizes.__func__ is original.__func__
+    assert not hasattr(cache, "_streamattn_past_kv_length")
+    assert cache.get_mask_sizes.__func__ is original_mask.__func__
+    assert cache.get_seq_length.__func__ is original_seq.__func__
+    assert cache.layers[0].get_mask_sizes.__func__ is original_layer_mask.__func__
+    assert cache.layers[0].get_seq_length.__func__ is original_layer_seq.__func__
 
 
 def test_apply_layer_seed_overrides_rewrites_only_target_layer():

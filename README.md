@@ -267,15 +267,14 @@ modal run benchmarks/modal_seed_only_route_bundle_decode.py \
   --batch-size 8 \
   --max-seq 32768 \
   --steps 32 \
-  --native-routed-cache \
-  --native-cache-hf-sync-layers 0
+  --native-routed-cache
 ```
 
-On H100 this measured `1.144x` full-model decode speedup with strict safety
-passing. The remaining layer-0 HF sync is a temporary cache/mask bookkeeping
-bridge; the next engine target is full StreamAttn cache ownership.
+On H100 this measured `1.136x` full-model decode speedup with strict safety
+passing and zero routed-layer `DynamicCache.update` calls. StreamAttn now owns
+the routed K/V cache and mask-length bookkeeping for this route.
 
-An experimental fused routed-layer path is also available:
+A fused routed-layer path is also available:
 
 ```bash
 modal run benchmarks/modal_seed_only_route_bundle_decode.py \
@@ -286,15 +285,12 @@ modal run benchmarks/modal_seed_only_route_bundle_decode.py \
   --max-seq 32768 \
   --steps 32 \
   --native-routed-cache \
-  --native-cache-hf-sync-layers 0 \
   --fused-rope-append-seed
 ```
 
 This fuses Qwen RoPE, native K/V append, and seed-only attention for routed
-layers that no longer need HF cache sync. The current H100 result is safety
-clean (`0` top1/sample changes, KL max `9.80e-05`) and reaches `1.139x`
-full-model decode speedup. It is kept experimental because it does not yet beat
-the best stable native-cache route.
+layers. The current H100 result is safety clean (`0` top1/sample changes, KL max
+`9.66e-05`) and reaches `1.163x` full-model decode speedup.
 
 
 ## API Reference

@@ -814,3 +814,97 @@ but not yet a clear product-route improvement over the best stable 1.144x path
 Keep it behind the experimental flag. The next high-reward systems target
 remains the remaining layer-0 HF sync and broader model-runner overhead, not
 more seed kernel micro-optimization.
+
+## Full Native Cache Bookkeeping, No HF Sync
+
+The layer-0 sync bridge is now removed for the strict route. The missing
+semantic piece was not the K/V data path itself; it was Hugging Face cache
+metadata. A zero-sync run without HF cache views was unsafe before this fix:
+
+```text
+native_cache_hf_sync_layers: []
+native_cache_attach_hf_views: false
+
+top1 changed count:   148 / 256
+sample changed count: 161 / 256
+KL max:               16.19
+```
+
+The native bookkeeping context now publishes both:
+
+```text
+_streamattn_past_kv_length
+_streamattn_mask_kv_length
+```
+
+and overrides both top-level cache methods and per-layer cache methods:
+
+```text
+cache.get_seq_length
+cache.get_mask_sizes
+layer.get_seq_length
+layer.get_mask_sizes
+```
+
+That lets Qwen/HF see coherent cache lengths without rebinding cache tensor
+views and without calling `DynamicCache.update` for routed layers.
+
+H100 32-step result, strict 7-layer route, B8, 32K, fp16, no sync layers:
+
+```text
+command flags:
+  --native-routed-cache
+
+dense decode:      28.8168 ms/token
+StreamAttn decode: 25.3612 ms/token
+speedup:           1.136x
+
+HF sync calls:      0
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.80e-05
+```
+
+The same no-sync route with fused RoPE + native append + seed enabled is now
+the strongest actual-model result:
+
+```text
+command flags:
+  --native-routed-cache
+  --fused-rope-append-seed
+
+dense decode:      29.0048 ms/token
+StreamAttn decode: 24.9490 ms/token
+speedup:           1.163x
+
+HF sync calls:      0
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.66e-05
+```
+
+Diagnostic 8-step patch timing for the no-sync fused route:
+
+```text
+routed patch time: 0.789 ms/decode step
+
+stage share of routed patch total:
+  seed kernel:  40.51%
+  QKV proj:     34.69%
+  output proj:  12.47%
+  cache_update:  5.39%
+  RoPE:          3.66%
+  layout:        3.29%
+```
+
+This is the first route where StreamAttn owns routed-layer cache/mask
+bookkeeping end to end. The remaining high-reward systems work is now lower in
+the stack:
+
+```text
+1. reduce fused seed-kernel time now that all routed layers enter the fused path
+2. reduce QKV projection/layout overhead in the routed module path
+3. expand strict-green routed layer coverage
+```

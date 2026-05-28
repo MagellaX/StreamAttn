@@ -339,8 +339,10 @@ def _native_cache_mask_bookkeeping(cache: Any, *, enabled: bool):
 
     Qwen's causal-mask helper asks the cache for a global KV length before layer
     forwards run. If routed layer 0 bypasses HF DynamicCache.update, that length
-    becomes stale. The decode loop already knows the correct max attention-mask
-    length on CPU, so provide it here without paying a layer-0 HF append.
+    becomes stale. Some HF helpers also ask the cache/layer objects for the
+    already-seen length directly, so patch both the top-level cache methods and
+    per-layer methods from CPU-side decode-loop lengths instead of rebinding HF
+    cache tensor views or paying a layer-0 HF append.
     """
 
     if not enabled or cache is None:
@@ -348,7 +350,8 @@ def _native_cache_mask_bookkeeping(cache: Any, *, enabled: bool):
         return
 
     original_get_mask_sizes = getattr(cache, "get_mask_sizes", None)
-    if original_get_mask_sizes is None:
+    original_get_seq_length = getattr(cache, "get_seq_length", None)
+    if original_get_mask_sizes is None and original_get_seq_length is None:
         yield
         return
 
@@ -356,21 +359,80 @@ def _native_cache_mask_bookkeeping(cache: Any, *, enabled: bool):
         kv_length = getattr(self, "_streamattn_mask_kv_length", None)
         if kv_length is not None:
             return int(kv_length), 0
+        if original_get_mask_sizes is None:
+            return 0, 0
         return original_get_mask_sizes(cache_position, layer_idx)
+
+    def get_seq_length(self, layer_idx: int = 0, cache_position=None):
+        past_length = getattr(self, "_streamattn_past_kv_length", None)
+        if past_length is not None:
+            return int(past_length)
+        if original_get_seq_length is None:
+            return 0
+        return original_get_seq_length(layer_idx, cache_position)
 
     had_length = hasattr(cache, "_streamattn_mask_kv_length")
     previous_length = getattr(cache, "_streamattn_mask_kv_length", None)
-    cache.get_mask_sizes = types.MethodType(get_mask_sizes, cache)
+    had_past_length = hasattr(cache, "_streamattn_past_kv_length")
+    previous_past_length = getattr(cache, "_streamattn_past_kv_length", None)
+    if original_get_mask_sizes is not None:
+        cache.get_mask_sizes = types.MethodType(get_mask_sizes, cache)
+    if original_get_seq_length is not None:
+        cache.get_seq_length = types.MethodType(get_seq_length, cache)
     cache._streamattn_mask_kv_length = None
+    cache._streamattn_past_kv_length = None
+    layer_originals = []
+    for layer in getattr(cache, "layers", []) or []:
+        original_layer_get_mask_sizes = getattr(layer, "get_mask_sizes", None)
+        original_layer_get_seq_length = getattr(layer, "get_seq_length", None)
+        if original_layer_get_mask_sizes is None and original_layer_get_seq_length is None:
+            continue
+
+        def layer_get_mask_sizes(layer_self, cache_position, _original=original_layer_get_mask_sizes):
+            kv_length = getattr(cache, "_streamattn_mask_kv_length", None)
+            if kv_length is not None:
+                return int(kv_length), 0
+            if _original is None:
+                return 0, 0
+            return _original(cache_position)
+
+        def layer_get_seq_length(layer_self, cache_position=None, _original=original_layer_get_seq_length):
+            past_length = getattr(cache, "_streamattn_past_kv_length", None)
+            if past_length is not None:
+                return int(past_length)
+            if _original is None:
+                return 0
+            return _original(cache_position)
+
+        layer_originals.append((layer, original_layer_get_mask_sizes, original_layer_get_seq_length))
+        if original_layer_get_mask_sizes is not None:
+            layer.get_mask_sizes = types.MethodType(layer_get_mask_sizes, layer)
+        if original_layer_get_seq_length is not None:
+            layer.get_seq_length = types.MethodType(layer_get_seq_length, layer)
     try:
         yield
     finally:
-        cache.get_mask_sizes = original_get_mask_sizes
+        if original_get_mask_sizes is not None:
+            cache.get_mask_sizes = original_get_mask_sizes
+        if original_get_seq_length is not None:
+            cache.get_seq_length = original_get_seq_length
+        for layer, original_layer_get_mask_sizes, original_layer_get_seq_length in layer_originals:
+            if original_layer_get_mask_sizes is not None:
+                layer.get_mask_sizes = original_layer_get_mask_sizes
+            if original_layer_get_seq_length is not None:
+                layer.get_seq_length = original_layer_get_seq_length
         if had_length:
             cache._streamattn_mask_kv_length = previous_length
         else:
             try:
                 delattr(cache, "_streamattn_mask_kv_length")
+            except AttributeError:
+                pass
+        if had_past_length:
+            cache._streamattn_past_kv_length = previous_past_length
+        else:
+            try:
+                delattr(cache, "_streamattn_past_kv_length")
             except AttributeError:
                 pass
 
@@ -878,6 +940,7 @@ def _decode_loop(
                     dtype=torch.long,
                 )
             if hasattr(past_key_values, "_streamattn_mask_kv_length"):
+                past_key_values._streamattn_past_kv_length = int(mask.shape[1])
                 past_key_values._streamattn_mask_kv_length = int(mask.shape[1] + input_token.shape[1])
             out = model(**model_kwargs)
             past_key_values = out.past_key_values
