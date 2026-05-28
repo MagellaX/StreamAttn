@@ -316,12 +316,16 @@ def test_attention_coverage_support_selector_adds_support_block():
     )
     scores = torch.zeros(16)
     probs = torch.full((16,), 1.0 / 16.0)
+    q = torch.tensor([1.0, 0.0])
+    k = torch.ones((16, 2))
     v = torch.ones((16, 2))
     support = torch.zeros(16, dtype=torch.bool)
     support[8:12] = True
     distractor = torch.zeros(16, dtype=torch.bool)
 
     masks = _selector_seed_masks(
+        q=q,
+        k=k,
         scores=scores,
         probs=probs,
         v=v,
@@ -336,6 +340,8 @@ def test_attention_coverage_support_selector_adds_support_block():
 
     support[4:8] = True
     masks = _selector_seed_masks(
+        q=q,
+        k=k,
         scores=scores,
         probs=probs,
         v=v,
@@ -346,6 +352,43 @@ def test_attention_coverage_support_selector_adds_support_block():
     )
 
     assert masks["support_block_oracle"]["selected_blocks"] == [0, 3, 1]
+
+
+def test_attention_coverage_qk_selector_keeps_negative_score_ordering():
+    import torch
+
+    policy = Gate0SeedOnlyBatchedPolicy(
+        policy_id="p0",
+        model_id="m",
+        layer_id=0,
+        block_size=4,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        block_order="recent_first",
+    )
+    q = torch.tensor([1.0, 0.0])
+    k = -torch.ones((16, 2))
+    v = torch.ones((16, 2))
+    scores = torch.full((16,), -10.0)
+    scores[4] = -1.0
+    probs = torch.softmax(scores, dim=0)
+    support = torch.zeros(16, dtype=torch.bool)
+    distractor = torch.zeros(16, dtype=torch.bool)
+
+    masks = _selector_seed_masks(
+        q=q,
+        k=k,
+        scores=scores,
+        probs=probs,
+        v=v,
+        support_mask=support,
+        distractor_mask=distractor,
+        policy=policy,
+        selector_profiles=["qk_block_max"],
+    )
+
+    assert masks["qk_block_max"]["selected_blocks"] == [0, 3, 1]
 
 
 def test_attention_coverage_hook_input_inference():

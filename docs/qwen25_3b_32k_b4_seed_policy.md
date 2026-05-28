@@ -2273,3 +2273,85 @@ The stress-fallback timing is not a speed metric because it compares two dense
 exact decode loops after separate prefills.  Its purpose is to prove the route
 does not enter StreamAttn for unsafe buckets and therefore has zero distribution
 drift.
+
+## Cheap qk-block selector proxy diagnostic
+
+The next research question was whether the useful `qk_block_max` selector signal
+can be approximated cheaply enough to become a runtime dynamic block selector.
+
+New selector utilities:
+
+```text
+stream_attention/seed_selectors.py
+benchmarks/profile_seed_selector_proxy.py
+benchmarks/modal_seed_selector_proxy.py
+benchmarks/summarize_seed_selector_proxy.py
+```
+
+H100 artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/selector_proxy_l26_l27_b8_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/selector_proxy_l26_l27_b8_h100_summary.json
+```
+
+Run scope:
+
+```text
+model:          Qwen/Qwen2.5-3B-Instruct
+route:          [0,14,16,24,26,27,35]
+target layers:  L26, L27
+target buckets: chat_instruction, json_tool, needle_rag, noisy_neartie
+rows:           failing stress rows from strict7 stress gate
+conditions:     dense_conditioned, route_conditioned
+```
+
+Selector summary:
+
+| selector | omitted P95 | support-out P95 | delta-collapse P95 | value-residual P95 | qk overlap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| fixed_policy | 0.8054 | 0.2594 | 0.2543 | 0.9057 | 0.4185 |
+| block_mean_proxy | 0.6777 | 0.2524 | 0.2486 | 0.7708 | 0.5878 |
+| block_l2_bound_proxy | 0.8066 | 0.2318 | 0.2278 | 0.9180 | 0.4378 |
+| support_top2_norm | 0.7369 | 0.2605 | 0.2544 | 0.8137 | 0.4966 |
+| support_top4_norm | 0.7185 | 0.2588 | 0.2526 | 0.8122 | 0.5221 |
+| support_top2_norm_refine32 | 0.7153 | 0.2556 | 0.2506 | 0.7834 | 0.5923 |
+| support_top4_norm_refine32 | 0.6714 | 0.2540 | 0.2471 | 0.7653 | 0.6319 |
+| qk_block_max | 0.5939 | 0.2009 | 0.2009 | 0.7426 | 1.0000 |
+| exact_mass_oracle | 0.5865 | 0.2080 | 0.2080 | 0.7386 | 0.8184 |
+| value_residual_oracle | 0.5865 | 0.2075 | 0.2075 | 0.7360 | 0.8411 |
+
+Interpretation:
+
+```text
+1. qk_block_max remains the best realistic selector signal, and it nearly
+   reaches the exact-mass/value oracle ceilings on omitted mass and value
+   residual.
+
+2. The cheap proxies tested here are not strong enough to integrate.  The best
+   proxy, support_top4_norm_refine32, reaches only ~63% overlap with qk_block_max
+   and barely reduces support-out/delta-collapse versus fixed_policy.
+
+3. Mean and norm-support sketches improve omitted/value residual somewhat, but
+   they do not preserve support-vs-distractor discrimination enough for L26/L27
+   stress recovery.
+
+4. Even qk_block_max is a coverage improvement, not a product-green proof.  The
+   stress buckets should remain exact-native unless a dynamic selector replay
+   passes top1/sample/KL gates.
+```
+
+Decision:
+
+```text
+Do not build a production runtime around mean/top-norm support sketches yet.
+
+The next selector research, if we keep pursuing L26/L27 stress recovery, should
+use either:
+  query-learned support directions from failing rows
+  small projection/LSH summaries trained to predict qk_block_max blocks
+  or a direct low-overhead top-M qk scan over candidate blocks
+
+If we are optimizing product speed rather than stress recovery, return to the
+validated-bucket systems path: native routed QKV/o_proj ownership.
+```

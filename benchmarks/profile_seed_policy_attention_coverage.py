@@ -49,20 +49,16 @@ from benchmarks.profile_seed_only_stress_attribution import QWEN3B_POLICY_BY_LAY
 from benchmarks.profile_real_llm_gate1_heads import _attention_modules, _import_transformers  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype  # noqa: E402
 from stream_attention.decode import load_packaged_gate0_seed_only_batched_policy  # noqa: E402
+from stream_attention.seed_selectors import (  # noqa: E402
+    DEFAULT_SELECTOR_PROFILES,
+    SELECTOR_PROFILES,
+    parse_selector_profiles as _parse_selector_profiles_impl,
+    seed_indices as _seed_indices_impl,
+    selector_seed_masks as _selector_seed_masks_impl,
+)
 
 
 DEFAULT_TARGET_BUCKETS = ("chat_instruction", "noisy_neartie", "json_tool", "needle_rag")
-DEFAULT_SELECTOR_PROFILES = ("fixed_policy",)
-SELECTOR_PROFILES = frozenset(
-    {
-        "fixed_policy",
-        "support_block_oracle",
-        "qk_block_max",
-        "exact_mass_oracle",
-        "support_mass_oracle",
-        "value_residual_oracle",
-    }
-)
 
 
 @dataclass
@@ -91,13 +87,7 @@ def _parse_ints(text: str) -> List[int]:
 
 
 def _parse_selector_profiles(text: str) -> List[str]:
-    profiles = [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
-    if not profiles:
-        profiles = list(DEFAULT_SELECTOR_PROFILES)
-    unknown = sorted(set(profiles) - SELECTOR_PROFILES)
-    if unknown:
-        raise ValueError(f"unknown selector profiles: {unknown}; supported={sorted(SELECTOR_PROFILES)}")
-    return profiles
+    return _parse_selector_profiles_impl(text)
 
 
 def _policy_bundle_for_layers(layers: Sequence[int]) -> RouteBundle:
@@ -120,27 +110,14 @@ def _seed_indices(
     middle_seed_blocks: int,
     block_order: str,
 ) -> torch.Tensor:
-    num_blocks = math.ceil(seq_len / block_size)
-    recent_start = num_blocks - recent_blocks
-    blocks: List[int] = []
-    blocks.extend(range(0, sink_blocks))
-    blocks.extend(range(recent_start, num_blocks))
-    if block_order == "sequential":
-        blocks.extend(range(sink_blocks, sink_blocks + middle_seed_blocks))
-    else:
-        blocks.extend(range(recent_start - 1, recent_start - 1 - middle_seed_blocks, -1))
-    indices: List[int] = []
-    seen = set()
-    for block in blocks:
-        if block < 0 or block >= num_blocks:
-            continue
-        start = block * block_size
-        end = min(seq_len, start + block_size)
-        for idx in range(start, end):
-            if idx not in seen:
-                seen.add(idx)
-                indices.append(idx)
-    return torch.tensor(sorted(indices), dtype=torch.long)
+    return _seed_indices_impl(
+        seq_len=seq_len,
+        block_size=block_size,
+        sink_blocks=sink_blocks,
+        recent_blocks=recent_blocks,
+        middle_seed_blocks=middle_seed_blocks,
+        block_order=block_order,
+    )
 
 
 def _policy_seed_blocks(
@@ -257,6 +234,8 @@ def _select_middle_blocks(
 
 def _selector_seed_masks(
     *,
+    q: torch.Tensor,
+    k: torch.Tensor,
     scores: torch.Tensor,
     probs: torch.Tensor,
     v: torch.Tensor,
@@ -265,73 +244,17 @@ def _selector_seed_masks(
     policy: Any,
     selector_profiles: Sequence[str],
 ) -> Dict[str, Dict[str, Any]]:
-    seq_len = int(probs.shape[0])
-    block_size = int(policy.block_size)
-    base_blocks = _policy_seed_blocks(
-        seq_len=seq_len,
-        block_size=block_size,
-        sink_blocks=int(policy.sink_blocks),
-        recent_blocks=int(policy.recent_blocks),
-        middle_seed_blocks=int(policy.middle_seed_blocks),
-        block_order=str(policy.block_order),
-        include_middle=False,
+    return _selector_seed_masks_impl(
+        q=q,
+        k=k,
+        scores=scores,
+        probs=probs,
+        v=v,
+        support_mask=support_mask,
+        distractor_mask=distractor_mask,
+        policy=policy,
+        selector_profiles=selector_profiles,
     )
-    fixed_blocks = _policy_seed_blocks(
-        seq_len=seq_len,
-        block_size=block_size,
-        sink_blocks=int(policy.sink_blocks),
-        recent_blocks=int(policy.recent_blocks),
-        middle_seed_blocks=int(policy.middle_seed_blocks),
-        block_order=str(policy.block_order),
-        include_middle=True,
-    )
-    fixed_middle_blocks = [block for block in fixed_blocks if block not in set(base_blocks)]
-    support_values = support_mask.float()
-    distractor_values = distractor_mask.float()
-    support_count_scores = _block_scores_from_values(
-        support_values - 0.25 * distractor_values,
-        block_size=block_size,
-    )
-    qk_scores = _block_max_scores(scores, block_size=block_size)
-    exact_mass_scores = _block_scores_from_values(probs, block_size=block_size)
-    support_mass_scores = _block_scores_from_values(
-        probs * support_values - 0.25 * probs * distractor_values,
-        block_size=block_size,
-    )
-    value_scores = _block_value_scores(probs, v, block_size=block_size)
-    score_by_selector = {
-        "support_block_oracle": support_count_scores,
-        "qk_block_max": qk_scores,
-        "exact_mass_oracle": exact_mass_scores,
-        "support_mass_oracle": support_mass_scores,
-        "value_residual_oracle": value_scores,
-    }
-    out: Dict[str, Dict[str, Any]] = {}
-    for selector in selector_profiles:
-        if selector == "fixed_policy":
-            blocks = fixed_blocks
-        else:
-            middle_blocks = _select_middle_blocks(
-                score_by_selector[selector],
-                base_blocks=base_blocks,
-                fixed_middle_blocks=fixed_middle_blocks,
-                middle_seed_blocks=int(policy.middle_seed_blocks),
-            )
-            blocks = list(base_blocks) + middle_blocks
-        mask = _seed_mask_from_blocks(
-            seq_len=seq_len,
-            block_size=block_size,
-            blocks=blocks,
-            device=probs.device,
-        )
-        out[selector] = {
-            "mask": mask,
-            "selected_blocks": [int(block) for block in blocks],
-            "middle_blocks": [int(block) for block in blocks if block not in set(base_blocks)],
-            "overlap_with_fixed_blocks": len(set(blocks) & set(fixed_blocks)),
-            "fixed_block_count": len(fixed_blocks),
-        }
-    return out
 
 
 def _find_spans(text: str, terms: Iterable[str]) -> List[tuple[int, int]]:
@@ -695,6 +618,8 @@ def _register_coverage_hooks(
                     probs_out[(state.condition, *key)] = probs.detach().cpu()
                     state.bump("captured_heads", str(_layer_id))
                     selector_masks = _selector_seed_masks(
+                        q=q_row,
+                        k=k_row,
                         scores=scores,
                         probs=probs,
                         v=v_row,
@@ -728,7 +653,11 @@ def _register_coverage_hooks(
                                 "selected_blocks": selector_payload["selected_blocks"],
                                 "middle_blocks": selector_payload["middle_blocks"],
                                 "overlap_with_fixed_blocks": selector_payload["overlap_with_fixed_blocks"],
+                                "overlap_with_qk_block_max_blocks": selector_payload[
+                                    "overlap_with_qk_block_max_blocks"
+                                ],
                                 "fixed_block_count": selector_payload["fixed_block_count"],
+                                "qk_block_max_block_count": selector_payload["qk_block_max_block_count"],
                                 **metrics,
                             }
                         )
@@ -1034,9 +963,8 @@ def main() -> None:
         "--selector-profiles",
         default="fixed_policy",
         help=(
-            "Comma-separated seed selector profiles to simulate: fixed_policy, "
-            "support_block_oracle, qk_block_max, exact_mass_oracle, "
-            "support_mass_oracle, value_residual_oracle."
+            "Comma-separated seed selector profiles to simulate. Supported: "
+            f"{','.join(sorted(SELECTOR_PROFILES))}."
         ),
     )
     parser.add_argument("--failure-artifact", default="")

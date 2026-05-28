@@ -43,6 +43,16 @@ def _metric_summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     def values(name: str) -> List[float]:
         return [_as_float(row.get(name)) for row in rows]
 
+    def mean(name: str) -> float:
+        vals = values(name)
+        return sum(vals) / len(vals) if vals else 0.0
+
+    qk_overlap_ratios = []
+    for row in rows:
+        qk_count = _as_float(row.get("qk_block_max_block_count"))
+        if qk_count > 0.0:
+            qk_overlap_ratios.append(_as_float(row.get("overlap_with_qk_block_max_blocks")) / qk_count)
+
     recommendations = defaultdict(int)
     for row in rows:
         recommendations[_recommendation(row)] += 1
@@ -55,6 +65,9 @@ def _metric_summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "delta_collapse_p95": _percentile(values("delta_collapse"), 0.95),
         "value_residual_ratio_p95": _percentile(values("value_residual_ratio"), 0.95),
         "dense_vs_route_attention_js_p95": _percentile(values("dense_vs_route_attention_js"), 0.95),
+        "overlap_with_fixed_blocks_mean": mean("overlap_with_fixed_blocks"),
+        "overlap_with_qk_block_max_blocks_mean": mean("overlap_with_qk_block_max_blocks"),
+        "qk_block_overlap_ratio_mean": sum(qk_overlap_ratios) / len(qk_overlap_ratios) if qk_overlap_ratios else 0.0,
         "top_recommendation": top_recommendation,
         "recommendation_counts": dict(sorted(recommendations.items())),
     }
