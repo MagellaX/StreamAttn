@@ -101,6 +101,14 @@ def test_qwen3b_bucket_policy_default_validated_uses_full_bundle():
     assert decision.strict_gate_passed is True
 
 
+def test_qwen3b_bucket_policy_unknown_bucket_fails_closed_in_product_mode():
+    decision = qwen25_3b_bucket_route_decision("new_task_family", product_strict=True)
+
+    assert decision.mode == "exact_native"
+    assert decision.seed_only_layers == ()
+    assert decision.reason == "bucket_not_validated_by_stress_or_default_gate"
+
+
 def test_decode_cost_model_json_roundtrip(tmp_path):
     q, k, _ = _tensors()
     model = DecodeCostModel()

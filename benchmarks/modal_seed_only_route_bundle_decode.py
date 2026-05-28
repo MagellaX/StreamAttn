@@ -95,6 +95,8 @@ def _run(**kwargs) -> dict[str, Any]:
         kwargs["layers"],
         "--policy-names",
         kwargs["policy_names"],
+        "--bucket-route-policy",
+        kwargs["bucket_route_policy"],
         "--prompt-kinds",
         kwargs["prompt_kinds"],
         "--prompt-repeat",
@@ -176,6 +178,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--packed-qkv-fused-input")
     if kwargs["allow_mixed_seed_configs"]:
         cmd.append("--allow-mixed-seed-configs")
+    if not kwargs["product_strict"]:
+        cmd.append("--no-product-strict")
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
     if not kwargs["use_packaged_policies"]:
@@ -194,6 +198,8 @@ def main(
     layers: str = "0,14,16,24,26,27,35",
     policy_names: str = "",
     use_packaged_policies: bool = True,
+    bucket_route_policy: str = "none",
+    product_strict: bool = True,
     prompt_kinds: str = "needle,code,long_doc,chat_doc",
     prompt_file: str = "",
     max_prompts: int = 0,
@@ -241,6 +247,8 @@ def main(
         layers=layers,
         policy_names=policy_names,
         use_packaged_policies=use_packaged_policies,
+        bucket_route_policy=bucket_route_policy,
+        product_strict=product_strict,
         prompt_kinds=prompt_kinds,
         prompt_file=prompt_file,
         max_prompts=max_prompts,

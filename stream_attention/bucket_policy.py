@@ -114,6 +114,20 @@ def qwen25_3b_bucket_route_decision(
             evidence="minimal repair sweep: removing L26/L27 lowered score from 973.14 to 224.41",
         )
 
+    if product_strict and bucket not in QWEN25_3B_VALIDATED_DEFAULT_BUCKETS:
+        return BucketRouteDecision(
+            model_id="Qwen/Qwen2.5-3B-Instruct",
+            prompt_bucket=bucket,
+            mode="exact_native",
+            seed_only_layers=(),
+            exact_layers="all",
+            policy_names=(),
+            strict_gate_passed=True,
+            status="product_exact_fallback",
+            reason="bucket_not_validated_by_stress_or_default_gate",
+            evidence="unknown buckets fail closed until separately validated",
+        )
+
     layers = QWEN25_3B_FULL_SEED_LAYERS
     return BucketRouteDecision(
         model_id="Qwen/Qwen2.5-3B-Instruct",

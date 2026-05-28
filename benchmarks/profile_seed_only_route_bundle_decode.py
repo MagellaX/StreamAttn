@@ -42,6 +42,7 @@ from benchmarks.profile_gate0_seed_only_multi_layer_rollout import (  # noqa: E4
 )
 from benchmarks.profile_real_llm_gate1_heads import _attention_modules, _import_transformers  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype  # noqa: E402
+from stream_attention.bucket_policy import qwen25_3b_bucket_route_decision  # noqa: E402
 from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_rope_append_packed_qkv_triton_forward_out_cachepos_bhnd,
     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd,
@@ -1336,15 +1337,135 @@ def _patch_timing_summary(
     }
 
 
+def _prompt_bucket(row: Dict[str, str]) -> str:
+    return str(row.get("bucket") or row.get("kind") or "default")
+
+
+def _bucket_route_policy_decision(
+    prompt_rows: Sequence[Dict[str, str]],
+    *,
+    policy_name: str,
+    product_strict: bool,
+) -> Dict[str, Any]:
+    if policy_name in {"", "none"}:
+        return {"enabled": False, "batch_mode": "manual_route"}
+    if policy_name != "qwen25_3b_b8":
+        raise ValueError(f"unsupported bucket route policy {policy_name!r}")
+
+    prompt_decisions = []
+    policy_sets = set()
+    exact_reasons = []
+    for idx, row in enumerate(prompt_rows):
+        bucket = _prompt_bucket(row)
+        decision = qwen25_3b_bucket_route_decision(bucket, product_strict=product_strict)
+        prompt_decisions.append(
+            {
+                "row": idx,
+                "bucket": bucket,
+                "mode": decision.mode,
+                "seed_only_layers": list(decision.seed_only_layers),
+                "policy_names": list(decision.policy_names),
+                "status": decision.status,
+                "reason": decision.reason,
+            }
+        )
+        if decision.mode == "exact_native":
+            exact_reasons.append(f"{bucket}:{decision.reason}")
+        else:
+            policy_sets.add(decision.policy_names)
+
+    if exact_reasons:
+        return {
+            "enabled": True,
+            "policy": policy_name,
+            "product_strict": bool(product_strict),
+            "batch_mode": "exact_native",
+            "fallback_reason": "batch_contains_exact_bucket",
+            "fallback_details": exact_reasons,
+            "prompt_decisions": prompt_decisions,
+            "policy_names": [],
+            "seed_only_layers": [],
+        }
+    if len(policy_sets) != 1:
+        return {
+            "enabled": True,
+            "policy": policy_name,
+            "product_strict": bool(product_strict),
+            "batch_mode": "exact_native",
+            "fallback_reason": "mixed_bucket_route_decisions",
+            "fallback_details": [sorted(list(item)) for item in policy_sets],
+            "prompt_decisions": prompt_decisions,
+            "policy_names": [],
+            "seed_only_layers": [],
+        }
+    policy_names = tuple(next(iter(policy_sets)))
+    seed_layers = []
+    for decision in prompt_decisions:
+        if decision["policy_names"] == list(policy_names):
+            seed_layers = list(decision["seed_only_layers"])
+            break
+    return {
+        "enabled": True,
+        "policy": policy_name,
+        "product_strict": bool(product_strict),
+        "batch_mode": "seed_only_bundle",
+        "fallback_reason": None,
+        "fallback_details": [],
+        "prompt_decisions": prompt_decisions,
+        "policy_names": list(policy_names),
+        "seed_only_layers": seed_layers,
+    }
+
+
+def _empty_route_bundle_summary(
+    *,
+    layer_seed_overrides: Sequence[Dict[str, Any]],
+    native_cache_hf_sync_layers: Set[int],
+    args: argparse.Namespace,
+    bucket_policy: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "policy_names": [],
+        "policy_ids": [],
+        "layers": [],
+        "seed_configs": [],
+        "layer_seed_overrides": list(layer_seed_overrides),
+        "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
+        "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
+        "native_attention_module": bool(args.native_attention_module),
+        "fused_rope_append_seed": False,
+        "packed_qkv_projection": False,
+        "packed_qkv_fused_input": False,
+        "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
+        "native_routed_cache": {"enabled": False},
+        "candidate_backend": "exact_native",
+        "fallback_reason": bucket_policy.get("fallback_reason"),
+        "bucket_route_policy": bucket_policy,
+    }
+
+
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     device = torch.device(args.device)
     dtype = _dtype(args.dtype)
-    bundle = _route_bundle_from_args(args)
-    bundle, layer_seed_overrides = apply_layer_seed_overrides(bundle, args.layer_seed_overrides)
     native_cache_hf_sync_layers = parse_layer_id_set(args.native_cache_hf_sync_layers)
     prompt_rows = _prompts_from_args(args)
+    bucket_policy = _bucket_route_policy_decision(
+        prompt_rows,
+        policy_name=args.bucket_route_policy,
+        product_strict=args.product_strict,
+    )
+    exact_bucket_fallback = bucket_policy.get("batch_mode") == "exact_native"
+    bundle = None
+    layer_seed_overrides: Sequence[Dict[str, Any]] = []
+    if not exact_bucket_fallback:
+        if bucket_policy.get("batch_mode") == "seed_only_bundle":
+            args.policy_names = ",".join(bucket_policy["policy_names"])
+            args.layers = ""
+            args.use_packaged_policies = True
+        bundle = _route_bundle_from_args(args)
+        bundle, layer_seed_overrides = apply_layer_seed_overrides(bundle, args.layer_seed_overrides)
 
     AutoModelForCausalLM, AutoTokenizer = _import_transformers()
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code)
@@ -1383,7 +1504,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        print("[route-bundle-decode] warmup StreamAttn seed-only bundle decode", flush=True)
+        print("[route-bundle-decode] warmup candidate decode", flush=True)
         seed_warmup = _warmup_decode(
             model=model,
             tokens=tokens,
@@ -1419,35 +1540,49 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     seed_prefill = _prefill(model, tokens)
     seed_prefill_cache = _cache_summary(seed_prefill.past_key_values)
     native_cache = None
-    if args.native_routed_cache:
+    patches = {}
+    patch_timing = None
+    if args.native_routed_cache and bundle is not None:
         native_cache = _native_cache_from_hf_cache(
             seed_prefill.past_key_values,
             bundle,
             max_len=_native_cache_max_len(tokens, args),
             attach_hf_views=args.native_cache_attach_hf_views,
         )
-    print("[route-bundle-decode] timing StreamAttn seed-only bundle decode", flush=True)
-    with _native_cache_mask_bookkeeping(seed_prefill.past_key_values, enabled=args.native_routed_cache):
-        with _patched_seed_only_decode_modules(
-            model,
-            bundle,
-            profile_timing=args.profile_patch_timing,
-            native_cache=native_cache,
-            native_cache_hf_sync_layers=native_cache_hf_sync_layers,
-            native_attention_module=args.native_attention_module,
-            fused_rope_append_seed=args.fused_rope_append_seed,
-            packed_qkv_projection=args.packed_qkv_projection,
-            packed_qkv_fused_input=args.packed_qkv_fused_input,
-        ) as patches:
-            seed = _decode_loop(
-                model=model,
-                past_key_values=seed_prefill.past_key_values,
-                attention_mask=tokens["attention_mask"],
-                first_token=first_token,
-                fixed_input_tokens=dense["input_tokens"],
-                prompt_rows=prompt_rows,
-                args=args,
-            )
+    if exact_bucket_fallback:
+        print("[route-bundle-decode] timing exact-native bucket fallback decode", flush=True)
+        seed = _decode_loop(
+            model=model,
+            past_key_values=seed_prefill.past_key_values,
+            attention_mask=tokens["attention_mask"],
+            first_token=first_token,
+            fixed_input_tokens=dense["input_tokens"],
+            prompt_rows=prompt_rows,
+            args=args,
+        )
+    else:
+        print("[route-bundle-decode] timing StreamAttn seed-only bundle decode", flush=True)
+        with _native_cache_mask_bookkeeping(seed_prefill.past_key_values, enabled=args.native_routed_cache):
+            with _patched_seed_only_decode_modules(
+                model,
+                bundle,
+                profile_timing=args.profile_patch_timing,
+                native_cache=native_cache,
+                native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+                native_attention_module=args.native_attention_module,
+                fused_rope_append_seed=args.fused_rope_append_seed,
+                packed_qkv_projection=args.packed_qkv_projection,
+                packed_qkv_fused_input=args.packed_qkv_fused_input,
+            ) as patches:
+                seed = _decode_loop(
+                    model=model,
+                    past_key_values=seed_prefill.past_key_values,
+                    attention_mask=tokens["attention_mask"],
+                    first_token=first_token,
+                    fixed_input_tokens=dense["input_tokens"],
+                    prompt_rows=prompt_rows,
+                    args=args,
+                )
     comparison = _compare_decode_logits(
         dense["logits_by_step"],
         seed["logits_by_step"],
@@ -1467,15 +1602,17 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         }
         for layer_id, patch in patches.items()
     }
-    patch_timing = _patch_timing_summary(patches, decode_steps=args.steps)
-    return {
-        "schema": "streamattn.seed_only_route_bundle_decode.v1",
-        "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
-        "model": {
-            "model_id": args.model,
-            "attn_implementation": args.attn_implementation or "default",
-        },
-        "route_bundle": {
+    if not exact_bucket_fallback:
+        patch_timing = _patch_timing_summary(patches, decode_steps=args.steps)
+    if bundle is None:
+        route_bundle_summary = _empty_route_bundle_summary(
+            layer_seed_overrides=layer_seed_overrides,
+            native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+            args=args,
+            bucket_policy=bucket_policy,
+        )
+    else:
+        route_bundle_summary = {
             "policy_names": bundle.policy_names,
             "policy_ids": [policy.policy_id for policy in bundle.policies],
             "layers": bundle.layer_ids,
@@ -1489,7 +1626,18 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
             "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
+            "candidate_backend": "seed_only_bundle",
+            "fallback_reason": None,
+            "bucket_route_policy": bucket_policy,
+        }
+    return {
+        "schema": "streamattn.seed_only_route_bundle_decode.v1",
+        "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
+        "model": {
+            "model_id": args.model,
+            "attn_implementation": args.attn_implementation or "default",
         },
+        "route_bundle": route_bundle_summary,
         "shape": {
             "batch": len(prompt_rows),
             "prompt_seq_len": int(tokens["input_ids"].shape[1]),
@@ -1537,6 +1685,18 @@ def main() -> None:
     parser.add_argument("--layers", default="")
     parser.add_argument("--policy-names", default="")
     parser.add_argument("--use-packaged-policies", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--bucket-route-policy",
+        choices=["none", "qwen25_3b_b8"],
+        default="none",
+        help="Batch-level bucket-conditioned route selector. Stress/unknown buckets fail closed in product mode.",
+    )
+    parser.add_argument(
+        "--product-strict",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When using --bucket-route-policy, fail closed on stress-risk or unknown buckets.",
+    )
     parser.add_argument("--prompt-kinds", default="needle,code,long_doc,chat_doc")
     parser.add_argument("--prompt-file", default="")
     parser.add_argument("--max-prompts", type=int, default=0)

@@ -2132,3 +2132,73 @@ The adversarial stress buckets are not globally seed-only safe.
 L26/L27 should not be routed on stress-risk rows without a verifier or a
 query-aware/support-aware seed policy.
 ```
+
+The actual model decode runner now enforces this policy at the batch level:
+
+```text
+--bucket-route-policy qwen25_3b_b8
+--product-strict
+```
+
+Batch rule:
+
+```text
+if every prompt bucket selects the same seed-only bundle:
+  run StreamAttn seed-only bundle
+
+if any prompt bucket selects exact_native:
+  run exact_native for the whole batch
+
+if prompt buckets select conflicting seed bundles:
+  run exact_native for the whole batch
+```
+
+Unknown buckets are exact-native in product-strict mode.  Research mode can
+still request the reduced stress route for follow-up experiments:
+
+```text
+--no-product-strict
+```
+
+H100 route-selection smoke artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_bucket_policy/validated_bucket_seed_route_b8_warm_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_bucket_policy/stress_exact_fallback_h100.json
+```
+
+Validated-bucket B8 smoke:
+
+```text
+prompt buckets:       code, long_doc, needle, chat_doc repeated to B8
+candidate backend:    seed_only_bundle
+routed layers:        [0,14,16,24,26,27,35]
+patch calls:          8 decode calls per routed layer
+dense decode:         29.27698 ms/token
+StreamAttn decode:    25.96729 ms/token
+speedup:              1.12746x
+KL max:               2.4668e-05
+top1 changes:         0 / 64
+sample changes:       0 / 64
+top5 overlap min:     4 / 5
+```
+
+Stress/unknown-bucket B8 smoke:
+
+```text
+prompt buckets:       code, math, chat_instruction, long_doc,
+                      needle_rag, multilingual, json_tool, noisy_neartie
+candidate backend:    exact_native
+fallback reason:      batch_contains_exact_bucket
+routed layers:        []
+patch calls:          none
+KL max:               0.0
+top1 changes:         0 / 32
+sample changes:       0 / 32
+top5 overlap min:     5 / 5
+```
+
+The stress-fallback timing is not a speed metric because it compares two dense
+exact decode loops after separate prefills.  Its purpose is to prove the route
+does not enter StreamAttn for unsafe buckets and therefore has zero distribution
+drift.

@@ -11,6 +11,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnQwenAttentionModule,
     _SeedOnlyQwenDecodePatch,
     _batch_tokens,
+    _bucket_route_policy_decision,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
@@ -366,6 +367,65 @@ def test_repair_sweep_prompt_pack_repeats_target_buckets(tmp_path):
     ]
     assert selected[0]["repair_source_id"] == "chat_0"
     assert output.exists()
+
+
+def test_route_bundle_bucket_policy_uses_full_route_for_validated_batch():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "code"}, {"bucket": "long_doc"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=True,
+    )
+
+    assert decision["batch_mode"] == "seed_only_bundle"
+    assert decision["seed_only_layers"] == [0, 14, 16, 24, 26, 27, 35]
+    assert "qwen25_3b_l27_32k_seed_only_batched" in decision["policy_names"]
+
+
+def test_route_bundle_bucket_policy_fails_closed_for_stress_bucket():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "json_tool"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=True,
+    )
+
+    assert decision["batch_mode"] == "exact_native"
+    assert decision["fallback_reason"] == "batch_contains_exact_bucket"
+    assert decision["policy_names"] == []
+
+
+def test_route_bundle_bucket_policy_fails_closed_for_mixed_batch():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "code"}, {"bucket": "json_tool"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=True,
+    )
+
+    assert decision["batch_mode"] == "exact_native"
+    assert any("json_tool" in item for item in decision["fallback_details"])
+
+
+def test_route_bundle_bucket_policy_research_reduced_route_for_json_tool():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "json_tool"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=False,
+    )
+
+    assert decision["batch_mode"] == "seed_only_bundle"
+    assert decision["seed_only_layers"] == [0, 14, 16, 24, 35]
+    assert "qwen25_3b_l26_32k_seed_only_batched" not in decision["policy_names"]
+    assert "qwen25_3b_l27_32k_seed_only_batched" not in decision["policy_names"]
+
+
+def test_route_bundle_bucket_policy_unknown_bucket_fails_closed():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "new_task"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=True,
+    )
+
+    assert decision["batch_mode"] == "exact_native"
+    assert any("bucket_not_validated" in item for item in decision["fallback_details"])
 
 
 def test_batch_tokens_temporarily_sets_truncation_side():
