@@ -99,6 +99,11 @@ from .seed_autotune import (
     seed_kernel_candidates,
     seed_shape_from_policy,
 )
+from .bucket_policy import (
+    BucketRouteDecision,
+    qwen25_3b_bucket_route_decision,
+    qwen25_3b_policy_names_for_bucket,
+)
 
 # Utilities
 from .utils.memory import (
@@ -182,6 +187,9 @@ __all__ = [
     "autotune_seed_kernel_mode",
     "seed_kernel_candidates",
     "seed_shape_from_policy",
+    "BucketRouteDecision",
+    "qwen25_3b_bucket_route_decision",
+    "qwen25_3b_policy_names_for_bucket",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",

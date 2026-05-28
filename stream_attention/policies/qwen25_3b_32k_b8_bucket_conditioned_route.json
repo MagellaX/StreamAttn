@@ -1,0 +1,52 @@
+{
+  "schema": "streamattn.bucket_conditioned_route_policy.v1",
+  "policy_id": "qwen25_3b_32k_b8_bucket_conditioned_route_v1",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "batch": 8,
+  "default_validated_route": {
+    "mode": "seed_only_bundle",
+    "seed_only_layers": [0, 14, 16, 24, 26, 27, 35],
+    "policy_names": [
+      "qwen25_3b_l0_32k_seed_only_batched",
+      "qwen25_3b_l14_32k_seed_only_batched",
+      "qwen25_3b_l16_32k_seed_only_batched",
+      "qwen25_3b_l24_32k_seed_only_batched",
+      "qwen25_3b_l26_32k_seed_only_batched",
+      "qwen25_3b_l27_32k_seed_only_batched",
+      "qwen25_3b_l35_32k_seed_only_batched"
+    ],
+    "validated_buckets": ["needle", "code", "long_doc", "chat_doc", "default", "mixed_validated"]
+  },
+  "product_strict_rules": [
+    {
+      "buckets": ["chat_instruction", "json_tool", "needle_rag", "noisy_neartie"],
+      "mode": "exact_native",
+      "reason": "adversarial stress buckets failed strict route gate"
+    }
+  ],
+  "research_rules": [
+    {
+      "buckets": ["chat_instruction", "json_tool", "needle_rag"],
+      "mode": "reduced_seed_only_bundle",
+      "seed_only_layers": [0, 14, 16, 24, 35],
+      "exact_layers": "all non-listed layers plus L26/L27",
+      "strict_gate_passed": false,
+      "reason": "minus_l26_l27 reduced stress score but still failed strict gate"
+    },
+    {
+      "buckets": ["noisy_neartie"],
+      "mode": "exact_native",
+      "reason": "margin-sensitive bucket still changed top1 under minus_l26_l27"
+    }
+  ],
+  "evidence": {
+    "attention_coverage": "artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/l24_l26_l27_b8_h100_summary.json",
+    "repair_sweep": "artifacts/gate0/qwen25_3b_32k_b8_repair_sweep/minimal_8step_h100.json",
+    "strict_base_score": 973.14,
+    "l26_l27_s640_score": 1026.68,
+    "minus_l26_l27_score": 224.41,
+    "conclusion": "do not blindly widen L26/L27; gate stress buckets exact in product-strict serving"
+  }
+}

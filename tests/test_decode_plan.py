@@ -22,6 +22,10 @@ from stream_attention.decode import (
     stream_attn_exact_native_decode,
     stream_attn_seed_only_decode,
 )
+from stream_attention.bucket_policy import (
+    qwen25_3b_bucket_route_decision,
+    qwen25_3b_policy_names_for_bucket,
+)
 from stream_attention.gate0_fused_hybrid import Gate0FusedHybridPolicy
 from stream_attention.gate1 import dense_attention_forward
 
@@ -58,6 +62,43 @@ def test_decode_cost_entry_predicts_with_gate1_dense_equiv():
     assert abs(entry.predicate_overhead_ms - 0.02) < 1.0e-6
     assert abs(entry.predict_mass_ms(0.125) - 0.42) < 1.0e-6
     assert abs(entry.predict_value_bound_ms(0.125) - 0.47) < 1.0e-6
+
+
+def test_qwen3b_bucket_policy_product_strict_exact_gates_stress_buckets():
+    decision = qwen25_3b_bucket_route_decision("json_tool", product_strict=True)
+
+    assert decision.mode == "exact_native"
+    assert decision.seed_only_layers == ()
+    assert decision.strict_gate_passed is True
+    assert decision.reason == "stress_bucket_failed_strict_gate"
+    assert qwen25_3b_policy_names_for_bucket("json_tool", product_strict=True) == ()
+
+
+def test_qwen3b_bucket_policy_research_reduces_late_layers():
+    decision = qwen25_3b_bucket_route_decision("json_tool", product_strict=False)
+
+    assert decision.mode == "reduced_seed_only_bundle"
+    assert decision.seed_only_layers == (0, 14, 16, 24, 35)
+    assert 26 not in decision.seed_only_layers
+    assert 27 not in decision.seed_only_layers
+    assert decision.strict_gate_passed is False
+    assert qwen25_3b_policy_names_for_bucket("json_tool", product_strict=False) == decision.policy_names
+
+
+def test_qwen3b_bucket_policy_margin_bucket_stays_exact_even_in_research():
+    decision = qwen25_3b_bucket_route_decision("noisy_neartie", product_strict=False)
+
+    assert decision.mode == "exact_native"
+    assert decision.seed_only_layers == ()
+    assert decision.reason == "margin_sensitive_stress_bucket"
+
+
+def test_qwen3b_bucket_policy_default_validated_uses_full_bundle():
+    decision = qwen25_3b_bucket_route_decision("code", product_strict=True)
+
+    assert decision.mode == "seed_only_bundle"
+    assert decision.seed_only_layers == (0, 14, 16, 24, 26, 27, 35)
+    assert decision.strict_gate_passed is True
 
 
 def test_decode_cost_model_json_roundtrip(tmp_path):

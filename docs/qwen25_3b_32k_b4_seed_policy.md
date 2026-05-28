@@ -2080,3 +2080,55 @@ Next action:
    The next research path is query-aware/support-aware seed selection or an
    online verifier, not S640/S768 brute force.
 ```
+
+### Bucket-Conditioned Route Policy
+
+The repo now contains an explicit bucket-conditioned route artifact and helper:
+
+```text
+stream_attention/policies/qwen25_3b_32k_b8_bucket_conditioned_route.json
+stream_attention/bucket_policy.py
+```
+
+Product-strict behavior:
+
+```text
+validated/default buckets:
+  route [0,14,16,24,26,27,35]
+
+chat_instruction:
+  exact_native
+
+json_tool:
+  exact_native
+
+needle_rag:
+  exact_native
+
+noisy_neartie:
+  exact_native
+
+unknown buckets:
+  exact recommended unless separately validated
+```
+
+Research behavior:
+
+```text
+chat_instruction/json_tool/needle_rag:
+  route [0,14,16,24,35]
+  keep L26/L27 exact
+  status: research_only, not product-green
+
+noisy_neartie:
+  exact_native even in research mode
+```
+
+This keeps the product story honest:
+
+```text
+The 7-layer Qwen3B route is a validated non-stress route.
+The adversarial stress buckets are not globally seed-only safe.
+L26/L27 should not be routed on stress-risk rows without a verifier or a
+query-aware/support-aware seed policy.
+```
