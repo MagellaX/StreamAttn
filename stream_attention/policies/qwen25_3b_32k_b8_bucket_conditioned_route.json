@@ -49,6 +49,47 @@
     "validated_route_speedup": 1.198901862892808,
     "validated_route_kl_max": 9.944393968908116e-05,
     "validated_route_scope": "32-step validated-bucket product candidate",
+    "product_fast_path_preset": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_b8_32step_h100.json",
+      "speedup": 1.1881308846462004,
+      "kl_max": 9.944393968908116e-05,
+      "top1_changes": 0,
+      "sample_changes": 0,
+      "runtime_config": {
+        "product_fast_path": "qwen25_3b_b8_validated",
+        "native_routed_cache": true,
+        "fused_rope_append_seed": true,
+        "packed_qkv_projection": true,
+        "direct_o_proj": true
+      }
+    },
+    "dynamic_selector_replay": {
+      "fixed_strict7": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json",
+        "kl_max": 0.5526413321495056,
+        "top1_changes": 5,
+        "sample_changes": 12
+      },
+      "l26_l27_support_rand8_refine32": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/l26_l27_rand8_refine32_fragile_buckets_8step_h100.json",
+        "kl_max": 0.18999530375003815,
+        "top1_changes": 4,
+        "sample_changes": 8
+      },
+      "l26_l27_qk_block_max": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/l26_l27_qk_block_max_fragile_buckets_8step_h100.json",
+        "kl_max": 0.18415337800979614,
+        "top1_changes": 4,
+        "sample_changes": 9
+      },
+      "minus_l26_l27": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/minus_l26_l27_fragile_buckets_8step_h100.json",
+        "kl_max": 0.09293240308761597,
+        "top1_changes": 1,
+        "sample_changes": 6
+      },
+      "conclusion": "even qk_block_max selected-block replay does not pass stress safety; keep stress-risk buckets exact-native and prioritize validated-bucket product speed"
+    },
     "long_horizon_128": {
       "s416": {
         "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json",

@@ -78,6 +78,7 @@
     "previous_best_7layer_direct_o_proj_speedup_vs_dense_decode": 1.15621
   },
   "runtime_config": {
+    "product_fast_path": "qwen25_3b_b8_validated",
     "native_routed_cache": true,
     "fused_rope_append_seed": true,
     "packed_qkv_projection": true,

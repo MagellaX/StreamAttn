@@ -56,6 +56,8 @@ from stream_attention.seed_selectors import (  # noqa: E402
     seed_token_indices_from_blocks,
 )
 
+PRODUCT_FAST_PATH_PROFILES = frozenset({"none", "qwen25_3b_b8_validated"})
+
 _SEED_OVERRIDE_ALIASES = {
     "block": "block_size",
     "block_size": "block_size",
@@ -145,6 +147,35 @@ def parse_layer_id_set(text: str) -> Set[int]:
             raise ValueError("layer ids must be non-negative")
         layers.add(layer_id)
     return layers
+
+
+def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
+    profile = str(getattr(args, "product_fast_path", "none") or "none")
+    if profile == "none":
+        return
+    if profile not in PRODUCT_FAST_PATH_PROFILES:
+        raise ValueError(f"unknown product fast path {profile!r}")
+    if profile != "qwen25_3b_b8_validated":
+        raise ValueError(f"unsupported product fast path {profile!r}")
+    if args.model != "Qwen/Qwen2.5-3B-Instruct":
+        raise ValueError("qwen25_3b_b8_validated fast path requires Qwen/Qwen2.5-3B-Instruct")
+    if int(args.batch_size) < 8:
+        raise ValueError("qwen25_3b_b8_validated fast path requires batch_size >= 8")
+    if int(args.max_seq) != 32768:
+        raise ValueError("qwen25_3b_b8_validated fast path requires max_seq == 32768")
+    if args.dynamic_selector_profile or args.dynamic_selector_layers:
+        raise ValueError("product fast path cannot be combined with dynamic selector research replay")
+    args.bucket_route_policy = "qwen25_3b_b8"
+    args.product_strict = True
+    args.use_packaged_policies = True
+    args.native_routed_cache = True
+    args.fused_rope_append_seed = True
+    args.packed_qkv_projection = True
+    args.packed_qkv_fused_input = False
+    args.native_attention_module = False
+    args.direct_o_proj = True
+    args.triton_o_proj = False
+    args.allow_mixed_seed_configs = True
 
 
 def _policy_seed_config(policy) -> Dict[str, Any]:
@@ -1563,6 +1594,7 @@ def _empty_route_bundle_summary(
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
+        "product_fast_path": args.product_fast_path,
         "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
         "native_routed_cache": {"enabled": False},
         "candidate_backend": "exact_native",
@@ -1572,6 +1604,7 @@ def _empty_route_bundle_summary(
 
 
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
+    _apply_product_fast_path_args(args)
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     dynamic_selector_layers = parse_layer_id_set(args.dynamic_selector_layers)
@@ -1776,6 +1809,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
+            "product_fast_path": args.product_fast_path,
             "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
             "candidate_backend": "seed_only_bundle",
@@ -1837,6 +1871,16 @@ def main() -> None:
     parser.add_argument("--layers", default="")
     parser.add_argument("--policy-names", default="")
     parser.add_argument("--use-packaged-policies", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--product-fast-path",
+        choices=sorted(PRODUCT_FAST_PATH_PROFILES),
+        default="none",
+        help=(
+            "Apply a validated product-serving preset. qwen25_3b_b8_validated enables "
+            "the bucket policy plus native cache, fused RoPE/cache/seed, packed QKV, "
+            "direct o_proj, and mixed L2-S416 policy support."
+        ),
+    )
     parser.add_argument(
         "--bucket-route-policy",
         choices=["none", "qwen25_3b_b8"],

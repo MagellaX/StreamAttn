@@ -2945,3 +2945,71 @@ The selector signal is real, but not strong enough to justify kernel work.
 Keep stress-risk buckets exact-native in product-strict mode, and return kernel
 effort to validated-bucket product speed.
 ```
+
+I also ran the stronger `qk_block_max` selector as an actual replay oracle for
+L26/L27:
+
+```text
+L26/L27 qk_block_max:
+  speedup:        0.170x  # reference-only, not a kernel result
+  KL max:         0.18415
+  top1 changes:   4 / 32
+  sample changes: 9 / 32
+  top5 min:       3 / 5
+
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/l26_l27_qk_block_max_fragile_buckets_8step_h100.json
+```
+
+Read:
+
+```text
+Even qk_block_max selected-block replay does not pass the fragile-bucket
+stress gate.  Dynamic selection improves coverage, but L26/L27 remain too
+composition/logit-sensitive for product routing on these buckets.
+```
+
+### Product Fast-Path Preset
+
+The validated-bucket serving route is now exposed as a single benchmark preset:
+
+```text
+--product-fast-path qwen25_3b_b8_validated
+```
+
+It applies:
+
+```text
+bucket policy: qwen25_3b_b8
+native routed cache
+fused RoPE/cache-append/seed attention
+packed QKV projection
+direct o_proj
+mixed seed configs for L2 S416
+```
+
+H100 B8 / 32-step validated-bucket rerun:
+
+```text
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_b8_32step_h100.json
+
+dense decode:      28.97886 ms/token
+StreamAttn decode: 24.39029 ms/token
+speedup:           1.18813x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.94439e-05
+decision:          pass
+```
+
+Product decision:
+
+```text
+Use the fast-path preset for validated buckets.
+Keep stress-risk and unknown buckets exact-native in product-strict mode.
+Do not spend kernel time on L26/L27 dynamic selected-block attention until a
+new selector can beat qk_block_max replay safety.
+```

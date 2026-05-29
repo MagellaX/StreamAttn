@@ -11,6 +11,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     StreamAttnNativeKVCache,
     StreamAttnQwenAttentionModule,
     _SeedOnlyQwenDecodePatch,
+    _apply_product_fast_path_args,
     _batch_tokens,
     _bucket_route_policy_decision,
     _native_cache_from_hf_cache,
@@ -90,6 +91,44 @@ def test_parse_layer_seed_overrides_positional_fields():
 def test_parse_layer_id_set_accepts_commas_and_semicolons():
     assert parse_layer_id_set("") == set()
     assert parse_layer_id_set("0,14;16") == {0, 14, 16}
+
+
+def test_product_fast_path_applies_validated_qwen3b_runtime_flags():
+    import argparse
+
+    args = argparse.Namespace(
+        product_fast_path="qwen25_3b_b8_validated",
+        model="Qwen/Qwen2.5-3B-Instruct",
+        batch_size=8,
+        max_seq=32768,
+        dynamic_selector_profile="",
+        dynamic_selector_layers="",
+        bucket_route_policy="none",
+        product_strict=False,
+        use_packaged_policies=False,
+        native_routed_cache=False,
+        fused_rope_append_seed=False,
+        packed_qkv_projection=False,
+        packed_qkv_fused_input=True,
+        native_attention_module=True,
+        direct_o_proj=False,
+        triton_o_proj=True,
+        allow_mixed_seed_configs=False,
+    )
+
+    _apply_product_fast_path_args(args)
+
+    assert args.bucket_route_policy == "qwen25_3b_b8"
+    assert args.product_strict is True
+    assert args.use_packaged_policies is True
+    assert args.native_routed_cache is True
+    assert args.fused_rope_append_seed is True
+    assert args.packed_qkv_projection is True
+    assert args.packed_qkv_fused_input is False
+    assert args.native_attention_module is False
+    assert args.direct_o_proj is True
+    assert args.triton_o_proj is False
+    assert args.allow_mixed_seed_configs is True
 
 
 def test_prompt_rows_from_jsonl_preserves_stress_metadata(tmp_path):
