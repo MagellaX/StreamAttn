@@ -54,6 +54,16 @@ class BlockSummary:
     support_key_indices: Optional[torch.Tensor] = None
 
 
+@dataclass(frozen=True)
+class SeedBlockSelection:
+    selector: str
+    selected_blocks: List[int]
+    middle_blocks: List[int]
+    base_blocks: List[int]
+    fixed_blocks: List[int]
+    cost: Dict[str, float]
+
+
 def parse_selector_profiles(text: str) -> List[str]:
     profiles = [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
     if not profiles:
@@ -137,6 +147,253 @@ def seed_mask_from_blocks(
         if start < seq_len:
             mask[start:end] = True
     return mask
+
+
+def seed_token_indices_from_blocks(
+    *,
+    seq_len: int,
+    block_size: int,
+    blocks: Sequence[int],
+    device: torch.device,
+) -> torch.Tensor:
+    indices: List[int] = []
+    seen = set()
+    for block in blocks:
+        start = int(block) * block_size
+        end = min(int(seq_len), start + block_size)
+        if start >= int(seq_len):
+            continue
+        for idx in range(start, end):
+            if idx in seen:
+                continue
+            seen.add(idx)
+            indices.append(idx)
+    if not indices:
+        return torch.empty((0,), device=device, dtype=torch.long)
+    return torch.tensor(sorted(indices), device=device, dtype=torch.long)
+
+
+def _blocked_k_view(k: torch.Tensor, *, block_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    seq_len = int(k.shape[0])
+    dim = int(k.shape[-1])
+    num_blocks = math.ceil(seq_len / block_size)
+    padded_len = num_blocks * block_size
+    if padded_len == seq_len:
+        padded = k
+    else:
+        pad = torch.zeros((padded_len - seq_len, dim), device=k.device, dtype=k.dtype)
+        padded = torch.cat([k, pad], dim=0)
+    blocks = padded.reshape(num_blocks, block_size, dim)
+    positions = torch.arange(padded_len, device=k.device).reshape(num_blocks, block_size)
+    valid = positions < seq_len
+    return blocks, valid
+
+
+def _block_qk_scores_tensor(q: torch.Tensor, k: torch.Tensor, *, block_size: int) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    dots = torch.matmul(blocks.float(), q.float())
+    dots = dots.masked_fill(~valid, -float("inf"))
+    return dots.max(dim=1).values
+
+
+def _gather_block_keys(blocks: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+    dim = int(blocks.shape[-1])
+    return blocks.gather(1, indices[..., None].expand(-1, -1, dim))
+
+
+def _support_top_norm_scores_tensor(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    top_p: int,
+) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    norms = torch.linalg.vector_norm(blocks.float(), dim=-1).masked_fill(~valid, -float("inf"))
+    count = min(int(top_p), int(block_size))
+    idx = torch.topk(norms, k=count, dim=1).indices
+    keys = _gather_block_keys(blocks.float(), idx)
+    return torch.matmul(keys, q.float()).max(dim=1).values
+
+
+def _support_extreme_mean_scores_tensor(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    top_p: int,
+) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    blocks_f = blocks.float()
+    valid_f = valid.float()
+    counts = valid_f.sum(dim=1).clamp_min(1.0)
+    mean = (blocks_f * valid_f[..., None]).sum(dim=1, keepdim=True) / counts[:, None, None]
+    distances = torch.linalg.vector_norm(blocks_f - mean, dim=-1).masked_fill(~valid, -float("inf"))
+    count = min(int(top_p), int(block_size))
+    idx = torch.topk(distances, k=count, dim=1).indices
+    keys = _gather_block_keys(blocks_f, idx)
+    return torch.matmul(keys, q.float()).max(dim=1).values
+
+
+def _support_random_scores_tensor(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    directions: int,
+) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    blocks_f = blocks.float()
+    dirs = _deterministic_directions(int(k.shape[-1]), int(directions), device=k.device)
+    projected = torch.matmul(blocks_f, dirs.T).masked_fill(~valid[..., None], -float("inf"))
+    idx = projected.argmax(dim=1)
+    keys = _gather_block_keys(blocks_f, idx)
+    return torch.matmul(keys, q.float()).max(dim=1).values
+
+
+def _mean_scores_tensor(q: torch.Tensor, k: torch.Tensor, *, block_size: int) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    blocks_f = blocks.float()
+    valid_f = valid.float()
+    counts = valid_f.sum(dim=1).clamp_min(1.0)
+    mean = (blocks_f * valid_f[..., None]).sum(dim=1) / counts[:, None]
+    return torch.matmul(mean, q.float())
+
+
+def _l2_bound_scores_tensor(q: torch.Tensor, k: torch.Tensor, *, block_size: int) -> torch.Tensor:
+    blocks, valid = _blocked_k_view(k, block_size=block_size)
+    blocks_f = blocks.float()
+    valid_f = valid.float()
+    counts = valid_f.sum(dim=1).clamp_min(1.0)
+    mean = (blocks_f * valid_f[..., None]).sum(dim=1, keepdim=True) / counts[:, None, None]
+    centered = torch.linalg.vector_norm(blocks_f - mean, dim=-1).masked_fill(~valid, 0.0)
+    radius = centered.max(dim=1).values
+    return torch.matmul(mean.squeeze(1), q.float()) + torch.linalg.vector_norm(q.float()) * radius
+
+
+def _score_tensor_for_runtime_selector(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    selector: str,
+) -> torch.Tensor:
+    if selector == "qk_block_max":
+        return _block_qk_scores_tensor(q, k, block_size=block_size)
+    if selector == "block_mean_proxy":
+        return _mean_scores_tensor(q, k, block_size=block_size)
+    if selector == "block_l2_bound_proxy":
+        return _l2_bound_scores_tensor(q, k, block_size=block_size)
+    if selector.startswith("support_top2_norm"):
+        scores = _support_top_norm_scores_tensor(q, k, block_size=block_size, top_p=2)
+    elif selector.startswith("support_top4_norm"):
+        scores = _support_top_norm_scores_tensor(q, k, block_size=block_size, top_p=4)
+    elif selector.startswith("support_extreme2_mean"):
+        scores = _support_extreme_mean_scores_tensor(q, k, block_size=block_size, top_p=2)
+    elif selector.startswith("support_extreme4_mean"):
+        scores = _support_extreme_mean_scores_tensor(q, k, block_size=block_size, top_p=4)
+    elif selector.startswith("support_rand4"):
+        scores = _support_random_scores_tensor(q, k, block_size=block_size, directions=4)
+    elif selector.startswith("support_rand8"):
+        scores = _support_random_scores_tensor(q, k, block_size=block_size, directions=8)
+    else:
+        raise ValueError(f"selector {selector!r} cannot run from q/k summaries only")
+    if selector.endswith("_refine16") or selector.endswith("_refine32"):
+        candidate_blocks = 32 if selector.endswith("_refine32") else 16
+        count = min(int(candidate_blocks), int(scores.numel()))
+        candidates = torch.topk(scores, k=count).indices
+        exact = torch.full_like(scores, -float("inf"))
+        blocks, valid = _blocked_k_view(k, block_size=block_size)
+        candidate_blocks_view = blocks.index_select(0, candidates).float()
+        candidate_valid = valid.index_select(0, candidates)
+        candidate_scores = torch.matmul(candidate_blocks_view, q.float()).masked_fill(
+            ~candidate_valid,
+            -float("inf"),
+        )
+        exact[candidates] = candidate_scores.max(dim=1).values
+        scores = exact
+    return scores
+
+
+def select_seed_blocks_by_profile(
+    *,
+    q: torch.Tensor,
+    k: torch.Tensor,
+    policy: Any,
+    selector: str,
+) -> SeedBlockSelection:
+    """Select seed blocks for one row/head from a runtime-feasible q/k proxy.
+
+    The implementation is intentionally reference-oriented: it computes block
+    summaries from the provided cache tensor so correctness can be tested before
+    a production selected-block kernel exists.  The selected block interface is
+    the same one a future native selector should feed.
+    """
+
+    if selector not in SELECTOR_PROFILES:
+        raise ValueError(f"unknown selector profile: {selector}")
+    seq_len = int(k.shape[0])
+    block_size = int(policy.block_size)
+    base_blocks = policy_seed_blocks(
+        seq_len=seq_len,
+        block_size=block_size,
+        sink_blocks=int(policy.sink_blocks),
+        recent_blocks=int(policy.recent_blocks),
+        middle_seed_blocks=int(policy.middle_seed_blocks),
+        block_order=str(policy.block_order),
+        include_middle=False,
+    )
+    fixed_blocks = policy_seed_blocks(
+        seq_len=seq_len,
+        block_size=block_size,
+        sink_blocks=int(policy.sink_blocks),
+        recent_blocks=int(policy.recent_blocks),
+        middle_seed_blocks=int(policy.middle_seed_blocks),
+        block_order=str(policy.block_order),
+        include_middle=True,
+    )
+    fixed_middle_blocks = [block for block in fixed_blocks if block not in set(base_blocks)]
+    if selector == "fixed_policy":
+        middle_blocks = fixed_middle_blocks
+        selected_blocks = fixed_blocks
+    else:
+        unsupported_oracles = {
+            "support_block_oracle",
+            "exact_mass_oracle",
+            "support_mass_oracle",
+            "value_residual_oracle",
+        }
+        if selector in unsupported_oracles:
+            raise ValueError(f"selector {selector!r} requires oracle labels/probabilities")
+        scores = _score_tensor_for_runtime_selector(q, k, block_size=block_size, selector=selector)
+        base = set(int(block) for block in base_blocks)
+        ranked = sorted(
+            ((int(block), float(score)) for block, score in enumerate(scores.detach().cpu().tolist())),
+            key=lambda item: (-item[1], item[0]),
+        )
+        middle_blocks = []
+        for block, score in ranked:
+            if block in base or block in middle_blocks or not math.isfinite(score):
+                continue
+            middle_blocks.append(block)
+            if len(middle_blocks) >= int(policy.middle_seed_blocks):
+                break
+        if len(middle_blocks) < int(policy.middle_seed_blocks):
+            for block in fixed_middle_blocks:
+                if block in base or block in middle_blocks:
+                    continue
+                middle_blocks.append(int(block))
+                if len(middle_blocks) >= int(policy.middle_seed_blocks):
+                    break
+        selected_blocks = list(base_blocks) + middle_blocks
+    return SeedBlockSelection(
+        selector=selector,
+        selected_blocks=[int(block) for block in selected_blocks],
+        middle_blocks=[int(block) for block in middle_blocks],
+        base_blocks=[int(block) for block in base_blocks],
+        fixed_blocks=[int(block) for block in fixed_blocks],
+        cost=selector_cost_estimate(selector, seq_len=seq_len, block_size=block_size),
+    )
 
 
 def block_scores_from_values(values: torch.Tensor, *, block_size: int) -> Dict[int, float]:

@@ -2877,3 +2877,71 @@ validated buckets:
 stress-risk / unknown buckets:
   exact_native in product-strict mode
 ```
+
+### Dynamic Selector Replay Result
+
+I then wired `support_rand8_refine32` into the real route-bundle decode patch as
+a reference selected-block attention path.  This is intentionally not a speed
+path: L26/L27 use PyTorch loops to compute attention over dynamically selected
+blocks so that we can test safety before building a selected-block Triton
+kernel.
+
+Matched H100 / 8-step fragile-bucket probe:
+
+```text
+prompt file: benchmarks/prompts/qwen3b_32k_stress_pack_v1_b8.jsonl
+prompt filter: chat_instruction, needle_rag, json_tool, noisy_neartie
+route baseline: [0,14,16,24,26,27,35]
+dynamic layers: L26,L27
+selector: support_rand8_refine32
+```
+
+Results:
+
+```text
+fixed strict7:
+  speedup:        1.007x
+  KL max:         0.55264
+  top1 changes:   5 / 32
+  sample changes: 12 / 32
+  top5 min:       3 / 5
+
+L26/L27 support_rand8_refine32:
+  speedup:        0.107x  # reference-only, not a kernel result
+  KL max:         0.18999
+  top1 changes:   4 / 32
+  sample changes: 8 / 32
+  top5 min:       3 / 5
+
+minus L26/L27:
+  speedup:        1.095x
+  KL max:         0.09293
+  top1 changes:   1 / 32
+  sample changes: 6 / 32
+  top5 min:       4 / 5
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/l26_l27_rand8_refine32_fragile_buckets_8step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/minus_l26_l27_fragile_buckets_8step_h100.json
+```
+
+Read:
+
+```text
+support_rand8_refine32 improves L26/L27 stress behavior versus fixed S384,
+but it does not pass strict safety and is worse than keeping L26/L27 exact for
+fragile buckets.
+```
+
+Decision:
+
+```text
+Do not build the selected-block Triton kernel yet for L26/L27 stress recovery.
+The selector signal is real, but not strong enough to justify kernel work.
+Keep stress-risk buckets exact-native in product-strict mode, and return kernel
+effort to validated-bucket product speed.
+```

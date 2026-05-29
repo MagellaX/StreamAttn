@@ -152,6 +152,10 @@ def _run(**kwargs) -> dict[str, Any]:
     ]
     if kwargs["prompt_file"]:
         cmd.extend(["--prompt-file", kwargs["prompt_file"]])
+    if kwargs["prompt_file_kinds"]:
+        cmd.extend(["--prompt-file-kinds", kwargs["prompt_file_kinds"]])
+    if kwargs["prompt_file_rows_per_kind"] > 0:
+        cmd.extend(["--prompt-file-rows-per-kind", str(kwargs["prompt_file_rows_per_kind"])])
     if kwargs["max_prompts"] > 0:
         cmd.extend(["--max-prompts", str(kwargs["max_prompts"])])
     if kwargs["prompt_truncation_side"]:
@@ -180,6 +184,10 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--direct-o-proj")
     if kwargs["triton_o_proj"]:
         cmd.append("--triton-o-proj")
+    if kwargs["dynamic_selector_layers"]:
+        cmd.extend(["--dynamic-selector-layers", kwargs["dynamic_selector_layers"]])
+    if kwargs["dynamic_selector_profile"]:
+        cmd.extend(["--dynamic-selector-profile", kwargs["dynamic_selector_profile"]])
     if kwargs["allow_mixed_seed_configs"]:
         cmd.append("--allow-mixed-seed-configs")
     if not kwargs["product_strict"]:
@@ -206,6 +214,8 @@ def main(
     product_strict: bool = True,
     prompt_kinds: str = "needle,code,long_doc,chat_doc",
     prompt_file: str = "",
+    prompt_file_kinds: str = "",
+    prompt_file_rows_per_kind: int = 0,
     max_prompts: int = 0,
     prompt_truncation_side: str = "right",
     prompt_repeat: int = 3000,
@@ -245,6 +255,8 @@ def main(
     packed_qkv_fused_input: bool = False,
     direct_o_proj: bool = False,
     triton_o_proj: bool = False,
+    dynamic_selector_layers: str = "",
+    dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
     output_json: str = "",
 ):
@@ -257,6 +269,8 @@ def main(
         product_strict=product_strict,
         prompt_kinds=prompt_kinds,
         prompt_file=prompt_file,
+        prompt_file_kinds=prompt_file_kinds,
+        prompt_file_rows_per_kind=prompt_file_rows_per_kind,
         max_prompts=max_prompts,
         prompt_truncation_side=prompt_truncation_side,
         prompt_repeat=prompt_repeat,
@@ -296,6 +310,8 @@ def main(
         packed_qkv_fused_input=packed_qkv_fused_input,
         direct_o_proj=direct_o_proj,
         triton_o_proj=triton_o_proj,
+        dynamic_selector_layers=dynamic_selector_layers,
+        dynamic_selector_profile=dynamic_selector_profile,
         allow_mixed_seed_configs=allow_mixed_seed_configs,
     )
     text = json.dumps(result, indent=2, sort_keys=True)

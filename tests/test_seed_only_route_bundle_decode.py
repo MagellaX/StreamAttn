@@ -49,6 +49,10 @@ from benchmarks.summarize_seed_policy_attention_coverage import (
     _metric_summary as attention_coverage_metric_summary,
 )
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy
+from stream_attention.seed_selectors import (
+    select_seed_blocks_by_profile,
+    seed_token_indices_from_blocks,
+)
 from stream_attention.kernels.gate0_seed_only_triton import (
     gate0_refresh_packed_seed_cache_recent_bhsd,
     gate0_seed_only_packed_ring_append_triton_forward_out,
@@ -120,6 +124,33 @@ def test_prompt_rows_from_jsonl_preserves_stress_metadata(tmp_path):
             "risk": "identifier",
         }
     ]
+
+
+def test_prompt_rows_from_file_filters_rows_per_kind(tmp_path):
+    import json
+
+    path = tmp_path / "prompts.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps({"bucket": "a", "prompt": "a0"}),
+                json.dumps({"bucket": "a", "prompt": "a1"}),
+                json.dumps({"bucket": "b", "prompt": "b0"}),
+                json.dumps({"bucket": "b", "prompt": "b1"}),
+                json.dumps({"bucket": "c", "prompt": "c0"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = _prompt_rows_from_file(
+        str(path),
+        max_rows=4,
+        prompt_file_kinds="a,b",
+        rows_per_kind=1,
+    )
+
+    assert [(row["bucket"], row["prompt"]) for row in rows] == [("a", "a0"), ("b", "b0")]
 
 
 def test_prompts_from_args_cycles_prompt_kinds_to_batch_size():
@@ -453,6 +484,50 @@ def test_attention_coverage_random_support_selector_is_registered():
         "support_rand4",
         "support_rand8_refine32",
     ]
+
+
+def test_runtime_support_rand_refine_selector_finds_aligned_block():
+    import torch
+
+    policy = Gate0SeedOnlyBatchedPolicy(
+        policy_id="p0",
+        model_id="m",
+        layer_id=0,
+        block_size=4,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        block_order="recent_first",
+    )
+    q = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    k = torch.zeros((16, 4))
+    k[8] = torch.tensor([9.0, 0.0, 0.0, 0.0])
+    k[4] = torch.tensor([2.0, 0.0, 0.0, 0.0])
+
+    selection = select_seed_blocks_by_profile(
+        q=q,
+        k=k,
+        policy=policy,
+        selector="support_rand8_refine32",
+    )
+
+    assert selection.selected_blocks == [0, 3, 2]
+    assert selection.middle_blocks == [2]
+    assert selection.cost["selector_proxy_dot_tokens"] > 0.0
+    assert selection.cost["selector_refine_dot_tokens"] > 0.0
+
+
+def test_seed_token_indices_from_blocks_deduplicates_and_sorts():
+    import torch
+
+    indices = seed_token_indices_from_blocks(
+        seq_len=10,
+        block_size=4,
+        blocks=[2, 0, 2],
+        device=torch.device("cpu"),
+    )
+
+    assert indices.tolist() == [0, 1, 2, 3, 8, 9]
 
 
 def test_attention_coverage_hook_input_inference():

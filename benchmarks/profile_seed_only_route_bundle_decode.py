@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 import types
@@ -49,6 +50,11 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd,
 )
 from stream_attention.kernels.qwen_o_proj_triton import qwen_o_proj_triton_forward  # noqa: E402
+from stream_attention.seed_selectors import (  # noqa: E402
+    SELECTOR_PROFILES,
+    select_seed_blocks_by_profile,
+    seed_token_indices_from_blocks,
+)
 
 _SEED_OVERRIDE_ALIASES = {
     "block": "block_size",
@@ -155,6 +161,65 @@ def _policy_seed_config(policy) -> Dict[str, Any]:
         "num_warps": int(policy.num_warps),
         "num_stages": int(policy.num_stages),
     }
+
+
+def _dynamic_seed_attention_reference_bhnd(
+    query_states: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    *,
+    seq_len: int,
+    policy,
+    selector_profile: str,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """Reference selected-block seed attention for real decode replay.
+
+    This is intentionally not a production kernel.  It lets the model-decode
+    gate test whether dynamic block selection fixes stress safety before we
+    spend time on a selected-block Triton/CUDA implementation.
+    """
+
+    batch, q_heads, query_len, head_dim = query_states.shape
+    if query_len != 1:
+        raise ValueError(f"dynamic selector reference only supports decode M=1, got {query_len}")
+    kv_heads = int(key_cache.shape[1])
+    if q_heads % kv_heads != 0:
+        raise ValueError(f"q_heads={q_heads} must be divisible by kv_heads={kv_heads}")
+    group_size = q_heads // kv_heads
+    scale = 1.0 / math.sqrt(float(head_dim))
+    seq_len = min(int(seq_len), int(key_cache.shape[2]))
+    if seq_len <= 0:
+        out.zero_()
+        return out
+    for b in range(int(batch)):
+        for h in range(int(q_heads)):
+            kv_head = h // group_size
+            q_row = query_states[b, h, 0]
+            k_row = key_cache[b, kv_head, :seq_len]
+            v_row = value_cache[b, kv_head, :seq_len]
+            selection = select_seed_blocks_by_profile(
+                q=q_row,
+                k=k_row,
+                policy=policy,
+                selector=selector_profile,
+            )
+            token_idx = seed_token_indices_from_blocks(
+                seq_len=seq_len,
+                block_size=int(policy.block_size),
+                blocks=selection.selected_blocks,
+                device=q_row.device,
+            )
+            if token_idx.numel() == 0:
+                out[b, 0, h].zero_()
+                continue
+            k_sel = k_row.index_select(0, token_idx)
+            v_sel = v_row.index_select(0, token_idx)
+            scores = torch.matmul(k_sel.float(), q_row.float()) * scale
+            probs = torch.softmax(scores, dim=0)
+            acc = torch.matmul(probs, v_sel.float())
+            out[b, 0, h].copy_(acc.to(out.dtype))
+    return out
 
 
 def apply_layer_seed_overrides(bundle, override_text: str):
@@ -595,6 +660,8 @@ class _SeedOnlyQwenDecodePatch:
         packed_qkv_fused_input: bool = False,
         direct_o_proj: bool = False,
         triton_o_proj: bool = False,
+        dynamic_selector_layers: Optional[Set[int]] = None,
+        dynamic_selector_profile: str = "",
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -606,8 +673,11 @@ class _SeedOnlyQwenDecodePatch:
         self.packed_qkv_fused_input = packed_qkv_fused_input
         self.direct_o_proj = direct_o_proj
         self.triton_o_proj = triton_o_proj
+        self.dynamic_selector_layers = dynamic_selector_layers or set()
+        self.dynamic_selector_profile = dynamic_selector_profile
         self.call_count = 0
         self.seed_call_count = 0
+        self.dynamic_selector_call_count = 0
         self.native_cache_update_count = 0
         self.hf_sync_update_count = 0
         self._native_next_pos = native_cache.prefill_len if native_cache is not None else 0
@@ -739,6 +809,11 @@ class _SeedOnlyQwenDecodePatch:
         **kwargs,
     ):
         self.call_count += 1
+        layer_id = int(module.layer_idx)
+        use_dynamic_selector = (
+            bool(self.dynamic_selector_profile)
+            and layer_id in self.dynamic_selector_layers
+        )
         if past_key_value is None:
             past_key_value = kwargs.get("past_key_value", kwargs.get("past_key_values"))
         if cache_position is None:
@@ -756,6 +831,8 @@ class _SeedOnlyQwenDecodePatch:
             fallback_reason = "non_cuda_cache_position"
         elif not hidden_states.is_cuda:
             fallback_reason = "non_cuda_hidden_states"
+        elif use_dynamic_selector and self.native_cache is None:
+            fallback_reason = "dynamic_selector_requires_native_cache"
         if fallback_reason is not None:
             self.fallback_reasons[fallback_reason] += 1
             if len(self.fallback_samples) < 5:
@@ -789,7 +866,8 @@ class _SeedOnlyQwenDecodePatch:
         use_fused_rope_append_seed = (
             self.fused_rope_append_seed
             and self.native_cache is not None
-            and int(module.layer_idx) not in self.native_cache_hf_sync_layers
+            and layer_id not in self.native_cache_hf_sync_layers
+            and not use_dynamic_selector
         )
         use_packed_qkv_fused_input = (
             use_fused_rope_append_seed
@@ -801,7 +879,7 @@ class _SeedOnlyQwenDecodePatch:
             self._mark(timing_events, "after_qkv")
             self._mark(timing_events, "after_rope")
             native_pos = self._native_next_pos
-            key_cache, value_cache = self.native_cache.layer_cache(int(module.layer_idx))
+            key_cache, value_cache = self.native_cache.layer_cache(layer_id)
             assert self._packed_qkv_sizes is not None
             q_heads = int(self._packed_qkv_sizes[0] // module.head_dim)
             out = self._output_buffer(
@@ -829,7 +907,7 @@ class _SeedOnlyQwenDecodePatch:
                 num_warps=self.policy.num_warps,
                 num_stages=self.policy.num_stages,
             )
-            self.native_cache.sync_hf_view(int(module.layer_idx), native_pos + 1)
+            self.native_cache.sync_hf_view(layer_id, native_pos + 1)
             self._native_next_pos += 1
             self.native_cache_update_count += 1
             self._mark(timing_events, "after_seed_kernel")
@@ -847,7 +925,7 @@ class _SeedOnlyQwenDecodePatch:
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             if use_fused_rope_append_seed:
                 native_pos = self._native_next_pos
-                key_cache, value_cache = self.native_cache.layer_cache(int(module.layer_idx))
+                key_cache, value_cache = self.native_cache.layer_cache(layer_id)
                 q = query_states
                 out = self._output_buffer(
                     batch=hidden_states.shape[0],
@@ -876,7 +954,7 @@ class _SeedOnlyQwenDecodePatch:
                     num_warps=self.policy.num_warps,
                     num_stages=self.policy.num_stages,
                 )
-                self.native_cache.sync_hf_view(int(module.layer_idx), native_pos + 1)
+                self.native_cache.sync_hf_view(layer_id, native_pos + 1)
                 self._native_next_pos += 1
                 self.native_cache_update_count += 1
                 self._mark(timing_events, "after_seed_kernel")
@@ -888,17 +966,17 @@ class _SeedOnlyQwenDecodePatch:
                     cache_kwargs,
                 )
             else:
-                if int(module.layer_idx) in self.native_cache_hf_sync_layers:
+                if layer_id in self.native_cache_hf_sync_layers:
                     past_key_value.update(
                         key_states,
                         value_states,
-                        module.layer_idx,
+                        layer_id,
                         cache_kwargs,
                     )
                     self.hf_sync_update_count += 1
                 native_pos = self._native_next_pos
                 key_states, value_states = self.native_cache.append(
-                    int(module.layer_idx),
+                    layer_id,
                     key_states,
                     value_states,
                     native_pos,
@@ -907,7 +985,6 @@ class _SeedOnlyQwenDecodePatch:
                 self.native_cache_update_count += 1
                 self._mark(timing_events, "after_cache_update")
 
-                q = query_states.transpose(1, 2).contiguous()
                 k = key_states
                 v = value_states
                 out = self._output_buffer(
@@ -918,20 +995,33 @@ class _SeedOnlyQwenDecodePatch:
                     dtype=hidden_states.dtype,
                 )
                 self._mark(timing_events, "after_layout")
-                gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                    q,
-                    k,
-                    v,
-                    out,
-                    cache_position,
-                    block_size=self.policy.block_size,
-                    sink_blocks=self.policy.sink_blocks,
-                    recent_blocks=self.policy.recent_blocks,
-                    middle_seed_blocks=self.policy.middle_seed_blocks,
-                    block_order=self.policy.block_order,
-                    num_warps=self.policy.num_warps,
-                    num_stages=self.policy.num_stages,
-                )
+                if use_dynamic_selector:
+                    _dynamic_seed_attention_reference_bhnd(
+                        query_states,
+                        k,
+                        v,
+                        seq_len=native_pos + 1,
+                        policy=self.policy,
+                        selector_profile=self.dynamic_selector_profile,
+                        out=out,
+                    )
+                    self.dynamic_selector_call_count += 1
+                else:
+                    q = query_states.transpose(1, 2).contiguous()
+                    gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+                        q,
+                        k,
+                        v,
+                        out,
+                        cache_position,
+                        block_size=self.policy.block_size,
+                        sink_blocks=self.policy.sink_blocks,
+                        recent_blocks=self.policy.recent_blocks,
+                        middle_seed_blocks=self.policy.middle_seed_blocks,
+                        block_order=self.policy.block_order,
+                        num_warps=self.policy.num_warps,
+                        num_stages=self.policy.num_stages,
+                    )
                 self._mark(timing_events, "after_seed_kernel")
             if not use_fused_rope_append_seed and self.native_cache is None:
                 self._mark(timing_events, "after_cache_update")
@@ -1076,6 +1166,8 @@ def _patched_seed_only_decode_modules(
     packed_qkv_fused_input: bool = False,
     direct_o_proj: bool = False,
     triton_o_proj: bool = False,
+    dynamic_selector_layers: Optional[Set[int]] = None,
+    dynamic_selector_profile: str = "",
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1099,6 +1191,8 @@ def _patched_seed_only_decode_modules(
             packed_qkv_fused_input=packed_qkv_fused_input,
             direct_o_proj=direct_o_proj,
             triton_o_proj=triton_o_proj,
+            dynamic_selector_layers=dynamic_selector_layers,
+            dynamic_selector_profile=dynamic_selector_profile,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1237,6 +1331,8 @@ def _warmup_decode(
             packed_qkv_fused_input=args.packed_qkv_fused_input,
             direct_o_proj=args.direct_o_proj,
             triton_o_proj=args.triton_o_proj,
+            dynamic_selector_layers=parse_layer_id_set(getattr(args, "dynamic_selector_layers", "")),
+            dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1251,6 +1347,8 @@ def _warmup_decode(
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "dynamic_selector_calls": patch.dynamic_selector_call_count,
+            "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
@@ -1462,6 +1560,9 @@ def _empty_route_bundle_summary(
         "packed_qkv_fused_input": False,
         "direct_o_proj": False,
         "triton_o_proj": False,
+        "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
+        "dynamic_selector_profile": args.dynamic_selector_profile,
+        "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
         "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
         "native_routed_cache": {"enabled": False},
         "candidate_backend": "exact_native",
@@ -1473,6 +1574,18 @@ def _empty_route_bundle_summary(
 def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
+    dynamic_selector_layers = parse_layer_id_set(args.dynamic_selector_layers)
+    if dynamic_selector_layers and not args.dynamic_selector_profile:
+        raise ValueError("--dynamic-selector-layers requires --dynamic-selector-profile")
+    if args.dynamic_selector_profile and not dynamic_selector_layers:
+        raise ValueError("--dynamic-selector-profile requires --dynamic-selector-layers")
+    if args.dynamic_selector_profile and args.dynamic_selector_profile not in SELECTOR_PROFILES:
+        raise ValueError(
+            f"unknown dynamic selector profile {args.dynamic_selector_profile!r}; "
+            f"supported={sorted(SELECTOR_PROFILES)}"
+        )
+    if args.dynamic_selector_profile and not args.native_routed_cache:
+        raise ValueError("--dynamic-selector-profile requires --native-routed-cache")
     device = torch.device(args.device)
     dtype = _dtype(args.dtype)
     native_cache_hf_sync_layers = parse_layer_id_set(args.native_cache_hf_sync_layers)
@@ -1601,6 +1714,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 packed_qkv_fused_input=args.packed_qkv_fused_input,
                 direct_o_proj=args.direct_o_proj,
                 triton_o_proj=args.triton_o_proj,
+                dynamic_selector_layers=parse_layer_id_set(args.dynamic_selector_layers),
+                dynamic_selector_profile=args.dynamic_selector_profile,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -1621,6 +1736,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "dynamic_selector_calls": patch.dynamic_selector_call_count,
+            "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
             "hf_sync_update_calls": patch.hf_sync_update_count,
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
@@ -1656,6 +1773,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
             "direct_o_proj": bool(args.direct_o_proj),
             "triton_o_proj": bool(args.triton_o_proj),
+            "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
+            "dynamic_selector_profile": args.dynamic_selector_profile,
+            "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
             "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
             "candidate_backend": "seed_only_bundle",
@@ -1731,6 +1851,17 @@ def main() -> None:
     )
     parser.add_argument("--prompt-kinds", default="needle,code,long_doc,chat_doc")
     parser.add_argument("--prompt-file", default="")
+    parser.add_argument(
+        "--prompt-file-kinds",
+        default="",
+        help="Optional comma-separated kind/bucket filter applied when --prompt-file is used.",
+    )
+    parser.add_argument(
+        "--prompt-file-rows-per-kind",
+        type=int,
+        default=0,
+        help="When filtering --prompt-file, keep at most this many rows per kind/bucket.",
+    )
     parser.add_argument("--max-prompts", type=int, default=0)
     parser.add_argument(
         "--prompt-truncation-side",
@@ -1843,6 +1974,22 @@ def main() -> None:
         help=(
             "Experimental: apply routed decode output projection with a StreamAttn Triton "
             "kernel for the [batch,1,hidden] shape."
+        ),
+    )
+    parser.add_argument(
+        "--dynamic-selector-layers",
+        default="",
+        help=(
+            "Comma-separated routed layer ids that use reference selected-block seed attention "
+            "instead of the fixed-block Triton seed kernel."
+        ),
+    )
+    parser.add_argument(
+        "--dynamic-selector-profile",
+        default="",
+        help=(
+            "Runtime selector profile for --dynamic-selector-layers, for example "
+            "support_rand8_refine32. This path is reference-only and not a speed result."
         ),
     )
     parser.add_argument(

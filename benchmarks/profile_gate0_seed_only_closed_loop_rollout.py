@@ -47,9 +47,21 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
 )
 
 
-def _prompt_rows_from_file(path: str, *, max_rows: int = 0) -> List[Dict[str, str]]:
+def _prompt_rows_from_file(
+    path: str,
+    *,
+    max_rows: int = 0,
+    prompt_file_kinds: str = "",
+    rows_per_kind: int = 0,
+) -> List[Dict[str, str]]:
     prompt_path = Path(path)
+    allowed_kinds = {
+        part.strip()
+        for part in str(prompt_file_kinds).replace(";", ",").split(",")
+        if part.strip()
+    }
     rows: List[Dict[str, str]] = []
+    kind_counts: Dict[str, int] = {}
     for line_idx, raw_line in enumerate(prompt_path.read_text(encoding="utf-8").splitlines()):
         line = raw_line.strip()
         if not line:
@@ -71,6 +83,12 @@ def _prompt_rows_from_file(path: str, *, max_rows: int = 0) -> List[Dict[str, st
                 "kind": f"{prompt_path.stem}_{len(rows):03d}",
                 "prompt": line,
             }
+        kind_key = row.get("bucket", "") or row.get("kind", "")
+        if allowed_kinds and row.get("kind", "") not in allowed_kinds and row.get("bucket", "") not in allowed_kinds:
+            continue
+        if rows_per_kind > 0 and kind_counts.get(kind_key, 0) >= rows_per_kind:
+            continue
+        kind_counts[kind_key] = kind_counts.get(kind_key, 0) + 1
         rows.append(row)
         if max_rows > 0 and len(rows) >= max_rows:
             break
@@ -85,7 +103,12 @@ def _prompts_from_args(args: argparse.Namespace) -> List[Dict[str, str]]:
         max_prompts = int(getattr(args, "max_prompts", 0) or 0)
         if max_prompts <= 0:
             max_prompts = int(getattr(args, "batch_size", 0) or 0)
-        return _prompt_rows_from_file(prompt_file, max_rows=max_prompts)
+        return _prompt_rows_from_file(
+            prompt_file,
+            max_rows=max_prompts,
+            prompt_file_kinds=str(getattr(args, "prompt_file_kinds", "") or ""),
+            rows_per_kind=int(getattr(args, "prompt_file_rows_per_kind", 0) or 0),
+        )
 
     kinds = _parse_prompt_kinds(args.prompt_kinds)
     prompts = []
