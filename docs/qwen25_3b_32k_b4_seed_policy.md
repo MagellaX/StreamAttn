@@ -2569,3 +2569,166 @@ use either:
 If we are optimizing product speed rather than stress recovery, return to the
 validated-bucket systems path: native routed QKV/o_proj ownership.
 ```
+
+## Current-Backend Marginal Route Search
+
+The marginal optimizer was updated to use the same backend as the current best
+validated route:
+
+```text
+native routed cache
+fused RoPE/cache-append/seed attention
+packed QKV projection
+direct o_proj
+```
+
+It also now performs explicit CUDA cleanup between long-context prefill cases
+and sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` in the Modal runner.
+That fixed an H100 fragmentation OOM encountered after several repeated 32K
+prefill cases.
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/marginals_current_backend_8step_h100.json
+```
+
+8-step H100 marginal screen, B8, 32K:
+
+```text
+base 7-layer route [0,14,16,24,26,27,35]:
+  StreamAttn: 25.65255 ms/token
+  speedup:   1.15289x
+  KL max:    2.4668e-05
+
+base + L2 S384:
+  StreamAttn: 24.95424 ms/token
+  speedup:   1.18515x
+  KL max:    3.1327e-05
+  decision:  candidate_add
+
+base + L18 S384:
+  speedup:   1.18028x
+  KL max:    3.0367e-05
+  decision:  candidate_add
+
+base + L29 S384:
+  speedup:   1.17278x
+  KL max:    5.3622e-05
+  decision:  candidate_add
+```
+
+The short-run screen says L2 is the highest-value add under the current
+backend, but short runs are only ranking evidence.  The 32-step gate then tested
+the strongest candidate.
+
+### L2 Minimal Repair Gate
+
+First, L2 was added with the default S384 schedule:
+
+```text
+route: [0,2,14,16,24,26,27,35]
+L2:    S384 = sink 2 + recent 2 + middle 8
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s384_current_backend_b8_h100.json
+```
+
+Result:
+
+```text
+dense decode:      28.65468 ms/token
+StreamAttn decode: 24.08799 ms/token
+speedup:           1.18958x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            1.03178e-04
+decision:          reject by KL only
+```
+
+This missed the strict KL gate by only:
+
+```text
+1.03178e-04 - 1.00000e-04 = 3.18e-06
+```
+
+The failure was concentrated in `chat_doc`; p99 KL remained below the gate:
+
+```text
+overall KL p99: 7.03039e-05
+```
+
+So the repair was intentionally minimal: add one recent block to L2 only.
+
+```text
+L2 S416:
+  sink_blocks = 2
+  recent_blocks = 3
+  middle_seed_blocks = 8
+  seed tokens = 416
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json
+```
+
+H100 B8 32-step result:
+
+```text
+dense decode:      28.65215 ms/token
+StreamAttn decode: 23.89866 ms/token
+speedup:           1.19890x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.94439e-05
+target logprob max:2.73081e-04
+decision:          strict pass
+```
+
+This is now the strongest validated-bucket actual-model result:
+
+```text
+previous best 7-layer direct-o route:
+  StreamAttn decode: 24.46827 ms/token
+  speedup:           1.15621x
+
+new 8-layer L2 S416 route:
+  StreamAttn decode: 23.89866 ms/token
+  speedup:           1.19890x
+```
+
+Decision:
+
+```text
+Promote L2 S416 for validated buckets at B8.
+Keep stress-risk buckets exact-native in product-strict mode.
+Do not promote L2 S640 for product speed; S416 is both faster and strict-clean
+on the validated bucket gate.
+```
+
+Packaged artifacts:
+
+```text
+stream_attention/policies/qwen25_3b_l2_s416_32k_seed_only_batched.json
+stream_attention/policies/qwen25_3b_32k_b8_seed_only_8layer_l2_s416_bundle.json
+```
+
+The bucket-conditioned route now uses the 8-layer L2 S416 bundle for validated
+buckets:
+
+```text
+validated buckets:
+  [0,2,14,16,24,26,27,35]
+
+stress-risk / unknown buckets:
+  exact_native in product-strict mode
+```

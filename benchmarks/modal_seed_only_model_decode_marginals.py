@@ -84,6 +84,7 @@ def _json_from_cmd(cmd: list[str], *, env: dict[str, str]) -> dict[str, Any]:
 def _run(**kwargs) -> dict[str, Any]:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
     cmd = [
         "python",
@@ -138,6 +139,26 @@ def _run(**kwargs) -> dict[str, Any]:
     ]
     if kwargs["attn_implementation"]:
         cmd.extend(["--attn-implementation", kwargs["attn_implementation"]])
+    if kwargs["explicit_cache_position"]:
+        cmd.append("--explicit-cache-position")
+    if kwargs["native_routed_cache"]:
+        cmd.append("--native-routed-cache")
+    if kwargs["native_cache_hf_sync_layers"]:
+        cmd.extend(["--native-cache-hf-sync-layers", kwargs["native_cache_hf_sync_layers"]])
+    if kwargs["native_cache_attach_hf_views"]:
+        cmd.append("--native-cache-attach-hf-views")
+    if kwargs["native_attention_module"]:
+        cmd.append("--native-attention-module")
+    if kwargs["fused_rope_append_seed"]:
+        cmd.append("--fused-rope-append-seed")
+    if kwargs["packed_qkv_projection"]:
+        cmd.append("--packed-qkv-projection")
+    if kwargs["packed_qkv_fused_input"]:
+        cmd.append("--packed-qkv-fused-input")
+    if kwargs["direct_o_proj"]:
+        cmd.append("--direct-o-proj")
+    if kwargs["triton_o_proj"]:
+        cmd.append("--triton-o-proj")
     return _json_from_cmd(cmd, env=env)
 
 
@@ -171,6 +192,16 @@ def main(
     sample_seed: int = 1234,
     assumed_region_speedup: float = 3.0,
     target_speedups: str = "1.05,1.10,1.20",
+    explicit_cache_position: bool = False,
+    native_routed_cache: bool = True,
+    native_cache_hf_sync_layers: str = "",
+    native_cache_attach_hf_views: bool = False,
+    native_attention_module: bool = False,
+    fused_rope_append_seed: bool = True,
+    packed_qkv_projection: bool = True,
+    packed_qkv_fused_input: bool = False,
+    direct_o_proj: bool = True,
+    triton_o_proj: bool = False,
     output_json: str = "",
 ):
     result = profile_h100.remote(
@@ -197,6 +228,16 @@ def main(
         sample_seed=sample_seed,
         assumed_region_speedup=assumed_region_speedup,
         target_speedups=target_speedups,
+        explicit_cache_position=explicit_cache_position,
+        native_routed_cache=native_routed_cache,
+        native_cache_hf_sync_layers=native_cache_hf_sync_layers,
+        native_cache_attach_hf_views=native_cache_attach_hf_views,
+        native_attention_module=native_attention_module,
+        fused_rope_append_seed=fused_rope_append_seed,
+        packed_qkv_projection=packed_qkv_projection,
+        packed_qkv_fused_input=packed_qkv_fused_input,
+        direct_o_proj=direct_o_proj,
+        triton_o_proj=triton_o_proj,
     )
     text = json.dumps(result, indent=2, sort_keys=True)
     if output_json:
@@ -208,6 +249,7 @@ def main(
             "model": result.get("model"),
             "shape": result.get("shape"),
             "dense": result.get("dense"),
+            "runtime_config": result.get("runtime_config"),
             "base_layers": result.get("base_layers"),
             "candidate_layers": result.get("candidate_layers"),
             "coverage": result.get("coverage"),

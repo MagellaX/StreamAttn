@@ -97,7 +97,8 @@ def test_qwen3b_bucket_policy_default_validated_uses_full_bundle():
     decision = qwen25_3b_bucket_route_decision("code", product_strict=True)
 
     assert decision.mode == "seed_only_bundle"
-    assert decision.seed_only_layers == (0, 14, 16, 24, 26, 27, 35)
+    assert decision.seed_only_layers == (0, 2, 14, 16, 24, 26, 27, 35)
+    assert "qwen25_3b_l2_s416_32k_seed_only_batched" in decision.policy_names
     assert decision.strict_gate_passed is True
 
 
@@ -926,6 +927,7 @@ def test_gate0_seed_only_batched_policy_registry_lists_green_cells():
         "qwen25_15b_l0_32k_seed_only_batched",
         "qwen25_15b_l3_32k_seed_only_batched",
         "qwen25_3b_l0_32k_seed_only_batched",
+        "qwen25_3b_l2_s416_32k_seed_only_batched",
         "qwen25_3b_l2_s640_32k_seed_only_batched",
         "qwen25_3b_l14_32k_seed_only_batched",
         "qwen25_3b_l16_32k_seed_only_batched",
@@ -947,6 +949,7 @@ def test_gate0_seed_only_batched_policy_registry_lists_green_cells():
     assert "qwen25_15b_l0_32k_fp16_b4_seed_only_v1" in names_with_aliases
     assert "qwen25_15b_l3_32k_fp16_b4_seed_only_v1" in names_with_aliases
     assert "qwen25_3b_l0_32k_fp16_b4_seed_only_v1" in names_with_aliases
+    assert "qwen25_3b_l2_s416_32k_fp16_b8_seed_only_v1" in names_with_aliases
     assert "qwen25_3b_l2_s640_32k_fp16_b8_seed_only_v1" in names_with_aliases
     assert "qwen25_3b_l14_32k_fp16_b4_seed_only_v1" in names_with_aliases
     assert "qwen25_3b_l16_32k_fp16_b4_seed_only_v1" in names_with_aliases
@@ -1005,6 +1008,14 @@ def test_gate0_seed_only_batched_policy_registry_finds_matching_cells():
         min_batch=8,
         status="candidate",
     )
+    qwen3_l2_green_b8 = find_packaged_gate0_seed_only_batched_policies(
+        model_id="Qwen/Qwen2.5-3B-Instruct",
+        layer_id=2,
+        dtype="fp16",
+        kv_len_bucket=32768,
+        min_batch=8,
+        status="green",
+    )
 
     assert l8_matches == ["qwen25_05b_l8_32k_seed_only_batched"]
     assert all_matches == [
@@ -1029,6 +1040,7 @@ def test_gate0_seed_only_batched_policy_registry_finds_matching_cells():
         "qwen25_3b_l29_32k_seed_only_batched",
         "qwen25_3b_l35_32k_seed_only_batched",
     ]
+    assert qwen3_l2_green_b8 == ["qwen25_3b_l2_s416_32k_seed_only_batched"]
     assert qwen3_l2_candidate == ["qwen25_3b_l2_s640_32k_seed_only_batched"]
     assert too_small_batch == []
     assert wrong_layer == []

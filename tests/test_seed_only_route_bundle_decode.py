@@ -540,7 +540,8 @@ def test_route_bundle_bucket_policy_uses_full_route_for_validated_batch():
     )
 
     assert decision["batch_mode"] == "seed_only_bundle"
-    assert decision["seed_only_layers"] == [0, 14, 16, 24, 26, 27, 35]
+    assert decision["seed_only_layers"] == [0, 2, 14, 16, 24, 26, 27, 35]
+    assert "qwen25_3b_l2_s416_32k_seed_only_batched" in decision["policy_names"]
     assert "qwen25_3b_l27_32k_seed_only_batched" in decision["policy_names"]
 
 

@@ -1,0 +1,84 @@
+{
+  "schema": "streamattn.gate0.seed_only_batched_policy.v1",
+  "policy_id": "qwen25_3b_l2_s416_32k_fp16_b8_seed_only_v1",
+  "mode": "all_seed_only",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "layer_id": 2,
+  "tensor_space": "post_rope",
+  "dtype": "fp16",
+  "kv_len_bucket": 32768,
+  "min_batch": 8,
+  "shape": {
+    "batch": 8,
+    "q_heads": 16,
+    "true_kv_heads": 2,
+    "dim": 128,
+    "kv_len": 32768,
+    "dtype": "fp16"
+  },
+  "seed_config": {
+    "block_size": 32,
+    "sink_blocks": 2,
+    "recent_blocks": 3,
+    "middle_seed_blocks": 8,
+    "block_order": "recent_first",
+    "num_warps": 4,
+    "num_stages": 2
+  },
+  "safety": {
+    "gate": "distribution_aware",
+    "status": "validated_bucket_bundle_green",
+    "top1_must_match": true,
+    "min_top5_overlap": 4,
+    "max_kl": 0.0001,
+    "max_logit_delta": 9.0,
+    "max_logprob_delta": 0.002,
+    "validated_rollout_steps": 32,
+    "actual_model_bundle_b8_32": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",
+      "prompt_kinds": [
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc",
+        "needle",
+        "code",
+        "long_doc",
+        "chat_doc"
+      ],
+      "cases": 256,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "top5_overlap_min": 4,
+      "kl_max": 9.944393968908116e-05,
+      "target_logprob_delta_max": 0.0002730809501372278,
+      "reference_top1_margin_min": 5.578125
+    }
+  },
+  "timing": {
+    "actual_model_bundle_streamattn_ms_per_token": 23.89866081250025,
+    "actual_model_bundle_dense_ms_per_token": 28.652148968749902,
+    "actual_model_bundle_speedup_vs_dense": 1.198901862892808,
+    "actual_model_bundle_layers": [
+      0,
+      2,
+      14,
+      16,
+      24,
+      26,
+      27,
+      35
+    ],
+    "current_backend": {
+      "native_routed_cache": true,
+      "fused_rope_append_seed": true,
+      "packed_qkv_projection": true,
+      "direct_o_proj": true
+    }
+  },
+  "kernel_modes": {
+    "batch_ge_8": "head_private_direct_seed",
+    "batch_lt_8": "exact_native"
+  },
+  "fallback": "exact_native"
+}

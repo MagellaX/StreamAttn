@@ -1,0 +1,76 @@
+{
+  "schema": "streamattn.seed_only_route_bundle.v1",
+  "bundle_id": "qwen25_3b_32k_fp16_b8_seed_only_8layer_l2_s416_v1",
+  "model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "dtype": "fp16",
+  "tensor_space": "post_rope",
+  "kv_len_bucket": 32768,
+  "min_batch": 8,
+  "mode": "multi_layer_seed_only_bundle",
+  "backend_mode": "gate0_seed_only_batched",
+  "seed_only_policy_names": [
+    "qwen25_3b_l0_32k_seed_only_batched",
+    "qwen25_3b_l2_s416_32k_seed_only_batched",
+    "qwen25_3b_l14_32k_seed_only_batched",
+    "qwen25_3b_l16_32k_seed_only_batched",
+    "qwen25_3b_l24_32k_seed_only_batched",
+    "qwen25_3b_l26_32k_seed_only_batched",
+    "qwen25_3b_l27_32k_seed_only_batched",
+    "qwen25_3b_l35_32k_seed_only_batched"
+  ],
+  "seed_only_layers": [
+    0,
+    2,
+    14,
+    16,
+    24,
+    26,
+    27,
+    35
+  ],
+  "layer_seed_overrides": [
+    {
+      "layer_id": 2,
+      "block_size": 32,
+      "sink_blocks": 2,
+      "recent_blocks": 3,
+      "middle_seed_blocks": 8,
+      "seed_tokens": 416
+    }
+  ],
+  "exact_native_layers": "all non-listed layers",
+  "safety": {
+    "validation": "actual_model_decode_teacher_forced_coupled_top_p_mixed_validated_prompts",
+    "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",
+    "steps": 32,
+    "top1_changes": 0,
+    "sample_token_changed_count": 0,
+    "min_top5_overlap": 4,
+    "max_kl_observed": 9.944393968908116e-05,
+    "max_target_logprob_delta_observed": 0.0002730809501372278,
+    "gates": {
+      "max_kl": 0.0001,
+      "max_logprob_delta": 0.002,
+      "min_topk_overlap": 4,
+      "sample_token_changes": 0,
+      "top1_changes": 0
+    },
+    "passed": true,
+    "scope": "validated buckets only; stress-risk buckets still route exact in product-strict mode"
+  },
+  "timing": {
+    "dense_decode_ms_per_token": 28.652148968749902,
+    "streamattn_decode_ms_per_token": 23.89866081250025,
+    "speedup_vs_dense_decode": 1.198901862892808,
+    "previous_best_7layer_direct_o_proj_streamattn_ms_per_token": 24.46827,
+    "previous_best_7layer_direct_o_proj_speedup_vs_dense_decode": 1.15621
+  },
+  "runtime_config": {
+    "native_routed_cache": true,
+    "fused_rope_append_seed": true,
+    "packed_qkv_projection": true,
+    "direct_o_proj": true
+  },
+  "status": "green",
+  "fallback": "exact_native"
+}

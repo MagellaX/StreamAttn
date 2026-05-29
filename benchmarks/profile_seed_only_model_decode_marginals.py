@@ -17,6 +17,7 @@ updates, MLPs, norms, and non-routed layers.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 from dataclasses import dataclass
@@ -34,14 +35,26 @@ from benchmarks.profile_seed_only_route_bundle_decode import (  # noqa: E402
     _batch_tokens,
     _compare_decode_logits,
     _decode_loop,
+    _native_cache_from_hf_cache,
+    _native_cache_mask_bookkeeping,
+    _native_cache_max_len,
     _patched_seed_only_decode_modules,
     _prefill,
     _safety_decision,
     _warmup_decode,
+    parse_layer_id_set,
 )
 from benchmarks.profile_real_llm_gate1_heads import _import_transformers  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype  # noqa: E402
 from stream_attention.decode import Gate0SeedOnlyBatchedPolicy  # noqa: E402
+
+
+def _cuda_cleanup() -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
 
 
 @dataclass(frozen=True)
@@ -156,6 +169,13 @@ def _patch_counts(patches) -> Dict[str, Dict[str, Any]]:
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "native_cache_update_calls": patch.native_cache_update_count,
+            "hf_sync_update_calls": patch.hf_sync_update_count,
+            "fused_rope_append_seed": bool(patch.fused_rope_append_seed),
+            "packed_qkv_projection": bool(patch.packed_qkv_projection),
+            "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
+            "direct_o_proj": bool(patch.direct_o_proj),
+            "triton_o_proj": bool(patch.triton_o_proj),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -265,17 +285,38 @@ def _run_case(
     args: argparse.Namespace,
 ) -> Dict[str, Any]:
     bundle = _bundle_for_layers(args, case.layers)
+    _cuda_cleanup()
     prefill = _prefill(model, tokens)
-    with _patched_seed_only_decode_modules(model, bundle) as patches:
-        seed = _decode_loop(
-            model=model,
-            past_key_values=prefill.past_key_values,
-            attention_mask=tokens["attention_mask"],
-            first_token=first_token,
-            fixed_input_tokens=dense_input_tokens,
-            prompt_rows=prompt_rows,
-            args=args,
+    native_cache = None
+    if args.native_routed_cache:
+        native_cache = _native_cache_from_hf_cache(
+            prefill.past_key_values,
+            bundle,
+            max_len=_native_cache_max_len(tokens, args),
+            attach_hf_views=args.native_cache_attach_hf_views,
         )
+    with _native_cache_mask_bookkeeping(prefill.past_key_values, enabled=args.native_routed_cache):
+        with _patched_seed_only_decode_modules(
+            model,
+            bundle,
+            native_cache=native_cache,
+            native_cache_hf_sync_layers=parse_layer_id_set(args.native_cache_hf_sync_layers),
+            native_attention_module=args.native_attention_module,
+            fused_rope_append_seed=args.fused_rope_append_seed,
+            packed_qkv_projection=args.packed_qkv_projection,
+            packed_qkv_fused_input=args.packed_qkv_fused_input,
+            direct_o_proj=args.direct_o_proj,
+            triton_o_proj=args.triton_o_proj,
+        ) as patches:
+            seed = _decode_loop(
+                model=model,
+                past_key_values=prefill.past_key_values,
+                attention_mask=tokens["attention_mask"],
+                first_token=first_token,
+                fixed_input_tokens=dense_input_tokens,
+                prompt_rows=prompt_rows,
+                args=args,
+            )
     result = _case_metric(
         case=case,
         dense_total_ms=dense_total_ms,
@@ -285,10 +326,11 @@ def _run_case(
         prompt_rows=prompt_rows,
         args=args,
     )
-    prefill = None
-    seed = None
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    del prefill
+    del seed
+    del native_cache
+    del bundle
+    _cuda_cleanup()
     return result
 
 
@@ -331,9 +373,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             bundle=None,
         )
         warmup["dense_ms_per_token"] = dense_warmup["decode"]["ms_per_token"]
-        dense_warmup = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        del dense_warmup
+        _cuda_cleanup()
 
         union_layers = sorted(set(layer for case in cases for layer in case.layers))
         print(f"[marginals] warmup seed route for union layers {union_layers}", flush=True)
@@ -346,9 +387,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         )
         warmup["seed_union_ms_per_token"] = seed_warmup["decode"]["ms_per_token"]
         warmup["seed_union_patch_counts"] = seed_warmup["patch_counts"]
-        seed_warmup = None
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        del seed_warmup
+        _cuda_cleanup()
 
     print("[marginals] dense reference prefill/decode", flush=True)
     dense_prefill = _prefill(model, tokens)
@@ -362,9 +402,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         prompt_rows=prompt_rows,
         args=args,
     )
-    dense_prefill = None
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    del dense_prefill
+    _cuda_cleanup()
 
     case_results: List[Dict[str, Any]] = []
     for case in cases:
@@ -412,6 +451,17 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "recent_blocks": args.recent_blocks,
             "middle_seed_blocks": args.middle_seed_blocks,
             "block_order": args.block_order,
+        },
+        "runtime_config": {
+            "native_routed_cache": bool(args.native_routed_cache),
+            "native_cache_hf_sync_layers": sorted(parse_layer_id_set(args.native_cache_hf_sync_layers)),
+            "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
+            "native_attention_module": bool(args.native_attention_module),
+            "fused_rope_append_seed": bool(args.fused_rope_append_seed),
+            "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
+            "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
+            "direct_o_proj": bool(args.direct_o_proj),
+            "triton_o_proj": bool(args.triton_o_proj),
         },
         "base_layers": base_layers,
         "candidate_layers": candidate_layers,
@@ -465,6 +515,16 @@ def main() -> None:
     parser.add_argument("--target-speedups", default="1.05,1.10,1.20")
     parser.add_argument("--use-safetensors", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--trust-remote-code", action="store_true")
+    parser.add_argument("--explicit-cache-position", action="store_true")
+    parser.add_argument("--native-routed-cache", action="store_true")
+    parser.add_argument("--native-cache-hf-sync-layers", default="")
+    parser.add_argument("--native-cache-attach-hf-views", action="store_true")
+    parser.add_argument("--native-attention-module", action="store_true")
+    parser.add_argument("--fused-rope-append-seed", action="store_true")
+    parser.add_argument("--packed-qkv-projection", action="store_true")
+    parser.add_argument("--packed-qkv-fused-input", action="store_true")
+    parser.add_argument("--direct-o-proj", action="store_true")
+    parser.add_argument("--triton-o-proj", action="store_true")
     parser.add_argument("--output-json", default="")
     args = parser.parse_args()
 

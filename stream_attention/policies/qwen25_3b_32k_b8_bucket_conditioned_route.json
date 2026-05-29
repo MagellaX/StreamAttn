@@ -7,9 +7,10 @@
   "batch": 8,
   "default_validated_route": {
     "mode": "seed_only_bundle",
-    "seed_only_layers": [0, 14, 16, 24, 26, 27, 35],
+    "seed_only_layers": [0, 2, 14, 16, 24, 26, 27, 35],
     "policy_names": [
       "qwen25_3b_l0_32k_seed_only_batched",
+      "qwen25_3b_l2_s416_32k_seed_only_batched",
       "qwen25_3b_l14_32k_seed_only_batched",
       "qwen25_3b_l16_32k_seed_only_batched",
       "qwen25_3b_l24_32k_seed_only_batched",
@@ -44,6 +45,9 @@
   "evidence": {
     "attention_coverage": "artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/l24_l26_l27_b8_h100_summary.json",
     "repair_sweep": "artifacts/gate0/qwen25_3b_32k_b8_repair_sweep/minimal_8step_h100.json",
+    "validated_route": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",
+    "validated_route_speedup": 1.198901862892808,
+    "validated_route_kl_max": 9.944393968908116e-05,
     "strict_base_score": 973.14,
     "l26_l27_s640_score": 1026.68,
     "minus_l26_l27_score": 224.41,

@@ -12,11 +12,12 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 
-QWEN25_3B_FULL_SEED_LAYERS: Tuple[int, ...] = (0, 14, 16, 24, 26, 27, 35)
+QWEN25_3B_FULL_SEED_LAYERS: Tuple[int, ...] = (0, 2, 14, 16, 24, 26, 27, 35)
 QWEN25_3B_REDUCED_STRESS_SEED_LAYERS: Tuple[int, ...] = (0, 14, 16, 24, 35)
 
 QWEN25_3B_POLICY_BY_LAYER: Dict[int, str] = {
     0: "qwen25_3b_l0_32k_seed_only_batched",
+    2: "qwen25_3b_l2_s416_32k_seed_only_batched",
     14: "qwen25_3b_l14_32k_seed_only_batched",
     16: "qwen25_3b_l16_32k_seed_only_batched",
     24: "qwen25_3b_l24_32k_seed_only_batched",
@@ -143,7 +144,7 @@ def qwen25_3b_bucket_route_decision(
             if bucket in QWEN25_3B_VALIDATED_DEFAULT_BUCKETS
             else "bucket_not_validated_by_stress_or_default_gate"
         ),
-        evidence="Qwen3B strict bundle passed previous mixed prompt gate, but not adversarial stress buckets",
+        evidence="Qwen3B L2-S416 8-layer route passed the validated-bucket 32-step gate, but not adversarial stress buckets",
     )
 
 
