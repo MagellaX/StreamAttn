@@ -68,6 +68,8 @@ def _metric_summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "overlap_with_fixed_blocks_mean": mean("overlap_with_fixed_blocks"),
         "overlap_with_qk_block_max_blocks_mean": mean("overlap_with_qk_block_max_blocks"),
         "qk_block_overlap_ratio_mean": sum(qk_overlap_ratios) / len(qk_overlap_ratios) if qk_overlap_ratios else 0.0,
+        "selector_estimated_dot_tokens_mean": mean("selector_estimated_dot_tokens"),
+        "selector_estimated_dot_token_ratio_mean": mean("selector_estimated_dot_token_ratio"),
         "top_recommendation": top_recommendation,
         "recommendation_counts": dict(sorted(recommendations.items())),
     }

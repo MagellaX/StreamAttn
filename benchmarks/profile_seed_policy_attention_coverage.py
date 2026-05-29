@@ -658,6 +658,18 @@ def _register_coverage_hooks(
                                 ],
                                 "fixed_block_count": selector_payload["fixed_block_count"],
                                 "qk_block_max_block_count": selector_payload["qk_block_max_block_count"],
+                                "selector_proxy_dot_tokens": selector_payload.get(
+                                    "selector_proxy_dot_tokens", 0.0
+                                ),
+                                "selector_refine_dot_tokens": selector_payload.get(
+                                    "selector_refine_dot_tokens", 0.0
+                                ),
+                                "selector_estimated_dot_tokens": selector_payload.get(
+                                    "selector_estimated_dot_tokens", 0.0
+                                ),
+                                "selector_estimated_dot_token_ratio": selector_payload.get(
+                                    "selector_estimated_dot_token_ratio", 0.0
+                                ),
                                 **metrics,
                             }
                         )

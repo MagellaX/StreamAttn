@@ -137,8 +137,11 @@ def main(
         "fixed_policy,block_mean_proxy,block_l2_bound_proxy,"
         "support_top2_norm,support_top4_norm,support_top2_norm_refine16,"
         "support_top2_norm_refine32,support_top4_norm_refine16,"
-        "support_top4_norm_refine32,qk_block_max,exact_mass_oracle,"
-        "value_residual_oracle"
+        "support_top4_norm_refine32,support_extreme2_mean,"
+        "support_extreme4_mean,support_extreme2_mean_refine32,"
+        "support_extreme4_mean_refine32,support_rand4,support_rand8,"
+        "support_rand4_refine32,support_rand8_refine32,qk_block_max,"
+        "exact_mass_oracle,value_residual_oracle"
     ),
     failure_artifact: str = "artifacts/gate0/qwen25_3b_32k_b8_model_decode/strict7_stress_pack_left_b8_h100.json",
     include_step0: bool = True,

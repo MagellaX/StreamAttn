@@ -27,6 +27,14 @@ SELECTOR_PROFILES = frozenset(
         "support_top2_norm_refine32",
         "support_top4_norm_refine16",
         "support_top4_norm_refine32",
+        "support_extreme2_mean",
+        "support_extreme4_mean",
+        "support_extreme2_mean_refine32",
+        "support_extreme4_mean_refine32",
+        "support_rand4",
+        "support_rand8",
+        "support_rand4_refine32",
+        "support_rand8_refine32",
         "support_block_oracle",
         "qk_block_max",
         "exact_mass_oracle",
@@ -209,6 +217,67 @@ def support_top_norm_scores(scores: torch.Tensor, k: torch.Tensor, *, block_size
     return out
 
 
+def support_extreme_mean_scores(q: torch.Tensor, k: torch.Tensor, *, block_size: int, top_p: int) -> Dict[int, float]:
+    """Score blocks from a tiny farthest-from-mean support-key sketch.
+
+    The selected keys are query-independent block summaries.  At runtime this
+    corresponds to storing ``top_p`` extreme keys per block and evaluating only
+    those keys against the decode query.
+    """
+
+    out: Dict[int, float] = {}
+    seq_len = int(k.shape[0])
+    num_blocks = math.ceil(seq_len / block_size)
+    q_float = q.float()
+    for block in range(num_blocks):
+        start = block * block_size
+        end = min(seq_len, start + block_size)
+        if start >= end:
+            continue
+        k_block = k[start:end].float()
+        mean = k_block.mean(dim=0, keepdim=True)
+        distances = torch.linalg.vector_norm(k_block - mean, dim=-1)
+        count = min(int(top_p), end - start)
+        local = torch.topk(distances, k=count).indices
+        out[block] = float(torch.matmul(k_block[local], q_float).max().item())
+    return out
+
+
+def _deterministic_directions(dim: int, count: int, *, device: torch.device) -> torch.Tensor:
+    """Return stable pseudo-random directions without global RNG state."""
+
+    rows = torch.arange(1, int(count) + 1, device=device, dtype=torch.float32)[:, None]
+    cols = torch.arange(1, int(dim) + 1, device=device, dtype=torch.float32)[None, :]
+    dirs = torch.sin(rows * cols * 12.9898) + torch.cos(rows * cols * 78.233)
+    return torch.nn.functional.normalize(dirs, dim=-1)
+
+
+def support_random_direction_scores(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    *,
+    block_size: int,
+    directions: int,
+) -> Dict[int, float]:
+    """Score blocks from support keys picked by fixed random directions."""
+
+    out: Dict[int, float] = {}
+    seq_len = int(k.shape[0])
+    num_blocks = math.ceil(seq_len / block_size)
+    q_float = q.float()
+    dirs = _deterministic_directions(int(k.shape[-1]), int(directions), device=k.device)
+    for block in range(num_blocks):
+        start = block * block_size
+        end = min(seq_len, start + block_size)
+        if start >= end:
+            continue
+        k_block = k[start:end].float()
+        local = torch.matmul(k_block, dirs.T).argmax(dim=0)
+        unique_local = torch.unique(local, sorted=True)
+        out[block] = float(torch.matmul(k_block[unique_local], q_float).max().item())
+    return out
+
+
 def block_value_scores(probs: torch.Tensor, v: torch.Tensor, *, block_size: int) -> Dict[int, float]:
     scores: Dict[int, float] = {}
     seq_len = int(probs.shape[0])
@@ -237,6 +306,60 @@ def refined_block_scores(
         )[:candidate_blocks]
     }
     return {block: (exact_qk_scores[block] if block in candidates else -float("inf")) for block in proxy_scores}
+
+
+def selector_cost_estimate(
+    selector: str,
+    *,
+    seq_len: int,
+    block_size: int,
+) -> Dict[str, float]:
+    """Estimate query-dot token work for selector comparisons."""
+
+    num_blocks = math.ceil(seq_len / block_size)
+    if selector == "fixed_policy":
+        proxy_tokens = 0
+        refine_tokens = 0
+    elif selector == "qk_block_max":
+        proxy_tokens = seq_len
+        refine_tokens = 0
+    elif selector in {"block_mean_proxy", "block_l2_bound_proxy"}:
+        proxy_tokens = num_blocks
+        refine_tokens = 0
+    elif selector.startswith("support_top2") or selector.startswith("support_extreme2"):
+        proxy_tokens = num_blocks * 2
+        refine_tokens = (
+            min(32, num_blocks) * block_size
+            if selector.endswith("_refine32")
+            else min(16, num_blocks) * block_size
+            if selector.endswith("_refine16")
+            else 0
+        )
+    elif selector.startswith("support_top4") or selector.startswith("support_extreme4"):
+        proxy_tokens = num_blocks * 4
+        refine_tokens = (
+            min(32, num_blocks) * block_size
+            if selector.endswith("_refine32")
+            else min(16, num_blocks) * block_size
+            if selector.endswith("_refine16")
+            else 0
+        )
+    elif selector.startswith("support_rand4"):
+        proxy_tokens = num_blocks * 4
+        refine_tokens = min(32, num_blocks) * block_size if selector.endswith("_refine32") else 0
+    elif selector.startswith("support_rand8"):
+        proxy_tokens = num_blocks * 8
+        refine_tokens = min(32, num_blocks) * block_size if selector.endswith("_refine32") else 0
+    else:
+        proxy_tokens = seq_len
+        refine_tokens = 0
+    estimated = proxy_tokens + refine_tokens
+    return {
+        "selector_proxy_dot_tokens": float(proxy_tokens),
+        "selector_refine_dot_tokens": float(refine_tokens),
+        "selector_estimated_dot_tokens": float(estimated),
+        "selector_estimated_dot_token_ratio": 0.0 if seq_len <= 0 else float(estimated) / float(seq_len),
+    }
 
 
 def select_middle_blocks(
@@ -307,6 +430,10 @@ def selector_seed_masks(
     l2_bound_scores = block_l2_bound_proxy_scores(q, k, scores, block_size=block_size)
     top2_scores = support_top_norm_scores(scores, k, block_size=block_size, top_p=2)
     top4_scores = support_top_norm_scores(scores, k, block_size=block_size, top_p=4)
+    extreme2_scores = support_extreme_mean_scores(q, k, block_size=block_size, top_p=2)
+    extreme4_scores = support_extreme_mean_scores(q, k, block_size=block_size, top_p=4)
+    rand4_scores = support_random_direction_scores(q, k, block_size=block_size, directions=4)
+    rand8_scores = support_random_direction_scores(q, k, block_size=block_size, directions=8)
     exact_mass_scores = block_scores_from_values(probs, block_size=block_size)
     support_mass_scores = block_scores_from_values(
         probs * support_values - 0.25 * probs * distractor_values,
@@ -340,6 +467,30 @@ def selector_seed_masks(
         ),
         "support_top4_norm_refine32": refined_block_scores(
             proxy_scores=top4_scores,
+            exact_qk_scores=qk_scores,
+            candidate_blocks=32,
+        ),
+        "support_extreme2_mean": extreme2_scores,
+        "support_extreme4_mean": extreme4_scores,
+        "support_extreme2_mean_refine32": refined_block_scores(
+            proxy_scores=extreme2_scores,
+            exact_qk_scores=qk_scores,
+            candidate_blocks=32,
+        ),
+        "support_extreme4_mean_refine32": refined_block_scores(
+            proxy_scores=extreme4_scores,
+            exact_qk_scores=qk_scores,
+            candidate_blocks=32,
+        ),
+        "support_rand4": rand4_scores,
+        "support_rand8": rand8_scores,
+        "support_rand4_refine32": refined_block_scores(
+            proxy_scores=rand4_scores,
+            exact_qk_scores=qk_scores,
+            candidate_blocks=32,
+        ),
+        "support_rand8_refine32": refined_block_scores(
+            proxy_scores=rand8_scores,
             exact_qk_scores=qk_scores,
             candidate_blocks=32,
         ),
@@ -377,5 +528,6 @@ def selector_seed_masks(
             "overlap_with_qk_block_max_blocks": len(set(blocks) & set(qk_blocks)),
             "qk_block_max_block_count": len(qk_blocks),
             "fixed_block_count": len(fixed_blocks),
+            **selector_cost_estimate(selector, seq_len=seq_len, block_size=block_size),
         }
     return out

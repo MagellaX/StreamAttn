@@ -407,6 +407,54 @@ def test_attention_coverage_qk_selector_keeps_negative_score_ordering():
     assert masks["qk_block_max"]["selected_blocks"] == [0, 3, 1]
 
 
+def test_attention_coverage_support_extreme_selector_is_query_aware():
+    import torch
+
+    policy = Gate0SeedOnlyBatchedPolicy(
+        policy_id="p0",
+        model_id="m",
+        layer_id=0,
+        block_size=4,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=1,
+        block_order="recent_first",
+    )
+    q = torch.tensor([1.0, 0.0])
+    k = torch.zeros((16, 2))
+    k[4] = torch.tensor([5.0, 0.0])
+    k[5] = torch.tensor([-5.0, 0.0])
+    v = torch.ones((16, 2))
+    scores = k @ q
+    probs = torch.softmax(scores, dim=0)
+    support = torch.zeros(16, dtype=torch.bool)
+    distractor = torch.zeros(16, dtype=torch.bool)
+
+    masks = _selector_seed_masks(
+        q=q,
+        k=k,
+        scores=scores,
+        probs=probs,
+        v=v,
+        support_mask=support,
+        distractor_mask=distractor,
+        policy=policy,
+        selector_profiles=["support_extreme2_mean", "support_extreme2_mean_refine32"],
+    )
+
+    assert masks["support_extreme2_mean"]["selected_blocks"] == [0, 3, 1]
+    assert masks["support_extreme2_mean_refine32"]["selected_blocks"] == [0, 3, 1]
+    assert masks["support_extreme2_mean"]["selector_estimated_dot_token_ratio"] == pytest.approx(0.5)
+    assert masks["support_extreme2_mean_refine32"]["selector_estimated_dot_tokens"] == pytest.approx(24.0)
+
+
+def test_attention_coverage_random_support_selector_is_registered():
+    assert _parse_selector_profiles("support_rand4,support_rand8_refine32") == [
+        "support_rand4",
+        "support_rand8_refine32",
+    ]
+
+
 def test_attention_coverage_hook_input_inference():
     import torch
 
@@ -480,6 +528,8 @@ def test_attention_coverage_summarizer_reports_selector_groups(tmp_path):
                         "delta_collapse": 0.1,
                         "value_residual_ratio": 0.2,
                         "dense_vs_route_attention_js": 0.0,
+                        "selector_estimated_dot_tokens": 16.0,
+                        "selector_estimated_dot_token_ratio": 1.0,
                     },
                 ],
             }
@@ -491,6 +541,8 @@ def test_attention_coverage_summarizer_reports_selector_groups(tmp_path):
 
     assert summary["selector_profiles"] == ["fixed_policy", "qk_block_max"]
     assert {row["selector"] for row in summary["by_selector"]} == {"fixed_policy", "qk_block_max"}
+    qk_summary = next(row for row in summary["by_selector"] if row["selector"] == "qk_block_max")
+    assert qk_summary["selector_estimated_dot_token_ratio_mean"] == pytest.approx(1.0)
 
 
 def test_repair_sweep_builds_focused_variants():

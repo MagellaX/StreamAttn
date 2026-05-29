@@ -2780,6 +2780,86 @@ S416 remains the fastest 32-step validated-bucket product candidate.
 larger fixed L2 seed schedule.
 ```
 
+### Dynamic Selector Proxy Evidence
+
+The next robustness lever is query-aware middle-block selection.  I added
+support-sketch selector proxies and ran the H100 diagnostic on failing stress
+rows for L26/L27:
+
+```text
+artifact:
+  artifacts/gate0/seed_selector_proxy/l26_l27_support_sketch_cost_h100.json
+
+summary:
+  artifacts/gate0/seed_selector_proxy/l26_l27_support_sketch_cost_h100_summary.json
+
+scope:
+  target layers: L26, L27
+  buckets: chat_instruction, json_tool, needle_rag, noisy_neartie
+  routed upstream: [0,14,16,24,26,27,35]
+```
+
+The best cheap candidate was:
+
+```text
+support_rand8_refine32
+```
+
+It stores/evaluates eight deterministic random-direction support keys per
+block, then refines only the top 32 candidate blocks with exact QK.
+
+Selector comparison:
+
+```text
+fixed_policy:
+  mass omitted p95:       0.80542
+  delta collapse p95:     0.25426
+  support out p95:        0.25943
+  value residual p95:     0.90569
+  qk-block overlap:       0.41849
+  estimated QK work:      0.0x qk_block_max
+
+support_extreme4_mean:
+  mass omitted p95:       0.67754
+  delta collapse p95:     0.20386
+  support out p95:        0.20437
+  value residual p95:     0.80014
+  qk-block overlap:       0.78516
+  estimated QK work:      0.125x qk_block_max
+
+support_rand8_refine32:
+  mass omitted p95:       0.62240
+  delta collapse p95:     0.19924
+  support out p95:        0.20442
+  value residual p95:     0.74961
+  qk-block overlap:       0.84440
+  estimated QK work:      0.281x qk_block_max
+
+qk_block_max oracle:
+  mass omitted p95:       0.59394
+  delta collapse p95:     0.20090
+  support out p95:        0.20090
+  value residual p95:     0.74264
+  qk-block overlap:       1.00000
+  estimated QK work:      1.000x
+```
+
+Read:
+
+```text
+support_rand8_refine32 recovers most of the qk_block_max coverage benefit
+while using about 28% of the dense block-max QK token work.
+```
+
+This is the first credible dynamic selector candidate.  It is not yet a product
+route, because selector coverage metrics must be followed by actual stress
+replay.  The next implementation step is:
+
+```text
+run stress replay with selected middle blocks supplied by support_rand8_refine32
+for L26/L27, then compare top1/sample/KL against fixed seed and exact-native.
+```
+
 Packaged artifacts:
 
 ```text
