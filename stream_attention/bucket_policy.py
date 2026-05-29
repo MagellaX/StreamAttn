@@ -144,7 +144,10 @@ def qwen25_3b_bucket_route_decision(
             if bucket in QWEN25_3B_VALIDATED_DEFAULT_BUCKETS
             else "bucket_not_validated_by_stress_or_default_gate"
         ),
-        evidence="Qwen3B L2-S416 8-layer route passed the validated-bucket 32-step gate, but not adversarial stress buckets",
+        evidence=(
+            "Qwen3B L2-S416 8-layer route passed the validated-bucket 32-step gate; "
+            "128-step long-horizon screen stayed top1/sample stable but exceeded max-KL/top-k strictness"
+        ),
     )
 
 

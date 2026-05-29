@@ -2715,6 +2715,71 @@ Do not promote L2 S640 for product speed; S416 is both faster and strict-clean
 on the validated bucket gate.
 ```
 
+### L2 Long-Horizon Boundary
+
+The 32-step gate is the current product-candidate validation scope for the
+validated buckets.  I then ran the same current backend at 128 decode steps to
+test whether L2 widening should become a stronger long-horizon route.
+
+The important result: this is not an L2 seed-size problem.  All variants stayed
+token-stable, but none passed the stricter 128-step max-KL/top-k gate:
+
+```text
+S416:
+  speedup:        1.17496x
+  top1 changes:   0 / 1024
+  sample changes: 0 / 1024
+  KL max:         1.03462e-04
+  KL p99:         8.44426e-05
+  top5 min:       3 / 5
+  decision:       fail by max-KL/top-k only
+
+S448:
+  speedup:        1.20902x
+  top1 changes:   0 / 1024
+  sample changes: 0 / 1024
+  KL max:         1.04841e-04
+  KL p99:         8.62089e-05
+  top5 min:       3 / 5
+  decision:       fail by max-KL/top-k only
+
+S512:
+  speedup:        1.18937x
+  top1 changes:   0 / 1024
+  sample changes: 0 / 1024
+  KL max:         1.05663e-04
+  KL p99:         8.78972e-05
+  top5 min:       3 / 5
+  decision:       fail by max-KL/top-k only
+
+7-layer baseline:
+  speedup:        1.14907x
+  top1 changes:   0 / 1024
+  sample changes: 0 / 1024
+  KL max:         1.22497e-04
+  KL p99:         7.87004e-05
+  top5 min:       3 / 5
+  decision:       fail by max-KL/top-k only
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s448_recent_current_backend_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s512_balanced_current_backend_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/strict_7layer_current_backend_b8_128step_h100.json
+```
+
+Conclusion:
+
+```text
+Stop widening L2 for this route.
+S416 remains the fastest 32-step validated-bucket product candidate.
+128-step strict promotion requires a different robustness mechanism, not a
+larger fixed L2 seed schedule.
+```
+
 Packaged artifacts:
 
 ```text

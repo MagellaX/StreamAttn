@@ -48,6 +48,46 @@
     "validated_route": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",
     "validated_route_speedup": 1.198901862892808,
     "validated_route_kl_max": 9.944393968908116e-05,
+    "validated_route_scope": "32-step validated-bucket product candidate",
+    "long_horizon_128": {
+      "s416": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json",
+        "speedup": 1.174961699204247,
+        "kl_max": 0.0001034615925163962,
+        "kl_p99": 0.00008444261038675904,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": false
+      },
+      "s448": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s448_recent_current_backend_b8_128step_h100.json",
+        "speedup": 1.209019371992274,
+        "kl_max": 0.00010484123777132481,
+        "kl_p99": 0.00008620885637355968,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": false
+      },
+      "s512": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s512_balanced_current_backend_b8_128step_h100.json",
+        "speedup": 1.189367958728816,
+        "kl_max": 0.00010566334094619378,
+        "kl_p99": 0.00008789723506197333,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": false
+      },
+      "strict_7layer": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/strict_7layer_current_backend_b8_128step_h100.json",
+        "speedup": 1.1490730267324754,
+        "kl_max": 0.00012249669816810638,
+        "kl_p99": 0.00007870042463764548,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": false
+      },
+      "conclusion": "L2 widening is not the blocker; 128-step max-KL/top-k strictness fails even for the 7-layer route while token identity remains stable"
+    },
     "strict_base_score": 973.14,
     "l26_l27_s640_score": 1026.68,
     "minus_l26_l27_score": 224.41,

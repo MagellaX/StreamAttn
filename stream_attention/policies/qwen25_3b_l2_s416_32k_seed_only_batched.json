@@ -27,7 +27,8 @@
   },
   "safety": {
     "gate": "distribution_aware",
-    "status": "validated_bucket_bundle_green",
+    "status": "validated_bucket_32step_green",
+    "scope": "validated buckets only; 32-step product candidate, not 128-step max-KL strict",
     "top1_must_match": true,
     "min_top5_overlap": 4,
     "max_kl": 0.0001,
@@ -53,6 +54,17 @@
       "kl_max": 9.944393968908116e-05,
       "target_logprob_delta_max": 0.0002730809501372278,
       "reference_top1_margin_min": 5.578125
+    },
+    "actual_model_bundle_b8_128": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json",
+      "cases": 1024,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "top5_overlap_min": 3,
+      "kl_max": 0.0001034615925163962,
+      "kl_p99": 0.00008444261038675904,
+      "passed": false,
+      "failure_reason": "128-step max-KL/top-k gate exceeded; no token divergence"
     }
   },
   "timing": {

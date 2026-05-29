@@ -208,6 +208,8 @@
       "policy_id": "qwen25_3b_l2_s416_32k_fp16_b8_seed_only_v1",
       "aliases": [],
       "status": "green",
+      "validation_scope": "validated_buckets_32step",
+      "long_horizon_128_status": "token_stable_max_kl_not_strict",
       "model_id": "Qwen/Qwen2.5-3B-Instruct",
       "layer_id": 2,
       "mode": "all_seed_only",

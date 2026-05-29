@@ -56,7 +56,19 @@
       "top1_changes": 0
     },
     "passed": true,
-    "scope": "validated buckets only; stress-risk buckets still route exact in product-strict mode"
+    "scope": "validated buckets only; stress-risk buckets still route exact in product-strict mode",
+    "long_horizon_128": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json",
+      "steps": 128,
+      "cases": 1024,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "min_top5_overlap": 3,
+      "max_kl_observed": 0.0001034615925163962,
+      "kl_p99": 0.00008444261038675904,
+      "passed": false,
+      "failure_reason": "max-KL/top-k only; no top1 or sample divergence"
+    }
   },
   "timing": {
     "dense_decode_ms_per_token": 28.652148968749902,
@@ -71,6 +83,6 @@
     "packed_qkv_projection": true,
     "direct_o_proj": true
   },
-  "status": "green",
+  "status": "green_32step",
   "fallback": "exact_native"
 }
