@@ -48,6 +48,7 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd,
     gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd,
 )
+from stream_attention.kernels.qwen_o_proj_triton import qwen_o_proj_triton_forward  # noqa: E402
 
 _SEED_OVERRIDE_ALIASES = {
     "block": "block_size",
@@ -593,6 +594,7 @@ class _SeedOnlyQwenDecodePatch:
         packed_qkv_projection: bool = False,
         packed_qkv_fused_input: bool = False,
         direct_o_proj: bool = False,
+        triton_o_proj: bool = False,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -603,6 +605,7 @@ class _SeedOnlyQwenDecodePatch:
         self.packed_qkv_projection = packed_qkv_projection
         self.packed_qkv_fused_input = packed_qkv_fused_input
         self.direct_o_proj = direct_o_proj
+        self.triton_o_proj = triton_o_proj
         self.call_count = 0
         self.seed_call_count = 0
         self.native_cache_update_count = 0
@@ -658,6 +661,12 @@ class _SeedOnlyQwenDecodePatch:
         return F.linear(hidden_states, self._packed_qkv_weight, self._packed_qkv_bias)
 
     def _o_projection(self, module: torch.nn.Module, attn_output: torch.Tensor) -> torch.Tensor:
+        if self.triton_o_proj:
+            return qwen_o_proj_triton_forward(
+                attn_output,
+                module.o_proj.weight,
+                self._linear_bias(module.o_proj),
+            )
         if self.direct_o_proj:
             return F.linear(attn_output, module.o_proj.weight, self._linear_bias(module.o_proj))
         return module.o_proj(attn_output)
@@ -1066,6 +1075,7 @@ def _patched_seed_only_decode_modules(
     packed_qkv_projection: bool = False,
     packed_qkv_fused_input: bool = False,
     direct_o_proj: bool = False,
+    triton_o_proj: bool = False,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1088,6 +1098,7 @@ def _patched_seed_only_decode_modules(
             packed_qkv_projection=effective_packed_qkv_projection,
             packed_qkv_fused_input=packed_qkv_fused_input,
             direct_o_proj=direct_o_proj,
+            triton_o_proj=triton_o_proj,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1225,6 +1236,7 @@ def _warmup_decode(
             packed_qkv_projection=args.packed_qkv_projection,
             packed_qkv_fused_input=args.packed_qkv_fused_input,
             direct_o_proj=args.direct_o_proj,
+            triton_o_proj=args.triton_o_proj,
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1244,6 +1256,7 @@ def _warmup_decode(
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "direct_o_proj": bool(patch.direct_o_proj),
+            "triton_o_proj": bool(patch.triton_o_proj),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1448,6 +1461,7 @@ def _empty_route_bundle_summary(
         "packed_qkv_projection": False,
         "packed_qkv_fused_input": False,
         "direct_o_proj": False,
+        "triton_o_proj": False,
         "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
         "native_routed_cache": {"enabled": False},
         "candidate_backend": "exact_native",
@@ -1586,6 +1600,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 packed_qkv_projection=args.packed_qkv_projection,
                 packed_qkv_fused_input=args.packed_qkv_fused_input,
                 direct_o_proj=args.direct_o_proj,
+                triton_o_proj=args.triton_o_proj,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -1611,6 +1626,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "direct_o_proj": bool(patch.direct_o_proj),
+            "triton_o_proj": bool(patch.triton_o_proj),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1639,6 +1655,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
             "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
             "direct_o_proj": bool(args.direct_o_proj),
+            "triton_o_proj": bool(args.triton_o_proj),
             "allow_mixed_seed_configs": bool(args.allow_mixed_seed_configs),
             "native_routed_cache": native_cache.summary() if native_cache is not None else {"enabled": False},
             "candidate_backend": "seed_only_bundle",
@@ -1819,6 +1836,14 @@ def main() -> None:
         "--direct-o-proj",
         action="store_true",
         help="Apply routed attention output projection with direct F.linear instead of module o_proj dispatch.",
+    )
+    parser.add_argument(
+        "--triton-o-proj",
+        action="store_true",
+        help=(
+            "Experimental: apply routed decode output projection with a StreamAttn Triton "
+            "kernel for the [batch,1,hidden] shape."
+        ),
     )
     parser.add_argument(
         "--allow-mixed-seed-configs",

@@ -1664,6 +1664,71 @@ layers.  It should either:
   2. build a lower-level fused output-projection/custom decode-GEMV path.
 ```
 
+### Triton o_proj Decode-GEMV Floor
+
+The custom decode-GEMV risk was tested directly before running a full model
+route.  The new optional path is:
+
+```text
+--triton-o-proj
+```
+
+It applies Qwen `o_proj` with a StreamAttn Triton kernel for the decode-only
+shape:
+
+```text
+attn_output: [B, 1, hidden]
+weight:      [hidden, hidden]
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen_o_proj_triton_b8_h100.json
+```
+
+H100 microbenchmark, Qwen3B shape:
+
+```text
+B:      8
+hidden: 2048
+dtype:  fp16
+bias:   false
+
+torch F.linear:          0.01965 ms
+best Triton o_proj:      0.05437 ms
+best Triton tile:        BLOCK_M=16, BLOCK_N=64, BLOCK_K=64
+Triton speedup:          0.36x
+max abs error:           0
+```
+
+Important low-level finding:
+
+```text
+Triton tl.dot requires M/N/K tile sizes >= 16.
+```
+
+So B8 decode must be padded into at least a 16-row tile internally.  That makes
+the custom output-projection path launch- and tile-overhead dominated for this
+shape.  It is correct, but it is not competitive with cuBLAS-backed
+`F.linear`.
+
+Decision:
+
+```text
+Do not promote --triton-o-proj.
+Do not run the full model route through a known-losing o_proj kernel.
+Keep direct F.linear o_proj as the current best explicit output path.
+```
+
+Implication:
+
+```text
+The output projection is not the next standalone kernel win.
+The next lower-level path must fuse projection with adjacent routed work or
+increase routed coverage; a standalone decode-GEMV kernel loses to PyTorch.
+```
+
 ### L2 S640 8-Layer Candidate Route
 
 The route-optimizer branch tested whether the known borderline L2 layer can be
