@@ -69,6 +69,13 @@ _SEED_OVERRIDE_ALIASES = {
     "middle_seed_blocks": "middle_seed_blocks",
 }
 
+_KERNEL_TUNABLE_OVERRIDE_ALIASES = {
+    "warps": "num_warps",
+    "num_warps": "num_warps",
+    "stages": "num_stages",
+    "num_stages": "num_stages",
+}
+
 
 def parse_layer_seed_overrides(text: str) -> Dict[int, Dict[str, int]]:
     """Parse per-layer seed configs.
@@ -134,6 +141,57 @@ def parse_layer_seed_overrides(text: str) -> Dict[int, Dict[str, int]]:
     return overrides
 
 
+def parse_layer_kernel_tunable_overrides(text: str) -> Dict[int, Dict[str, int]]:
+    """Parse per-layer kernel launch tunables.
+
+    Format examples:
+
+        35:warps=8,stages=2
+        0:8,2;35:num_warps=8,num_stages=2
+    """
+
+    overrides: Dict[int, Dict[str, int]] = {}
+    if not text.strip():
+        return overrides
+    for spec in text.split(";"):
+        spec = spec.strip()
+        if not spec:
+            continue
+        if ":" not in spec:
+            raise ValueError(f"invalid layer kernel override {spec!r}; expected LAYER:CONFIG")
+        layer_text, config_text = spec.split(":", 1)
+        layer_id = int(layer_text.strip())
+        if layer_id < 0:
+            raise ValueError("layer kernel override ids must be non-negative")
+        config_text = config_text.strip()
+        if not config_text:
+            raise ValueError(f"missing kernel tunables for layer {layer_id}")
+        config: Dict[str, int] = {}
+        if "=" not in config_text:
+            values = [int(part.strip()) for part in config_text.split(",") if part.strip()]
+            if len(values) != 2:
+                raise ValueError(
+                    f"positional kernel override for layer {layer_id} needs 2 integers"
+                )
+            config = {"num_warps": values[0], "num_stages": values[1]}
+        else:
+            for part in config_text.split(","):
+                if not part.strip():
+                    continue
+                if "=" not in part:
+                    raise ValueError(f"invalid kernel override field {part!r}")
+                key, value = part.split("=", 1)
+                field = _KERNEL_TUNABLE_OVERRIDE_ALIASES.get(key.strip())
+                if field is None:
+                    raise ValueError(f"unknown kernel override field {key.strip()!r}")
+                config[field] = int(value.strip())
+        for field, value in config.items():
+            if value <= 0:
+                raise ValueError(f"{field} override for layer {layer_id} must be positive")
+        overrides[layer_id] = config
+    return overrides
+
+
 def parse_layer_id_set(text: str) -> Set[int]:
     layers: Set[int] = set()
     if not text.strip():
@@ -175,6 +233,8 @@ def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
     args.native_attention_module = False
     args.direct_o_proj = True
     args.triton_o_proj = False
+    if not getattr(args, "layer_kernel_overrides", ""):
+        args.layer_kernel_overrides = "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
     args.allow_mixed_seed_configs = True
 
 
@@ -276,6 +336,56 @@ def apply_layer_seed_overrides(bundle, override_text: str):
             f"{config.get('middle_seed_blocks', policy.middle_seed_blocks)}"
         )
         updated = replace(policy, **config, policy_id=f"{policy.policy_id}_{suffix}")
+        policies.append(updated)
+        summaries.append(
+            {
+                "layer_id": int(updated.layer_id),
+                "old": _policy_seed_config(policy),
+                "new": _policy_seed_config(updated),
+            }
+        )
+    return type(bundle)(
+        policy_names=[policy.policy_id for policy in policies],
+        policies=policies,
+        artifacts=bundle.artifacts,
+        layer_ids=[int(policy.layer_id) for policy in policies],
+    ), summaries
+
+
+def apply_policy_kernel_tunable_overrides(
+    bundle,
+    *,
+    num_warps: int,
+    num_stages: int,
+    enabled: bool,
+    layer_override_text: str = "",
+):
+    layer_overrides = parse_layer_kernel_tunable_overrides(layer_override_text)
+    if not enabled and not layer_overrides:
+        return bundle, []
+    num_warps = int(num_warps)
+    num_stages = int(num_stages)
+    if num_warps <= 0 or num_stages <= 0:
+        raise ValueError("kernel tunable overrides require positive num_warps and num_stages")
+    policies_by_layer = {int(policy.layer_id): policy for policy in bundle.policies}
+    unknown_layers = sorted(set(layer_overrides) - set(policies_by_layer))
+    if unknown_layers:
+        raise ValueError(f"kernel tunable overrides target non-routed layers: {unknown_layers}")
+    policies = []
+    summaries = []
+    for policy in bundle.policies:
+        config = layer_overrides.get(int(policy.layer_id))
+        if not enabled and not config:
+            policies.append(policy)
+            continue
+        policy_num_warps = int(config.get("num_warps", num_warps)) if config else num_warps
+        policy_num_stages = int(config.get("num_stages", num_stages)) if config else num_stages
+        updated = replace(
+            policy,
+            num_warps=policy_num_warps,
+            num_stages=policy_num_stages,
+            policy_id=f"{policy.policy_id}_w{policy_num_warps}_s{policy_num_stages}",
+        )
         policies.append(updated)
         summaries.append(
             {
@@ -690,6 +800,7 @@ class _SeedOnlyQwenDecodePatch:
         packed_qkv_projection: bool = False,
         packed_qkv_fused_input: bool = False,
         direct_o_proj: bool = False,
+        prealloc_o_proj: bool = False,
         triton_o_proj: bool = False,
         dynamic_selector_layers: Optional[Set[int]] = None,
         dynamic_selector_profile: str = "",
@@ -703,6 +814,7 @@ class _SeedOnlyQwenDecodePatch:
         self.packed_qkv_projection = packed_qkv_projection
         self.packed_qkv_fused_input = packed_qkv_fused_input
         self.direct_o_proj = direct_o_proj
+        self.prealloc_o_proj = prealloc_o_proj
         self.triton_o_proj = triton_o_proj
         self.dynamic_selector_layers = dynamic_selector_layers or set()
         self.dynamic_selector_profile = dynamic_selector_profile
@@ -716,6 +828,7 @@ class _SeedOnlyQwenDecodePatch:
         self.fallback_samples: List[Dict[str, Any]] = []
         self._timing_event_rows: List[Dict[str, torch.cuda.Event]] = []
         self._out_buffer: Optional[torch.Tensor] = None
+        self._o_proj_buffer: Optional[torch.Tensor] = None
         self._packed_qkv_weight: Optional[torch.Tensor] = None
         self._packed_qkv_bias: Optional[torch.Tensor] = None
         self._packed_qkv_sizes: Optional[tuple[int, int, int]] = None
@@ -768,9 +881,37 @@ class _SeedOnlyQwenDecodePatch:
                 module.o_proj.weight,
                 self._linear_bias(module.o_proj),
             )
+        if self.prealloc_o_proj:
+            return self._o_projection_prealloc(module, attn_output)
         if self.direct_o_proj:
             return F.linear(attn_output, module.o_proj.weight, self._linear_bias(module.o_proj))
         return module.o_proj(attn_output)
+
+    def _o_projection_prealloc(self, module: torch.nn.Module, attn_output: torch.Tensor) -> torch.Tensor:
+        """Apply Qwen decode o_proj into a reusable layer-local output buffer."""
+
+        if attn_output.dim() != 3 or int(attn_output.shape[1]) != 1:
+            return F.linear(attn_output, module.o_proj.weight, self._linear_bias(module.o_proj))
+        weight = module.o_proj.weight
+        bias = self._linear_bias(module.o_proj)
+        batch = int(attn_output.shape[0])
+        in_features = int(attn_output.shape[2])
+        out_features = int(weight.shape[0])
+        shape = (batch, 1, out_features)
+        if (
+            self._o_proj_buffer is None
+            or tuple(self._o_proj_buffer.shape) != shape
+            or self._o_proj_buffer.device != attn_output.device
+            or self._o_proj_buffer.dtype != attn_output.dtype
+        ):
+            self._o_proj_buffer = torch.empty(shape, device=attn_output.device, dtype=attn_output.dtype)
+        flat_in = attn_output.reshape(batch, in_features)
+        flat_out = self._o_proj_buffer.reshape(batch, out_features)
+        with torch.no_grad():
+            torch.mm(flat_in, weight.t(), out=flat_out)
+            if bias is not None:
+                flat_out.add_(bias)
+        return self._o_proj_buffer
 
     def _qkv_projection(
         self,
@@ -1196,6 +1337,7 @@ def _patched_seed_only_decode_modules(
     packed_qkv_projection: bool = False,
     packed_qkv_fused_input: bool = False,
     direct_o_proj: bool = False,
+    prealloc_o_proj: bool = False,
     triton_o_proj: bool = False,
     dynamic_selector_layers: Optional[Set[int]] = None,
     dynamic_selector_profile: str = "",
@@ -1221,6 +1363,7 @@ def _patched_seed_only_decode_modules(
             packed_qkv_projection=effective_packed_qkv_projection,
             packed_qkv_fused_input=packed_qkv_fused_input,
             direct_o_proj=direct_o_proj,
+            prealloc_o_proj=prealloc_o_proj,
             triton_o_proj=triton_o_proj,
             dynamic_selector_layers=dynamic_selector_layers,
             dynamic_selector_profile=dynamic_selector_profile,
@@ -1361,6 +1504,7 @@ def _warmup_decode(
             packed_qkv_projection=args.packed_qkv_projection,
             packed_qkv_fused_input=args.packed_qkv_fused_input,
             direct_o_proj=args.direct_o_proj,
+            prealloc_o_proj=args.prealloc_o_proj,
             triton_o_proj=args.triton_o_proj,
             dynamic_selector_layers=parse_layer_id_set(getattr(args, "dynamic_selector_layers", "")),
             dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
@@ -1385,6 +1529,7 @@ def _warmup_decode(
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "direct_o_proj": bool(patch.direct_o_proj),
+            "prealloc_o_proj": bool(patch.prealloc_o_proj),
             "triton_o_proj": bool(patch.triton_o_proj),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
@@ -1573,6 +1718,7 @@ def _bucket_route_policy_decision(
 def _empty_route_bundle_summary(
     *,
     layer_seed_overrides: Sequence[Dict[str, Any]],
+    kernel_tunable_overrides: Sequence[Dict[str, Any]],
     native_cache_hf_sync_layers: Set[int],
     args: argparse.Namespace,
     bucket_policy: Dict[str, Any],
@@ -1583,6 +1729,7 @@ def _empty_route_bundle_summary(
         "layers": [],
         "seed_configs": [],
         "layer_seed_overrides": list(layer_seed_overrides),
+        "kernel_tunable_overrides": list(kernel_tunable_overrides),
         "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
         "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
         "native_attention_module": bool(args.native_attention_module),
@@ -1590,6 +1737,7 @@ def _empty_route_bundle_summary(
         "packed_qkv_projection": False,
         "packed_qkv_fused_input": False,
         "direct_o_proj": False,
+        "prealloc_o_proj": False,
         "triton_o_proj": False,
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
@@ -1631,6 +1779,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     exact_bucket_fallback = bucket_policy.get("batch_mode") == "exact_native"
     bundle = None
     layer_seed_overrides: Sequence[Dict[str, Any]] = []
+    kernel_tunable_overrides: Sequence[Dict[str, Any]] = []
     if not exact_bucket_fallback:
         if bucket_policy.get("batch_mode") == "seed_only_bundle":
             args.policy_names = ",".join(bucket_policy["policy_names"])
@@ -1638,6 +1787,13 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             args.use_packaged_policies = True
         bundle = _route_bundle_from_args(args)
         bundle, layer_seed_overrides = apply_layer_seed_overrides(bundle, args.layer_seed_overrides)
+        bundle, kernel_tunable_overrides = apply_policy_kernel_tunable_overrides(
+            bundle,
+            num_warps=args.num_warps,
+            num_stages=args.num_stages,
+            enabled=args.override_policy_kernel_tunables,
+            layer_override_text=args.layer_kernel_overrides,
+        )
 
     AutoModelForCausalLM, AutoTokenizer = _import_transformers()
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code)
@@ -1746,6 +1902,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 packed_qkv_projection=args.packed_qkv_projection,
                 packed_qkv_fused_input=args.packed_qkv_fused_input,
                 direct_o_proj=args.direct_o_proj,
+                prealloc_o_proj=args.prealloc_o_proj,
                 triton_o_proj=args.triton_o_proj,
                 dynamic_selector_layers=parse_layer_id_set(args.dynamic_selector_layers),
                 dynamic_selector_profile=args.dynamic_selector_profile,
@@ -1776,6 +1933,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_projection": bool(patch.packed_qkv_projection),
             "packed_qkv_fused_input": bool(patch.packed_qkv_fused_input),
             "direct_o_proj": bool(patch.direct_o_proj),
+            "prealloc_o_proj": bool(patch.prealloc_o_proj),
             "triton_o_proj": bool(patch.triton_o_proj),
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
@@ -1787,6 +1945,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if bundle is None:
         route_bundle_summary = _empty_route_bundle_summary(
             layer_seed_overrides=layer_seed_overrides,
+            kernel_tunable_overrides=kernel_tunable_overrides,
             native_cache_hf_sync_layers=native_cache_hf_sync_layers,
             args=args,
             bucket_policy=bucket_policy,
@@ -1798,6 +1957,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "layers": bundle.layer_ids,
             "seed_configs": [_policy_seed_config(policy) for policy in bundle.policies],
             "layer_seed_overrides": layer_seed_overrides,
+            "kernel_tunable_overrides": kernel_tunable_overrides,
             "native_cache_hf_sync_layers": sorted(native_cache_hf_sync_layers),
             "native_cache_attach_hf_views": bool(args.native_cache_attach_hf_views),
             "native_attention_module": bool(args.native_attention_module),
@@ -1805,6 +1965,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "packed_qkv_projection": bool(args.packed_qkv_projection or args.native_attention_module),
             "packed_qkv_fused_input": bool(args.packed_qkv_fused_input),
             "direct_o_proj": bool(args.direct_o_proj),
+            "prealloc_o_proj": bool(args.prealloc_o_proj),
             "triton_o_proj": bool(args.triton_o_proj),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
@@ -1943,6 +2104,22 @@ def main() -> None:
     parser.add_argument("--block-order", choices=["sequential", "recent_first", "sink_recent_first"], default="recent_first")
     parser.add_argument("--num-warps", type=int, default=4)
     parser.add_argument("--num-stages", type=int, default=2)
+    parser.add_argument(
+        "--override-policy-kernel-tunables",
+        action="store_true",
+        help=(
+            "Override packaged seed-policy num_warps/num_stages with --num-warps and "
+            "--num-stages. Use for production-kernel launch tuning probes."
+        ),
+    )
+    parser.add_argument(
+        "--layer-kernel-overrides",
+        default="",
+        help=(
+            "Semicolon-separated per-layer kernel tunable overrides, for example "
+            "'35:warps=8,stages=2;0:8,2'."
+        ),
+    )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-kl", type=float, default=1.0e-4)
     parser.add_argument("--min-topk-overlap", type=int, default=4)
@@ -2011,6 +2188,14 @@ def main() -> None:
         "--direct-o-proj",
         action="store_true",
         help="Apply routed attention output projection with direct F.linear instead of module o_proj dispatch.",
+    )
+    parser.add_argument(
+        "--prealloc-o-proj",
+        action="store_true",
+        help=(
+            "Experimental: apply routed decode o_proj into a reusable layer-local output "
+            "buffer with torch.mm(out=...)."
+        ),
     )
     parser.add_argument(
         "--triton-o-proj",

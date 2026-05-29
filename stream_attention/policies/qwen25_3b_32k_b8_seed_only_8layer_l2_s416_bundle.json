@@ -41,13 +41,13 @@
   "exact_native_layers": "all non-listed layers",
   "safety": {
     "validation": "actual_model_decode_teacher_forced_coupled_top_p_mixed_validated_prompts",
-    "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",
+    "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_32step_h100.json",
     "steps": 32,
     "top1_changes": 0,
     "sample_token_changed_count": 0,
     "min_top5_overlap": 4,
-    "max_kl_observed": 9.944393968908116e-05,
-    "max_target_logprob_delta_observed": 0.0002730809501372278,
+    "max_kl_observed": 9.958085138350725e-05,
+    "max_target_logprob_delta_observed": 0.0002724181395024061,
     "gates": {
       "max_kl": 0.0001,
       "max_logprob_delta": 0.002,
@@ -71,9 +71,9 @@
     }
   },
   "timing": {
-    "dense_decode_ms_per_token": 28.652148968749902,
-    "streamattn_decode_ms_per_token": 23.89866081250025,
-    "speedup_vs_dense_decode": 1.198901862892808,
+    "dense_decode_ms_per_token": 28.47137590624982,
+    "streamattn_decode_ms_per_token": 23.873254468750105,
+    "speedup_vs_dense_decode": 1.1926055554561537,
     "previous_best_7layer_direct_o_proj_streamattn_ms_per_token": 24.46827,
     "previous_best_7layer_direct_o_proj_speedup_vs_dense_decode": 1.15621
   },
@@ -82,7 +82,8 @@
     "native_routed_cache": true,
     "fused_rope_append_seed": true,
     "packed_qkv_projection": true,
-    "direct_o_proj": true
+    "direct_o_proj": true,
+    "layer_kernel_overrides": "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
   },
   "status": "green_32step",
   "fallback": "exact_native"

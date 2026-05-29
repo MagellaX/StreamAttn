@@ -164,6 +164,10 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.extend(["--prompt-truncation-side", kwargs["prompt_truncation_side"]])
     if kwargs["layer_seed_overrides"]:
         cmd.extend(["--layer-seed-overrides", kwargs["layer_seed_overrides"]])
+    if kwargs["override_policy_kernel_tunables"]:
+        cmd.append("--override-policy-kernel-tunables")
+    if kwargs["layer_kernel_overrides"]:
+        cmd.extend(["--layer-kernel-overrides", kwargs["layer_kernel_overrides"]])
     if kwargs["profile_patch_timing"]:
         cmd.append("--profile-patch-timing")
     if kwargs["explicit_cache_position"]:
@@ -184,6 +188,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--packed-qkv-fused-input")
     if kwargs["direct_o_proj"]:
         cmd.append("--direct-o-proj")
+    if kwargs["prealloc_o_proj"]:
+        cmd.append("--prealloc-o-proj")
     if kwargs["triton_o_proj"]:
         cmd.append("--triton-o-proj")
     if kwargs["dynamic_selector_layers"]:
@@ -247,6 +253,8 @@ def main(
     block_order: str = "recent_first",
     num_warps: int = 4,
     num_stages: int = 2,
+    override_policy_kernel_tunables: bool = False,
+    layer_kernel_overrides: str = "",
     profile_patch_timing: bool = False,
     explicit_cache_position: bool = False,
     native_routed_cache: bool = False,
@@ -257,6 +265,7 @@ def main(
     packed_qkv_projection: bool = False,
     packed_qkv_fused_input: bool = False,
     direct_o_proj: bool = False,
+    prealloc_o_proj: bool = False,
     triton_o_proj: bool = False,
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
@@ -303,6 +312,8 @@ def main(
         block_order=block_order,
         num_warps=num_warps,
         num_stages=num_stages,
+        override_policy_kernel_tunables=override_policy_kernel_tunables,
+        layer_kernel_overrides=layer_kernel_overrides,
         profile_patch_timing=profile_patch_timing,
         explicit_cache_position=explicit_cache_position,
         native_routed_cache=native_routed_cache,
@@ -313,6 +324,7 @@ def main(
         packed_qkv_projection=packed_qkv_projection,
         packed_qkv_fused_input=packed_qkv_fused_input,
         direct_o_proj=direct_o_proj,
+        prealloc_o_proj=prealloc_o_proj,
         triton_o_proj=triton_o_proj,
         dynamic_selector_layers=dynamic_selector_layers,
         dynamic_selector_profile=dynamic_selector_profile,

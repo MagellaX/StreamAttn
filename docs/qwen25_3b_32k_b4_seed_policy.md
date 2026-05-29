@@ -3013,3 +3013,74 @@ Keep stress-risk and unknown buckets exact-native in product-strict mode.
 Do not spend kernel time on L26/L27 dynamic selected-block attention until a
 new selector can beat qk_block_max replay safety.
 ```
+
+### Product Fast-Path v2 Kernel Tunables
+
+The routed-patch timing probe showed the native cache path is no longer the
+limiter:
+
+```text
+cache_update:    4.36%
+seed_kernel:    49.25%
+output_proj:    28.16%
+qkv:            13.10%
+```
+
+The first projection allocation probe was a no-go:
+
+```text
+preallocated o_proj output:
+  artifact:           artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/prealloc_o_proj_preset_b8_32step_h100.json
+  StreamAttn decode:  29.76393 ms/token
+  decision:           do not promote
+```
+
+The useful result came from per-layer seed-kernel launch tuning.  Global
+`w8/s2` was fast but missed the strict KL gate:
+
+```text
+all routed layers w8/s2:
+  StreamAttn decode: 23.99243 ms/token
+  KL max:            1.0179e-4
+  decision:          fail strict gate
+```
+
+Layer-specific `w8/s2` on L0/L27/L35 preserved strict safety and improved the
+validated product preset:
+
+```text
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_32step_h100.json
+
+kernel overrides:
+  L0:  num_warps=8, num_stages=2
+  L27: num_warps=8, num_stages=2
+  L35: num_warps=8, num_stages=2
+
+dense decode:      28.47138 ms/token
+StreamAttn decode: 23.87325 ms/token
+speedup:           1.19261x
+
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4 / 5
+KL max:            9.95809e-05
+decision:          pass
+```
+
+The product preset now applies the validated kernel overrides automatically:
+
+```text
+--product-fast-path qwen25_3b_b8_validated
+```
+
+Expanded internally to:
+
+```text
+native routed cache
+fused RoPE/cache-append/seed attention
+packed QKV projection
+direct o_proj
+L0/L27/L35 w8/s2 seed kernels
+mixed L2 S416 policy
+```

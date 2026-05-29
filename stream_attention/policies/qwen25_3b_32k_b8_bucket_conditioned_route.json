@@ -50,9 +50,9 @@
     "validated_route_kl_max": 9.944393968908116e-05,
     "validated_route_scope": "32-step validated-bucket product candidate",
     "product_fast_path_preset": {
-      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_b8_32step_h100.json",
-      "speedup": 1.1881308846462004,
-      "kl_max": 9.944393968908116e-05,
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_32step_h100.json",
+      "speedup": 1.1926055554561537,
+      "kl_max": 9.958085138350725e-05,
       "top1_changes": 0,
       "sample_changes": 0,
       "runtime_config": {
@@ -60,7 +60,8 @@
         "native_routed_cache": true,
         "fused_rope_append_seed": true,
         "packed_qkv_projection": true,
-        "direct_o_proj": true
+        "direct_o_proj": true,
+        "layer_kernel_overrides": "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
       }
     },
     "dynamic_selector_replay": {

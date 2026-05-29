@@ -18,7 +18,9 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
     apply_layer_seed_overrides,
+    apply_policy_kernel_tunable_overrides,
     parse_layer_id_set,
+    parse_layer_kernel_tunable_overrides,
     parse_layer_seed_overrides,
     summarize_patch_timing_rows,
 )
@@ -88,6 +90,13 @@ def test_parse_layer_seed_overrides_positional_fields():
     }
 
 
+def test_parse_layer_kernel_tunable_overrides_named_and_positional_fields():
+    assert parse_layer_kernel_tunable_overrides("35:warps=8,stages=2;0:4,1") == {
+        35: {"num_warps": 8, "num_stages": 2},
+        0: {"num_warps": 4, "num_stages": 1},
+    }
+
+
 def test_parse_layer_id_set_accepts_commas_and_semicolons():
     assert parse_layer_id_set("") == set()
     assert parse_layer_id_set("0,14;16") == {0, 14, 16}
@@ -113,6 +122,7 @@ def test_product_fast_path_applies_validated_qwen3b_runtime_flags():
         native_attention_module=True,
         direct_o_proj=False,
         triton_o_proj=True,
+        layer_kernel_overrides="",
         allow_mixed_seed_configs=False,
     )
 
@@ -128,6 +138,9 @@ def test_product_fast_path_applies_validated_qwen3b_runtime_flags():
     assert args.native_attention_module is False
     assert args.direct_o_proj is True
     assert args.triton_o_proj is False
+    assert args.layer_kernel_overrides == (
+        "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
+    )
     assert args.allow_mixed_seed_configs is True
 
 
@@ -885,6 +898,60 @@ def test_apply_layer_seed_overrides_rewrites_only_target_layer():
     assert summaries[0]["new"]["seed_tokens"] == 512
 
 
+def test_apply_policy_kernel_tunable_overrides_rewrites_packaged_layers():
+    policies = [
+        Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        Gate0SeedOnlyBatchedPolicy(policy_id="p2", model_id="m", layer_id=2),
+    ]
+    bundle = RouteBundle(
+        policy_names=["p0", "p2"],
+        policies=policies,
+        artifacts=[{}, {}],
+        layer_ids=[0, 2],
+    )
+
+    updated, summaries = apply_policy_kernel_tunable_overrides(
+        bundle,
+        num_warps=2,
+        num_stages=1,
+        enabled=True,
+    )
+
+    assert updated.layer_ids == [0, 2]
+    assert [policy.num_warps for policy in updated.policies] == [2, 2]
+    assert [policy.num_stages for policy in updated.policies] == [1, 1]
+    assert [policy.policy_id for policy in updated.policies] == ["p0_w2_s1", "p2_w2_s1"]
+    assert summaries[0]["old"]["num_warps"] == 4
+    assert summaries[0]["new"]["num_stages"] == 1
+
+
+def test_apply_policy_kernel_tunable_overrides_rewrites_selected_layers():
+    policies = [
+        Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        Gate0SeedOnlyBatchedPolicy(policy_id="p35", model_id="m", layer_id=35),
+    ]
+    bundle = RouteBundle(
+        policy_names=["p0", "p35"],
+        policies=policies,
+        artifacts=[{}, {}],
+        layer_ids=[0, 35],
+    )
+
+    updated, summaries = apply_policy_kernel_tunable_overrides(
+        bundle,
+        num_warps=4,
+        num_stages=2,
+        enabled=False,
+        layer_override_text="35:warps=8,stages=2",
+    )
+
+    assert updated.policies[0].policy_id == "p0"
+    assert updated.policies[0].num_warps == 4
+    assert updated.policies[1].policy_id == "p35_w8_s2"
+    assert updated.policies[1].num_warps == 8
+    assert [item["layer_id"] for item in summaries] == [35]
+
+
 def test_validate_route_bundle_allows_explicit_mixed_seed_configs():
     import argparse
     import pytest
@@ -1087,6 +1154,36 @@ def test_seed_only_qwen_patch_direct_o_proj_matches_module():
         direct_patch._o_projection(module, attn_output),
         module_patch._o_projection(module, attn_output),
     )
+
+
+def test_seed_only_qwen_patch_prealloc_o_proj_matches_module_and_reuses_buffer():
+    import torch
+
+    class DummyAttention(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.o_proj = torch.nn.Linear(8, 8)
+
+    module = DummyAttention()
+    attn_output = torch.randn(2, 1, 8)
+    module_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+    )
+    prealloc_patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        prealloc_o_proj=True,
+    )
+
+    expected = module_patch._o_projection(module, attn_output)
+    first = prealloc_patch._o_projection(module, attn_output)
+    torch.testing.assert_close(first, expected)
+    first_ptr = first.data_ptr()
+
+    second = prealloc_patch._o_projection(module, attn_output + 1.0)
+    assert second.data_ptr() == first_ptr
+    torch.testing.assert_close(second, module_patch._o_projection(module, attn_output + 1.0))
 
 
 def test_packed_seed_workspace_shape():
