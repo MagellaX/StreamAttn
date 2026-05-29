@@ -1595,6 +1595,75 @@ Further product-speed work needs either:
   2. more strict-green routed coverage to increase the accelerated fraction f.
 ```
 
+### Aggressive L2 S640 + Direct o_proj Probe
+
+The riskier coverage-expansion bet was to combine the 8-layer L2 S640 candidate
+with the current best systems path:
+
+```text
+native routed cache
+fused RoPE/cache-append/seed attention
+packed QKV projection
+direct o_proj
+```
+
+Artifact:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_model_decode/l2_s640_direct_o_proj_b8_h100.json
+```
+
+Corrected H100 B8 result after prompt-kind cycling:
+
+```text
+7-layer direct-o-proj route:
+  layers:            [0,14,16,24,26,27,35]
+  dense decode:      28.29044 ms/token
+  StreamAttn decode: 24.46827 ms/token
+  speedup:           1.15621x
+  KL max:            9.655e-05
+
+8-layer L2 S640 direct-o-proj route:
+  layers:            [0,2,14,16,24,26,27,35]
+  dense decode:      28.90481 ms/token
+  StreamAttn decode: 24.98807 ms/token
+  speedup:           1.15674x
+  KL max:            9.946e-05
+```
+
+Both routes stayed strict-clean:
+
+```text
+top1 changes:      0 / 256
+sample changes:    0 / 256
+top5 overlap min:  4/5
+```
+
+Decision:
+
+```text
+Do not promote L2 S640 for product speed.
+
+It remains safety-pass on this validated prompt mix, but the corrected B8 run
+shows it slows the StreamAttn candidate path by:
+
+  24.98807 - 24.46827 = 0.51980 ms/token
+
+The older apparent ~1.20x L2 S640 win is no longer the right comparison because
+the synthetic prompt builder did not actually fill B8 before prompt cycling was
+fixed.
+```
+
+Implication:
+
+```text
+The next high-risk product-speed work should not simply add borderline routed
+layers.  It should either:
+  1. find layers with positive measured marginal model-time gain, not just
+     isolated safety, or
+  2. build a lower-level fused output-projection/custom decode-GEMV path.
+```
+
 ### L2 S640 8-Layer Candidate Route
 
 The route-optimizer branch tested whether the known borderline L2 layer can be
