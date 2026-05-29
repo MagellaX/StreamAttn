@@ -62,6 +62,17 @@
         "packed_qkv_projection": true,
         "direct_o_proj": true,
         "layer_kernel_overrides": "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
+      },
+      "long_horizon_128": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_128step_h100.json",
+        "speedup": 1.1638155721353443,
+        "kl_max": 0.00010389386443421245,
+        "kl_p99": 0.00008444375998806208,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "topk_overlap_min": 3,
+        "passed": false,
+        "failure_reason": "max-KL/top-k only; no top1 or sample divergence"
       }
     },
     "dynamic_selector_replay": {

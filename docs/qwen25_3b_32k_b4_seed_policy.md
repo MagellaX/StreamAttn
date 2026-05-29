@@ -3084,3 +3084,57 @@ direct o_proj
 L0/L27/L35 w8/s2 seed kernels
 mixed L2 S416 policy
 ```
+
+### Product Fast-Path v2 128-Step Promotion Gate
+
+The v2 preset was then tested at 128 decode steps on the validated buckets.  It
+remained token-stable, but it did not pass the strict promotion gate:
+
+```text
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_128step_h100.json
+
+dense decode:      28.75852 ms/token
+StreamAttn decode: 24.71054 ms/token
+speedup:           1.16382x
+
+top1 changes:      0 / 1024
+sample changes:    0 / 1024
+top5 overlap min:  3 / 5
+KL max:            1.03894e-04
+KL p99:            8.44438e-05
+decision:          fail strict 128-step gate
+failure mode:      max-KL/top-k only; no token divergence
+```
+
+A safer L0/L35-only kernel override was also checked at 128 steps.  It did not
+clear the strict gate and lost most of the product-speed gain in that run:
+
+```text
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/kernel_l0_l35_w8_s2_preset_b8_128step_h100.json
+
+dense decode:      31.68685 ms/token
+StreamAttn decode: 30.66190 ms/token
+speedup:           1.03343x
+
+top1 changes:      0 / 1024
+sample changes:    0 / 1024
+top5 overlap min:  3 / 5
+KL max:            1.04388e-04
+decision:          fail strict 128-step gate
+```
+
+Conclusion:
+
+```text
+Qwen3B B8 validated fast path:
+  strong 32-step actual-model proof
+  token-stable at 128 steps
+  not strict-product-promoted at 128 steps
+```
+
+This is the cutoff for Qwen-specific tuning.  The route should remain a
+Gate-0 proof / 32-step product candidate, while the next work moves to engine
+generalization and a second model family rather than chasing another tiny Qwen
+margin.

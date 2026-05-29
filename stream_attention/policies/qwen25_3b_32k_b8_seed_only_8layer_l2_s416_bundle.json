@@ -58,16 +58,16 @@
     "passed": true,
     "scope": "validated buckets only; stress-risk buckets still route exact in product-strict mode",
     "long_horizon_128": {
-      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_128step_h100.json",
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_product_fast_path/validated_fast_path_preset_v2_b8_128step_h100.json",
       "steps": 128,
       "cases": 1024,
       "top1_changes": 0,
       "sample_token_changed_count": 0,
       "min_top5_overlap": 3,
-      "max_kl_observed": 0.0001034615925163962,
-      "kl_p99": 0.00008444261038675904,
+      "max_kl_observed": 0.00010389386443421245,
+      "kl_p99": 0.00008444375998806208,
       "passed": false,
-      "failure_reason": "max-KL/top-k only; no top1 or sample divergence"
+      "failure_reason": "product fast path v2 exceeds strict max-KL/top-k at 128 steps; no top1 or sample divergence"
     }
   },
   "timing": {
@@ -85,6 +85,6 @@
     "direct_o_proj": true,
     "layer_kernel_overrides": "0:warps=8,stages=2;27:warps=8,stages=2;35:warps=8,stages=2"
   },
-  "status": "green_32step",
+  "status": "green_32step_token_stable_128step_not_strict",
   "fallback": "exact_native"
 }
