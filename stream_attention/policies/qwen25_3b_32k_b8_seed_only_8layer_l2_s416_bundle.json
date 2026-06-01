@@ -140,6 +140,39 @@
           "sample_token_changed_count": 0
         }
       ]
+    },
+    "event_step_exact_refresh_128": {
+      "mode": "explicit_event_step_exact_reference_refresh",
+      "diagnosis": "event-step refresh can clear strict long-horizon safety, but refreshing all routed layers with the PyTorch exact reference at those events loses product speed",
+      "oracle_steps": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_h100.json",
+        "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_summary.json",
+        "steps": [19, 38, 57, 86, 91, 106],
+        "exact_refresh_calls_per_layer": 6,
+        "speedup": 1.0831579675819638,
+        "top1_changes": 0,
+        "sample_token_changed_count": 0,
+        "min_top5_overlap": 4,
+        "max_kl_observed": 0.00010711530194384977,
+        "kl_p99": 0.0000701168755767867,
+        "failure_rows": 4,
+        "passed": false,
+        "missed_steps": [63, 93]
+      },
+      "oracle_union_steps": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_h100.json",
+        "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_summary.json",
+        "steps": [19, 38, 57, 63, 86, 91, 93, 106],
+        "exact_refresh_calls_per_layer": 8,
+        "speedup": 1.0095272106132598,
+        "top1_changes": 0,
+        "sample_token_changed_count": 0,
+        "min_top5_overlap": 4,
+        "max_kl_observed": 0.00009795100777409971,
+        "kl_p99": 0.00006341357948258519,
+        "failure_rows": 0,
+        "passed": true
+      }
     }
   },
   "timing": {

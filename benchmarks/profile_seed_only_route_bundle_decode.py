@@ -207,6 +207,33 @@ def parse_layer_id_set(text: str) -> Set[int]:
     return layers
 
 
+def parse_step_set(text: str) -> Set[int]:
+    """Parse zero-based decode step ids and inclusive ranges."""
+
+    steps: Set[int] = set()
+    if not text.strip():
+        return steps
+    for part in text.replace(";", ",").split(","):
+        item = part.strip()
+        if not item:
+            continue
+        if "-" in item:
+            left, right = item.split("-", 1)
+            start = int(left.strip())
+            end = int(right.strip())
+            if start < 0 or end < 0:
+                raise ValueError("decode refresh steps must be non-negative")
+            if end < start:
+                raise ValueError(f"invalid decode refresh range {item!r}")
+            steps.update(range(start, end + 1))
+        else:
+            step = int(item)
+            if step < 0:
+                raise ValueError("decode refresh steps must be non-negative")
+            steps.add(step)
+    return steps
+
+
 def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
     profile = str(getattr(args, "product_fast_path", "none") or "none")
     if profile == "none":
@@ -1077,6 +1104,7 @@ class _SeedOnlyQwenDecodePatch:
         dynamic_selector_layers: Optional[Set[int]] = None,
         dynamic_selector_profile: str = "",
         exact_refresh_interval: int = 0,
+        exact_refresh_steps: Optional[Set[int]] = None,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -1095,6 +1123,7 @@ class _SeedOnlyQwenDecodePatch:
         self.dynamic_selector_layers = dynamic_selector_layers or set()
         self.dynamic_selector_profile = dynamic_selector_profile
         self.exact_refresh_interval = max(0, int(exact_refresh_interval))
+        self.exact_refresh_steps = set(exact_refresh_steps or set())
         self.call_count = 0
         self.seed_call_count = 0
         self.exact_refresh_call_count = 0
@@ -1255,9 +1284,11 @@ class _SeedOnlyQwenDecodePatch:
         return int(step)
 
     def _use_exact_refresh(self, past_key_value: Any) -> bool:
+        step = self._decode_step(past_key_value)
+        if step is not None and step in self.exact_refresh_steps:
+            return True
         if self.exact_refresh_interval <= 0:
             return False
-        step = self._decode_step(past_key_value)
         if step is None:
             return False
         return (step + 1) % self.exact_refresh_interval == 0
@@ -1676,6 +1707,7 @@ def _patched_seed_only_decode_modules(
     dynamic_selector_layers: Optional[Set[int]] = None,
     dynamic_selector_profile: str = "",
     exact_refresh_interval: int = 0,
+    exact_refresh_steps: Optional[Set[int]] = None,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1704,6 +1736,7 @@ def _patched_seed_only_decode_modules(
             dynamic_selector_layers=dynamic_selector_layers,
             dynamic_selector_profile=dynamic_selector_profile,
             exact_refresh_interval=exact_refresh_interval,
+            exact_refresh_steps=exact_refresh_steps,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1851,6 +1884,7 @@ def _warmup_decode(
             dynamic_selector_layers=parse_layer_id_set(getattr(args, "dynamic_selector_layers", "")),
             dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
             exact_refresh_interval=getattr(args, "exact_refresh_interval", 0),
+            exact_refresh_steps=parse_step_set(getattr(args, "exact_refresh_steps", "")),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1867,6 +1901,7 @@ def _warmup_decode(
             "seed_only_decode_calls": patch.seed_call_count,
             "exact_refresh_calls": patch.exact_refresh_call_count,
             "exact_refresh_interval": patch.exact_refresh_interval,
+            "exact_refresh_steps": sorted(patch.exact_refresh_steps),
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2098,6 +2133,7 @@ def _empty_route_bundle_summary(
         "triton_o_proj": False,
         "seed_attention_backend": args.seed_attention_backend,
         "exact_refresh_interval": int(getattr(args, "exact_refresh_interval", 0)),
+        "exact_refresh_steps": sorted(parse_step_set(getattr(args, "exact_refresh_steps", ""))),
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2115,6 +2151,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     dynamic_selector_layers = parse_layer_id_set(args.dynamic_selector_layers)
+    exact_refresh_steps = parse_step_set(args.exact_refresh_steps)
     if dynamic_selector_layers and not args.dynamic_selector_profile:
         raise ValueError("--dynamic-selector-layers requires --dynamic-selector-profile")
     if args.dynamic_selector_profile and not dynamic_selector_layers:
@@ -2267,6 +2304,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 dynamic_selector_layers=parse_layer_id_set(args.dynamic_selector_layers),
                 dynamic_selector_profile=args.dynamic_selector_profile,
                 exact_refresh_interval=args.exact_refresh_interval,
+                exact_refresh_steps=exact_refresh_steps,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -2289,6 +2327,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_only_decode_calls": patch.seed_call_count,
             "exact_refresh_calls": patch.exact_refresh_call_count,
             "exact_refresh_interval": patch.exact_refresh_interval,
+            "exact_refresh_steps": sorted(patch.exact_refresh_steps),
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2333,6 +2372,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "triton_o_proj": bool(args.triton_o_proj),
             "seed_attention_backend": args.seed_attention_backend,
             "exact_refresh_interval": int(args.exact_refresh_interval),
+            "exact_refresh_steps": sorted(exact_refresh_steps),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2608,6 +2648,14 @@ def main() -> None:
         help=(
             "Verifier mode: run exact full-prefix reference attention for routed "
             "layers every Nth decode step. 0 disables exact refresh."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-steps",
+        default="",
+        help=(
+            "Verifier mode: comma-separated zero-based decode steps or inclusive "
+            "ranges that run exact full-prefix reference attention for routed layers."
         ),
     )
     parser.add_argument(

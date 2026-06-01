@@ -3365,3 +3365,83 @@ The next verifier should be event-triggered, not periodic:
 3. keep the strict product route exact for stress buckets
 4. keep Qwen3B B8 as Gate-0 actual-model proof, not strict 128-step product
 ```
+
+### 128-Step Event-Step Exact Refresh
+
+The next verifier experiment replaced periodic refresh with explicit refresh
+steps selected from margin-forensics tail events:
+
+```text
+--exact-refresh-steps 19,38,57,86,91,106
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_summary.json
+```
+
+Result:
+
+```text
+exact refresh oracle steps:
+  exact calls:   6 per routed layer
+  seed calls:    122 per routed layer
+  speedup:       1.08316x
+  KL max / p99: 1.07115e-04 / 7.01169e-05
+  top5 min:      4
+  top1 changes: 0 / 1024
+  sample changes: 0 / 1024
+  failures:      4
+```
+
+This improved the top-k gate compared with periodic refresh, but it still missed
+the strict max-KL gate.  The remaining failures were concentrated in `chat_doc`
+at steps `63` and `93`.
+
+A second event-step run added those newly exposed tail steps:
+
+```text
+--exact-refresh-steps 19,38,57,63,86,91,93,106
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_summary.json
+```
+
+Result:
+
+```text
+exact refresh union steps:
+  exact calls:   8 per routed layer
+  seed calls:    120 per routed layer
+  speedup:       1.00953x
+  KL max / p99: 9.79510e-05 / 6.34136e-05
+  top5 min:      4
+  top1 changes: 0 / 1024
+  sample changes: 0 / 1024
+  failures:      0
+  decision:      strict pass
+```
+
+This proves the 128-step tail is correctable by exact verifier events, but the
+current implementation refreshes all routed layers with a PyTorch exact
+reference at each event and therefore loses the product-speed advantage:
+
+```text
+strict safety can be recovered
+but all-layer event refresh is too expensive as a production route
+```
+
+The next verifier should be more selective:
+
+```text
+1. canary-trigger only risky rows, not the full batch
+2. refresh only culprit layers, not all routed layers
+3. eventually use exact_native, not PyTorch reference exact
+4. keep event refresh as verifier evidence, not as the default product route yet
+```

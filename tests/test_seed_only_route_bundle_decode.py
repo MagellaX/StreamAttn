@@ -25,6 +25,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     parse_layer_id_set,
     parse_layer_kernel_tunable_overrides,
     parse_layer_seed_overrides,
+    parse_step_set,
     summarize_patch_timing_rows,
 )
 from benchmarks.summarize_seed_policy_stress_replay import summarize_payload
@@ -1305,6 +1306,31 @@ def test_exact_refresh_interval_uses_one_indexed_decode_steps():
     cache._streamattn_decode_step = 7
     assert patch._use_exact_refresh(cache)
     cache._streamattn_decode_step = 15
+    assert patch._use_exact_refresh(cache)
+
+
+def test_parse_step_set_supports_ranges_and_zero_based_ids():
+    assert parse_step_set("") == set()
+    assert parse_step_set("0,3,7-9;12") == {0, 3, 7, 8, 9, 12}
+    with pytest.raises(ValueError):
+        parse_step_set("4-2")
+
+
+def test_exact_refresh_explicit_steps_override_interval():
+    patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        exact_refresh_interval=0,
+        exact_refresh_steps={3, 11},
+    )
+
+    class Cache:
+        pass
+
+    cache = Cache()
+    cache._streamattn_decode_step = 2
+    assert not patch._use_exact_refresh(cache)
+    cache._streamattn_decode_step = 3
     assert patch._use_exact_refresh(cache)
 
 

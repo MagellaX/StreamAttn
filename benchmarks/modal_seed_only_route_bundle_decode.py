@@ -202,6 +202,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.extend(["--seed-attention-backend", kwargs["seed_attention_backend"]])
     if kwargs["exact_refresh_interval"] > 0:
         cmd.extend(["--exact-refresh-interval", str(kwargs["exact_refresh_interval"])])
+    if kwargs["exact_refresh_steps"]:
+        cmd.extend(["--exact-refresh-steps", kwargs["exact_refresh_steps"]])
     if kwargs["dynamic_selector_layers"]:
         cmd.extend(["--dynamic-selector-layers", kwargs["dynamic_selector_layers"]])
     if kwargs["dynamic_selector_profile"]:
@@ -283,6 +285,7 @@ def main(
     triton_o_proj: bool = False,
     seed_attention_backend: str = "triton",
     exact_refresh_interval: int = 0,
+    exact_refresh_steps: str = "",
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
@@ -348,6 +351,7 @@ def main(
         triton_o_proj=triton_o_proj,
         seed_attention_backend=seed_attention_backend,
         exact_refresh_interval=exact_refresh_interval,
+        exact_refresh_steps=exact_refresh_steps,
         dynamic_selector_layers=dynamic_selector_layers,
         dynamic_selector_profile=dynamic_selector_profile,
         allow_mixed_seed_configs=allow_mixed_seed_configs,

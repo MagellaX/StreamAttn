@@ -137,6 +137,39 @@
       },
       "next": "prefer event-triggered verifier/canary refresh over periodic refresh"
     },
+    "event_step_exact_refresh_128": {
+      "conclusion": "explicit event-step exact refresh can recover the strict 128-step gate, but all-layer PyTorch exact refresh at those events loses the product-speed advantage",
+      "oracle_steps": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_h100.json",
+        "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_steps_product_fast_path_b8_128step_summary.json",
+        "exact_refresh_steps": [19, 38, 57, 86, 91, 106],
+        "exact_refresh_calls_per_layer": 6,
+        "speedup": 1.0831579675819638,
+        "kl_max": 0.00010711530194384977,
+        "kl_p99": 0.0000701168755767867,
+        "topk_overlap_min": 4,
+        "failure_rows": 4,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": false,
+        "missed_steps": [63, 93]
+      },
+      "oracle_union_steps": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_h100.json",
+        "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_oracle_union_steps_product_fast_path_b8_128step_summary.json",
+        "exact_refresh_steps": [19, 38, 57, 63, 86, 91, 93, 106],
+        "exact_refresh_calls_per_layer": 8,
+        "speedup": 1.0095272106132598,
+        "kl_max": 0.00009795100777409971,
+        "kl_p99": 0.00006341357948258519,
+        "topk_overlap_min": 4,
+        "failure_rows": 0,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "passed": true
+      },
+      "next": "replace all-layer event refresh with row/layer-selective canary refresh and exact_native verifier kernels"
+    },
     "dynamic_selector_replay": {
       "fixed_strict7": {
         "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json",
