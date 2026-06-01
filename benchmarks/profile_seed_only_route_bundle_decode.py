@@ -313,6 +313,66 @@ def _dynamic_seed_attention_reference_bhnd(
     return out
 
 
+def _fixed_seed_attention_reference_bhnd(
+    query_states: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    *,
+    seq_len: int,
+    policy,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """Vectorized fp32 reference for the fixed seed-only decode schedule.
+
+    This is a forensics backend, not a production path.  It computes the same
+    fixed seed policy as the Triton backend with fp32 score/probability/value
+    accumulation so long-horizon gates can separate policy error from kernel
+    numeric/layout drift.
+    """
+
+    batch, q_heads, query_len, head_dim = query_states.shape
+    if query_len != 1:
+        raise ValueError(f"fixed seed reference only supports decode M=1, got {query_len}")
+    kv_heads = int(key_cache.shape[1])
+    if q_heads % kv_heads != 0:
+        raise ValueError(f"q_heads={q_heads} must be divisible by kv_heads={kv_heads}")
+    seq_len = min(int(seq_len), int(key_cache.shape[2]))
+    if seq_len <= 0:
+        out.zero_()
+        return out
+    token_idx = seed_token_indices_from_blocks(
+        seq_len=seq_len,
+        block_size=int(policy.block_size),
+        blocks=select_seed_blocks_by_profile(
+            q=query_states[0, 0, 0],
+            k=key_cache[0, 0, :seq_len],
+            policy=policy,
+            selector="fixed_policy",
+        ).selected_blocks,
+        device=query_states.device,
+    )
+    if token_idx.numel() == 0:
+        out.zero_()
+        return out
+
+    group_size = q_heads // kv_heads
+    kv_for_q = torch.div(
+        torch.arange(q_heads, device=query_states.device, dtype=torch.long),
+        group_size,
+        rounding_mode="floor",
+    )
+    q = query_states[:, :, 0, :].float()
+    k_seed = key_cache[:, :, :seq_len, :].index_select(2, token_idx)
+    v_seed = value_cache[:, :, :seq_len, :].index_select(2, token_idx)
+    k_by_q = k_seed.index_select(1, kv_for_q).float()
+    v_by_q = v_seed.index_select(1, kv_for_q).float()
+    scores = torch.sum(q[:, :, None, :] * k_by_q, dim=-1) / math.sqrt(float(head_dim))
+    probs = torch.softmax(scores, dim=-1)
+    acc = torch.sum(probs[:, :, :, None] * v_by_q, dim=2)
+    out.copy_(acc[:, None, :, :].to(dtype=out.dtype))
+    return out
+
+
 def apply_layer_seed_overrides(bundle, override_text: str):
     overrides = parse_layer_seed_overrides(override_text)
     if not overrides:
@@ -802,6 +862,7 @@ class _SeedOnlyQwenDecodePatch:
         direct_o_proj: bool = False,
         prealloc_o_proj: bool = False,
         triton_o_proj: bool = False,
+        seed_attention_backend: str = "triton",
         dynamic_selector_layers: Optional[Set[int]] = None,
         dynamic_selector_profile: str = "",
     ):
@@ -816,6 +877,9 @@ class _SeedOnlyQwenDecodePatch:
         self.direct_o_proj = direct_o_proj
         self.prealloc_o_proj = prealloc_o_proj
         self.triton_o_proj = triton_o_proj
+        if seed_attention_backend not in {"triton", "torch_ref_fp32"}:
+            raise ValueError(f"unsupported seed attention backend {seed_attention_backend!r}")
+        self.seed_attention_backend = seed_attention_backend
         self.dynamic_selector_layers = dynamic_selector_layers or set()
         self.dynamic_selector_profile = dynamic_selector_profile
         self.call_count = 0
@@ -1040,6 +1104,7 @@ class _SeedOnlyQwenDecodePatch:
             and self.native_cache is not None
             and layer_id not in self.native_cache_hf_sync_layers
             and not use_dynamic_selector
+            and self.seed_attention_backend == "triton"
         )
         use_packed_qkv_fused_input = (
             use_fused_rope_append_seed
@@ -1178,6 +1243,15 @@ class _SeedOnlyQwenDecodePatch:
                         out=out,
                     )
                     self.dynamic_selector_call_count += 1
+                elif self.seed_attention_backend == "torch_ref_fp32":
+                    _fixed_seed_attention_reference_bhnd(
+                        query_states,
+                        k,
+                        v,
+                        seq_len=native_pos + 1,
+                        policy=self.policy,
+                        out=out,
+                    )
                 else:
                     q = query_states.transpose(1, 2).contiguous()
                     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
@@ -1209,20 +1283,30 @@ class _SeedOnlyQwenDecodePatch:
                     dtype=hidden_states.dtype,
                 )
                 self._mark(timing_events, "after_layout")
-                gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                    q,
-                    k,
-                    v,
-                    out,
-                    cache_position,
-                    block_size=self.policy.block_size,
-                    sink_blocks=self.policy.sink_blocks,
-                    recent_blocks=self.policy.recent_blocks,
-                    middle_seed_blocks=self.policy.middle_seed_blocks,
-                    block_order=self.policy.block_order,
-                    num_warps=self.policy.num_warps,
-                    num_stages=self.policy.num_stages,
-                )
+                if self.seed_attention_backend == "torch_ref_fp32":
+                    _fixed_seed_attention_reference_bhnd(
+                        query_states,
+                        k,
+                        v,
+                        seq_len=int(k.shape[2]),
+                        policy=self.policy,
+                        out=out,
+                    )
+                else:
+                    gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+                        q,
+                        k,
+                        v,
+                        out,
+                        cache_position,
+                        block_size=self.policy.block_size,
+                        sink_blocks=self.policy.sink_blocks,
+                        recent_blocks=self.policy.recent_blocks,
+                        middle_seed_blocks=self.policy.middle_seed_blocks,
+                        block_order=self.policy.block_order,
+                        num_warps=self.policy.num_warps,
+                        num_stages=self.policy.num_stages,
+                    )
                 self._mark(timing_events, "after_seed_kernel")
         attn_output = out.reshape(*input_shape, -1).contiguous()
         attn_output = self._o_projection(module, attn_output)
@@ -1339,6 +1423,7 @@ def _patched_seed_only_decode_modules(
     direct_o_proj: bool = False,
     prealloc_o_proj: bool = False,
     triton_o_proj: bool = False,
+    seed_attention_backend: str = "triton",
     dynamic_selector_layers: Optional[Set[int]] = None,
     dynamic_selector_profile: str = "",
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
@@ -1365,6 +1450,7 @@ def _patched_seed_only_decode_modules(
             direct_o_proj=direct_o_proj,
             prealloc_o_proj=prealloc_o_proj,
             triton_o_proj=triton_o_proj,
+            seed_attention_backend=seed_attention_backend,
             dynamic_selector_layers=dynamic_selector_layers,
             dynamic_selector_profile=dynamic_selector_profile,
         )
@@ -1506,6 +1592,7 @@ def _warmup_decode(
             direct_o_proj=args.direct_o_proj,
             prealloc_o_proj=args.prealloc_o_proj,
             triton_o_proj=args.triton_o_proj,
+            seed_attention_backend=args.seed_attention_backend,
             dynamic_selector_layers=parse_layer_id_set(getattr(args, "dynamic_selector_layers", "")),
             dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
         ) as patches:
@@ -1531,6 +1618,7 @@ def _warmup_decode(
             "direct_o_proj": bool(patch.direct_o_proj),
             "prealloc_o_proj": bool(patch.prealloc_o_proj),
             "triton_o_proj": bool(patch.triton_o_proj),
+            "seed_attention_backend": patch.seed_attention_backend,
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1739,6 +1827,7 @@ def _empty_route_bundle_summary(
         "direct_o_proj": False,
         "prealloc_o_proj": False,
         "triton_o_proj": False,
+        "seed_attention_backend": args.seed_attention_backend,
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -1904,6 +1993,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 direct_o_proj=args.direct_o_proj,
                 prealloc_o_proj=args.prealloc_o_proj,
                 triton_o_proj=args.triton_o_proj,
+                seed_attention_backend=args.seed_attention_backend,
                 dynamic_selector_layers=parse_layer_id_set(args.dynamic_selector_layers),
                 dynamic_selector_profile=args.dynamic_selector_profile,
             ) as patches:
@@ -1935,6 +2025,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "direct_o_proj": bool(patch.direct_o_proj),
             "prealloc_o_proj": bool(patch.prealloc_o_proj),
             "triton_o_proj": bool(patch.triton_o_proj),
+            "seed_attention_backend": patch.seed_attention_backend,
             "fallback_reasons": dict(patch.fallback_reasons),
             "fallback_samples": patch.fallback_samples,
         }
@@ -1967,6 +2058,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "direct_o_proj": bool(args.direct_o_proj),
             "prealloc_o_proj": bool(args.prealloc_o_proj),
             "triton_o_proj": bool(args.triton_o_proj),
+            "seed_attention_backend": args.seed_attention_backend,
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2203,6 +2295,16 @@ def main() -> None:
         help=(
             "Experimental: apply routed decode output projection with a StreamAttn Triton "
             "kernel for the [batch,1,hidden] shape."
+        ),
+    )
+    parser.add_argument(
+        "--seed-attention-backend",
+        choices=["triton", "torch_ref_fp32"],
+        default="triton",
+        help=(
+            "Seed-attention backend for routed decode. Use torch_ref_fp32 for "
+            "kernel forensics; it disables fused seed kernels and computes the "
+            "fixed seed policy with a vectorized PyTorch fp32 reference."
         ),
     )
     parser.add_argument(

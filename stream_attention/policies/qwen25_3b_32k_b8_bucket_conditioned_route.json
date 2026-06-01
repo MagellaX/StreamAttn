@@ -75,6 +75,18 @@
         "failure_reason": "max-KL/top-k only; no top1 or sample divergence"
       }
     },
+    "kernel_forensics": {
+      "seed_ref_fp32_backend": {
+        "artifact": "artifacts/gate0/qwen25_3b_32k_b8_kernel_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json",
+        "kl_max": 0.00010754559480119497,
+        "kl_p99": 0.00008713216811884195,
+        "top1_changes": 0,
+        "sample_changes": 0,
+        "topk_overlap_min": 3,
+        "passed": false
+      },
+      "conclusion": "fp32 mathematical seed reference also fails strict KL/top-k with zero token divergence; the 128-step issue is policy/margin/recurrent composition, not primarily Triton seed-kernel numeric drift"
+    },
     "dynamic_selector_replay": {
       "fixed_strict7": {
         "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json",

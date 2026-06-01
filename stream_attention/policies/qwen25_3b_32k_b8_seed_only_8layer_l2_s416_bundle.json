@@ -68,6 +68,17 @@
       "kl_p99": 0.00008444375998806208,
       "passed": false,
       "failure_reason": "product fast path v2 exceeds strict max-KL/top-k at 128 steps; no top1 or sample divergence"
+    },
+    "kernel_forensics_128": {
+      "mode": "seed_ref_fp32",
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_kernel_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json",
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "min_top5_overlap": 3,
+      "max_kl_observed": 0.00010754559480119497,
+      "kl_p99": 0.00008713216811884195,
+      "passed": false,
+      "diagnosis": "strict long-horizon failure reproduces with fp32 seed reference; do not classify as primary Triton kernel drift"
     }
   },
   "timing": {

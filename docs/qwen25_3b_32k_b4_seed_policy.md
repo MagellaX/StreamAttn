@@ -3138,3 +3138,52 @@ This is the cutoff for Qwen-specific tuning.  The route should remain a
 Gate-0 proof / 32-step product candidate, while the next work moves to engine
 generalization and a second model family rather than chasing another tiny Qwen
 margin.
+
+### 128-Step Kernel Forensics: Seed Reference
+
+The next concern was whether the 128-step miss came from the Triton/fused seed
+kernel rather than from the seed policy itself.  To test that, the route runner
+now supports:
+
+```text
+--seed-attention-backend torch_ref_fp32
+```
+
+This disables the fused seed kernel and computes the same fixed seed schedule
+with a vectorized PyTorch fp32 reference.  The 128-step result still missed the
+strict gate:
+
+```text
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_kernel_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json
+
+dense decode:      28.66876 ms/token
+seed-ref decode:   27.38123 ms/token
+speedup:           1.04702x
+
+top1 changes:      0 / 1024
+sample changes:    0 / 1024
+top5 overlap min:  3 / 5
+KL max:            1.07546e-04
+KL p99:            8.71322e-05
+decision:          fail strict 128-step gate
+```
+
+Diagnosis:
+
+```text
+Mode B seed_ref_fp32 fails the same strict margin class as the Triton path.
+Therefore the 128-step issue is not primarily Triton online-softmax or fused
+cache/seed numerical drift.
+```
+
+The likely causes are now:
+
+```text
+1. fixed seed policy is genuinely margin-tight at long horizon
+2. recurrent routed-state composition accumulates small policy errors
+3. strict max-KL/top-k gate is catching token-stable near-boundary movement
+```
+
+The next research should focus on verifier/exact-refresh and margin-aware gate
+calibration, not seed-kernel numeric tuning.

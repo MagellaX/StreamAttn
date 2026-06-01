@@ -192,6 +192,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--prealloc-o-proj")
     if kwargs["triton_o_proj"]:
         cmd.append("--triton-o-proj")
+    if kwargs["seed_attention_backend"] != "triton":
+        cmd.extend(["--seed-attention-backend", kwargs["seed_attention_backend"]])
     if kwargs["dynamic_selector_layers"]:
         cmd.extend(["--dynamic-selector-layers", kwargs["dynamic_selector_layers"]])
     if kwargs["dynamic_selector_profile"]:
@@ -267,6 +269,7 @@ def main(
     direct_o_proj: bool = False,
     prealloc_o_proj: bool = False,
     triton_o_proj: bool = False,
+    seed_attention_backend: str = "triton",
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
@@ -326,6 +329,7 @@ def main(
         direct_o_proj=direct_o_proj,
         prealloc_o_proj=prealloc_o_proj,
         triton_o_proj=triton_o_proj,
+        seed_attention_backend=seed_attention_backend,
         dynamic_selector_layers=dynamic_selector_layers,
         dynamic_selector_profile=dynamic_selector_profile,
         allow_mixed_seed_configs=allow_mixed_seed_configs,

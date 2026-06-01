@@ -14,6 +14,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     _apply_product_fast_path_args,
     _batch_tokens,
     _bucket_route_policy_decision,
+    _fixed_seed_attention_reference_bhnd,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
@@ -1184,6 +1185,59 @@ def test_seed_only_qwen_patch_prealloc_o_proj_matches_module_and_reuses_buffer()
     second = prealloc_patch._o_projection(module, attn_output + 1.0)
     assert second.data_ptr() == first_ptr
     torch.testing.assert_close(second, module_patch._o_projection(module, attn_output + 1.0))
+
+
+def test_fixed_seed_attention_reference_matches_manual_seed_softmax():
+    import math
+    import torch
+
+    policy = Gate0SeedOnlyBatchedPolicy(
+        policy_id="p0",
+        model_id="m",
+        layer_id=0,
+        block_size=2,
+        sink_blocks=1,
+        recent_blocks=1,
+        middle_seed_blocks=0,
+        block_order="recent_first",
+    )
+    q = torch.tensor([[[[1.0, 0.0]], [[0.0, 1.0]]]])
+    k = torch.tensor(
+        [[
+            [
+                [2.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 5.0],
+                [0.0, 4.0],
+                [0.0, 3.0],
+                [0.0, 2.0],
+            ]
+        ]]
+    )
+    v = torch.tensor(
+        [[
+            [
+                [10.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 100.0],
+                [0.0, 50.0],
+                [0.0, 8.0],
+                [0.0, 4.0],
+            ]
+        ]]
+    )
+    out = torch.empty((1, 1, 2, 2), dtype=torch.float32)
+
+    _fixed_seed_attention_reference_bhnd(q, k, v, seq_len=6, policy=policy, out=out)
+
+    seed_idx = torch.tensor([0, 1, 4, 5])
+    expected = []
+    for head in range(2):
+        scores = torch.matmul(k[0, 0, seed_idx].float(), q[0, head, 0].float())
+        probs = torch.softmax(scores / math.sqrt(2.0), dim=0)
+        expected.append(torch.matmul(probs, v[0, 0, seed_idx].float()))
+    expected = torch.stack(expected).reshape(1, 1, 2, 2)
+    torch.testing.assert_close(out, expected)
 
 
 def test_packed_seed_workspace_shape():
