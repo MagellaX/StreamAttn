@@ -14,6 +14,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     _apply_product_fast_path_args,
     _batch_tokens,
     _bucket_route_policy_decision,
+    _exact_attention_reference_bhnd,
     _fixed_seed_attention_reference_bhnd,
     _logit_row_margin_forensics,
     _native_cache_from_hf_cache,
@@ -1239,6 +1240,72 @@ def test_fixed_seed_attention_reference_matches_manual_seed_softmax():
         expected.append(torch.matmul(probs, v[0, 0, seed_idx].float()))
     expected = torch.stack(expected).reshape(1, 1, 2, 2)
     torch.testing.assert_close(out, expected)
+
+
+def test_exact_attention_reference_matches_manual_full_softmax():
+    import math
+    import torch
+
+    q = torch.tensor([[[[1.0, 0.0]], [[0.0, 1.0]], [[1.0, 1.0]], [[-1.0, 0.5]]]])
+    k = torch.tensor(
+        [[
+            [
+                [2.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 5.0],
+            ],
+            [
+                [0.5, 0.5],
+                [1.0, -1.0],
+                [0.0, 2.0],
+            ],
+        ]]
+    )
+    v = torch.tensor(
+        [[
+            [
+                [10.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 100.0],
+            ],
+            [
+                [2.0, 4.0],
+                [8.0, 1.0],
+                [0.0, 3.0],
+            ],
+        ]]
+    )
+    out = torch.empty((1, 1, 4, 2), dtype=torch.float32)
+
+    _exact_attention_reference_bhnd(q, k, v, seq_len=3, out=out)
+
+    expected = []
+    for head in range(4):
+        kv_head = head // 2
+        scores = torch.matmul(k[0, kv_head].float(), q[0, head, 0].float())
+        probs = torch.softmax(scores / math.sqrt(2.0), dim=0)
+        expected.append(torch.matmul(probs, v[0, kv_head].float()))
+    expected = torch.stack(expected).reshape(1, 1, 4, 2)
+    torch.testing.assert_close(out, expected)
+
+
+def test_exact_refresh_interval_uses_one_indexed_decode_steps():
+    patch = _SeedOnlyQwenDecodePatch(
+        policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+        original_forward=lambda *args, **kwargs: None,
+        exact_refresh_interval=8,
+    )
+
+    class Cache:
+        pass
+
+    cache = Cache()
+    cache._streamattn_decode_step = 6
+    assert not patch._use_exact_refresh(cache)
+    cache._streamattn_decode_step = 7
+    assert patch._use_exact_refresh(cache)
+    cache._streamattn_decode_step = 15
+    assert patch._use_exact_refresh(cache)
 
 
 def test_logit_row_margin_forensics_reports_tail_mass_and_boundary():

@@ -97,6 +97,49 @@
       "failure_topk_lost_ref_mass_max": 0.000022803887986810878,
       "passed": false,
       "diagnosis": "token-stable 128-step miss is dominated by max-KL/top-k tail movement; p99 KL passes and lost top-k reference mass is tiny"
+    },
+    "exact_refresh_128": {
+      "mode": "periodic_exact_reference_refresh",
+      "passed": false,
+      "diagnosis": "periodic exact refresh reduces KL tail but does not clear strict max-KL/top-k before product speed mostly disappears",
+      "runs": [
+        {
+          "interval": 32,
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n32_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n32_product_fast_path_b8_128step_summary.json",
+          "speedup": 1.1555861067295845,
+          "max_kl_observed": 0.00010670736082829535,
+          "kl_p99": 0.00008456988871330395,
+          "min_top5_overlap": 3,
+          "failure_rows": 12,
+          "top1_changes": 0,
+          "sample_token_changed_count": 0
+        },
+        {
+          "interval": 16,
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n16_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n16_product_fast_path_b8_128step_summary.json",
+          "speedup": 1.0968298711321707,
+          "max_kl_observed": 0.00010104889224749058,
+          "kl_p99": 0.00008478237577946857,
+          "min_top5_overlap": 3,
+          "failure_rows": 10,
+          "top1_changes": 0,
+          "sample_token_changed_count": 0
+        },
+        {
+          "interval": 8,
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n8_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n8_product_fast_path_b8_128step_summary.json",
+          "speedup": 1.0244159954748207,
+          "max_kl_observed": 0.00010021441266871989,
+          "kl_p99": 0.00007731916412012652,
+          "min_top5_overlap": 3,
+          "failure_rows": 8,
+          "top1_changes": 0,
+          "sample_token_changed_count": 0
+        }
+      ]
     }
   },
   "timing": {

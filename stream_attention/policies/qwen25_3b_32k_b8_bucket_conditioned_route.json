@@ -104,6 +104,39 @@
       "failure_topk_lost_ref_mass_max": 0.000022803887986810878,
       "interpretation": "not product-promoted, but failures are token-stable tail-margin events with p99 KL inside budget and tiny lost top-k reference mass"
     },
+    "exact_refresh_128": {
+      "conclusion": "periodic exact refresh lowers tail risk monotonically but does not pass strict gate before losing the product-speed advantage",
+      "runs": {
+        "n32": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n32_product_fast_path_b8_128step_h100.json",
+          "speedup": 1.1555861067295845,
+          "kl_max": 0.00010670736082829535,
+          "kl_p99": 0.00008456988871330395,
+          "topk_overlap_min": 3,
+          "failure_rows": 12,
+          "exact_refresh_calls_per_layer": 4
+        },
+        "n16": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n16_product_fast_path_b8_128step_h100.json",
+          "speedup": 1.0968298711321707,
+          "kl_max": 0.00010104889224749058,
+          "kl_p99": 0.00008478237577946857,
+          "topk_overlap_min": 3,
+          "failure_rows": 10,
+          "exact_refresh_calls_per_layer": 8
+        },
+        "n8": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n8_product_fast_path_b8_128step_h100.json",
+          "speedup": 1.0244159954748207,
+          "kl_max": 0.00010021441266871989,
+          "kl_p99": 0.00007731916412012652,
+          "topk_overlap_min": 3,
+          "failure_rows": 8,
+          "exact_refresh_calls_per_layer": 16
+        }
+      },
+      "next": "prefer event-triggered verifier/canary refresh over periodic refresh"
+    },
     "dynamic_selector_replay": {
       "fixed_strict7": {
         "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json",

@@ -373,6 +373,47 @@ def _fixed_seed_attention_reference_bhnd(
     return out
 
 
+def _exact_attention_reference_bhnd(
+    query_states: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    *,
+    seq_len: int,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    """Reference exact decode attention over the full available K/V prefix.
+
+    This is a verifier/refresh backend, not a production exact kernel.  It keeps
+    the same routed Qwen module path and native cache ownership but replaces the
+    seed schedule with full-prefix attention for selected decode steps.
+    """
+
+    batch, q_heads, query_len, head_dim = query_states.shape
+    if query_len != 1:
+        raise ValueError(f"exact refresh only supports decode M=1, got {query_len}")
+    kv_heads = int(key_cache.shape[1])
+    if q_heads % kv_heads != 0:
+        raise ValueError(f"q_heads={q_heads} must be divisible by kv_heads={kv_heads}")
+    seq_len = min(int(seq_len), int(key_cache.shape[2]))
+    if seq_len <= 0:
+        out.zero_()
+        return out
+
+    group_size = q_heads // kv_heads
+    scale = 1.0 / math.sqrt(float(head_dim))
+    for kv_head in range(kv_heads):
+        head_start = kv_head * group_size
+        head_end = head_start + group_size
+        q_group = query_states[:, head_start:head_end, 0, :].float()
+        k_group = key_cache[:, kv_head, :seq_len, :].float()
+        v_group = value_cache[:, kv_head, :seq_len, :].float()
+        scores = torch.einsum("bgd,bnd->bgn", q_group, k_group) * scale
+        probs = torch.softmax(scores, dim=-1)
+        acc = torch.einsum("bgn,bnd->bgd", probs, v_group)
+        out[:, 0, head_start:head_end, :].copy_(acc.to(dtype=out.dtype))
+    return out
+
+
 def apply_layer_seed_overrides(bundle, override_text: str):
     overrides = parse_layer_seed_overrides(override_text)
     if not overrides:
@@ -1035,6 +1076,7 @@ class _SeedOnlyQwenDecodePatch:
         seed_attention_backend: str = "triton",
         dynamic_selector_layers: Optional[Set[int]] = None,
         dynamic_selector_profile: str = "",
+        exact_refresh_interval: int = 0,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -1052,8 +1094,10 @@ class _SeedOnlyQwenDecodePatch:
         self.seed_attention_backend = seed_attention_backend
         self.dynamic_selector_layers = dynamic_selector_layers or set()
         self.dynamic_selector_profile = dynamic_selector_profile
+        self.exact_refresh_interval = max(0, int(exact_refresh_interval))
         self.call_count = 0
         self.seed_call_count = 0
+        self.exact_refresh_call_count = 0
         self.dynamic_selector_call_count = 0
         self.native_cache_update_count = 0
         self.hf_sync_update_count = 0
@@ -1204,6 +1248,20 @@ class _SeedOnlyQwenDecodePatch:
             rows.append(row)
         return rows
 
+    def _decode_step(self, past_key_value: Any) -> Optional[int]:
+        step = getattr(past_key_value, "_streamattn_decode_step", None)
+        if step is None:
+            return None
+        return int(step)
+
+    def _use_exact_refresh(self, past_key_value: Any) -> bool:
+        if self.exact_refresh_interval <= 0:
+            return False
+        step = self._decode_step(past_key_value)
+        if step is None:
+            return False
+        return (step + 1) % self.exact_refresh_interval == 0
+
     def forward(
         self,
         module,
@@ -1269,11 +1327,13 @@ class _SeedOnlyQwenDecodePatch:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, module.head_dim)
         cos, sin = position_embeddings
+        use_exact_refresh = self._use_exact_refresh(past_key_value)
         use_fused_rope_append_seed = (
             self.fused_rope_append_seed
             and self.native_cache is not None
             and layer_id not in self.native_cache_hf_sync_layers
             and not use_dynamic_selector
+            and not use_exact_refresh
             and self.seed_attention_backend == "triton"
         )
         use_packed_qkv_fused_input = (
@@ -1402,7 +1462,16 @@ class _SeedOnlyQwenDecodePatch:
                     dtype=hidden_states.dtype,
                 )
                 self._mark(timing_events, "after_layout")
-                if use_dynamic_selector:
+                if use_exact_refresh:
+                    _exact_attention_reference_bhnd(
+                        query_states,
+                        k,
+                        v,
+                        seq_len=native_pos + 1,
+                        out=out,
+                    )
+                    self.exact_refresh_call_count += 1
+                elif use_dynamic_selector:
                     _dynamic_seed_attention_reference_bhnd(
                         query_states,
                         k,
@@ -1453,7 +1522,16 @@ class _SeedOnlyQwenDecodePatch:
                     dtype=hidden_states.dtype,
                 )
                 self._mark(timing_events, "after_layout")
-                if self.seed_attention_backend == "torch_ref_fp32":
+                if use_exact_refresh:
+                    _exact_attention_reference_bhnd(
+                        query_states,
+                        k,
+                        v,
+                        seq_len=int(k.shape[2]),
+                        out=out,
+                    )
+                    self.exact_refresh_call_count += 1
+                elif self.seed_attention_backend == "torch_ref_fp32":
                     _fixed_seed_attention_reference_bhnd(
                         query_states,
                         k,
@@ -1483,7 +1561,8 @@ class _SeedOnlyQwenDecodePatch:
         self._mark(timing_events, "end")
         if timing_events is not None:
             self._timing_event_rows.append(timing_events)
-        self.seed_call_count += 1
+        if not use_exact_refresh:
+            self.seed_call_count += 1
         return attn_output, None
 
 
@@ -1596,6 +1675,7 @@ def _patched_seed_only_decode_modules(
     seed_attention_backend: str = "triton",
     dynamic_selector_layers: Optional[Set[int]] = None,
     dynamic_selector_profile: str = "",
+    exact_refresh_interval: int = 0,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1623,6 +1703,7 @@ def _patched_seed_only_decode_modules(
             seed_attention_backend=seed_attention_backend,
             dynamic_selector_layers=dynamic_selector_layers,
             dynamic_selector_profile=dynamic_selector_profile,
+            exact_refresh_interval=exact_refresh_interval,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1682,6 +1763,10 @@ def _decode_loop(
             if fixed_input_tokens is not None:
                 input_token = fixed_input_tokens[step]
             input_tokens.append(input_token.detach().clone())
+            try:
+                past_key_values._streamattn_decode_step = int(step)
+            except Exception:
+                pass
             model_kwargs = {
                 "input_ids": input_token,
                 "attention_mask": _append_decode_attention_mask(mask, input_token),
@@ -1765,6 +1850,7 @@ def _warmup_decode(
             seed_attention_backend=args.seed_attention_backend,
             dynamic_selector_layers=parse_layer_id_set(getattr(args, "dynamic_selector_layers", "")),
             dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
+            exact_refresh_interval=getattr(args, "exact_refresh_interval", 0),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1779,6 +1865,8 @@ def _warmup_decode(
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "exact_refresh_calls": patch.exact_refresh_call_count,
+            "exact_refresh_interval": patch.exact_refresh_interval,
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2009,6 +2097,7 @@ def _empty_route_bundle_summary(
         "prealloc_o_proj": False,
         "triton_o_proj": False,
         "seed_attention_backend": args.seed_attention_backend,
+        "exact_refresh_interval": int(getattr(args, "exact_refresh_interval", 0)),
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2177,6 +2266,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 seed_attention_backend=args.seed_attention_backend,
                 dynamic_selector_layers=parse_layer_id_set(args.dynamic_selector_layers),
                 dynamic_selector_profile=args.dynamic_selector_profile,
+                exact_refresh_interval=args.exact_refresh_interval,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -2197,6 +2287,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         layer_id: {
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
+            "exact_refresh_calls": patch.exact_refresh_call_count,
+            "exact_refresh_interval": patch.exact_refresh_interval,
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2240,6 +2332,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "prealloc_o_proj": bool(args.prealloc_o_proj),
             "triton_o_proj": bool(args.triton_o_proj),
             "seed_attention_backend": args.seed_attention_backend,
+            "exact_refresh_interval": int(args.exact_refresh_interval),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2506,6 +2599,15 @@ def main() -> None:
             "Seed-attention backend for routed decode. Use torch_ref_fp32 for "
             "kernel forensics; it disables fused seed kernels and computes the "
             "fixed seed policy with a vectorized PyTorch fp32 reference."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-interval",
+        type=int,
+        default=0,
+        help=(
+            "Verifier mode: run exact full-prefix reference attention for routed "
+            "layers every Nth decode step. 0 disables exact refresh."
         ),
     )
     parser.add_argument(

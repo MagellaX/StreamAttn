@@ -3263,3 +3263,105 @@ verified-auto research:
 That is the correct place to spend research effort.  Another seed-kernel numeric
 tuning pass is unlikely to solve this class, because the fp32 mathematical seed
 reference produces the same margin shape.
+
+### 128-Step Exact-Refresh Verifier Sweep
+
+The first verifier experiment keeps the normal product fast path but replaces
+routed seed-only attention with exact full-prefix reference attention every `N`
+decode steps:
+
+```text
+--exact-refresh-interval N
+```
+
+This is a diagnostic verifier path.  The exact refresh is a PyTorch reference
+inside the routed Qwen module, not a production exact-native kernel.  It answers
+whether periodic exact correction removes the long-horizon margin tail.
+
+Artifacts:
+
+```text
+N=32:
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n32_product_fast_path_b8_128step_h100.json
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n32_product_fast_path_b8_128step_summary.json
+
+N=16:
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n16_product_fast_path_b8_128step_h100.json
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n16_product_fast_path_b8_128step_summary.json
+
+N=8:
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n8_product_fast_path_b8_128step_h100.json
+  artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_n8_product_fast_path_b8_128step_summary.json
+```
+
+Results:
+
+```text
+baseline seed_ref_fp32:
+  speedup:       0.98240x
+  KL max / p99: 1.07546e-04 / 8.71322e-05
+  top5 min:      3
+  failures:      14
+
+exact refresh N=32:
+  exact calls:   4 per routed layer
+  seed calls:    124 per routed layer
+  speedup:       1.15559x
+  KL max / p99: 1.06707e-04 / 8.45699e-05
+  top5 min:      3
+  failures:      12
+
+exact refresh N=16:
+  exact calls:   8 per routed layer
+  seed calls:    120 per routed layer
+  speedup:       1.09683x
+  KL max / p99: 1.01049e-04 / 8.47824e-05
+  top5 min:      3
+  failures:      10
+
+exact refresh N=8:
+  exact calls:   16 per routed layer
+  seed calls:    112 per routed layer
+  speedup:       1.02442x
+  KL max / p99: 1.00214e-04 / 7.73192e-05
+  top5 min:      3
+  failures:      8
+```
+
+All exact-refresh runs remained token-stable:
+
+```text
+top1 changes:    0 / 1024
+sample changes:  0 / 1024
+```
+
+But none passed the strict 128-step gate.  Even `N=8` still had:
+
+```text
+KL max:       1.00214e-04
+top5 min:     3 / 5
+speedup:      1.02442x
+```
+
+The sweep is still useful because it shows the direction:
+
+```text
+more exact refresh -> lower KL tail and fewer failure rows
+more exact refresh -> rapidly loses product speed
+```
+
+Conclusion:
+
+```text
+Periodic exact refresh is not the right product fix for this Qwen3B B8 route
+unless the exact-native verifier becomes far cheaper or more selective.
+```
+
+The next verifier should be event-triggered, not periodic:
+
+```text
+1. use margin forensics to define cheap canary conditions
+2. refresh only risky rows/layers/steps
+3. keep the strict product route exact for stress buckets
+4. keep Qwen3B B8 as Gate-0 actual-model proof, not strict 128-step product
+```
