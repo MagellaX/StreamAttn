@@ -15,6 +15,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     _batch_tokens,
     _bucket_route_policy_decision,
     _fixed_seed_attention_reference_bhnd,
+    _logit_row_margin_forensics,
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
@@ -1238,6 +1239,24 @@ def test_fixed_seed_attention_reference_matches_manual_seed_softmax():
         expected.append(torch.matmul(probs, v[0, 0, seed_idx].float()))
     expected = torch.stack(expected).reshape(1, 1, 2, 2)
     torch.testing.assert_close(out, expected)
+
+
+def test_logit_row_margin_forensics_reports_tail_mass_and_boundary():
+    import torch
+
+    reference = torch.tensor([[10.0, 9.0, 8.0, 7.0, 6.0, 5.99, 1.0]])
+    candidate = torch.tensor([[10.0, 9.0, 8.0, 5.8, 5.7, 7.1, 1.0]])
+
+    rows = _logit_row_margin_forensics(candidate, reference, top_k=5, report_top_k=6)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["topk_overlap"] == 4
+    assert row["topk_lost_ref_tokens"] == [4]
+    assert row["topk_gained_candidate_tokens"] == [5]
+    assert row["topk_boundary_logit_margin_ref"] == pytest.approx(0.01, abs=1.0e-6)
+    assert 0.0 < row["topk_lost_ref_mass"] < 0.02
+    assert 0.98 < row["topk_mass_retained_ref"] < 1.0
 
 
 def test_packed_seed_workspace_shape():

@@ -779,6 +779,87 @@ def _append_decode_attention_mask(mask: torch.Tensor, next_token: torch.Tensor) 
     return torch.cat([mask, torch.ones_like(next_token)], dim=1)
 
 
+def _logit_row_margin_forensics(
+    candidate: torch.Tensor,
+    reference: torch.Tensor,
+    *,
+    top_k: int,
+    report_top_k: int,
+) -> List[Dict[str, Any]]:
+    cand = candidate.detach().float()
+    ref = reference.detach().float()
+    logp = F.log_softmax(ref, dim=-1)
+    logq = F.log_softmax(cand, dim=-1)
+    p = logp.exp()
+    q = logq.exp()
+    kl = torch.sum(p * (logp - logq), dim=-1)
+    vocab_size = int(ref.shape[-1])
+    gate_k = min(max(1, int(top_k)), vocab_size)
+    report_k = min(vocab_size, max(int(report_top_k), gate_k + 1))
+    ref_top = torch.topk(ref, k=report_k, dim=-1)
+    cand_top = torch.topk(cand, k=report_k, dim=-1)
+    rows: List[Dict[str, Any]] = []
+    for row in range(ref.shape[0]):
+        ref_tokens = [int(x) for x in ref_top.indices[row].tolist()]
+        cand_tokens = [int(x) for x in cand_top.indices[row].tolist()]
+        ref_gate = ref_tokens[:gate_k]
+        cand_gate = cand_tokens[:gate_k]
+        ref_set = set(ref_gate)
+        cand_set = set(cand_gate)
+        overlap_tokens = sorted(ref_set & cand_set)
+        lost_ref_tokens = [tok for tok in ref_gate if tok not in cand_set]
+        gained_tokens = [tok for tok in cand_gate if tok not in ref_set]
+        ref_top_probs = [float(p[row, tok].item()) for tok in ref_tokens]
+        cand_top_probs = [float(q[row, tok].item()) for tok in cand_tokens]
+        ref_top_mass = float(sum(float(p[row, tok].item()) for tok in ref_gate))
+        retained_mass = float(sum(float(p[row, tok].item()) for tok in overlap_tokens))
+        lost_mass = float(sum(float(p[row, tok].item()) for tok in lost_ref_tokens))
+        gained_ref_mass = float(sum(float(p[row, tok].item()) for tok in gained_tokens))
+        if report_k > gate_k:
+            boundary_logit_margin = float((ref_top.values[row, gate_k - 1] - ref_top.values[row, gate_k]).item())
+            boundary_prob_margin = float(
+                (p[row, ref_tokens[gate_k - 1]] - p[row, ref_tokens[gate_k]]).item()
+            )
+        else:
+            boundary_logit_margin = 0.0
+            boundary_prob_margin = 0.0
+        ref_top1_margin = float((ref_top.values[row, 0] - ref_top.values[row, 1]).item())
+        cand_top1_margin = float((cand_top.values[row, 0] - cand_top.values[row, 1]).item())
+        ref_top1 = ref_tokens[0]
+        cand_top1 = cand_tokens[0]
+        rows.append(
+            {
+                "row": int(row),
+                "kl_ref_to_candidate": float(kl[row].item()),
+                "max_logit_delta": float((cand[row] - ref[row]).abs().max().item()),
+                "reference_top1": ref_top1,
+                "candidate_top1": cand_top1,
+                "top1_changed": bool(ref_top1 != cand_top1),
+                "topk_overlap": len(overlap_tokens),
+                "reference_top1_margin": ref_top1_margin,
+                "candidate_top1_margin": cand_top1_margin,
+                "top1_margin_delta": cand_top1_margin - ref_top1_margin,
+                "reference_top1_logprob_delta": float((logq[row, ref_top1] - logp[row, ref_top1]).item()),
+                "topk_boundary_logit_margin_ref": boundary_logit_margin,
+                "topk_boundary_prob_margin_ref": boundary_prob_margin,
+                "topk_mass_retained_ref": retained_mass / max(ref_top_mass, 1.0e-30),
+                "topk_ref_mass": ref_top_mass,
+                "topk_lost_ref_mass": lost_mass,
+                "topk_gained_ref_mass": gained_ref_mass,
+                "topk_overlap_tokens": overlap_tokens,
+                "topk_lost_ref_tokens": lost_ref_tokens,
+                "topk_gained_candidate_tokens": gained_tokens,
+                "reference_top_tokens": ref_gate,
+                "candidate_top_tokens": cand_gate,
+                "reference_top_report_tokens": ref_tokens,
+                "candidate_top_report_tokens": cand_tokens,
+                "reference_top_report_probs": ref_top_probs,
+                "candidate_top_report_probs": cand_top_probs,
+            }
+        )
+    return rows
+
+
 def _summarize_logit_steps(step_rows: Sequence[Dict[str, Any]], *, batch_size: int) -> Dict[str, Any]:
     flat = [row for step in step_rows for row in step["rows"]]
     kl_values = [float(row["kl_ref_to_candidate"]) for row in flat]
@@ -845,6 +926,95 @@ def _summarize_logit_steps_by_field(
                 row_ids.update(int(row["row"]) for row in rows)
         grouped[value] = _summarize_logit_steps(filtered_steps, batch_size=len(row_ids))
     return grouped
+
+
+def _margin_forensics_report(
+    step_rows: Sequence[Dict[str, Any]],
+    *,
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    flat = [
+        {**row, "step": int(step["step"])}
+        for step in step_rows
+        for row in step["rows"]
+    ]
+    failures = [
+        row
+        for row in flat
+        if (
+            float(row.get("kl_ref_to_candidate", 0.0)) > float(args.max_kl)
+            or int(row.get("topk_overlap", 0)) < int(args.min_topk_overlap)
+            or bool(row.get("top1_changed"))
+            or bool(row.get("sample_token_changed"))
+            or abs(float(row.get("reference_top1_logprob_delta", 0.0))) > float(args.max_logprob_delta)
+        )
+    ]
+    failures.sort(
+        key=lambda row: (
+            int(row.get("topk_overlap", 0)) >= int(args.min_topk_overlap),
+            -float(row.get("kl_ref_to_candidate", 0.0)),
+            float(row.get("topk_boundary_logit_margin_ref", 0.0)),
+        )
+    )
+
+    def vals(rows: Sequence[Dict[str, Any]], key: str) -> List[float]:
+        return [float(row.get(key, 0.0) or 0.0) for row in rows]
+
+    def summary(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        return {
+            "count": len(rows),
+            "kl_max": max(vals(rows, "kl_ref_to_candidate"), default=0.0),
+            "kl_p99": _percentile(vals(rows, "kl_ref_to_candidate"), 0.99),
+            "topk_overlap_min": min((int(row.get("topk_overlap", 0)) for row in rows), default=0),
+            "topk_mass_retained_min": min(vals(rows, "topk_mass_retained_ref"), default=0.0),
+            "topk_mass_retained_p50": _percentile(vals(rows, "topk_mass_retained_ref"), 0.50),
+            "topk_boundary_logit_margin_min": min(
+                vals(rows, "topk_boundary_logit_margin_ref"),
+                default=0.0,
+            ),
+            "topk_lost_ref_mass_max": max(vals(rows, "topk_lost_ref_mass"), default=0.0),
+            "top1_margin_min": min(vals(rows, "reference_top1_margin"), default=0.0),
+            "target_logprob_delta_max_abs": max(
+                (abs(value) for value in vals(rows, "reference_top1_logprob_delta")),
+                default=0.0,
+            ),
+        }
+
+    by_bucket = {}
+    for bucket in sorted({str(row.get("prompt_bucket", "")) for row in flat}):
+        by_bucket[bucket] = summary([row for row in flat if str(row.get("prompt_bucket", "")) == bucket])
+    by_failure_bucket = {}
+    for bucket in sorted({str(row.get("prompt_bucket", "")) for row in failures}):
+        by_failure_bucket[bucket] = summary(
+            [row for row in failures if str(row.get("prompt_bucket", "")) == bucket]
+        )
+
+    return {
+        "schema": "streamattn.margin_forensics.v1",
+        "top_k": int(args.top_k),
+        "report_top_k": int(args.margin_forensics_top_k),
+        "case_summary": summary(flat),
+        "failure_summary": summary(failures),
+        "failure_count": len(failures),
+        "kl_over_count": sum(
+            1 for row in flat if float(row.get("kl_ref_to_candidate", 0.0)) > float(args.max_kl)
+        ),
+        "topk_under_count": sum(
+            1 for row in flat if int(row.get("topk_overlap", 0)) < int(args.min_topk_overlap)
+        ),
+        "top1_changed_count": sum(1 for row in flat if bool(row.get("top1_changed"))),
+        "sample_changed_count": sum(1 for row in flat if bool(row.get("sample_token_changed"))),
+        "by_bucket": by_bucket,
+        "by_failure_bucket": by_failure_bucket,
+        "worst_rows": failures[: max(0, int(args.margin_forensics_max_rows))],
+        "interpretation": {
+            "token_stable": not any(row.get("top1_changed") or row.get("sample_token_changed") for row in flat),
+            "p99_kl_passed": _percentile(vals(flat, "kl_ref_to_candidate"), 0.99) <= float(args.max_kl),
+            "max_kl_passed": max(vals(flat, "kl_ref_to_candidate"), default=0.0) <= float(args.max_kl),
+            "topk_passed": min((int(row.get("topk_overlap", 0)) for row in flat), default=0)
+            >= int(args.min_topk_overlap),
+        },
+    }
 
 
 class _SeedOnlyQwenDecodePatch:
@@ -1636,7 +1806,15 @@ def _compare_decode_logits(
 ) -> Dict[str, Any]:
     steps = []
     for step, (dense, seed) in enumerate(zip(dense_logits, seed_logits)):
-        rows = _logit_row_metrics(seed, dense, top_k=args.top_k)
+        if getattr(args, "margin_forensics", False):
+            rows = _logit_row_margin_forensics(
+                seed,
+                dense,
+                top_k=args.top_k,
+                report_top_k=args.margin_forensics_top_k,
+            )
+        else:
+            rows = _logit_row_metrics(seed, dense, top_k=args.top_k)
         dense_sample, seed_sample = _coupled_sample_tokens(dense, seed, step=step, args=args)
         changed = dense_sample != seed_sample
         steps.append(
@@ -1661,7 +1839,10 @@ def _compare_decode_logits(
     summary["by_prompt_bucket"] = _summarize_logit_steps_by_field(steps, field="prompt_bucket")
     return {
         "summary": summary,
-        "steps": steps,
+        "steps": steps if getattr(args, "include_step_rows", False) else [],
+        "margin_forensics": _margin_forensics_report(steps, args=args)
+        if getattr(args, "margin_forensics", False)
+        else None,
     }
 
 
@@ -2069,7 +2250,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "fallback_reason": None,
             "bucket_route_policy": bucket_policy,
         }
-    return {
+    result = {
         "schema": "streamattn.seed_only_route_bundle_decode.v1",
         "device": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu",
         "model": {
@@ -2116,6 +2297,11 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             for idx, row in enumerate(prompt_rows)
         ],
     }
+    if comparison.get("margin_forensics") is not None:
+        result["margin_forensics"] = comparison["margin_forensics"]
+    if comparison.get("steps"):
+        result["steps"] = comparison["steps"]
+    return result
 
 
 def main() -> None:
@@ -2216,6 +2402,21 @@ def main() -> None:
     parser.add_argument("--max-kl", type=float, default=1.0e-4)
     parser.add_argument("--min-topk-overlap", type=int, default=4)
     parser.add_argument("--max-logprob-delta", type=float, default=2.0e-3)
+    parser.add_argument(
+        "--margin-forensics",
+        action="store_true",
+        help=(
+            "Emit margin-aware gate forensics for KL/top-k failures, including "
+            "top-k boundary margins and retained reference probability mass."
+        ),
+    )
+    parser.add_argument("--margin-forensics-top-k", type=int, default=10)
+    parser.add_argument("--margin-forensics-max-rows", type=int, default=24)
+    parser.add_argument(
+        "--include-step-rows",
+        action="store_true",
+        help="Include per-step per-row logit comparison rows in the output JSON.",
+    )
     parser.add_argument("--use-safetensors", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument(

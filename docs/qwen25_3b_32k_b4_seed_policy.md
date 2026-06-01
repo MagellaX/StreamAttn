@@ -3187,3 +3187,79 @@ The likely causes are now:
 
 The next research should focus on verifier/exact-refresh and margin-aware gate
 calibration, not seed-kernel numeric tuning.
+
+### 128-Step Margin Forensics
+
+The seed-reference path was then rerun with row-level margin forensics:
+
+```text
+benchmark:
+  benchmarks/profile_seed_policy_margin_forensics.py
+modal:
+  benchmarks/modal_seed_only_route_bundle_decode.py --margin-forensics
+artifact:
+  artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json
+summary:
+  artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_summary.json
+```
+
+This diagnostic uses the fp32 seed-reference backend, so its timing is not the
+product fast-path timing.  It is a safety-shape run:
+
+```text
+dense decode:       28.68997 ms/token
+seed-ref decode:    29.20381 ms/token
+diagnostic speedup: 0.98240x
+
+top1 changes:       0 / 1024
+sample changes:     0 / 1024
+top5 overlap min:   3 / 5
+KL max:             1.07546e-04
+KL p99:             8.71322e-05
+decision:           fail strict 128-step gate
+```
+
+The important finding is the margin shape:
+
+```text
+failure rows:        14 / 1024
+KL-over rows:         6 / 1024
+top-k-under rows:     8 / 1024
+p99 KL gate:          passed
+token identity:       stable
+
+failure retained top-k ref mass min: 0.999977
+failure lost top-k ref mass max:     2.28039e-05
+all-row retained top-k ref mass min: 0.999948
+```
+
+Interpretation:
+
+```text
+The 128-step miss is not top-token instability.
+It is a token-stable tail/margin failure:
+  - max KL barely crosses the strict gate
+  - p99 KL is inside the gate
+  - top-k set overlap can drop to 3/5
+  - but the missing top-k tokens carry tiny probability mass
+```
+
+So the strict-gate result is still real and must block product promotion, but
+the failure is not catastrophic.  The next research should decide whether the
+long-horizon product gate should include mass-aware top-k retention and verifier
+refresh, for example:
+
+```text
+strict promotion:
+  unchanged, max-KL/top-k hard gate
+
+verified-auto research:
+  require top1/sample stability
+  require KL p99 inside budget
+  require top-k retained reference mass >= threshold
+  run exact-native refresh every N steps if max-tail events appear
+```
+
+That is the correct place to spend research effort.  Another seed-kernel numeric
+tuning pass is unlikely to solve this class, because the fp32 mathematical seed
+reference produces the same margin shape.

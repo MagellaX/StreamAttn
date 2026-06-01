@@ -168,6 +168,12 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.append("--override-policy-kernel-tunables")
     if kwargs["layer_kernel_overrides"]:
         cmd.extend(["--layer-kernel-overrides", kwargs["layer_kernel_overrides"]])
+    if kwargs["margin_forensics"]:
+        cmd.append("--margin-forensics")
+        cmd.extend(["--margin-forensics-top-k", str(kwargs["margin_forensics_top_k"])])
+        cmd.extend(["--margin-forensics-max-rows", str(kwargs["margin_forensics_max_rows"])])
+    if kwargs["include_step_rows"]:
+        cmd.append("--include-step-rows")
     if kwargs["profile_patch_timing"]:
         cmd.append("--profile-patch-timing")
     if kwargs["explicit_cache_position"]:
@@ -240,6 +246,10 @@ def main(
     max_kl: float = 1.0e-4,
     min_topk_overlap: int = 4,
     max_logprob_delta: float = 2.0e-3,
+    margin_forensics: bool = False,
+    margin_forensics_top_k: int = 10,
+    margin_forensics_max_rows: int = 24,
+    include_step_rows: bool = False,
     sample_temperature: float = 0.8,
     sample_top_p: float = 0.95,
     sample_top_k: int = 0,
@@ -300,6 +310,10 @@ def main(
         max_kl=max_kl,
         min_topk_overlap=min_topk_overlap,
         max_logprob_delta=max_logprob_delta,
+        margin_forensics=margin_forensics,
+        margin_forensics_top_k=margin_forensics_top_k,
+        margin_forensics_max_rows=margin_forensics_max_rows,
+        include_step_rows=include_step_rows,
         sample_temperature=sample_temperature,
         sample_top_p=sample_top_p,
         sample_top_k=sample_top_k,
@@ -349,6 +363,7 @@ def main(
             "decision": result.get("decision"),
             "patch_counts": result.get("patch_counts"),
             "patch_timing": result.get("patch_timing"),
+            "margin_forensics": result.get("margin_forensics"),
             "prompts": result.get("prompts"),
         }
         print(json.dumps(summary, indent=2, sort_keys=True))

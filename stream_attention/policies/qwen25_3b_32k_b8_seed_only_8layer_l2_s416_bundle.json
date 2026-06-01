@@ -79,6 +79,24 @@
       "kl_p99": 0.00008713216811884195,
       "passed": false,
       "diagnosis": "strict long-horizon failure reproduces with fp32 seed reference; do not classify as primary Triton kernel drift"
+    },
+    "margin_forensics_128": {
+      "mode": "seed_ref_fp32",
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json",
+      "summary": "artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_summary.json",
+      "cases": 1024,
+      "failure_rows": 14,
+      "kl_over_rows": 6,
+      "topk_under_rows": 8,
+      "top1_changes": 0,
+      "sample_token_changed_count": 0,
+      "min_top5_overlap": 3,
+      "max_kl_observed": 0.00010754559480119497,
+      "kl_p99": 0.00008713216811884195,
+      "failure_topk_mass_retained_min": 0.9999771919978352,
+      "failure_topk_lost_ref_mass_max": 0.000022803887986810878,
+      "passed": false,
+      "diagnosis": "token-stable 128-step miss is dominated by max-KL/top-k tail movement; p99 KL passes and lost top-k reference mass is tiny"
     }
   },
   "timing": {

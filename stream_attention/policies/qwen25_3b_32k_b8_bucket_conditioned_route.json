@@ -87,6 +87,23 @@
       },
       "conclusion": "fp32 mathematical seed reference also fails strict KL/top-k with zero token divergence; the 128-step issue is policy/margin/recurrent composition, not primarily Triton seed-kernel numeric drift"
     },
+    "margin_forensics_128": {
+      "artifact": "artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_h100.json",
+      "summary": "artifacts/gate0/qwen25_3b_32k_b8_margin_forensics/seed_ref_fp32_product_fast_path_b8_128step_summary.json",
+      "backend": "torch_ref_fp32",
+      "cases": 1024,
+      "failure_rows": 14,
+      "kl_over_rows": 6,
+      "topk_under_rows": 8,
+      "kl_max": 0.00010754559480119497,
+      "kl_p99": 0.00008713216811884195,
+      "top1_changes": 0,
+      "sample_changes": 0,
+      "topk_overlap_min": 3,
+      "failure_topk_mass_retained_min": 0.9999771919978352,
+      "failure_topk_lost_ref_mass_max": 0.000022803887986810878,
+      "interpretation": "not product-promoted, but failures are token-stable tail-margin events with p99 KL inside budget and tiny lost top-k reference mass"
+    },
     "dynamic_selector_replay": {
       "fixed_strict7": {
         "artifact": "artifacts/gate0/qwen25_3b_32k_b8_dynamic_selector/strict7_fragile_buckets_8step_h100.json",
