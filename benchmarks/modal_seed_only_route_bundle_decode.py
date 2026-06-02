@@ -208,6 +208,8 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.extend(["--exact-refresh-layers", kwargs["exact_refresh_layers"]])
     if kwargs["exact_refresh_plan"]:
         cmd.extend(["--exact-refresh-plan", kwargs["exact_refresh_plan"]])
+    if kwargs["exact_refresh_row_plan"]:
+        cmd.extend(["--exact-refresh-row-plan", kwargs["exact_refresh_row_plan"]])
     if kwargs["dynamic_selector_layers"]:
         cmd.extend(["--dynamic-selector-layers", kwargs["dynamic_selector_layers"]])
     if kwargs["dynamic_selector_profile"]:
@@ -292,6 +294,7 @@ def main(
     exact_refresh_steps: str = "",
     exact_refresh_layers: str = "",
     exact_refresh_plan: str = "",
+    exact_refresh_row_plan: str = "",
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
@@ -360,6 +363,7 @@ def main(
         exact_refresh_steps=exact_refresh_steps,
         exact_refresh_layers=exact_refresh_layers,
         exact_refresh_plan=exact_refresh_plan,
+        exact_refresh_row_plan=exact_refresh_row_plan,
         dynamic_selector_layers=dynamic_selector_layers,
         dynamic_selector_profile=dynamic_selector_profile,
         allow_mixed_seed_configs=allow_mixed_seed_configs,

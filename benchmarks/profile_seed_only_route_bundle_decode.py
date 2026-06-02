@@ -272,6 +272,45 @@ def parse_step_layer_plan(text: str) -> Dict[int, Optional[Set[int]]]:
     return plan
 
 
+def parse_step_row_plan(text: str) -> Dict[int, Optional[Set[int]]]:
+    """Parse ``steps:rows`` verifier clauses.
+
+    Example: ``"91:3,7;38:2,6"`` refreshes only rows 3/7 at
+    step 91 and rows 2/6 at step 38. ``*`` preserves all-row refresh for
+    the listed steps.
+    """
+
+    plan: Dict[int, Optional[Set[int]]] = {}
+    if not text.strip():
+        return plan
+    for clause in text.split(";"):
+        item = clause.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise ValueError(f"invalid exact refresh row plan clause {item!r}; expected steps:rows")
+        step_text, row_text = item.split(":", 1)
+        steps = parse_step_set(step_text.strip())
+        row_spec = row_text.strip().lower()
+        if row_spec in {"*", "all"}:
+            rows: Optional[Set[int]] = None
+        else:
+            rows = parse_step_set(row_text)
+            if not rows:
+                raise ValueError(f"exact refresh row plan clause {item!r} has no row ids")
+        for step in steps:
+            existing = plan.get(step)
+            if existing is None and step in plan:
+                continue
+            if rows is None:
+                plan[step] = None
+            elif existing is None:
+                plan[step] = set(rows)
+            else:
+                existing.update(rows)
+    return plan
+
+
 def _exact_refresh_steps_for_layer(
     layer_id: int,
     *,
@@ -290,6 +329,10 @@ def _exact_refresh_steps_for_layer(
 
 def _serialize_step_layer_plan(plan: Dict[int, Optional[Set[int]]]) -> Dict[str, Any]:
     return {str(step): "all" if layers is None else sorted(layers) for step, layers in sorted(plan.items())}
+
+
+def _serialize_step_row_plan(plan: Dict[int, Optional[Set[int]]]) -> Dict[str, Any]:
+    return {str(step): "all" if rows is None else sorted(rows) for step, rows in sorted(plan.items())}
 
 
 def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
@@ -465,6 +508,7 @@ def _exact_attention_reference_bhnd(
     *,
     seq_len: int,
     out: torch.Tensor,
+    row_indices: Optional[Set[int]] = None,
 ) -> torch.Tensor:
     """Reference exact decode attention over the full available K/V prefix.
 
@@ -480,22 +524,43 @@ def _exact_attention_reference_bhnd(
     if q_heads % kv_heads != 0:
         raise ValueError(f"q_heads={q_heads} must be divisible by kv_heads={kv_heads}")
     seq_len = min(int(seq_len), int(key_cache.shape[2]))
+    selected_rows: Optional[List[int]] = None
+    if row_indices is not None:
+        selected_rows = sorted({int(row) for row in row_indices if 0 <= int(row) < batch})
+        if not selected_rows:
+            return out
     if seq_len <= 0:
-        out.zero_()
+        if selected_rows is None:
+            out.zero_()
+        else:
+            out[selected_rows].zero_()
         return out
 
     group_size = q_heads // kv_heads
     scale = 1.0 / math.sqrt(float(head_dim))
+    row_tensor = (
+        None
+        if selected_rows is None
+        else torch.tensor(selected_rows, device=query_states.device, dtype=torch.long)
+    )
     for kv_head in range(kv_heads):
         head_start = kv_head * group_size
         head_end = head_start + group_size
-        q_group = query_states[:, head_start:head_end, 0, :].float()
-        k_group = key_cache[:, kv_head, :seq_len, :].float()
-        v_group = value_cache[:, kv_head, :seq_len, :].float()
+        if row_tensor is None:
+            q_group = query_states[:, head_start:head_end, 0, :].float()
+            k_group = key_cache[:, kv_head, :seq_len, :].float()
+            v_group = value_cache[:, kv_head, :seq_len, :].float()
+        else:
+            q_group = query_states.index_select(0, row_tensor)[:, head_start:head_end, 0, :].float()
+            k_group = key_cache.index_select(0, row_tensor)[:, kv_head, :seq_len, :].float()
+            v_group = value_cache.index_select(0, row_tensor)[:, kv_head, :seq_len, :].float()
         scores = torch.einsum("bgd,bnd->bgn", q_group, k_group) * scale
         probs = torch.softmax(scores, dim=-1)
         acc = torch.einsum("bgn,bnd->bgd", probs, v_group)
-        out[:, 0, head_start:head_end, :].copy_(acc.to(dtype=out.dtype))
+        if row_tensor is None:
+            out[:, 0, head_start:head_end, :].copy_(acc.to(dtype=out.dtype))
+        else:
+            out[row_tensor, 0, head_start:head_end, :] = acc.to(dtype=out.dtype)
     return out
 
 
@@ -1163,6 +1228,7 @@ class _SeedOnlyQwenDecodePatch:
         dynamic_selector_profile: str = "",
         exact_refresh_interval: int = 0,
         exact_refresh_steps: Optional[Set[int]] = None,
+        exact_refresh_row_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -1182,9 +1248,11 @@ class _SeedOnlyQwenDecodePatch:
         self.dynamic_selector_profile = dynamic_selector_profile
         self.exact_refresh_interval = max(0, int(exact_refresh_interval))
         self.exact_refresh_steps = set(exact_refresh_steps or set())
+        self.exact_refresh_row_plan = dict(exact_refresh_row_plan or {})
         self.call_count = 0
         self.seed_call_count = 0
         self.exact_refresh_call_count = 0
+        self.exact_refresh_row_count = 0
         self.dynamic_selector_call_count = 0
         self.native_cache_update_count = 0
         self.hf_sync_update_count = 0
@@ -1350,6 +1418,55 @@ class _SeedOnlyQwenDecodePatch:
         if step is None:
             return False
         return (step + 1) % self.exact_refresh_interval == 0
+
+    def _exact_refresh_rows(self, past_key_value: Any, batch: int) -> Optional[Set[int]]:
+        step = self._decode_step(past_key_value)
+        if step is None or step not in self.exact_refresh_row_plan:
+            return None
+        rows = self.exact_refresh_row_plan[step]
+        if rows is None:
+            return None
+        return {int(row) for row in rows if 0 <= int(row) < int(batch)}
+
+    def _record_exact_refresh(self, rows: Optional[Set[int]], batch: int) -> None:
+        self.exact_refresh_call_count += 1
+        self.exact_refresh_row_count += int(batch if rows is None else len(rows))
+
+    def _run_seed_attention(
+        self,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        *,
+        seq_len: int,
+        cache_position: torch.Tensor,
+        out: torch.Tensor,
+    ) -> None:
+        if self.seed_attention_backend == "torch_ref_fp32":
+            _fixed_seed_attention_reference_bhnd(
+                query_states,
+                key_states,
+                value_states,
+                seq_len=seq_len,
+                policy=self.policy,
+                out=out,
+            )
+            return
+        q = query_states.transpose(1, 2).contiguous()
+        gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
+            q,
+            key_states,
+            value_states,
+            out,
+            cache_position,
+            block_size=self.policy.block_size,
+            sink_blocks=self.policy.sink_blocks,
+            recent_blocks=self.policy.recent_blocks,
+            middle_seed_blocks=self.policy.middle_seed_blocks,
+            block_order=self.policy.block_order,
+            num_warps=self.policy.num_warps,
+            num_stages=self.policy.num_stages,
+        )
 
     def forward(
         self,
@@ -1552,14 +1669,25 @@ class _SeedOnlyQwenDecodePatch:
                 )
                 self._mark(timing_events, "after_layout")
                 if use_exact_refresh:
+                    refresh_rows = self._exact_refresh_rows(past_key_value, hidden_states.shape[0])
+                    if refresh_rows is not None:
+                        self._run_seed_attention(
+                            query_states,
+                            k,
+                            v,
+                            seq_len=native_pos + 1,
+                            cache_position=cache_position,
+                            out=out,
+                        )
                     _exact_attention_reference_bhnd(
                         query_states,
                         k,
                         v,
                         seq_len=native_pos + 1,
                         out=out,
+                        row_indices=refresh_rows,
                     )
-                    self.exact_refresh_call_count += 1
+                    self._record_exact_refresh(refresh_rows, hidden_states.shape[0])
                 elif use_dynamic_selector:
                     _dynamic_seed_attention_reference_bhnd(
                         query_states,
@@ -1572,29 +1700,22 @@ class _SeedOnlyQwenDecodePatch:
                     )
                     self.dynamic_selector_call_count += 1
                 elif self.seed_attention_backend == "torch_ref_fp32":
-                    _fixed_seed_attention_reference_bhnd(
+                    self._run_seed_attention(
                         query_states,
                         k,
                         v,
                         seq_len=native_pos + 1,
-                        policy=self.policy,
+                        cache_position=cache_position,
                         out=out,
                     )
                 else:
-                    q = query_states.transpose(1, 2).contiguous()
-                    gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                        q,
+                    self._run_seed_attention(
+                        query_states,
                         k,
                         v,
-                        out,
-                        cache_position,
-                        block_size=self.policy.block_size,
-                        sink_blocks=self.policy.sink_blocks,
-                        recent_blocks=self.policy.recent_blocks,
-                        middle_seed_blocks=self.policy.middle_seed_blocks,
-                        block_order=self.policy.block_order,
-                        num_warps=self.policy.num_warps,
-                        num_stages=self.policy.num_stages,
+                        seq_len=native_pos + 1,
+                        cache_position=cache_position,
+                        out=out,
                     )
                 self._mark(timing_events, "after_seed_kernel")
             if not use_fused_rope_append_seed and self.native_cache is None:
@@ -1612,37 +1733,42 @@ class _SeedOnlyQwenDecodePatch:
                 )
                 self._mark(timing_events, "after_layout")
                 if use_exact_refresh:
+                    refresh_rows = self._exact_refresh_rows(past_key_value, hidden_states.shape[0])
+                    if refresh_rows is not None:
+                        self._run_seed_attention(
+                            query_states,
+                            k,
+                            v,
+                            seq_len=int(k.shape[2]),
+                            cache_position=cache_position,
+                            out=out,
+                        )
                     _exact_attention_reference_bhnd(
                         query_states,
                         k,
                         v,
                         seq_len=int(k.shape[2]),
                         out=out,
+                        row_indices=refresh_rows,
                     )
-                    self.exact_refresh_call_count += 1
+                    self._record_exact_refresh(refresh_rows, hidden_states.shape[0])
                 elif self.seed_attention_backend == "torch_ref_fp32":
-                    _fixed_seed_attention_reference_bhnd(
+                    self._run_seed_attention(
                         query_states,
                         k,
                         v,
                         seq_len=int(k.shape[2]),
-                        policy=self.policy,
+                        cache_position=cache_position,
                         out=out,
                     )
                 else:
-                    gate0_seed_only_attention_triton_forward_out_cachepos_bhnd(
-                        q,
+                    self._run_seed_attention(
+                        query_states,
                         k,
                         v,
-                        out,
-                        cache_position,
-                        block_size=self.policy.block_size,
-                        sink_blocks=self.policy.sink_blocks,
-                        recent_blocks=self.policy.recent_blocks,
-                        middle_seed_blocks=self.policy.middle_seed_blocks,
-                        block_order=self.policy.block_order,
-                        num_warps=self.policy.num_warps,
-                        num_stages=self.policy.num_stages,
+                        seq_len=int(k.shape[2]),
+                        cache_position=cache_position,
+                        out=out,
                     )
                 self._mark(timing_events, "after_seed_kernel")
         attn_output = out.reshape(*input_shape, -1).contiguous()
@@ -1768,6 +1894,7 @@ def _patched_seed_only_decode_modules(
     exact_refresh_steps: Optional[Set[int]] = None,
     exact_refresh_layers: Optional[Set[int]] = None,
     exact_refresh_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
+    exact_refresh_row_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1805,6 +1932,7 @@ def _patched_seed_only_decode_modules(
             dynamic_selector_profile=dynamic_selector_profile,
             exact_refresh_interval=exact_refresh_interval if refresh_enabled else 0,
             exact_refresh_steps=layer_refresh_steps,
+            exact_refresh_row_plan=exact_refresh_row_plan,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1955,6 +2083,7 @@ def _warmup_decode(
             exact_refresh_steps=parse_step_set(getattr(args, "exact_refresh_steps", "")),
             exact_refresh_layers=parse_layer_id_set(getattr(args, "exact_refresh_layers", "")),
             exact_refresh_plan=parse_step_layer_plan(getattr(args, "exact_refresh_plan", "")),
+            exact_refresh_row_plan=parse_step_row_plan(getattr(args, "exact_refresh_row_plan", "")),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -1970,8 +2099,10 @@ def _warmup_decode(
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
             "exact_refresh_calls": patch.exact_refresh_call_count,
+            "exact_refresh_row_count": patch.exact_refresh_row_count,
             "exact_refresh_interval": patch.exact_refresh_interval,
             "exact_refresh_steps": sorted(patch.exact_refresh_steps),
+            "exact_refresh_row_plan": _serialize_step_row_plan(patch.exact_refresh_row_plan),
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2208,6 +2339,9 @@ def _empty_route_bundle_summary(
         "exact_refresh_plan": _serialize_step_layer_plan(
             parse_step_layer_plan(getattr(args, "exact_refresh_plan", ""))
         ),
+        "exact_refresh_row_plan": _serialize_step_row_plan(
+            parse_step_row_plan(getattr(args, "exact_refresh_row_plan", ""))
+        ),
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2228,6 +2362,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
     exact_refresh_steps = parse_step_set(args.exact_refresh_steps)
     exact_refresh_layers = parse_layer_id_set(args.exact_refresh_layers)
     exact_refresh_plan = parse_step_layer_plan(args.exact_refresh_plan)
+    exact_refresh_row_plan = parse_step_row_plan(args.exact_refresh_row_plan)
     if dynamic_selector_layers and not args.dynamic_selector_profile:
         raise ValueError("--dynamic-selector-layers requires --dynamic-selector-profile")
     if args.dynamic_selector_profile and not dynamic_selector_layers:
@@ -2383,6 +2518,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 exact_refresh_steps=exact_refresh_steps,
                 exact_refresh_layers=exact_refresh_layers,
                 exact_refresh_plan=exact_refresh_plan,
+                exact_refresh_row_plan=exact_refresh_row_plan,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -2404,8 +2540,10 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "forward_calls": patch.call_count,
             "seed_only_decode_calls": patch.seed_call_count,
             "exact_refresh_calls": patch.exact_refresh_call_count,
+            "exact_refresh_row_count": patch.exact_refresh_row_count,
             "exact_refresh_interval": patch.exact_refresh_interval,
             "exact_refresh_steps": sorted(patch.exact_refresh_steps),
+            "exact_refresh_row_plan": _serialize_step_row_plan(patch.exact_refresh_row_plan),
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2453,6 +2591,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "exact_refresh_steps": sorted(exact_refresh_steps),
             "exact_refresh_layers": sorted(exact_refresh_layers),
             "exact_refresh_plan": _serialize_step_layer_plan(exact_refresh_plan),
+            "exact_refresh_row_plan": _serialize_step_row_plan(exact_refresh_row_plan),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2754,6 +2893,16 @@ def main() -> None:
             "Verifier mode: semicolon-separated steps:layers clauses. Example "
             "'91:*;19,38:0,2,14' refreshes all routed layers at step 91 and "
             "only layers 0/2/14 at steps 19 and 38."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-row-plan",
+        default="",
+        help=(
+            "Verifier mode: optional semicolon-separated steps:rows clauses. "
+            "Example '91:3,7;38:2,6' exact-overwrites only those batch rows "
+            "at listed steps. Exact-refresh steps absent from this plan keep "
+            "the previous all-row refresh behavior."
         ),
     )
     parser.add_argument(

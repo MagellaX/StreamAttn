@@ -28,6 +28,7 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     parse_layer_seed_overrides,
     parse_step_set,
     parse_step_layer_plan,
+    parse_step_row_plan,
     _exact_refresh_steps_for_layer,
     summarize_patch_timing_rows,
 )
@@ -1293,6 +1294,25 @@ def test_exact_attention_reference_matches_manual_full_softmax():
     torch.testing.assert_close(out, expected)
 
 
+def test_exact_attention_reference_row_subset_preserves_other_rows():
+    import torch
+
+    torch.manual_seed(7)
+    q = torch.randn((2, 2, 1, 4), dtype=torch.float32)
+    k = torch.randn((2, 1, 5, 4), dtype=torch.float32)
+    v = torch.randn((2, 1, 5, 4), dtype=torch.float32)
+
+    full = torch.empty((2, 1, 2, 4), dtype=torch.float32)
+    _exact_attention_reference_bhnd(q, k, v, seq_len=5, out=full)
+
+    sentinel = torch.full((2, 1, 2, 4), -123.0, dtype=torch.float32)
+    out = sentinel.clone()
+    _exact_attention_reference_bhnd(q, k, v, seq_len=5, out=out, row_indices={1, 999})
+
+    torch.testing.assert_close(out[0], sentinel[0])
+    torch.testing.assert_close(out[1], full[1])
+
+
 def test_exact_refresh_interval_uses_one_indexed_decode_steps():
     patch = _SeedOnlyQwenDecodePatch(
         policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
@@ -1329,6 +1349,17 @@ def test_parse_step_layer_plan_supports_all_and_layer_lists():
 
     with pytest.raises(ValueError):
         parse_step_layer_plan("91")
+
+
+def test_parse_step_row_plan_supports_all_and_row_lists():
+    plan = parse_step_row_plan("91:*;38,57:2,6;63:3-4")
+    assert plan[91] is None
+    assert plan[38] == {2, 6}
+    assert plan[57] == {2, 6}
+    assert plan[63] == {3, 4}
+
+    with pytest.raises(ValueError):
+        parse_step_row_plan("91")
 
 
 def test_exact_refresh_steps_for_layer_merges_base_and_plan():
