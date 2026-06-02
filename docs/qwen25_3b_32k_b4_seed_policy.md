@@ -3445,3 +3445,87 @@ The next verifier should be more selective:
 3. eventually use exact_native, not PyTorch reference exact
 4. keep event refresh as verifier evidence, not as the default product route yet
 ```
+
+### 128-Step Layer-Selective Exact Refresh
+
+The next sweep tested whether the event-step verifier could refresh only a
+subset of routed layers.  The event steps stayed fixed:
+
+```text
+19,38,57,63,86,91,93,106
+```
+
+Artifacts:
+
+```text
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l26_l27_union_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l24_l26_l27_union_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l0_l27_l35_union_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_except_l26_l27_union_steps_product_fast_path_b8_128step_h100.json
+artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_plan_step91_all_else_except_l26_l27_product_fast_path_b8_128step_h100.json
+```
+
+Results:
+
+```text
+refresh L26/L27 only:
+  exact layer calls: 16 total
+  speedup:           1.14142x
+  KL max / p99:      1.00433e-04 / 7.01731e-05
+  top5 min:          3
+  failures:          6
+  decision:          fail strict
+
+refresh L24/L26/L27:
+  exact layer calls: 24 total
+  speedup:           1.11459x
+  KL max / p99:      1.12819e-04 / 7.01169e-05
+  top5 min:          3
+  failures:          6
+  decision:          fail strict
+
+refresh L0/L27/L35:
+  exact layer calls: 24 total
+  speedup:           1.08757x
+  KL max / p99:      1.05314e-04 / 7.25492e-05
+  top5 min:          3
+  failures:          6
+  decision:          fail strict
+
+refresh all except L26/L27:
+  exact layer calls: 48 total
+  speedup:           1.10455x
+  KL max / p99:      9.89678e-05 / 6.86022e-05
+  top5 min:          3
+  failures:          2
+  decision:          fail strict top-k only
+
+step-specific plan:
+  plan:              step 91 all layers; other event steps L0/L2/L14/L16/L24/L35
+  exact layer calls: 50 total
+  speedup:           0.96742x
+  KL max / p99:      9.89678e-05 / 6.86022e-05
+  top5 min:          4
+  failures:          0
+  decision:          strict pass
+```
+
+This gives a sharper conclusion than the all-layer event refresh:
+
+```text
+layer selectivity works for safety,
+but the current PyTorch exact-reference verifier is still too slow for product speed.
+```
+
+The most informative failed run was `refresh all except L26/L27`: it passed the
+KL gate and missed only two `chat_doc` top-k rows at step 91, with lost reference
+top-k mass around `7.5e-07`.  Adding all-layer refresh only at step 91 removed
+those failures, proving that per-step routing can target specific tail events.
+
+The next implementation target should not be more fixed subsets.  It should be:
+
+```text
+1. exact_native verifier for the refresh path, replacing PyTorch exact reference
+2. row-selective refresh, because current event refresh still runs whole batch rows
+3. canary trigger that detects step-91-like top-k/margin risk without oracle steps
+```

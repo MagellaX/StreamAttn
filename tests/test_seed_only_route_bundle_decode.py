@@ -20,12 +20,15 @@ from benchmarks.profile_seed_only_route_bundle_decode import (
     _native_cache_from_hf_cache,
     _native_cache_mask_bookkeeping,
     _parent_module_and_attr,
+    _patched_seed_only_decode_modules,
     apply_layer_seed_overrides,
     apply_policy_kernel_tunable_overrides,
     parse_layer_id_set,
     parse_layer_kernel_tunable_overrides,
     parse_layer_seed_overrides,
     parse_step_set,
+    parse_step_layer_plan,
+    _exact_refresh_steps_for_layer,
     summarize_patch_timing_rows,
 )
 from benchmarks.summarize_seed_policy_stress_replay import summarize_payload
@@ -1316,6 +1319,40 @@ def test_parse_step_set_supports_ranges_and_zero_based_ids():
         parse_step_set("4-2")
 
 
+def test_parse_step_layer_plan_supports_all_and_layer_lists():
+    plan = parse_step_layer_plan("91:*;19,38:0,2,14;57-58:27")
+    assert plan[91] is None
+    assert plan[19] == {0, 2, 14}
+    assert plan[38] == {0, 2, 14}
+    assert plan[57] == {27}
+    assert plan[58] == {27}
+
+    with pytest.raises(ValueError):
+        parse_step_layer_plan("91")
+
+
+def test_exact_refresh_steps_for_layer_merges_base_and_plan():
+    plan = parse_step_layer_plan("91:*;19,38:0,2,14")
+    assert _exact_refresh_steps_for_layer(
+        2,
+        exact_refresh_steps={63},
+        exact_refresh_layers={2, 35},
+        exact_refresh_plan=plan,
+    ) == {19, 38, 63, 91}
+    assert _exact_refresh_steps_for_layer(
+        35,
+        exact_refresh_steps={63},
+        exact_refresh_layers={2, 35},
+        exact_refresh_plan=plan,
+    ) == {63, 91}
+    assert _exact_refresh_steps_for_layer(
+        27,
+        exact_refresh_steps={63},
+        exact_refresh_layers={2, 35},
+        exact_refresh_plan=plan,
+    ) == {91}
+
+
 def test_exact_refresh_explicit_steps_override_interval():
     patch = _SeedOnlyQwenDecodePatch(
         policy=Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
@@ -1332,6 +1369,50 @@ def test_exact_refresh_explicit_steps_override_interval():
     assert not patch._use_exact_refresh(cache)
     cache._streamattn_decode_step = 3
     assert patch._use_exact_refresh(cache)
+
+
+def test_exact_refresh_layers_filter_patch_context():
+    import torch
+
+    class DummyAttention(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = torch.nn.Linear(1, 1, bias=False)
+            self.k_proj = torch.nn.Linear(1, 1, bias=False)
+            self.v_proj = torch.nn.Linear(1, 1, bias=False)
+
+        def forward(self, *args, **kwargs):
+            return None
+
+    class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = torch.nn.ModuleList([DummyAttention() for _ in range(3)])
+
+    bundle = RouteBundle(
+        policy_names=["p0", "p1", "p2"],
+        policies=[
+            Gate0SeedOnlyBatchedPolicy(policy_id="p0", model_id="m", layer_id=0),
+            Gate0SeedOnlyBatchedPolicy(policy_id="p1", model_id="m", layer_id=1),
+            Gate0SeedOnlyBatchedPolicy(policy_id="p2", model_id="m", layer_id=2),
+        ],
+        artifacts=[],
+        layer_ids=[0, 1, 2],
+    )
+
+    with _patched_seed_only_decode_modules(
+        DummyModel(),
+        bundle,
+        exact_refresh_interval=8,
+        exact_refresh_steps={3, 11},
+        exact_refresh_layers={1},
+    ) as patches:
+        assert patches["0"].exact_refresh_interval == 0
+        assert patches["0"].exact_refresh_steps == set()
+        assert patches["1"].exact_refresh_interval == 8
+        assert patches["1"].exact_refresh_steps == {3, 11}
+        assert patches["2"].exact_refresh_interval == 0
+        assert patches["2"].exact_refresh_steps == set()
 
 
 def test_logit_row_margin_forensics_reports_tail_mass_and_boundary():

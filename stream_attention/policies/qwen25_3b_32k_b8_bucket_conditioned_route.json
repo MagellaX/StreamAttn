@@ -168,6 +168,74 @@
         "sample_changes": 0,
         "passed": true
       },
+      "layer_selective": {
+        "l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l26_l27_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l26_l27_union_steps_product_fast_path_b8_128step_summary.json",
+          "exact_refresh_layers": [26, 27],
+          "exact_refresh_calls_total": 16,
+          "speedup": 1.1414216029457367,
+          "kl_max": 0.00010043326619779691,
+          "kl_p99": 0.00007017306779744104,
+          "topk_overlap_min": 3,
+          "failure_rows": 6,
+          "passed": false
+        },
+        "l24_l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l24_l26_l27_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l24_l26_l27_union_steps_product_fast_path_b8_128step_summary.json",
+          "exact_refresh_layers": [24, 26, 27],
+          "exact_refresh_calls_total": 24,
+          "speedup": 1.1145916899426134,
+          "kl_max": 0.00011281885963398963,
+          "kl_p99": 0.0000701168755767867,
+          "topk_overlap_min": 3,
+          "failure_rows": 6,
+          "passed": false
+        },
+        "l0_l27_l35": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l0_l27_l35_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l0_l27_l35_union_steps_product_fast_path_b8_128step_summary.json",
+          "exact_refresh_layers": [0, 27, 35],
+          "exact_refresh_calls_total": 24,
+          "speedup": 1.0875728505254483,
+          "kl_max": 0.00010531429870752618,
+          "kl_p99": 0.00007254923548316583,
+          "topk_overlap_min": 3,
+          "failure_rows": 6,
+          "passed": false
+        },
+        "except_l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_except_l26_l27_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_except_l26_l27_union_steps_product_fast_path_b8_128step_summary.json",
+          "exact_refresh_layers": [0, 2, 14, 16, 24, 35],
+          "exact_refresh_calls_total": 48,
+          "speedup": 1.10455401189032,
+          "kl_max": 0.0000989677500911057,
+          "kl_p99": 0.00006860218127258122,
+          "topk_overlap_min": 3,
+          "failure_rows": 2,
+          "failure_reason": "top-k only at chat_doc step 91 with tiny lost reference mass",
+          "passed": false
+        },
+        "step91_all_else_except_l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_plan_step91_all_else_except_l26_l27_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_plan_step91_all_else_except_l26_l27_product_fast_path_b8_128step_summary.json",
+          "exact_refresh_plan": {
+            "91": "all",
+            "19,38,57,63,86,93,106": [0, 2, 14, 16, 24, 35]
+          },
+          "exact_refresh_calls_total": 50,
+          "speedup": 0.9674214623854401,
+          "kl_max": 0.0000989677500911057,
+          "kl_p99": 0.00006860218127258122,
+          "topk_overlap_min": 4,
+          "failure_rows": 0,
+          "top1_changes": 0,
+          "sample_changes": 0,
+          "passed": true
+        }
+      },
       "next": "replace all-layer event refresh with row/layer-selective canary refresh and exact_native verifier kernels"
     },
     "dynamic_selector_replay": {

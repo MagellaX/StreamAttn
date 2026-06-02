@@ -172,6 +172,46 @@
         "kl_p99": 0.00006341357948258519,
         "failure_rows": 0,
         "passed": true
+      },
+      "layer_selective": {
+        "l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l26_l27_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_l26_l27_union_steps_product_fast_path_b8_128step_summary.json",
+          "layers": [26, 27],
+          "exact_refresh_calls_total": 16,
+          "speedup": 1.1414216029457367,
+          "max_kl_observed": 0.00010043326619779691,
+          "kl_p99": 0.00007017306779744104,
+          "min_top5_overlap": 3,
+          "failure_rows": 6,
+          "passed": false
+        },
+        "except_l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_except_l26_l27_union_steps_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_except_l26_l27_union_steps_product_fast_path_b8_128step_summary.json",
+          "layers": [0, 2, 14, 16, 24, 35],
+          "exact_refresh_calls_total": 48,
+          "speedup": 1.10455401189032,
+          "max_kl_observed": 0.0000989677500911057,
+          "kl_p99": 0.00006860218127258122,
+          "min_top5_overlap": 3,
+          "failure_rows": 2,
+          "passed": false
+        },
+        "step91_all_else_except_l26_l27": {
+          "artifact": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_plan_step91_all_else_except_l26_l27_product_fast_path_b8_128step_h100.json",
+          "summary": "artifacts/gate0/qwen25_3b_32k_b8_exact_refresh/exact_refresh_plan_step91_all_else_except_l26_l27_product_fast_path_b8_128step_summary.json",
+          "plan": "91:*;19,38,57,63,86,93,106:0,2,14,16,24,35",
+          "exact_refresh_calls_total": 50,
+          "speedup": 0.9674214623854401,
+          "max_kl_observed": 0.0000989677500911057,
+          "kl_p99": 0.00006860218127258122,
+          "min_top5_overlap": 4,
+          "top1_changes": 0,
+          "sample_token_changed_count": 0,
+          "failure_rows": 0,
+          "passed": true
+        }
       }
     }
   },

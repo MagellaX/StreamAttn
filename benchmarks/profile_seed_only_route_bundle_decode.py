@@ -234,6 +234,64 @@ def parse_step_set(text: str) -> Set[int]:
     return steps
 
 
+def parse_step_layer_plan(text: str) -> Dict[int, Optional[Set[int]]]:
+    """Parse ``steps:layers`` verifier clauses.
+
+    Example: ``"91:*;19,38:0,2,14"`` means every routed layer refreshes at
+    step 91, while only layers 0/2/14 refresh at steps 19 and 38.
+    """
+
+    plan: Dict[int, Optional[Set[int]]] = {}
+    if not text.strip():
+        return plan
+    for clause in text.split(";"):
+        item = clause.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise ValueError(f"invalid exact refresh plan clause {item!r}; expected steps:layers")
+        step_text, layer_text = item.split(":", 1)
+        steps = parse_step_set(step_text.strip())
+        layer_spec = layer_text.strip().lower()
+        if layer_spec in {"*", "all"}:
+            layers: Optional[Set[int]] = None
+        else:
+            layers = parse_layer_id_set(layer_text)
+            if not layers:
+                raise ValueError(f"exact refresh plan clause {item!r} has no layer ids")
+        for step in steps:
+            existing = plan.get(step)
+            if existing is None and step in plan:
+                continue
+            if layers is None:
+                plan[step] = None
+            elif existing is None:
+                plan[step] = set(layers)
+            else:
+                existing.update(layers)
+    return plan
+
+
+def _exact_refresh_steps_for_layer(
+    layer_id: int,
+    *,
+    exact_refresh_steps: Set[int],
+    exact_refresh_layers: Set[int],
+    exact_refresh_plan: Dict[int, Optional[Set[int]]],
+) -> Set[int]:
+    steps: Set[int] = set()
+    if exact_refresh_steps and (not exact_refresh_layers or layer_id in exact_refresh_layers):
+        steps.update(exact_refresh_steps)
+    for step, layers in exact_refresh_plan.items():
+        if layers is None or layer_id in layers:
+            steps.add(step)
+    return steps
+
+
+def _serialize_step_layer_plan(plan: Dict[int, Optional[Set[int]]]) -> Dict[str, Any]:
+    return {str(step): "all" if layers is None else sorted(layers) for step, layers in sorted(plan.items())}
+
+
 def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
     profile = str(getattr(args, "product_fast_path", "none") or "none")
     if profile == "none":
@@ -1708,6 +1766,8 @@ def _patched_seed_only_decode_modules(
     dynamic_selector_profile: str = "",
     exact_refresh_interval: int = 0,
     exact_refresh_steps: Optional[Set[int]] = None,
+    exact_refresh_layers: Optional[Set[int]] = None,
+    exact_refresh_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1716,10 +1776,18 @@ def _patched_seed_only_decode_modules(
     originals = []
     effective_packed_qkv_projection = bool(packed_qkv_projection or native_attention_module)
     for policy in bundle.policies:
+        layer_id = int(policy.layer_id)
         item = modules_by_layer.get(int(policy.layer_id))
         if item is None:
             raise ValueError(f"model is missing layer {policy.layer_id}")
         name, module = item
+        refresh_enabled = not exact_refresh_layers or layer_id in exact_refresh_layers
+        layer_refresh_steps = _exact_refresh_steps_for_layer(
+            layer_id,
+            exact_refresh_steps=set(exact_refresh_steps or set()),
+            exact_refresh_layers=set(exact_refresh_layers or set()),
+            exact_refresh_plan=exact_refresh_plan or {},
+        )
         patch = _SeedOnlyQwenDecodePatch(
             policy=policy,
             original_forward=module.forward,
@@ -1735,8 +1803,8 @@ def _patched_seed_only_decode_modules(
             seed_attention_backend=seed_attention_backend,
             dynamic_selector_layers=dynamic_selector_layers,
             dynamic_selector_profile=dynamic_selector_profile,
-            exact_refresh_interval=exact_refresh_interval,
-            exact_refresh_steps=exact_refresh_steps,
+            exact_refresh_interval=exact_refresh_interval if refresh_enabled else 0,
+            exact_refresh_steps=layer_refresh_steps,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1885,6 +1953,8 @@ def _warmup_decode(
             dynamic_selector_profile=getattr(args, "dynamic_selector_profile", ""),
             exact_refresh_interval=getattr(args, "exact_refresh_interval", 0),
             exact_refresh_steps=parse_step_set(getattr(args, "exact_refresh_steps", "")),
+            exact_refresh_layers=parse_layer_id_set(getattr(args, "exact_refresh_layers", "")),
+            exact_refresh_plan=parse_step_layer_plan(getattr(args, "exact_refresh_plan", "")),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -2134,6 +2204,10 @@ def _empty_route_bundle_summary(
         "seed_attention_backend": args.seed_attention_backend,
         "exact_refresh_interval": int(getattr(args, "exact_refresh_interval", 0)),
         "exact_refresh_steps": sorted(parse_step_set(getattr(args, "exact_refresh_steps", ""))),
+        "exact_refresh_layers": sorted(parse_layer_id_set(getattr(args, "exact_refresh_layers", ""))),
+        "exact_refresh_plan": _serialize_step_layer_plan(
+            parse_step_layer_plan(getattr(args, "exact_refresh_plan", ""))
+        ),
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2152,6 +2226,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         raise RuntimeError("CUDA requested but unavailable")
     dynamic_selector_layers = parse_layer_id_set(args.dynamic_selector_layers)
     exact_refresh_steps = parse_step_set(args.exact_refresh_steps)
+    exact_refresh_layers = parse_layer_id_set(args.exact_refresh_layers)
+    exact_refresh_plan = parse_step_layer_plan(args.exact_refresh_plan)
     if dynamic_selector_layers and not args.dynamic_selector_profile:
         raise ValueError("--dynamic-selector-layers requires --dynamic-selector-profile")
     if args.dynamic_selector_profile and not dynamic_selector_layers:
@@ -2305,6 +2381,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 dynamic_selector_profile=args.dynamic_selector_profile,
                 exact_refresh_interval=args.exact_refresh_interval,
                 exact_refresh_steps=exact_refresh_steps,
+                exact_refresh_layers=exact_refresh_layers,
+                exact_refresh_plan=exact_refresh_plan,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -2373,6 +2451,8 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "seed_attention_backend": args.seed_attention_backend,
             "exact_refresh_interval": int(args.exact_refresh_interval),
             "exact_refresh_steps": sorted(exact_refresh_steps),
+            "exact_refresh_layers": sorted(exact_refresh_layers),
+            "exact_refresh_plan": _serialize_step_layer_plan(exact_refresh_plan),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2656,6 +2736,24 @@ def main() -> None:
         help=(
             "Verifier mode: comma-separated zero-based decode steps or inclusive "
             "ranges that run exact full-prefix reference attention for routed layers."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-layers",
+        default="",
+        help=(
+            "Verifier mode: comma-separated routed layer ids that are eligible for "
+            "exact refresh. Empty refreshes every routed layer, preserving the "
+            "existing all-layer verifier behavior."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-plan",
+        default="",
+        help=(
+            "Verifier mode: semicolon-separated steps:layers clauses. Example "
+            "'91:*;19,38:0,2,14' refreshes all routed layers at step 91 and "
+            "only layers 0/2/14 at steps 19 and 38."
         ),
     )
     parser.add_argument(
