@@ -12,6 +12,7 @@ import modal
 
 
 app = modal.App("streamattn-seed-selector-proxy")
+hf_cache = modal.Volume.from_name("streamattn-hf-cache", create_if_missing=True)
 
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
@@ -22,6 +23,7 @@ image = (
         "accelerate",
         "sentencepiece",
         "safetensors",
+        "hf_transfer",
     )
     .add_local_dir(
         ".",
@@ -65,6 +67,15 @@ def _run(**kwargs) -> dict[str, Any]:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
+    env.setdefault("HF_HOME", "/root/.cache/huggingface")
+    env.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+    if env.get("HF_TOKEN"):
+        print("[modal-seed-selector-proxy] HF_TOKEN is available from Modal secret", flush=True)
+    else:
+        print(
+            "[modal-seed-selector-proxy] HF_TOKEN not set; using unauthenticated Hugging Face downloads",
+            flush=True,
+        )
 
     remote_failure_artifact = ""
     failure_artifact_json = kwargs.get("failure_artifact_json") or ""
@@ -116,9 +127,29 @@ def _run(**kwargs) -> dict[str, Any]:
     return json.loads(Path(remote_output_json).read_text(encoding="utf-8"))
 
 
-@app.function(image=image, gpu="H100", timeout=14400)
+@app.function(
+    image=image,
+    gpu="H100",
+    timeout=14400,
+    volumes={"/root/.cache/huggingface": hf_cache},
+)
 def profile_h100(**kwargs):
-    return _run(**kwargs)
+    result = _run(**kwargs)
+    hf_cache.commit()
+    return result
+
+
+@app.function(
+    image=image,
+    gpu="H100",
+    timeout=14400,
+    volumes={"/root/.cache/huggingface": hf_cache},
+    secrets=[modal.Secret.from_name("huggingface-token")],
+)
+def profile_h100_hf_token(**kwargs):
+    result = _run(**kwargs)
+    hf_cache.commit()
+    return result
 
 
 @app.local_entrypoint()
@@ -146,6 +177,7 @@ def main(
     failure_artifact: str = "artifacts/gate0/qwen25_3b_32k_b8_model_decode/strict7_stress_pack_left_b8_h100.json",
     include_step0: bool = True,
     max_rows: int = 0,
+    use_hf_token_secret: bool = False,
     output_json: str = "",
 ):
     failure_artifact_json = ""
@@ -156,7 +188,11 @@ def main(
         else:
             print(f"[modal-seed-selector-proxy] warning: failure artifact not found: {failure_artifact}", flush=True)
 
-    result = profile_h100.remote(
+    runner = profile_h100_hf_token if use_hf_token_secret else profile_h100
+    if use_hf_token_secret:
+        print("[modal-seed-selector-proxy] using Modal secret: huggingface-token", flush=True)
+
+    result = runner.remote(
         model=model,
         prompt_file=prompt_file,
         prompt_truncation_side=prompt_truncation_side,

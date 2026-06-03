@@ -98,6 +98,33 @@ def _iter_worst_rows(payload: Mapping[str, Any]) -> Iterable[Dict[str, Any]]:
             yield dict(row)
 
 
+def _iter_safety_bucket_rows(payload: Mapping[str, Any]) -> Iterable[Dict[str, Any]]:
+    safety = payload.get("safety") or {}
+    for bucket, summary in (safety.get("by_prompt_bucket") or {}).items():
+        for key, reason in (
+            ("first_divergence", "top1_changed"),
+            ("first_sample_divergence", "sample_token_changed"),
+        ):
+            event = summary.get(key)
+            if not event:
+                continue
+            step = _as_int(event.get("step"), 0)
+            for row_id in event.get("rows") or []:
+                yield {
+                    "step": step,
+                    "row": _as_int(row_id),
+                    "prompt_bucket": bucket,
+                    reason: True,
+                }
+        worst = summary.get("worst_case_by_kl") or {}
+        if "row" in worst:
+            yield {
+                **worst,
+                "step": _as_int(worst.get("step"), 0),
+                "prompt_bucket": str(worst.get("prompt_bucket") or bucket),
+            }
+
+
 def _compact_row(row: Mapping[str, Any], reasons: Sequence[str]) -> Dict[str, Any]:
     return {
         "step": _as_int(row.get("step")),
@@ -269,6 +296,9 @@ def compile_artifact(
     source = "steps" if rows else "margin_forensics.worst_rows"
     if not rows:
         rows = list(_iter_worst_rows(payload))
+    if not rows:
+        source = "safety.by_prompt_bucket"
+        rows = list(_iter_safety_bucket_rows(payload))
 
     plan: Dict[int, Set[int]] = defaultdict(set)
     failures: List[Dict[str, Any]] = []

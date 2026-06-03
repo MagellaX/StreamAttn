@@ -84,6 +84,47 @@ def test_compile_artifact_uses_margin_worst_rows_without_steps():
     assert {tuple(row["reasons"]) for row in plan["failure_rows"]} == {("topk_under",), ("kl_over",)}
 
 
+def test_compile_artifact_extracts_stress_safety_bucket_rows():
+    payload = {
+        "decision": {
+            "passed": False,
+            "gates": {"max_kl": 1.0e-4, "min_topk_overlap": 4, "max_logprob_delta": 2.0e-3},
+        },
+        "safety": {
+            "by_prompt_bucket": {
+                "needle_rag": {
+                    "first_divergence": {"rows": [4], "step": 21},
+                    "first_sample_divergence": {"rows": [4], "step": 5},
+                    "worst_case_by_kl": {
+                        "row": 4,
+                        "prompt_bucket": "needle_rag",
+                        "kl_ref_to_candidate": 0.05,
+                        "topk_overlap": 5,
+                    },
+                },
+                "json_tool": {
+                    "first_sample_divergence": {"rows": [6], "step": 5},
+                    "worst_case_by_kl": {
+                        "row": 6,
+                        "prompt_bucket": "json_tool",
+                        "kl_ref_to_candidate": 0.2,
+                        "topk_overlap": 3,
+                    },
+                },
+            }
+        },
+    }
+
+    plan = compile_artifact(payload)
+
+    assert plan["failure_row_source"] == "safety.by_prompt_bucket"
+    assert plan["compiled_step_row_plan_text"] == "0:4,6;5:4,6;21:4"
+    reasons_by_step_row = {(row["step"], row["row"]): row["reasons"] for row in plan["failure_rows"]}
+    assert reasons_by_step_row[(21, 4)] == ["top1_changed"]
+    assert reasons_by_step_row[(5, 4)] == ["sample_token_changed"]
+    assert set(reasons_by_step_row[(0, 6)]) == {"kl_over", "topk_under"}
+
+
 def test_compile_artifact_marks_speed_negative_exact_refresh_as_research_only():
     payload = {
         "decision": {
