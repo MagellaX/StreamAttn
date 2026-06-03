@@ -13,6 +13,8 @@ import modal
 
 app = modal.App("streamattn-seed-selector-proxy")
 hf_cache = modal.Volume.from_name("streamattn-hf-cache", create_if_missing=True)
+hf_secret_name = os.environ.get("STREAMATTN_MODAL_HF_SECRET", "").strip()
+hf_secrets = [modal.Secret.from_name(hf_secret_name)] if hf_secret_name else []
 
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
@@ -132,21 +134,9 @@ def _run(**kwargs) -> dict[str, Any]:
     gpu="H100",
     timeout=14400,
     volumes={"/root/.cache/huggingface": hf_cache},
+    secrets=hf_secrets,
 )
 def profile_h100(**kwargs):
-    result = _run(**kwargs)
-    hf_cache.commit()
-    return result
-
-
-@app.function(
-    image=image,
-    gpu="H100",
-    timeout=14400,
-    volumes={"/root/.cache/huggingface": hf_cache},
-    secrets=[modal.Secret.from_name("huggingface-token")],
-)
-def profile_h100_hf_token(**kwargs):
     result = _run(**kwargs)
     hf_cache.commit()
     return result
@@ -188,11 +178,15 @@ def main(
         else:
             print(f"[modal-seed-selector-proxy] warning: failure artifact not found: {failure_artifact}", flush=True)
 
-    runner = profile_h100_hf_token if use_hf_token_secret else profile_h100
     if use_hf_token_secret:
-        print("[modal-seed-selector-proxy] using Modal secret: huggingface-token", flush=True)
+        if not hf_secret_name:
+            raise ValueError(
+                "--use-hf-token-secret requires setting STREAMATTN_MODAL_HF_SECRET, "
+                "for example STREAMATTN_MODAL_HF_SECRET=huggingface-token"
+            )
+        print(f"[modal-seed-selector-proxy] using Modal secret: {hf_secret_name}", flush=True)
 
-    result = runner.remote(
+    result = profile_h100.remote(
         model=model,
         prompt_file=prompt_file,
         prompt_truncation_side=prompt_truncation_side,

@@ -12,6 +12,9 @@ import modal
 
 
 app = modal.App("streamattn-seed-only-route-bundle-decode")
+hf_cache = modal.Volume.from_name("streamattn-hf-cache", create_if_missing=True)
+hf_secret_name = os.environ.get("STREAMATTN_MODAL_HF_SECRET", "").strip()
+hf_secrets = [modal.Secret.from_name(hf_secret_name)] if hf_secret_name else []
 
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
@@ -22,6 +25,7 @@ image = (
         "accelerate",
         "sentencepiece",
         "safetensors",
+        "hf_transfer",
     )
     .add_local_dir(
         ".",
@@ -85,6 +89,15 @@ def _run(**kwargs) -> dict[str, Any]:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONPATH"] = "/root/StreamAttn" + os.pathsep + env.get("PYTHONPATH", "")
+    env.setdefault("HF_HOME", "/root/.cache/huggingface")
+    env.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+    if env.get("HF_TOKEN"):
+        print("[modal-route-bundle-decode] HF_TOKEN is available from Modal secret", flush=True)
+    else:
+        print(
+            "[modal-route-bundle-decode] HF_TOKEN not set; using unauthenticated Hugging Face downloads",
+            flush=True,
+        )
     cmd = [
         "python",
         "-u",
@@ -231,9 +244,17 @@ def _run(**kwargs) -> dict[str, Any]:
     return _json_from_cmd(cmd, env=env)
 
 
-@app.function(image=image, gpu="H100", timeout=7200)
+@app.function(
+    image=image,
+    gpu="H100",
+    timeout=7200,
+    volumes={"/root/.cache/huggingface": hf_cache},
+    secrets=hf_secrets,
+)
 def profile_h100(**kwargs):
-    return _run(**kwargs)
+    result = _run(**kwargs)
+    hf_cache.commit()
+    return result
 
 
 @app.local_entrypoint()
@@ -307,8 +328,17 @@ def main(
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
+    use_hf_token_secret: bool = False,
     output_json: str = "",
 ):
+    if use_hf_token_secret:
+        if not hf_secret_name:
+            raise ValueError(
+                "--use-hf-token-secret requires setting STREAMATTN_MODAL_HF_SECRET, "
+                "for example STREAMATTN_MODAL_HF_SECRET=huggingface-token"
+            )
+        print(f"[modal-route-bundle-decode] using Modal secret: {hf_secret_name}", flush=True)
+
     result = profile_h100.remote(
         model=model,
         layers=layers,
