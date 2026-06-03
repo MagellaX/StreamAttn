@@ -102,6 +102,30 @@ def test_qwen3b_bucket_policy_default_validated_uses_full_bundle():
     assert decision.strict_gate_passed is True
 
 
+def test_qwen3b_bucket_policy_stress_risk_tier_overrides_validated_bucket_name():
+    decision = qwen25_3b_bucket_route_decision(
+        "code",
+        product_strict=True,
+        risk_tier="stress",
+    )
+
+    assert decision.mode == "exact_native"
+    assert decision.seed_only_layers == ()
+    assert decision.reason == "risk_tier_requires_exact"
+    assert decision.risk_tier == "stress"
+
+
+def test_qwen3b_bucket_policy_validated_tier_allows_validated_bucket():
+    decision = qwen25_3b_bucket_route_decision(
+        "long_doc",
+        product_strict=True,
+        risk_tier="validated",
+    )
+
+    assert decision.mode == "seed_only_bundle"
+    assert decision.risk_tier == "validated"
+
+
 def test_qwen3b_bucket_policy_unknown_bucket_fails_closed_in_product_mode():
     decision = qwen25_3b_bucket_route_decision("new_task_family", product_strict=True)
 

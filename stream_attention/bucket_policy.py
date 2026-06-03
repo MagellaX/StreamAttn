@@ -45,6 +45,7 @@ QWEN25_3B_VALIDATED_DEFAULT_BUCKETS = frozenset(
         "mixed_validated",
     }
 )
+QWEN25_3B_RISK_TIERS = frozenset({"bucket_only", "validated", "stress", "unknown"})
 
 
 @dataclass(frozen=True)
@@ -59,12 +60,14 @@ class BucketRouteDecision:
     status: str
     reason: str
     evidence: str
+    risk_tier: str = "bucket_only"
 
 
 def qwen25_3b_bucket_route_decision(
     prompt_bucket: Optional[str],
     *,
     product_strict: bool = True,
+    risk_tier: Optional[str] = None,
 ) -> BucketRouteDecision:
     """Return the Qwen2.5-3B bucket-conditioned route decision.
 
@@ -74,6 +77,40 @@ def qwen25_3b_bucket_route_decision(
     """
 
     bucket = str(prompt_bucket or "default")
+    tier = str(risk_tier or "bucket_only")
+    if tier not in QWEN25_3B_RISK_TIERS:
+        raise ValueError(f"unsupported Qwen2.5-3B route risk tier {tier!r}")
+    if tier in {"stress", "unknown"}:
+        return BucketRouteDecision(
+            model_id="Qwen/Qwen2.5-3B-Instruct",
+            prompt_bucket=bucket,
+            mode="exact_native",
+            seed_only_layers=(),
+            exact_layers="all",
+            policy_names=(),
+            strict_gate_passed=True,
+            status="product_exact_fallback",
+            reason="risk_tier_requires_exact",
+            evidence=(
+                "32-step hybrid stress matrix: no tested L27/L26/L24 hybrid route "
+                "passed the strict gate; coarse bucket names are insufficient"
+            ),
+            risk_tier=tier,
+        )
+    if tier == "validated" and bucket not in QWEN25_3B_VALIDATED_DEFAULT_BUCKETS:
+        return BucketRouteDecision(
+            model_id="Qwen/Qwen2.5-3B-Instruct",
+            prompt_bucket=bucket,
+            mode="exact_native",
+            seed_only_layers=(),
+            exact_layers="all",
+            policy_names=(),
+            strict_gate_passed=True,
+            status="product_exact_fallback",
+            reason="bucket_not_validated_for_validated_tier",
+            evidence="validated risk tier can only use explicitly validated buckets",
+            risk_tier=tier,
+        )
     if bucket in QWEN25_3B_MARGIN_EXACT_BUCKETS:
         return BucketRouteDecision(
             model_id="Qwen/Qwen2.5-3B-Instruct",
@@ -86,6 +123,7 @@ def qwen25_3b_bucket_route_decision(
             status="product_exact_fallback",
             reason="margin_sensitive_stress_bucket",
             evidence="minimal repair sweep: noisy_neartie still changed top1 under minus_l26_l27",
+            risk_tier=tier,
         )
     if bucket in QWEN25_3B_STRESS_RISK_BUCKETS:
         if product_strict:
@@ -99,7 +137,8 @@ def qwen25_3b_bucket_route_decision(
                 strict_gate_passed=True,
                 status="product_exact_fallback",
                 reason="stress_bucket_failed_strict_gate",
-                evidence="minimal repair sweep: minus_l26_l27 reduced damage but did not pass strict gate",
+                evidence="32-step hybrid stress matrix: no tested hybrid route passed strict gate",
+                risk_tier=tier,
             )
         layers = QWEN25_3B_REDUCED_STRESS_SEED_LAYERS
         return BucketRouteDecision(
@@ -112,7 +151,11 @@ def qwen25_3b_bucket_route_decision(
             strict_gate_passed=False,
             status="research_only",
             reason="late_layers_exact_for_repair_screen",
-            evidence="minimal repair sweep: removing L26/L27 lowered score from 973.14 to 224.41",
+            evidence=(
+                "research-only reduced route; 32-step hybrid stress matrix confirmed "
+                "that even L24/L26/L27 exact did not pass"
+            ),
+            risk_tier=tier,
         )
 
     if product_strict and bucket not in QWEN25_3B_VALIDATED_DEFAULT_BUCKETS:
@@ -127,6 +170,7 @@ def qwen25_3b_bucket_route_decision(
             status="product_exact_fallback",
             reason="bucket_not_validated_by_stress_or_default_gate",
             evidence="unknown buckets fail closed until separately validated",
+            risk_tier=tier,
         )
 
     layers = QWEN25_3B_FULL_SEED_LAYERS
@@ -148,6 +192,7 @@ def qwen25_3b_bucket_route_decision(
             "Qwen3B L2-S416 8-layer route passed the validated-bucket 32-step gate; "
             "128-step long-horizon screen stayed top1/sample stable but exceeded max-KL/top-k strictness"
         ),
+        risk_tier=tier,
     )
 
 
@@ -155,10 +200,12 @@ def qwen25_3b_policy_names_for_bucket(
     prompt_bucket: Optional[str],
     *,
     product_strict: bool = True,
+    risk_tier: Optional[str] = None,
 ) -> Tuple[str, ...]:
     """Return packaged policy names for the selected bucket route."""
 
     return qwen25_3b_bucket_route_decision(
         prompt_bucket,
         product_strict=product_strict,
+        risk_tier=risk_tier,
     ).policy_names

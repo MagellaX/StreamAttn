@@ -5,6 +5,15 @@
   "dtype": "fp16",
   "kv_len_bucket": 32768,
   "batch": 8,
+  "risk_tier_policy": {
+    "required_runtime_signal": "route_risk_tier",
+    "tiers": {
+      "validated": "allow explicitly validated bucket routes",
+      "stress": "exact_native",
+      "unknown": "exact_native",
+      "bucket_only": "legacy/research behavior; coarse bucket names are not sufficient for product promotion"
+    }
+  },
   "default_validated_route": {
     "mode": "seed_only_bundle",
     "seed_only_layers": [0, 2, 14, 16, 24, 26, 27, 35],
@@ -21,6 +30,12 @@
     "validated_buckets": ["needle", "code", "long_doc", "chat_doc", "default", "mixed_validated"]
   },
   "product_strict_rules": [
+    {
+      "risk_tiers": ["stress", "unknown"],
+      "buckets": ["*"],
+      "mode": "exact_native",
+      "reason": "hybrid stress matrix showed coarse bucket labels are insufficient"
+    },
     {
       "buckets": ["chat_instruction", "json_tool", "needle_rag", "noisy_neartie"],
       "mode": "exact_native",
@@ -43,6 +58,12 @@
     }
   ],
   "evidence": {
+    "hybrid_stress_matrix": {
+      "summary": "artifacts/gate0/qwen25_3b_32k_b8_hybrid_routes/hybrid_stress_route_summary_32step.json",
+      "admissibility_dataset": "artifacts/gate0/qwen25_3b_32k_b8_hybrid_routes/stress_admissibility_dataset_v1.json",
+      "decision": "no_stress_promotion",
+      "finding": "all eight adversarial stress buckets require exact under the current strict gate, including stress-form code and long_doc"
+    },
     "attention_coverage": "artifacts/gate0/qwen25_3b_32k_b8_attention_coverage/l24_l26_l27_b8_h100_summary.json",
     "repair_sweep": "artifacts/gate0/qwen25_3b_32k_b8_repair_sweep/minimal_8step_h100.json",
     "validated_route": "artifacts/gate0/qwen25_3b_32k_b8_model_decode/base_plus_l2_s416_recent_current_backend_b8_h100.json",

@@ -142,6 +142,7 @@ def test_product_fast_path_applies_validated_qwen3b_runtime_flags():
 
     assert args.bucket_route_policy == "qwen25_3b_b8"
     assert args.product_strict is True
+    assert args.route_risk_tier == "validated"
     assert args.use_packaged_policies is True
     assert args.native_routed_cache is True
     assert args.fused_rope_append_seed is True
@@ -775,6 +776,21 @@ def test_route_bundle_bucket_policy_uses_full_route_for_validated_batch():
     assert decision["seed_only_layers"] == [0, 2, 14, 16, 24, 26, 27, 35]
     assert "qwen25_3b_l2_s416_32k_seed_only_batched" in decision["policy_names"]
     assert "qwen25_3b_l27_32k_seed_only_batched" in decision["policy_names"]
+
+
+def test_route_bundle_bucket_policy_stress_tier_overrides_validated_bucket_names():
+    decision = _bucket_route_policy_decision(
+        [{"bucket": "code"}, {"bucket": "long_doc"}],
+        policy_name="qwen25_3b_b8",
+        product_strict=True,
+        risk_tier="stress",
+    )
+
+    assert decision["batch_mode"] == "exact_native"
+    assert decision["risk_tier"] == "stress"
+    assert all(
+        row["reason"] == "risk_tier_requires_exact" for row in decision["prompt_decisions"]
+    )
 
 
 def test_route_bundle_bucket_policy_fails_closed_for_stress_bucket():

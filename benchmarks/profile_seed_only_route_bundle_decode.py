@@ -358,6 +358,7 @@ def _apply_product_fast_path_args(args: argparse.Namespace) -> None:
         raise ValueError("product fast path cannot be combined with dynamic selector research replay")
     args.bucket_route_policy = "qwen25_3b_b8"
     args.product_strict = True
+    args.route_risk_tier = "validated"
     args.use_packaged_policies = True
     args.native_routed_cache = True
     args.fused_rope_append_seed = True
@@ -2351,9 +2352,14 @@ def _bucket_route_policy_decision(
     *,
     policy_name: str,
     product_strict: bool,
+    risk_tier: str = "bucket_only",
 ) -> Dict[str, Any]:
     if policy_name in {"", "none"}:
-        return {"enabled": False, "batch_mode": "manual_route"}
+        return {
+            "enabled": False,
+            "batch_mode": "manual_route",
+            "risk_tier": risk_tier,
+        }
     if policy_name != "qwen25_3b_b8":
         raise ValueError(f"unsupported bucket route policy {policy_name!r}")
 
@@ -2362,11 +2368,16 @@ def _bucket_route_policy_decision(
     exact_reasons = []
     for idx, row in enumerate(prompt_rows):
         bucket = _prompt_bucket(row)
-        decision = qwen25_3b_bucket_route_decision(bucket, product_strict=product_strict)
+        decision = qwen25_3b_bucket_route_decision(
+            bucket,
+            product_strict=product_strict,
+            risk_tier=risk_tier,
+        )
         prompt_decisions.append(
             {
                 "row": idx,
                 "bucket": bucket,
+                "risk_tier": decision.risk_tier,
                 "mode": decision.mode,
                 "seed_only_layers": list(decision.seed_only_layers),
                 "policy_names": list(decision.policy_names),
@@ -2384,6 +2395,7 @@ def _bucket_route_policy_decision(
             "enabled": True,
             "policy": policy_name,
             "product_strict": bool(product_strict),
+            "risk_tier": risk_tier,
             "batch_mode": "exact_native",
             "fallback_reason": "batch_contains_exact_bucket",
             "fallback_details": exact_reasons,
@@ -2396,6 +2408,7 @@ def _bucket_route_policy_decision(
             "enabled": True,
             "policy": policy_name,
             "product_strict": bool(product_strict),
+            "risk_tier": risk_tier,
             "batch_mode": "exact_native",
             "fallback_reason": "mixed_bucket_route_decisions",
             "fallback_details": [sorted(list(item)) for item in policy_sets],
@@ -2413,6 +2426,7 @@ def _bucket_route_policy_decision(
         "enabled": True,
         "policy": policy_name,
         "product_strict": bool(product_strict),
+        "risk_tier": risk_tier,
         "batch_mode": "seed_only_bundle",
         "fallback_reason": None,
         "fallback_details": [],
@@ -2499,6 +2513,7 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
         prompt_rows,
         policy_name=args.bucket_route_policy,
         product_strict=args.product_strict,
+        risk_tier=args.route_risk_tier,
     )
     exact_bucket_fallback = bucket_policy.get("batch_mode") == "exact_native"
     bundle = None
@@ -2809,6 +2824,15 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="When using --bucket-route-policy, fail closed on stress-risk or unknown buckets.",
+    )
+    parser.add_argument(
+        "--route-risk-tier",
+        choices=["bucket_only", "validated", "stress", "unknown"],
+        default="bucket_only",
+        help=(
+            "Batch-level admissibility tier. stress/unknown fail closed to exact; "
+            "the validated fast-path preset sets validated explicitly."
+        ),
     )
     parser.add_argument("--prompt-kinds", default="needle,code,long_doc,chat_doc")
     parser.add_argument("--prompt-file", default="")
