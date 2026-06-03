@@ -380,6 +380,47 @@ def test_attention_coverage_selected_rows_from_artifact(tmp_path):
     assert selected == {1: {0, 3}}
 
 
+def test_attention_coverage_selected_rows_from_risk_plan_failure_rows(tmp_path):
+    artifact = {
+        "schema": "streamattn.seed_route_risk_plan.v1",
+        "artifacts": [
+            {
+                "failure_rows": [
+                    {"step": 38, "row": 2, "prompt_bucket": "needle_rag"},
+                    {"step": 57, "row": 6, "prompt_bucket": "needle_rag"},
+                    {"step": 91, "row": 3, "prompt_bucket": "json_tool"},
+                ]
+            }
+        ],
+    }
+    path = tmp_path / "risk_plan.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    selected = _selected_rows_from_artifact(str(path), target_buckets={"needle_rag"}, include_step0=True)
+
+    assert selected == {2: {0, 38}, 6: {0, 57}}
+
+
+def test_attention_coverage_selected_rows_from_risk_plan_compiled_plan(tmp_path):
+    artifact = {
+        "schema": "streamattn.seed_route_risk_plan.v1",
+        "artifacts": [
+            {
+                "compiled_step_row_plan": {
+                    "38": [2, 6],
+                    "91": [3, 7],
+                }
+            }
+        ],
+    }
+    path = tmp_path / "risk_plan.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    selected = _selected_rows_from_artifact(str(path), target_buckets={"needle_rag"}, include_step0=False)
+
+    assert selected == {2: {38}, 6: {38}, 3: {91}, 7: {91}}
+
+
 def test_attention_coverage_metrics_and_recommendation():
     import torch
 

@@ -376,6 +376,12 @@ def _selected_rows_from_artifact(
     if not path:
         return {}
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if payload.get("schema") == "streamattn.seed_route_risk_plan.v1":
+        return _selected_rows_from_risk_plan(
+            payload,
+            target_buckets=target_buckets,
+            include_step0=include_step0,
+        )
     safety = payload.get("safety") or {}
     row_steps: Dict[int, set[int]] = defaultdict(set)
     if include_step0:
@@ -395,6 +401,47 @@ def _selected_rows_from_artifact(
         worst = bucket_summary.get("worst_case_by_kl") or {}
         if "row" in worst:
             row_steps[int(worst["row"])].add(0)
+    return row_steps
+
+
+def _selected_rows_from_risk_plan(
+    payload: Dict[str, Any],
+    *,
+    target_buckets: set[str],
+    include_step0: bool,
+) -> Dict[int, set[int]]:
+    row_steps: Dict[int, set[int]] = defaultdict(set)
+
+    def add(row_id: int, step: int) -> None:
+        row_steps[int(row_id)].add(int(step))
+        if include_step0:
+            row_steps[int(row_id)].add(0)
+
+    for artifact in payload.get("artifacts") or []:
+        failure_rows = artifact.get("failure_rows") or []
+        if failure_rows:
+            for row in failure_rows:
+                bucket = str(row.get("prompt_bucket") or "")
+                if target_buckets and bucket and bucket not in target_buckets:
+                    continue
+                if "row" not in row or "step" not in row:
+                    continue
+                add(int(row["row"]), int(row["step"]))
+            continue
+
+        # Fallback for strict-pass or precompiled artifacts without per-row
+        # failure metadata.  The row plan is already a risk-plan product, so
+        # do not bucket-filter rows when bucket labels are unavailable.
+        for step, rows in (artifact.get("compiled_step_row_plan") or {}).items():
+            for row_id in rows or []:
+                add(int(row_id), int(step))
+
+    if row_steps:
+        return row_steps
+
+    for step, rows in (payload.get("combined_compiled_step_row_plan") or {}).items():
+        for row_id in rows or []:
+            add(int(row_id), int(step))
     return row_steps
 
 
