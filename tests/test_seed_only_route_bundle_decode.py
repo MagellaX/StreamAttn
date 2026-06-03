@@ -69,6 +69,10 @@ from stream_attention.kernels.gate0_seed_only_triton import (
     gate0_seed_only_packed_ring_append_triton_forward_out,
     make_gate0_seed_only_packed_workspace,
 )
+from stream_attention.kernels.gate0_exact_refresh_triton import (
+    exact_decode_attention_rows_triton_forward_out_bhnd,
+    exact_decode_attention_rows_splitk_triton_forward_out_bhnd,
+)
 
 
 def test_parse_layer_seed_overrides_named_fields():
@@ -1311,6 +1315,55 @@ def test_exact_attention_reference_row_subset_preserves_other_rows():
 
     torch.testing.assert_close(out[0], sentinel[0])
     torch.testing.assert_close(out[1], full[1])
+
+
+def test_exact_refresh_triton_row_subset_matches_reference_when_cuda_available():
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required for Triton exact-refresh parity")
+
+    torch.manual_seed(11)
+    q = torch.randn((3, 4, 1, 16), device="cuda", dtype=torch.float16)
+    k = torch.randn((3, 2, 17, 16), device="cuda", dtype=torch.float16)
+    v = torch.randn((3, 2, 17, 16), device="cuda", dtype=torch.float16)
+    ref = torch.empty((3, 1, 4, 16), device="cuda", dtype=torch.float16)
+    _exact_attention_reference_bhnd(q, k, v, seq_len=13, out=ref)
+
+    sentinel = torch.full((3, 1, 4, 16), -7.0, device="cuda", dtype=torch.float16)
+    out = sentinel.clone()
+    cache_position = torch.tensor([12], device="cuda", dtype=torch.long)
+    exact_decode_attention_rows_triton_forward_out_bhnd(
+        q,
+        k,
+        v,
+        out,
+        cache_position,
+        row_indices={1},
+        tile_n=8,
+    )
+    torch.cuda.synchronize()
+
+    torch.testing.assert_close(out[0], sentinel[0])
+    torch.testing.assert_close(out[2], sentinel[2])
+    torch.testing.assert_close(out[1], ref[1], rtol=2.5e-3, atol=2.5e-3)
+
+    split_out = sentinel.clone()
+    exact_decode_attention_rows_splitk_triton_forward_out_bhnd(
+        q,
+        k,
+        v,
+        split_out,
+        cache_position,
+        row_indices={1},
+        tile_n=8,
+        splits=4,
+    )
+    torch.cuda.synchronize()
+
+    torch.testing.assert_close(split_out[0], sentinel[0])
+    torch.testing.assert_close(split_out[2], sentinel[2])
+    torch.testing.assert_close(split_out[1], ref[1], rtol=2.5e-3, atol=2.5e-3)
 
 
 def test_exact_refresh_interval_uses_one_indexed_decode_steps():

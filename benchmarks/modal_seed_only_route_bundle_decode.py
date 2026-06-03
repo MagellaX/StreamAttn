@@ -210,6 +210,12 @@ def _run(**kwargs) -> dict[str, Any]:
         cmd.extend(["--exact-refresh-plan", kwargs["exact_refresh_plan"]])
     if kwargs["exact_refresh_row_plan"]:
         cmd.extend(["--exact-refresh-row-plan", kwargs["exact_refresh_row_plan"]])
+    if kwargs["exact_refresh_backend"] != "torch_ref":
+        cmd.extend(["--exact-refresh-backend", kwargs["exact_refresh_backend"]])
+    if kwargs["exact_refresh_tile_n"] != 64:
+        cmd.extend(["--exact-refresh-tile-n", str(kwargs["exact_refresh_tile_n"])])
+    if kwargs["exact_refresh_splits"] != 16:
+        cmd.extend(["--exact-refresh-splits", str(kwargs["exact_refresh_splits"])])
     if kwargs["dynamic_selector_layers"]:
         cmd.extend(["--dynamic-selector-layers", kwargs["dynamic_selector_layers"]])
     if kwargs["dynamic_selector_profile"]:
@@ -295,6 +301,9 @@ def main(
     exact_refresh_layers: str = "",
     exact_refresh_plan: str = "",
     exact_refresh_row_plan: str = "",
+    exact_refresh_backend: str = "torch_ref",
+    exact_refresh_tile_n: int = 64,
+    exact_refresh_splits: int = 16,
     dynamic_selector_layers: str = "",
     dynamic_selector_profile: str = "",
     allow_mixed_seed_configs: bool = False,
@@ -364,6 +373,9 @@ def main(
         exact_refresh_layers=exact_refresh_layers,
         exact_refresh_plan=exact_refresh_plan,
         exact_refresh_row_plan=exact_refresh_row_plan,
+        exact_refresh_backend=exact_refresh_backend,
+        exact_refresh_tile_n=exact_refresh_tile_n,
+        exact_refresh_splits=exact_refresh_splits,
         dynamic_selector_layers=dynamic_selector_layers,
         dynamic_selector_profile=dynamic_selector_profile,
         allow_mixed_seed_configs=allow_mixed_seed_configs,

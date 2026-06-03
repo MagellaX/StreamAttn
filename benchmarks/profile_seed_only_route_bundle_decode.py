@@ -49,6 +49,11 @@ from stream_attention.kernels.gate0_seed_only_triton import (  # noqa: E402
     gate0_seed_only_attention_triton_forward_out_cachepos_bhnd,
     gate0_seed_only_rope_append_triton_forward_out_cachepos_bhnd,
 )
+from stream_attention.kernels.gate0_exact_refresh_triton import (  # noqa: E402
+    exact_decode_attention_rows_triton_forward_out_bhnd,
+    exact_decode_attention_rows_splitk_triton_forward_out_bhnd,
+    make_exact_refresh_splitk_workspace,
+)
 from stream_attention.kernels.qwen_o_proj_triton import qwen_o_proj_triton_forward  # noqa: E402
 from stream_attention.seed_selectors import (  # noqa: E402
     SELECTOR_PROFILES,
@@ -1229,6 +1234,9 @@ class _SeedOnlyQwenDecodePatch:
         exact_refresh_interval: int = 0,
         exact_refresh_steps: Optional[Set[int]] = None,
         exact_refresh_row_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
+        exact_refresh_backend: str = "torch_ref",
+        exact_refresh_tile_n: int = 64,
+        exact_refresh_splits: int = 16,
     ):
         self.policy = policy
         self.original_forward = original_forward
@@ -1249,6 +1257,11 @@ class _SeedOnlyQwenDecodePatch:
         self.exact_refresh_interval = max(0, int(exact_refresh_interval))
         self.exact_refresh_steps = set(exact_refresh_steps or set())
         self.exact_refresh_row_plan = dict(exact_refresh_row_plan or {})
+        if exact_refresh_backend not in {"torch_ref", "triton", "triton_splitk"}:
+            raise ValueError(f"unsupported exact refresh backend {exact_refresh_backend!r}")
+        self.exact_refresh_backend = exact_refresh_backend
+        self.exact_refresh_tile_n = max(1, int(exact_refresh_tile_n))
+        self.exact_refresh_splits = max(1, int(exact_refresh_splits))
         self.call_count = 0
         self.seed_call_count = 0
         self.exact_refresh_call_count = 0
@@ -1266,6 +1279,7 @@ class _SeedOnlyQwenDecodePatch:
         self._packed_qkv_bias: Optional[torch.Tensor] = None
         self._packed_qkv_sizes: Optional[tuple[int, int, int]] = None
         self._packed_qkv_module_id: Optional[int] = None
+        self._exact_refresh_splitk_workspaces: Dict[tuple[int, int, int, torch.device], Dict[str, torch.Tensor]] = {}
 
     @staticmethod
     def _linear_bias(linear: torch.nn.Module) -> Optional[torch.Tensor]:
@@ -1466,6 +1480,73 @@ class _SeedOnlyQwenDecodePatch:
             block_order=self.policy.block_order,
             num_warps=self.policy.num_warps,
             num_stages=self.policy.num_stages,
+        )
+
+    def _run_exact_refresh(
+        self,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        *,
+        seq_len: int,
+        cache_position: torch.Tensor,
+        out: torch.Tensor,
+        rows: Optional[Set[int]],
+    ) -> None:
+        if self.exact_refresh_backend == "triton_splitk":
+            row_count = int(query_states.shape[0] if rows is None else len(rows))
+            workspace = None
+            if row_count > 0:
+                key = (
+                    row_count,
+                    int(query_states.shape[1]),
+                    int(query_states.shape[3]),
+                    query_states.device,
+                )
+                workspace = self._exact_refresh_splitk_workspaces.get(key)
+                if workspace is None:
+                    workspace = make_exact_refresh_splitk_workspace(
+                        row_count=row_count,
+                        heads=int(query_states.shape[1]),
+                        chunks=self.exact_refresh_splits,
+                        dim=int(query_states.shape[3]),
+                        device=query_states.device,
+                    )
+                    self._exact_refresh_splitk_workspaces[key] = workspace
+            exact_decode_attention_rows_splitk_triton_forward_out_bhnd(
+                query_states,
+                key_states,
+                value_states,
+                out,
+                cache_position,
+                row_indices=rows,
+                tile_n=self.exact_refresh_tile_n,
+                splits=self.exact_refresh_splits,
+                workspace=workspace,
+                partial_num_warps=self.policy.num_warps,
+                partial_num_stages=self.policy.num_stages,
+            )
+            return
+        if self.exact_refresh_backend == "triton":
+            exact_decode_attention_rows_triton_forward_out_bhnd(
+                query_states,
+                key_states,
+                value_states,
+                out,
+                cache_position,
+                row_indices=rows,
+                tile_n=self.exact_refresh_tile_n,
+                num_warps=self.policy.num_warps,
+                num_stages=self.policy.num_stages,
+            )
+            return
+        _exact_attention_reference_bhnd(
+            query_states,
+            key_states,
+            value_states,
+            seq_len=seq_len,
+            out=out,
+            row_indices=rows,
         )
 
     def forward(
@@ -1679,13 +1760,14 @@ class _SeedOnlyQwenDecodePatch:
                             cache_position=cache_position,
                             out=out,
                         )
-                    _exact_attention_reference_bhnd(
+                    self._run_exact_refresh(
                         query_states,
                         k,
                         v,
                         seq_len=native_pos + 1,
+                        cache_position=cache_position,
                         out=out,
-                        row_indices=refresh_rows,
+                        rows=refresh_rows,
                     )
                     self._record_exact_refresh(refresh_rows, hidden_states.shape[0])
                 elif use_dynamic_selector:
@@ -1743,13 +1825,14 @@ class _SeedOnlyQwenDecodePatch:
                             cache_position=cache_position,
                             out=out,
                         )
-                    _exact_attention_reference_bhnd(
+                    self._run_exact_refresh(
                         query_states,
                         k,
                         v,
                         seq_len=int(k.shape[2]),
+                        cache_position=cache_position,
                         out=out,
-                        row_indices=refresh_rows,
+                        rows=refresh_rows,
                     )
                     self._record_exact_refresh(refresh_rows, hidden_states.shape[0])
                 elif self.seed_attention_backend == "torch_ref_fp32":
@@ -1895,6 +1978,9 @@ def _patched_seed_only_decode_modules(
     exact_refresh_layers: Optional[Set[int]] = None,
     exact_refresh_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
     exact_refresh_row_plan: Optional[Dict[int, Optional[Set[int]]]] = None,
+    exact_refresh_backend: str = "torch_ref",
+    exact_refresh_tile_n: int = 64,
+    exact_refresh_splits: int = 16,
 ) -> Iterator[Dict[str, _SeedOnlyQwenDecodePatch]]:
     modules_by_layer = {
         int(layer_id): (name, module) for layer_id, name, module in _attention_modules(model)
@@ -1933,6 +2019,9 @@ def _patched_seed_only_decode_modules(
             exact_refresh_interval=exact_refresh_interval if refresh_enabled else 0,
             exact_refresh_steps=layer_refresh_steps,
             exact_refresh_row_plan=exact_refresh_row_plan,
+            exact_refresh_backend=exact_refresh_backend,
+            exact_refresh_tile_n=exact_refresh_tile_n,
+            exact_refresh_splits=exact_refresh_splits,
         )
         if native_attention_module:
             parent, attr = _parent_module_and_attr(model, name)
@@ -1960,6 +2049,25 @@ def _args_with_steps(args: argparse.Namespace, steps: int) -> argparse.Namespace
     clone = argparse.Namespace(**vars(args))
     clone.native_cache_capacity_steps = max(int(args.steps), int(steps))
     clone.steps = int(steps)
+    return clone
+
+
+def _enable_triton_exact_refresh_prewarm(args: argparse.Namespace) -> argparse.Namespace:
+    clone = argparse.Namespace(**vars(args))
+    if (
+        getattr(clone, "exact_refresh_backend", "torch_ref") in {"triton", "triton_splitk"}
+        and (
+            int(getattr(clone, "exact_refresh_interval", 0)) > 0
+            or bool(getattr(clone, "exact_refresh_steps", ""))
+            or bool(getattr(clone, "exact_refresh_plan", ""))
+        )
+    ):
+        clone.steps = max(1, int(getattr(clone, "steps", 1)))
+        clone.exact_refresh_interval = 0
+        clone.exact_refresh_steps = "0"
+        clone.exact_refresh_layers = ""
+        clone.exact_refresh_plan = ""
+        clone.exact_refresh_row_plan = ""
     return clone
 
 
@@ -2041,7 +2149,7 @@ def _warmup_decode(
     args: argparse.Namespace,
     bundle=None,
 ) -> Dict[str, Any]:
-    warmup_args = _args_with_steps(args, args.warmup_steps)
+    warmup_args = _enable_triton_exact_refresh_prewarm(_args_with_steps(args, args.warmup_steps))
     prefill = _prefill(model, tokens)
     first_token = torch.argmax(prefill.logits[:, -1, :], dim=-1, keepdim=True)
     if bundle is None:
@@ -2084,6 +2192,9 @@ def _warmup_decode(
             exact_refresh_layers=parse_layer_id_set(getattr(args, "exact_refresh_layers", "")),
             exact_refresh_plan=parse_step_layer_plan(getattr(args, "exact_refresh_plan", "")),
             exact_refresh_row_plan=parse_step_row_plan(getattr(args, "exact_refresh_row_plan", "")),
+            exact_refresh_backend=getattr(args, "exact_refresh_backend", "torch_ref"),
+            exact_refresh_tile_n=getattr(args, "exact_refresh_tile_n", 64),
+            exact_refresh_splits=getattr(args, "exact_refresh_splits", 16),
         ) as patches:
             result = _decode_loop(
                 model=model,
@@ -2103,6 +2214,9 @@ def _warmup_decode(
             "exact_refresh_interval": patch.exact_refresh_interval,
             "exact_refresh_steps": sorted(patch.exact_refresh_steps),
             "exact_refresh_row_plan": _serialize_step_row_plan(patch.exact_refresh_row_plan),
+            "exact_refresh_backend": patch.exact_refresh_backend,
+            "exact_refresh_tile_n": patch.exact_refresh_tile_n,
+            "exact_refresh_splits": patch.exact_refresh_splits,
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2342,6 +2456,9 @@ def _empty_route_bundle_summary(
         "exact_refresh_row_plan": _serialize_step_row_plan(
             parse_step_row_plan(getattr(args, "exact_refresh_row_plan", ""))
         ),
+        "exact_refresh_backend": getattr(args, "exact_refresh_backend", "torch_ref"),
+        "exact_refresh_tile_n": int(getattr(args, "exact_refresh_tile_n", 64)),
+        "exact_refresh_splits": int(getattr(args, "exact_refresh_splits", 16)),
         "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
         "dynamic_selector_profile": args.dynamic_selector_profile,
         "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2519,6 +2636,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
                 exact_refresh_layers=exact_refresh_layers,
                 exact_refresh_plan=exact_refresh_plan,
                 exact_refresh_row_plan=exact_refresh_row_plan,
+                exact_refresh_backend=args.exact_refresh_backend,
+                exact_refresh_tile_n=args.exact_refresh_tile_n,
+                exact_refresh_splits=args.exact_refresh_splits,
             ) as patches:
                 seed = _decode_loop(
                     model=model,
@@ -2544,6 +2664,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "exact_refresh_interval": patch.exact_refresh_interval,
             "exact_refresh_steps": sorted(patch.exact_refresh_steps),
             "exact_refresh_row_plan": _serialize_step_row_plan(patch.exact_refresh_row_plan),
+            "exact_refresh_backend": patch.exact_refresh_backend,
+            "exact_refresh_tile_n": patch.exact_refresh_tile_n,
+            "exact_refresh_splits": patch.exact_refresh_splits,
             "dynamic_selector_calls": patch.dynamic_selector_call_count,
             "dynamic_selector_profile": patch.dynamic_selector_profile,
             "native_cache_update_calls": patch.native_cache_update_count,
@@ -2592,6 +2715,9 @@ def profile(args: argparse.Namespace) -> Dict[str, Any]:
             "exact_refresh_layers": sorted(exact_refresh_layers),
             "exact_refresh_plan": _serialize_step_layer_plan(exact_refresh_plan),
             "exact_refresh_row_plan": _serialize_step_row_plan(exact_refresh_row_plan),
+            "exact_refresh_backend": args.exact_refresh_backend,
+            "exact_refresh_tile_n": int(args.exact_refresh_tile_n),
+            "exact_refresh_splits": int(args.exact_refresh_splits),
             "dynamic_selector_layers": sorted(parse_layer_id_set(args.dynamic_selector_layers)),
             "dynamic_selector_profile": args.dynamic_selector_profile,
             "dynamic_selector_reference_only": bool(args.dynamic_selector_profile),
@@ -2904,6 +3030,27 @@ def main() -> None:
             "at listed steps. Exact-refresh steps absent from this plan keep "
             "the previous all-row refresh behavior."
         ),
+    )
+    parser.add_argument(
+        "--exact-refresh-backend",
+        choices=["torch_ref", "triton", "triton_splitk"],
+        default="torch_ref",
+        help=(
+            "Verifier exact-refresh backend. triton is the native serial M=1 BHND "
+            "decode refresh kernel; triton_splitk parallelizes exact refresh across K chunks."
+        ),
+    )
+    parser.add_argument(
+        "--exact-refresh-tile-n",
+        type=int,
+        default=64,
+        help="K/V token tile size for --exact-refresh-backend triton.",
+    )
+    parser.add_argument(
+        "--exact-refresh-splits",
+        type=int,
+        default=16,
+        help="Number of K chunks for --exact-refresh-backend triton_splitk.",
     )
     parser.add_argument(
         "--dynamic-selector-layers",
