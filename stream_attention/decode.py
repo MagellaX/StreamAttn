@@ -31,6 +31,16 @@ from .telemetry import Prediction, seq_bucket
 
 DenseFallbackFn = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 STREAMATTN_EXACT_NATIVE_BACKEND = "streamattn_exact_native"
+STREAMATTN_MODE_EXACT_NATIVE = "exact_native"
+STREAMATTN_MODE_SEED_ONLY_NATIVE = "seed_only_native"
+STREAMATTN_MODE_VERIFIED_AUTO = "verified_auto"
+STREAMATTN_NATIVE_MODES = frozenset(
+    {
+        STREAMATTN_MODE_EXACT_NATIVE,
+        STREAMATTN_MODE_SEED_ONLY_NATIVE,
+        STREAMATTN_MODE_VERIFIED_AUTO,
+    }
+)
 DEFAULT_GATE0_SEED_ONLY_BATCHED_POLICY = "qwen25_05b_l8_32k_seed_only_batched"
 _PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICY_REGISTRY = "policies/registry.json"
 _FALLBACK_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
@@ -38,6 +48,20 @@ _FALLBACK_PACKAGED_GATE0_SEED_ONLY_BATCHED_POLICIES = {
     "qwen25_05b_l8_32k_fp16_b4_seed_only_v2": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
     "qwen25_05b_l8_32k_fp16_b8_seed_only_v1": "policies/qwen25_05b_l8_32k_seed_only_batched.json",
 }
+
+
+def normalize_stream_attn_mode(mode: str) -> str:
+    """Normalize public native modes and retained compatibility aliases."""
+
+    aliases = {
+        "auto": STREAMATTN_MODE_VERIFIED_AUTO,
+        "dense": STREAMATTN_MODE_EXACT_NATIVE,
+    }
+    normalized = aliases.get(str(mode), str(mode))
+    if normalized not in STREAMATTN_NATIVE_MODES:
+        allowed = ", ".join(sorted(STREAMATTN_NATIVE_MODES))
+        raise ValueError(f"mode must be one of: {allowed}")
+    return normalized
 
 
 def _read_packaged_text(relative_path: str) -> str:
@@ -172,13 +196,58 @@ def stream_attn_exact_native_decode(
 ) -> torch.Tensor:
     """StreamAttn-owned exact decode path for serving fail-closed execution.
 
-    This is the engine-level exact mode used when no external benchmark backend
-    is injected.  It intentionally starts from the repository's dense reference;
-    the H100/TK exact-native kernel can replace this implementation without
-    changing serving semantics.
+    The promoted SM90 cell uses StreamAttn's transposed true-GQA WGMMA kernel.
+    Other CUDA M=1 GQA shapes use the native Triton exact kernel, while CPU and
+    unsupported shapes retain the dense reference as a fail-closed path.
     """
-
+    if _exact_native_sm90_wgmma_supported(query, key_cache, value_cache) or (
+        _exact_native_triton_supported(query, key_cache, value_cache)
+    ):
+        output = torch.empty_like(query)
+        runner = StreamAttnExactNativeDirectRunner(
+            query=query,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            output=output,
+            info=None,
+        )
+        return runner.run()
     return dense_attention_forward(query, key_cache, value_cache, causal=False)
+
+
+def _exact_native_sm90_wgmma_supported(
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+) -> bool:
+    from .backends.sm90.transposed_gqa_exact import supports_transposed_gqa_exact
+
+    return supports_transposed_gqa_exact(query, key_cache, value_cache)
+
+
+def _exact_native_triton_supported(
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+) -> bool:
+    if not all(t.is_cuda for t in (query, key_cache, value_cache)):
+        return False
+    if query.dim() != 4 or key_cache.dim() != 4 or value_cache.dim() != 4:
+        return False
+    if query.shape[1] != 1 or key_cache.shape != value_cache.shape:
+        return False
+    if query.shape[0] != key_cache.shape[0] or query.shape[3] != key_cache.shape[3]:
+        return False
+    if key_cache.shape[2] <= 0 or query.shape[2] % key_cache.shape[2] != 0:
+        return False
+    if query.dtype != key_cache.dtype or query.dtype != value_cache.dtype:
+        return False
+    dim = int(query.shape[3])
+    if dim <= 0 or dim > 256 or dim & (dim - 1):
+        return False
+    from .kernels.gate0_exact_refresh_triton import TRITON_AVAILABLE
+
+    return bool(TRITON_AVAILABLE)
 
 
 @dataclass(frozen=True)
@@ -710,6 +779,102 @@ class StreamAttnSeedOnlyDirectRunner:
     def run_with_info(self) -> tuple[torch.Tensor, StreamAttnServingInfo]:
         """Launch the kernel and return the precomputed serving telemetry."""
 
+        return self.run(), self.info
+
+
+class StreamAttnExactNativeDirectRunner:
+    """Fixed-buffer exact-native M=1 GQA decode runner.
+
+    Promoted SM90 buffers bind the transposed WGMMA plan and its FP32 partial
+    workspace once. Other supported BNHD buffers reuse the native Triton exact
+    kernel without allocating or rebuilding row metadata in the decode loop.
+    """
+
+    def __init__(
+        self,
+        *,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        output: torch.Tensor,
+        info: Optional[StreamAttnServingInfo],
+        tile_n: int = 64,
+        num_warps: int = 4,
+        num_stages: int = 3,
+    ) -> None:
+        if output.shape != query.shape or not output.is_contiguous():
+            raise ValueError("exact-native output must be contiguous and match query shape")
+
+        self.query = query
+        self.key_cache = key_cache
+        self.value_cache = value_cache
+        self.output = output
+        self.info = info
+        self.query_shape = tuple(query.shape)
+        self.key_shape = tuple(key_cache.shape)
+        self.value_shape = tuple(value_cache.shape)
+        self.query_stride = tuple(query.stride())
+        self.key_stride = tuple(key_cache.stride())
+        self.value_stride = tuple(value_cache.stride())
+        self.query_data_ptr = int(query.data_ptr())
+        self.key_data_ptr = int(key_cache.data_ptr())
+        self.value_data_ptr = int(value_cache.data_ptr())
+        self._sm90_plan = None
+        if _exact_native_sm90_wgmma_supported(query, key_cache, value_cache):
+            from .backends.sm90.transposed_gqa_exact import ExactDecodePlan
+
+            self._sm90_plan = ExactDecodePlan.build(
+                query,
+                key_cache,
+                value_cache,
+                output=output,
+            )
+            self.backend_variant = self._sm90_plan.backend
+            return
+
+        from .kernels.gate0_exact_refresh_triton import (
+            exact_decode_attention_rows_triton_forward_out_bhnd,
+        )
+
+        if not _exact_native_triton_supported(query, key_cache, value_cache):
+            raise ValueError("no exact-native runner supports these buffers")
+        self.backend_variant = "triton_exact_refresh"
+        self._query_bhnd = query.transpose(1, 2)
+        self._key_bhnd = key_cache.transpose(1, 2)
+        self._value_bhnd = value_cache.transpose(1, 2)
+        self._cache_position = torch.tensor(
+            [int(key_cache.shape[1]) - 1],
+            device=query.device,
+            dtype=torch.int64,
+        )
+        self._rows = torch.arange(query.shape[0], device=query.device, dtype=torch.int64)
+        self._tile_n = int(tile_n)
+        self._num_warps = int(num_warps)
+        self._num_stages = int(num_stages)
+        self._launch = exact_decode_attention_rows_triton_forward_out_bhnd
+
+    def run(self) -> torch.Tensor:
+        """Launch exact native attention into the reused final output buffer."""
+
+        if self._sm90_plan is not None:
+            return self._sm90_plan.run()
+        return self._launch(
+            self._query_bhnd,
+            self._key_bhnd,
+            self._value_bhnd,
+            self.output,
+            self._cache_position,
+            row_indices=self._rows,
+            tile_n=self._tile_n,
+            num_warps=self._num_warps,
+            num_stages=self._num_stages,
+        )
+
+    def run_with_info(self) -> tuple[torch.Tensor, StreamAttnServingInfo]:
+        """Launch exact native attention and return precomputed telemetry."""
+
+        if self.info is None:
+            raise RuntimeError("exact-native runner was planned without serving info")
         return self.run(), self.info
 
 
@@ -1976,10 +2141,13 @@ class StreamAttnSeedOnlyDecodeService:
         layer_id: Optional[int],
         mode: str,
     ) -> List[str]:
-        if mode not in {"auto", "dense"}:
-            raise ValueError("mode must be 'auto' or 'dense'")
-        if mode == "dense":
-            return ["manual_dense"]
+        normalized_mode = normalize_stream_attn_mode(mode)
+        if normalized_mode == STREAMATTN_MODE_EXACT_NATIVE:
+            return [
+                "manual_dense"
+                if mode == "dense"
+                else "manual_exact_native"
+            ]
         safety_reasons = self.policy.mismatch_reasons(
             query,
             key_cache,
@@ -2239,6 +2407,46 @@ class StreamAttnSeedOnlyDecodeService:
             info=info,
         )
 
+    def plan_exact_native(
+        self,
+        query: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        *,
+        model_id: Optional[str] = None,
+        layer_id: Optional[int] = None,
+    ) -> StreamAttnExactNativeDirectRunner:
+        """Bind a fixed-buffer exact-native runner for a supported native shape."""
+
+        if not (
+            _exact_native_sm90_wgmma_supported(query, key_cache, value_cache)
+            or _exact_native_triton_supported(query, key_cache, value_cache)
+        ):
+            raise ValueError("cannot plan exact-native route: backend_unavailable")
+        if not query.is_contiguous() or not key_cache.is_contiguous() or not value_cache.is_contiguous():
+            raise ValueError("cannot plan exact-native route: layout_mismatch")
+        effective_model_id = model_id if model_id is not None else self.model_id
+        effective_layer_id = layer_id if layer_id is not None else self.layer_id
+        output = self._allocate_output_workspace(query)
+        info = self._serving_info(
+            query=query,
+            key_cache=key_cache,
+            model_id=effective_model_id,
+            layer_id=effective_layer_id,
+            backend_used=STREAMATTN_EXACT_NATIVE_BACKEND,
+            fallback_reason=None,
+            plan_backend=STREAMATTN_EXACT_NATIVE_BACKEND,
+            plan_reason="planned_exact_native",
+            safety_policy_matched=False,
+        )
+        return StreamAttnExactNativeDirectRunner(
+            query=query,
+            key_cache=key_cache,
+            value_cache=value_cache,
+            output=output,
+            info=info,
+        )
+
     def _allocate_direct_runner(
         self,
         query: torch.Tensor,
@@ -2281,17 +2489,21 @@ class StreamAttnSeedOnlyDecodeService:
         active_fraction_hint: Optional[float] = 1.0,
         return_info: bool = True,
     ):
-        """Run one decode call with policy-aware seed-only routing.
+        """Run one decode call through a public StreamAttn native mode.
 
-        ``mode='auto'`` uses the packaged policy if all invariants match and the
-        backend is available.  ``mode='dense'`` forces exact-native execution
-        while still returning structured telemetry.
+        ``verified_auto`` uses an offline-verified packaged policy and fails
+        closed to exact-native when an invariant does not match.
+        ``seed_only_native`` explicitly requests that same validated native
+        route, while ``exact_native`` forces StreamAttn-owned exact execution.
+        The legacy aliases ``auto`` and ``dense`` remain accepted.
         """
 
         effective_model_id = model_id if model_id is not None else self.model_id
         effective_layer_id = layer_id if layer_id is not None else self.layer_id
+        normalized_mode = normalize_stream_attn_mode(mode)
         if (
-            mode == "auto"
+            normalized_mode
+            in {STREAMATTN_MODE_VERIFIED_AUTO, STREAMATTN_MODE_SEED_ONLY_NATIVE}
             and self.use_planned_direct_seed_only_path
             and not self.use_direct_seed_only_path
             and self._direct_runner_matches(
@@ -2353,7 +2565,7 @@ class StreamAttnSeedOnlyDecodeService:
                     value_cache,
                     model_id=effective_model_id,
                     layer_id=effective_layer_id,
-                    mode=mode,
+                    mode=normalized_mode,
                 )
                 if not return_info:
                     return runner.run()

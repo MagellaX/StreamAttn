@@ -71,11 +71,49 @@ minimize T_partial(C) + T_merge(C)
 subject to enough producer CTAs and exact output semantics
 ```
 
+## Backend Promotion (2026-08-14)
+
+The measured CUDA/C++ source now lives under
+`stream_attention/backends/sm90/` and is called by both the benchmark and the
+serving exact-native runner. `ExactDecodePlan` compiles and allocates once,
+prebinds query/output views and launch callables, and reuses 532,480 bytes of
+FP32 split-state workspace. Its `run()` path performs only the producer and
+merge launches.
+
+The promoted serving specialization requires native head-major contiguous KV:
+
+```text
+Q: [B,1,Hq,D]
+K/V: [B,Hkv,N,D]
+```
+
+It does not hide a BNHD-to-BHND cache transpose. Unsupported layouts and shapes
+retain the existing StreamAttn exact fallback.
+
+The final H100 promotion gate used log2 split-state LSE so partial and merge
+rescaling remain aligned with the mainloop's `exp2` online softmax:
+
+| Measurement | StreamAttn plan | FlashInfer | Speedup |
+| --- | ---: | ---: | ---: |
+| Independent median | 33.239 us | 33.468 us | 1.007x |
+| Alternating paired median | 32.780 us | 33.116 us | 1.011x |
+| Weakest paired trial | 32.962 us | 33.103 us | 1.004x |
+
+All nine final paired trials won. The serving dispatcher selected
+`sm90_transposed_gqa_wgmma_exact`, output remained deterministic and finite,
+and max error versus the FP32 reference remained `9.01e-5`.
+
+The performance margin remains narrow and environment-sensitive: an earlier
+strict promotion rerun reached a `0.991x` paired median before the final log2
+variant passed. Therefore the backend is promoted for exact ownership and this
+guarded cell, while broader speed claims remain performance-gated by paired
+measurements.
+
 ## Scope
 
 This is an exact-kernel victory for one important decode cell, not a universal
-claim. The current implementation is an embedded CUDA/CUTLASS benchmark and is
-narrowly specialized to H100, BF16, D64, G8, B4, and contiguous 32K KV.
+claim. The production specialization is narrowly guarded to H100, BF16, D64,
+G8, B4, and head-major contiguous 32K KV.
 
 It does establish two separate StreamAttn advantages:
 
@@ -84,9 +122,8 @@ exact_native:     full exact attention can beat FlashInfer at a native cell
 seed_only_native: validated cells can avoid most KV work for larger gains
 ```
 
-The next engineering gate is to extract this kernel into the native backend,
-add plan/workspace reuse, and measure adjacent shapes (`B2/B8`, `16K/64K`,
-other GQA groups, and D128) without weakening the exact output gate.
+The next engineering gate is to map adjacent shapes (`B2/B8`, `16K/64K`, other
+GQA groups, and D128) without weakening the exact output gate.
 
 ## Artifact
 
@@ -94,4 +131,5 @@ The complete raw result is stored at:
 
 ```text
 artifacts/gate0/transposed_wgmma_exact_native_gate_h100_20260813.json
+artifacts/gate0/transposed_wgmma_exact_backend_promoted_modal_h100_20260814.json
 ```

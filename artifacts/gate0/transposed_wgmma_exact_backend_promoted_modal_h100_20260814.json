@@ -1,0 +1,291 @@
+{
+  "schema": "streamattn.transposed_wgmma_exact_decode.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "shape": {
+    "batch": 4,
+    "q_heads": 16,
+    "kv_heads": 2,
+    "group_size": 8,
+    "kv_len": 32768,
+    "head_dim": 64,
+    "dtype": "bf16",
+    "wgmma_atom": "m64n8k16.f32.bf16.bf16",
+    "qk_orientation": "K[64,64] @ Q.T[64,8]",
+    "split_state_lse": "log2"
+  },
+  "compile_s": 2.0909802289999995,
+  "timing": {
+    "qk_ms_by_splits": {
+      "32": 0.21213267517089843
+    },
+    "qk_samples_ms_by_splits": {
+      "32": [
+        0.2140908203125,
+        0.21241976928710937,
+        0.21211923217773437,
+        0.21210258483886718,
+        0.21214060974121093,
+        0.21210957336425781,
+        0.21213267517089843,
+        0.21210713195800782,
+        0.21222962951660157
+      ]
+    },
+    "qk_checksum_ms_by_splits": {
+      "32": 0.09812525177001953
+    },
+    "qk_checksum_samples_ms_by_splits": {
+      "32": [
+        0.09945478057861327,
+        0.09948563385009766,
+        0.09923712158203125,
+        0.09868000030517578,
+        0.09806687927246094,
+        0.09810912322998047,
+        0.09809075164794921,
+        0.09812525177001953,
+        0.09807033538818359
+      ]
+    },
+    "qk_async_checksum_ms_by_splits": {
+      "32": 0.00868115234375
+    },
+    "qk_async_checksum_samples_ms_by_splits": {
+      "32": [
+        0.00868115234375,
+        0.008683391571044922,
+        0.008683648109436035,
+        0.00867807960510254,
+        0.008686464309692382,
+        0.008688960075378418,
+        0.008676032066345214,
+        0.008677632331848144,
+        0.008676095962524414
+      ]
+    },
+    "qkpv_async_checksum_ms_by_splits": {
+      "32": 0.027417087554931642
+    },
+    "qkpv_async_checksum_samples_ms_by_splits": {
+      "32": [
+        0.02742323112487793,
+        0.027411455154418944,
+        0.027419904708862304,
+        0.027408512115478515,
+        0.027398399353027344,
+        0.02739967918395996,
+        0.02742073631286621,
+        0.027427263259887695,
+        0.027417087554931642
+      ]
+    },
+    "exact_partial_ms_by_splits": {
+      "32": 0.028734399795532228
+    },
+    "exact_partial_samples_ms_by_splits": {
+      "32": [
+        0.028748031616210937,
+        0.02874790382385254,
+        0.02873734474182129,
+        0.028747007369995116,
+        0.028734399795532228,
+        0.028705408096313476,
+        0.028716480255126953,
+        0.02870783996582031,
+        0.02873094367980957
+      ]
+    },
+    "exact_merge_ms_by_splits": {
+      "32": 0.0034191999435424806
+    },
+    "exact_merge_samples_ms_by_splits": {
+      "32": [
+        0.0034214398860931395,
+        0.0034206080436706542,
+        0.0034191999435424806,
+        0.003417407989501953,
+        0.0034122879505157472,
+        0.0034177279472351074,
+        0.003420543909072876,
+        0.0034227840900421143,
+        0.003418431997299194
+      ]
+    },
+    "exact_end_to_end_ms_by_splits": {
+      "32": 0.032689792633056644
+    },
+    "exact_end_to_end_samples_ms_by_splits": {
+      "32": [
+        0.032690494537353516,
+        0.032689792633056644,
+        0.03269171142578125,
+        0.03266617584228516,
+        0.032649280548095704,
+        0.03269708633422851,
+        0.0327275505065918,
+        0.032650753021240236,
+        0.032661441802978516
+      ]
+    },
+    "best_splits": 32,
+    "best_qk_ms": 0.21213267517089843,
+    "best_cta_count": 256,
+    "best_checksum_splits": 32,
+    "best_qk_checksum_ms": 0.09812525177001953,
+    "best_checksum_cta_count": 256,
+    "best_async_checksum_splits": 32,
+    "best_qk_async_checksum_ms": 0.00868115234375,
+    "best_async_checksum_cta_count": 256,
+    "best_qkpv_splits": 32,
+    "best_qkpv_ms": 0.027417087554931642,
+    "best_qkpv_cta_count": 256,
+    "best_exact_partial_splits": 32,
+    "best_exact_partial_ms": 0.028734399795532228,
+    "best_exact_partial_cta_count": 256,
+    "best_exact_merge_splits": 32,
+    "best_exact_merge_ms": 0.0034191999435424806,
+    "best_exact_end_to_end_splits": 32,
+    "best_exact_end_to_end_ms": 0.032689792633056644,
+    "backend_plan_ms": 0.03323936080932617,
+    "backend_plan_samples_ms": [
+      0.033246528625488284,
+      0.03320844650268555,
+      0.03323936080932617,
+      0.03322163009643555,
+      0.03329484939575195,
+      0.033259265899658205,
+      0.03323519897460937,
+      0.0332281608581543,
+      0.03326009750366211
+    ],
+    "flashinfer_batched_exact_ms": 0.03346790313720703,
+    "flashinfer_samples_ms": [
+      0.03365689468383789,
+      0.0336363525390625,
+      0.03365324783325195,
+      0.03351123046875,
+      0.03345087814331055,
+      0.03344076919555664,
+      0.03346790313720703,
+      0.033456001281738285,
+      0.033408702850341795
+    ],
+    "qk_budget_fraction_of_flashinfer": 6.338391571806174,
+    "qk_checksum_budget_fraction_of_flashinfer": 2.9319211116316235,
+    "qk_async_checksum_budget_fraction_of_flashinfer": 0.2593873989702978,
+    "qkpv_budget_fraction_of_flashinfer": 0.8192054172778885,
+    "exact_partial_budget_fraction_of_flashinfer": 0.8585658825929713,
+    "exact_end_to_end_speedup_vs_flashinfer": 1.023802858368809,
+    "paired_exact_ms": [
+      0.03296211242675781,
+      0.03277555084228516,
+      0.032769088745117185,
+      0.032785598754882815,
+      0.03278067016601562,
+      0.03276582336425781,
+      0.032774398803710934,
+      0.03276563262939453,
+      0.03277983856201172
+    ],
+    "paired_flashinfer_ms": [
+      0.033102783203125,
+      0.03312480163574219,
+      0.03312940979003906,
+      0.03311942291259766,
+      0.033103679656982424,
+      0.03312441635131836,
+      0.033142913818359376,
+      0.03311199951171875,
+      0.03311552047729492
+    ],
+    "paired_speedups": [
+      1.0042676505239085,
+      1.0106558329145288,
+      1.010995760294847,
+      1.0101820363328007,
+      1.009853657333146,
+      1.0109441164677617,
+      1.011243990068453,
+      1.0105710421111627,
+      1.010240499343771
+    ],
+    "paired_speedup_median": 1.0105710421111627,
+    "paired_speedup_min": 1.0042676505239085
+  },
+  "quality": {
+    "32": {
+      "max_abs_error": 9.5367431640625e-06,
+      "mean_abs_error": 3.7054394397273427e-07,
+      "nonfinite_count": 0,
+      "large_error_count_gt_1e-4": 0,
+      "max_error_flat_index": 957398,
+      "repeat_max_abs_diff": 0.0,
+      "repeat_changed_count_gt_1e-6": 0
+    }
+  },
+  "checksum_quality": {
+    "32": {
+      "max_abs_error": 0.000518798828125,
+      "mean_abs_error": 0.00011298060417175293
+    }
+  },
+  "async_checksum_quality": {
+    "32": {
+      "max_abs_error": 0.000518798828125,
+      "mean_abs_error": 0.00011298060417175293
+    }
+  },
+  "qkpv_quality": {
+    "32": {
+      "max_abs_error": 0.4501953125,
+      "mean_abs_error": 0.01695561408996582,
+      "max_abs_reference": 16058.90234375,
+      "normalized_max_abs_error": 2.803400275207555e-05,
+      "repeat_max_abs_diff": 0.0
+    }
+  },
+  "exact_partial_quality": {
+    "32": {
+      "max_abs_error": 5.17331063747406e-05,
+      "mean_abs_error": 1.0766892955871299e-05,
+      "partial_o_repeat_max_abs_diff": 0.0,
+      "partial_lse_repeat_max_abs_diff": 0.0,
+      "partial_o_nonfinite_count": 0,
+      "partial_lse_nonfinite_count": 0
+    }
+  },
+  "exact_merged_quality": {
+    "32": {
+      "max_abs_error": 9.0084969997406e-05,
+      "mean_abs_error": 1.5286241250578314e-05,
+      "repeat_max_abs_diff": 0.0,
+      "nonfinite_count": 0
+    }
+  },
+  "backend_plan_quality": {
+    "max_abs_error": 9.0084969997406e-05,
+    "mean_abs_error": 1.5286241250578314e-05,
+    "repeat_max_abs_diff": 0.0,
+    "nonfinite_count": 0,
+    "workspace_bytes": 532480,
+    "backend": "sm90_transposed_gqa_wgmma_exact"
+  },
+  "serving_dispatch_quality": {
+    "max_abs_error": 9.0084969997406e-05,
+    "mean_abs_error": 1.5286241250578314e-05,
+    "backend_variant": "sm90_transposed_gqa_wgmma_exact",
+    "nonfinite_count": 0
+  },
+  "exact_vs_flashinfer_quality": {
+    "max_abs_error": 0.0001220703125,
+    "mean_abs_error": 2.0382063667057082e-05
+  },
+  "flashinfer_error": null,
+  "flashinfer_import_error": null,
+  "decision": {
+    "qk_gate": "pass",
+    "criterion": "cp.async storeless QK milestone <= 50% of matching batched FlashInfer exact",
+    "exact_native_gate": "pass",
+    "exact_native_criterion": "paired median faster than matching FlashInfer, paired min >=0.98x, max output delta <=5e-4, finite and deterministic"
+  }
+}
