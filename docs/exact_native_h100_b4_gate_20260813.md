@@ -138,16 +138,66 @@ raw total: 32.024 us
 Independent serving timing reached `31.928 us` while paired measurements later
 in the same process were near `32.05 us`, further demonstrating that independent
 benchmark phases cannot be subtracted to attribute sub-microsecond overhead.
-The combined entry point remains an experimental measurement path; the promoted
-plan continues to use the established two-call implementation. The next exact
-backend work is merge-kernel profiling and controlled merge variants, followed
-by repeatability and adjacent-shape mapping.
+The combined entry point remains an experimental measurement path. The
+established 64-thread merge remained the promoted control for this experiment;
+the one-warp result below supersedes it.
 
 Artifact:
 
 ```text
 artifacts/gate0/transposed_wgmma_exact_combined_dispatch_modal_h100_20260818.json
 ```
+
+## One-warp merge promotion (2026-08-18)
+
+Merge profiling exposed a real fixed-cost inefficiency. The original 64-thread
+kernel used only its first warp for LSE max/sum work, synchronized the whole
+block between phases, and then distributed the D64 numerator across both
+warps. The promoted kernel maps one 32-thread warp to each output row, assigns
+two adjacent D elements to every lane, loads FP32 partial numerators as
+`float2`, and performs max/sum reductions with warp shuffles. It removes the
+idle warp and all block-wide barriers without changing the split-state math.
+
+Three fresh H100 processes used 20 warmups, 200 timed iterations, and nine
+alternating paired trials per comparison:
+
+| Process | Warp merge vs old merge | Minimum | Wins | Warp merge vs FlashInfer | Minimum | Wins |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Experimental run 1 | `1.01743x` | `1.01692x` | `9/9` | `1.01965x` | `1.01837x` | `9/9` |
+| Experimental run 2 | `1.02022x` | `1.01907x` | `9/9` | `1.02512x` | `1.02468x` | `9/9` |
+| Promoted public path | `1.01756x` | `1.01615x` | `9/9` | `1.01104x` | `1.00984x` | `9/9` |
+
+The new merge won all `27/27` paired trials against the old merge and all
+`27/27` paired trials against matching FlashInfer batch decode. The public
+`ExactDecodePlan.run()` and `StreamAttnExactNativeDirectRunner` now use this
+path. In the promotion process the public serving dispatch measured
+`31.235 us`; the explicitly retained two-call control measured `32.421 us` in
+its independent phase.
+
+Numerical behavior was unchanged in every process:
+
+```text
+max error vs FP32 dense reference: 9.01e-5
+deterministic repeat delta:         0
+non-finite outputs:                 0
+```
+
+The honest repeatability envelope for this exact cell is now approximately
+`1.01x` to `1.025x` over FlashInfer, not the highest isolated observation. This
+is a narrow but repeated exact-kernel victory: StreamAttn evaluates all 32K KV
+tokens and wins through an H100/GQA-specific dataflow and lower merge overhead,
+not sparsity or reduced work.
+
+Artifacts:
+
+```text
+artifacts/gate0/transposed_wgmma_exact_warp_merge_modal_h100_20260818.json
+artifacts/gate0/transposed_wgmma_exact_warp_merge_repeat2_modal_h100_20260818.json
+artifacts/gate0/transposed_wgmma_exact_warp_merge_promoted_modal_h100_20260818.json
+```
+
+The next exact-backend gate is adjacent-cell mapping (`B2/B8`, `16K/64K`) to
+determine whether this is a useful D64/G8 region or a single-cell optimum.
 
 ## Scope
 

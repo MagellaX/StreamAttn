@@ -237,14 +237,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     exact_partial_samples: dict[str, list[float]] = {}
     exact_merge_timings: dict[str, float] = {}
     exact_merge_samples: dict[str, list[float]] = {}
+    exact_merge_warp_timings: dict[str, float] = {}
+    exact_merge_warp_samples: dict[str, list[float]] = {}
     exact_end_to_end_timings: dict[str, float] = {}
     exact_end_to_end_samples: dict[str, list[float]] = {}
+    exact_end_to_end_warp_timings: dict[str, float] = {}
+    exact_end_to_end_warp_samples: dict[str, list[float]] = {}
     quality: dict[str, dict[str, Any]] = {}
     checksum_quality: dict[str, dict[str, float]] = {}
     async_checksum_quality: dict[str, dict[str, float]] = {}
     qkpv_quality: dict[str, dict[str, float]] = {}
     exact_partial_quality: dict[str, dict[str, float]] = {}
     exact_merged_quality: dict[str, dict[str, float]] = {}
+    exact_merged_warp_quality: dict[str, dict[str, float]] = {}
     reference = torch.einsum("bhgd,bhnd->bhng", q_group.float(), k_group.float())
     reference_flat = reference.view(args.batch * args.kv_heads, args.kv_len, 8)
     v_group = v_nhd.permute(0, 2, 1, 3).contiguous()
@@ -478,6 +483,35 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         exact_merge_timings[str(splits)] = exact_merge_ms
         exact_merge_samples[str(splits)] = exact_merge_raw_samples
 
+        exact_warp_output = torch.empty_like(exact_output)
+
+        def run_exact_merge_warp() -> torch.Tensor:
+            ext.exact_merge_warp_out(partial_o, partial_lse, exact_warp_output)
+            return exact_warp_output
+
+        run_exact_merge_warp()
+        torch.cuda.synchronize()
+        first_warp_output = exact_warp_output.clone()
+        run_exact_merge_warp()
+        torch.cuda.synchronize()
+        exact_merged_warp_quality[str(splits)] = {
+            **_error(exact_warp_output.float(), exact_reference_out),
+            "repeat_max_abs_diff": float(
+                (exact_warp_output - first_warp_output).abs().max().item()
+            ),
+            "nonfinite_count": int(
+                (~torch.isfinite(exact_warp_output)).sum().item()
+            ),
+        }
+        exact_merge_warp_ms, exact_merge_warp_raw_samples = _time_repeated(
+            run_exact_merge_warp,
+            warmup=args.warmup,
+            iters=args.iters,
+            repeats=args.repeats,
+        )
+        exact_merge_warp_timings[str(splits)] = exact_merge_warp_ms
+        exact_merge_warp_samples[str(splits)] = exact_merge_warp_raw_samples
+
         def run_exact_end_to_end() -> torch.Tensor:
             run_exact_partial()
             run_exact_merge()
@@ -491,6 +525,24 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         )
         exact_end_to_end_timings[str(splits)] = exact_end_to_end_ms
         exact_end_to_end_samples[str(splits)] = exact_end_to_end_raw_samples
+
+        def run_exact_end_to_end_warp() -> torch.Tensor:
+            run_exact_partial()
+            run_exact_merge_warp()
+            return exact_warp_output
+
+        exact_end_to_end_warp_ms, exact_end_to_end_warp_raw_samples = (
+            _time_repeated(
+                run_exact_end_to_end_warp,
+                warmup=args.warmup,
+                iters=args.iters,
+                repeats=args.repeats,
+            )
+        )
+        exact_end_to_end_warp_timings[str(splits)] = exact_end_to_end_warp_ms
+        exact_end_to_end_warp_samples[str(splits)] = (
+            exact_end_to_end_warp_raw_samples
+        )
         print(
             f"[transposed-qk] splits={splits:>3} ctas={args.batch * args.kv_heads * splits:>4} "
             f"scores_ms={median_ms:.6f} checksum_ms={checksum_ms:.6f} "
@@ -498,7 +550,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             f"qkpv_ms={qkpv_ms:.6f} "
             f"exact_partial_ms={exact_partial_ms:.6f} "
             f"merge_ms={exact_merge_ms:.6f} "
+            f"warp_merge_ms={exact_merge_warp_ms:.6f} "
             f"exact_e2e_ms={exact_end_to_end_ms:.6f} "
+            f"warp_e2e_ms={exact_end_to_end_warp_ms:.6f} "
             f"exact_out_err={exact_error['max_abs_error']:.6g} "
             f"max_err={quality[str(splits)]['max_abs_error']} "
             f"nonfinite={quality[str(splits)]['nonfinite_count']}",
@@ -538,11 +592,23 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     best_exact_partial_ms = exact_partial_timings[best_exact_partial_splits]
     best_exact_merge_splits = min(exact_merge_timings, key=exact_merge_timings.get)
     best_exact_merge_ms = exact_merge_timings[best_exact_merge_splits]
+    best_exact_merge_warp_splits = min(
+        exact_merge_warp_timings, key=exact_merge_warp_timings.get
+    )
+    best_exact_merge_warp_ms = exact_merge_warp_timings[
+        best_exact_merge_warp_splits
+    ]
     best_exact_end_to_end_splits = min(
         exact_end_to_end_timings, key=exact_end_to_end_timings.get
     )
     best_exact_end_to_end_ms = exact_end_to_end_timings[
         best_exact_end_to_end_splits
+    ]
+    best_exact_end_to_end_warp_splits = min(
+        exact_end_to_end_warp_timings, key=exact_end_to_end_warp_timings.get
+    )
+    best_exact_end_to_end_warp_ms = exact_end_to_end_warp_timings[
+        best_exact_end_to_end_warp_splits
     ]
     backend_plan = ExactDecodePlan.build(
         q.unsqueeze(1),
@@ -553,18 +619,18 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         build_dir=Path(args.build_dir) if args.build_dir else None,
         promoted_only=False,
     )
-    backend_plan.run()
+    backend_plan.run_two_call()
     torch.cuda.synchronize()
-    first_backend_output = backend_plan.output.clone()
-    backend_plan.run()
+    first_two_call_output = backend_plan.output.clone()
+    backend_plan.run_two_call()
     torch.cuda.synchronize()
-    backend_plan_ms, backend_plan_samples = _time_repeated(
-        backend_plan.run,
+    backend_plan_two_call_ms, backend_plan_two_call_samples = _time_repeated(
+        backend_plan.run_two_call,
         warmup=args.warmup,
         iters=args.iters,
         repeats=args.repeats,
     )
-    backend_plan_quality = {
+    backend_plan_two_call_quality = {
         **_error(
             backend_plan.output.view(
                 args.batch * args.kv_heads, 8, args.head_dim
@@ -572,7 +638,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             exact_reference_out,
         ),
         "repeat_max_abs_diff": float(
-            (backend_plan.output - first_backend_output).abs().max().item()
+            (backend_plan.output - first_two_call_output).abs().max().item()
         ),
         "nonfinite_count": int(
             (~torch.isfinite(backend_plan.output)).sum().item()
@@ -605,8 +671,45 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "workspace_bytes": backend_plan.workspace_bytes,
         "backend": backend_plan.backend,
     }
+    backend_plan.run_warp_merge()
+    torch.cuda.synchronize()
+    first_warp_plan_output = backend_plan.output.clone()
+    backend_plan.run_warp_merge()
+    torch.cuda.synchronize()
+    backend_plan_warp_merge_ms, backend_plan_warp_merge_samples = _time_repeated(
+        backend_plan.run_warp_merge,
+        warmup=args.warmup,
+        iters=args.iters,
+        repeats=args.repeats,
+    )
+    backend_plan_warp_merge_quality = {
+        **_error(
+            backend_plan.output.view(
+                args.batch * args.kv_heads, 8, args.head_dim
+            ).float(),
+            exact_reference_out,
+        ),
+        "repeat_max_abs_diff": float(
+            (backend_plan.output - first_warp_plan_output).abs().max().item()
+        ),
+        "nonfinite_count": int((~torch.isfinite(backend_plan.output)).sum().item()),
+        "workspace_bytes": backend_plan.workspace_bytes,
+        "backend": backend_plan.backend,
+    }
+    # The one-warp merge is the promoted public ExactDecodePlan.run() path.
+    backend_plan_ms = backend_plan_warp_merge_ms
+    backend_plan_samples = backend_plan_warp_merge_samples
+    backend_plan_quality = backend_plan_warp_merge_quality
     combined_vs_two_call = _paired_cuda_ratio(
         backend_plan.run_combined,
+        backend_plan.run_two_call,
+        device=device,
+        warmup=args.warmup,
+        iters=args.iters,
+        repeats=max(9, args.repeats),
+    )
+    warp_merge_vs_two_call = _paired_cuda_ratio(
+        backend_plan.run_warp_merge,
         backend_plan.run_two_call,
         device=device,
         warmup=args.warmup,
@@ -654,7 +757,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     paired_exact_ms: list[float] = []
     paired_flashinfer_ms: list[float] = []
     paired_speedups: list[float] = []
+    paired_two_call_vs_flashinfer = None
     paired_combined_vs_flashinfer = None
+    paired_warp_merge_vs_flashinfer = None
     if flashinfer_ms is not None:
         paired_two_call_vs_flashinfer = _paired_cuda_ratio(
             backend_plan.run_two_call,
@@ -664,11 +769,6 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             iters=args.iters,
             repeats=max(9, args.repeats),
         )
-        paired_exact_ms = paired_two_call_vs_flashinfer["candidate_ms"]
-        paired_flashinfer_ms = paired_two_call_vs_flashinfer["reference_ms"]
-        paired_speedups = paired_two_call_vs_flashinfer["ratios"]
-        paired_speedup_median = paired_two_call_vs_flashinfer["ratio_median"]
-        paired_speedup_min = paired_two_call_vs_flashinfer["ratio_min"]
         paired_combined_vs_flashinfer = _paired_cuda_ratio(
             backend_plan.run_combined,
             flashinfer_run,
@@ -677,6 +777,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             iters=args.iters,
             repeats=max(9, args.repeats),
         )
+        paired_warp_merge_vs_flashinfer = _paired_cuda_ratio(
+            backend_plan.run_warp_merge,
+            flashinfer_run,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+            repeats=max(9, args.repeats),
+        )
+        paired_exact_ms = paired_warp_merge_vs_flashinfer["candidate_ms"]
+        paired_flashinfer_ms = paired_warp_merge_vs_flashinfer["reference_ms"]
+        paired_speedups = paired_warp_merge_vs_flashinfer["ratios"]
+        paired_speedup_median = paired_warp_merge_vs_flashinfer["ratio_median"]
+        paired_speedup_min = paired_warp_merge_vs_flashinfer["ratio_min"]
     else:
         paired_speedup_median = None
         paired_speedup_min = None
@@ -709,8 +822,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "exact_partial_samples_ms_by_splits": exact_partial_samples,
             "exact_merge_ms_by_splits": exact_merge_timings,
             "exact_merge_samples_ms_by_splits": exact_merge_samples,
+            "exact_merge_warp_ms_by_splits": exact_merge_warp_timings,
+            "exact_merge_warp_samples_ms_by_splits": exact_merge_warp_samples,
             "exact_end_to_end_ms_by_splits": exact_end_to_end_timings,
             "exact_end_to_end_samples_ms_by_splits": exact_end_to_end_samples,
+            "exact_end_to_end_warp_ms_by_splits": exact_end_to_end_warp_timings,
+            "exact_end_to_end_warp_samples_ms_by_splits": (
+                exact_end_to_end_warp_samples
+            ),
             "best_splits": int(best_splits),
             "best_qk_ms": best_ms,
             "best_cta_count": args.batch * args.kv_heads * int(best_splits),
@@ -732,18 +851,29 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "best_exact_merge_splits": int(best_exact_merge_splits),
             "best_exact_merge_ms": best_exact_merge_ms,
+            "best_exact_merge_warp_splits": int(best_exact_merge_warp_splits),
+            "best_exact_merge_warp_ms": best_exact_merge_warp_ms,
             "best_exact_end_to_end_splits": int(best_exact_end_to_end_splits),
             "best_exact_end_to_end_ms": best_exact_end_to_end_ms,
+            "best_exact_end_to_end_warp_splits": int(
+                best_exact_end_to_end_warp_splits
+            ),
+            "best_exact_end_to_end_warp_ms": best_exact_end_to_end_warp_ms,
             "backend_plan_ms": backend_plan_ms,
             "backend_plan_samples_ms": backend_plan_samples,
-            "backend_plan_two_call_ms": backend_plan_ms,
-            "backend_plan_two_call_samples_ms": backend_plan_samples,
+            "backend_plan_two_call_ms": backend_plan_two_call_ms,
+            "backend_plan_two_call_samples_ms": backend_plan_two_call_samples,
             "backend_plan_combined_ms": backend_plan_combined_ms,
             "backend_plan_combined_samples_ms": backend_plan_combined_samples,
+            "backend_plan_warp_merge_ms": backend_plan_warp_merge_ms,
+            "backend_plan_warp_merge_samples_ms": backend_plan_warp_merge_samples,
             "serving_dispatch_ms": serving_dispatch_ms,
             "serving_dispatch_samples_ms": serving_dispatch_samples,
             "paired_combined_vs_two_call": combined_vs_two_call,
+            "paired_warp_merge_vs_two_call": warp_merge_vs_two_call,
+            "paired_two_call_vs_flashinfer": paired_two_call_vs_flashinfer,
             "paired_combined_vs_flashinfer": paired_combined_vs_flashinfer,
+            "paired_warp_merge_vs_flashinfer": paired_warp_merge_vs_flashinfer,
             "flashinfer_batched_exact_ms": flashinfer_ms,
             "flashinfer_samples_ms": flashinfer_samples,
             "qk_budget_fraction_of_flashinfer": (
@@ -780,8 +910,11 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "qkpv_quality": qkpv_quality,
         "exact_partial_quality": exact_partial_quality,
         "exact_merged_quality": exact_merged_quality,
+        "exact_merged_warp_quality": exact_merged_warp_quality,
         "backend_plan_quality": backend_plan_quality,
+        "backend_plan_two_call_quality": backend_plan_two_call_quality,
         "backend_plan_combined_quality": backend_plan_combined_quality,
+        "backend_plan_warp_merge_quality": backend_plan_warp_merge_quality,
         "serving_dispatch_quality": serving_dispatch_quality,
         "exact_vs_flashinfer_quality": flashinfer_quality,
         "flashinfer_error": flashinfer_error,
@@ -819,6 +952,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "combined_dispatch_criterion": (
                 "paired median faster than two-call plan, paired min >=0.995x, "
                 "max output delta <=5e-4, finite and deterministic"
+            ),
+            "warp_merge_gate": (
+                "pass"
+                if warp_merge_vs_two_call["ratio_median"] > 1.0
+                and warp_merge_vs_two_call["ratio_min"] > 0.995
+                and backend_plan_warp_merge_quality["nonfinite_count"] == 0
+                and backend_plan_warp_merge_quality["repeat_max_abs_diff"] == 0.0
+                and backend_plan_warp_merge_quality["max_abs_error"] <= 5.0e-4
+                else "fail"
+            ),
+            "warp_merge_criterion": (
+                "paired median faster than the 64-thread merge plan, paired min "
+                ">=0.995x, max output delta <=5e-4, finite and deterministic"
             ),
             "exact_native_criterion": (
                 "paired median faster than matching FlashInfer, paired min >=0.98x, "

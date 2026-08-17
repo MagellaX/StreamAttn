@@ -41,6 +41,11 @@ void streamattn_transposed_wgmma_exact_merge_out_cuda(
     torch::Tensor partial_lse,
     torch::Tensor output);
 
+void streamattn_transposed_wgmma_exact_merge_warp_out_cuda(
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output);
+
 void streamattn_transposed_wgmma_exact_decode_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_cache,
@@ -63,6 +68,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "StreamAttn transposed m64n8k16 exact attention partial states");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
         "StreamAttn exact split-state merge");
+  m.def("exact_merge_warp_out", &streamattn_transposed_wgmma_exact_merge_warp_out_cuda,
+        "StreamAttn one-warp exact split-state merge");
   m.def("exact_decode_out", &streamattn_transposed_wgmma_exact_decode_out_cuda,
         "StreamAttn exact producer and merge (single host dispatch)");
 }
@@ -949,6 +956,68 @@ void streamattn_transposed_wgmma_exact_merge_kernel(
   output[static_cast<int64_t>(row) * kHeadDim + dim] = Element(value / normalizer);
 }
 
+__global__ __launch_bounds__(32)
+void streamattn_transposed_wgmma_exact_merge_warp_kernel(
+    const Accum* __restrict__ partial_o,
+    const Accum* __restrict__ partial_lse,
+    Element* __restrict__ output,
+    int groups,
+    int num_splits) {
+  const int row = blockIdx.x;
+  if (row >= groups * kBlockN) {
+    return;
+  }
+  const int group = row / kBlockN;
+  const int head = row - group * kBlockN;
+  const int lane = threadIdx.x;
+  __shared__ Accum weights[512];
+
+  Accum row_max = -INFINITY;
+  for (int split = lane; split < num_splits; split += 32) {
+    row_max = fmaxf(
+        row_max,
+        partial_lse[(static_cast<int64_t>(group) * num_splits + split) *
+                    kBlockN + head]);
+  }
+  row_max = fmaxf(row_max, __shfl_xor_sync(0xffffffffu, row_max, 16));
+  row_max = fmaxf(row_max, __shfl_xor_sync(0xffffffffu, row_max, 8));
+  row_max = fmaxf(row_max, __shfl_xor_sync(0xffffffffu, row_max, 4));
+  row_max = fmaxf(row_max, __shfl_xor_sync(0xffffffffu, row_max, 2));
+  row_max = fmaxf(row_max, __shfl_xor_sync(0xffffffffu, row_max, 1));
+
+  Accum normalizer = 0.0f;
+  for (int split = lane; split < num_splits; split += 32) {
+    const Accum weight = exp2f(
+        partial_lse[(static_cast<int64_t>(group) * num_splits + split) *
+                    kBlockN + head] - row_max);
+    weights[split] = weight;
+    normalizer += weight;
+  }
+  normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 16);
+  normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 8);
+  normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 4);
+  normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 2);
+  normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 1);
+  __syncwarp();
+
+  Accum value0 = 0.0f;
+  Accum value1 = 0.0f;
+  const int dim0 = lane * 2;
+  for (int split = 0; split < num_splits; ++split) {
+    const int64_t base =
+        ((static_cast<int64_t>(group) * num_splits + split) * kBlockN +
+         head) * kHeadDim + dim0;
+    const float2 pair = *reinterpret_cast<const float2*>(partial_o + base);
+    const Accum weight = weights[split];
+    value0 += weight * pair.x;
+    value1 += weight * pair.y;
+  }
+  const Accum inverse_normalizer = 1.0f / normalizer;
+  const int64_t output_base = static_cast<int64_t>(row) * kHeadDim + dim0;
+  output[output_base] = Element(value0 * inverse_normalizer);
+  output[output_base + 1] = Element(value1 * inverse_normalizer);
+}
+
 void streamattn_transposed_wgmma_qk_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_cache,
@@ -1219,6 +1288,44 @@ void streamattn_transposed_wgmma_exact_merge_out_cuda(
   const dim3 block(kHeadDim);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   streamattn_transposed_wgmma_exact_merge_kernel<<<grid, block, 0, stream>>>(
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      groups,
+      num_splits);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_transposed_wgmma_exact_merge_warp_out_cuda(
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output) {
+  TORCH_CHECK(partial_o.is_cuda() && partial_lse.is_cuda() && output.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(partial_o.is_contiguous() && partial_lse.is_contiguous() &&
+              output.is_contiguous(), "all tensors must be contiguous");
+  TORCH_CHECK(partial_o.scalar_type() == at::ScalarType::Float &&
+              partial_lse.scalar_type() == at::ScalarType::Float,
+              "partial inputs must be fp32");
+  TORCH_CHECK(output.scalar_type() == at::ScalarType::BFloat16,
+              "output must be bf16");
+  TORCH_CHECK(partial_o.dim() == 4 && partial_o.size(2) == kBlockN &&
+              partial_o.size(3) == kHeadDim,
+              "partial_o must have shape [groups,num_splits,8,64]");
+  TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
+                  {partial_o.size(0), partial_o.size(1), kBlockN}),
+              "partial_lse must have shape [groups,num_splits,8]");
+  TORCH_CHECK(output.sizes() == torch::IntArrayRef(
+                  {partial_o.size(0), kBlockN, kHeadDim}),
+              "output must have shape [groups,8,64]");
+  TORCH_CHECK(partial_o.size(1) <= 512, "num_splits must be <= 512");
+
+  const int groups = static_cast<int>(partial_o.size(0));
+  const int num_splits = static_cast<int>(partial_o.size(1));
+  const dim3 grid(groups * kBlockN);
+  const dim3 block(32);
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  streamattn_transposed_wgmma_exact_merge_warp_kernel<<<grid, block, 0, stream>>>(
       partial_o.data_ptr<float>(),
       partial_lse.data_ptr<float>(),
       reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),

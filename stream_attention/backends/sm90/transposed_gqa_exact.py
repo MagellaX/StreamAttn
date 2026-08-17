@@ -224,6 +224,7 @@ class ExactDecodePlan:
     extension: Any
     partial_launch: Any
     merge_launch: Any
+    warp_merge_launch: Any
     combined_launch: Any
     backend: str = "sm90_transposed_gqa_wgmma_exact"
 
@@ -306,6 +307,7 @@ class ExactDecodePlan:
             extension=extension,
             partial_launch=extension.exact_partial_out,
             merge_launch=extension.exact_merge_out,
+            warp_merge_launch=extension.exact_merge_warp_out,
             combined_launch=extension.exact_decode_out,
         )
 
@@ -345,7 +347,23 @@ class ExactDecodePlan:
         )
         return self.output
 
-    def run(self) -> torch.Tensor:
-        """Run the promoted path; retained as two-call until the H100 gate."""
+    def run_warp_merge(self) -> torch.Tensor:
+        """Launch the producer followed by the promoted one-warp merge."""
 
-        return self.run_two_call()
+        self.partial_launch(
+            self.query_group,
+            self.key_cache,
+            self.value_cache,
+            self.partial_output,
+            self.partial_lse,
+            self.num_splits,
+        )
+        self.warp_merge_launch(
+            self.partial_output, self.partial_lse, self.output_group
+        )
+        return self.output
+
+    def run(self) -> torch.Tensor:
+        """Run the H100-promoted producer and one-warp merge path."""
+
+        return self.run_warp_merge()

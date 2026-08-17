@@ -35,7 +35,9 @@ def test_promoted_shape_contract_requires_head_major_bf16_buffers():
 
 def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
     assert 'm.def("exact_decode_out"' in CPP_SOURCE
+    assert 'm.def("exact_merge_warp_out"' in CPP_SOURCE
     assert "streamattn_transposed_wgmma_exact_decode_out_cuda" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_exact_merge_warp_kernel" in CUDA_SOURCE
 
     calls: list[str] = []
 
@@ -47,6 +49,9 @@ def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
 
     def combined(*_args) -> None:
         calls.append("combined")
+
+    def warp_merge(*_args) -> None:
+        calls.append("warp_merge")
 
     tensor = torch.empty(1)
     plan = ExactDecodePlan(
@@ -62,6 +67,7 @@ def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
         extension=None,
         partial_launch=partial,
         merge_launch=merge,
+        warp_merge_launch=warp_merge,
         combined_launch=combined,
     )
 
@@ -70,6 +76,12 @@ def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
     calls.clear()
     assert plan.run_combined() is tensor
     assert calls == ["combined"]
+    calls.clear()
+    assert plan.run_warp_merge() is tensor
+    assert calls == ["partial", "warp_merge"]
+    calls.clear()
+    assert plan.run() is tensor
+    assert calls == ["partial", "warp_merge"]
 
 
 def _has_h100_and_cutlass() -> bool:
