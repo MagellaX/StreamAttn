@@ -8,6 +8,10 @@ from stream_attention.backends.sm90.transposed_gqa_exact import (
     resolve_cutlass_root,
     supports_transposed_gqa_exact,
 )
+from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
+    CPP_SOURCE,
+    CUDA_SOURCE,
+)
 
 
 def test_split_rule_preserves_256_producer_cta_target():
@@ -27,6 +31,45 @@ def test_promoted_shape_contract_requires_head_major_bf16_buffers():
     assert "gqa" in reasons
     assert "unpromoted_shape" in reasons
     assert not supports_transposed_gqa_exact(q, k_head_major, v_head_major)
+
+
+def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
+    assert 'm.def("exact_decode_out"' in CPP_SOURCE
+    assert "streamattn_transposed_wgmma_exact_decode_out_cuda" in CUDA_SOURCE
+
+    calls: list[str] = []
+
+    def partial(*_args) -> None:
+        calls.append("partial")
+
+    def merge(*_args) -> None:
+        calls.append("merge")
+
+    def combined(*_args) -> None:
+        calls.append("combined")
+
+    tensor = torch.empty(1)
+    plan = ExactDecodePlan(
+        query=tensor,
+        key_cache=tensor,
+        value_cache=tensor,
+        output=tensor,
+        query_group=tensor,
+        output_group=tensor,
+        partial_output=tensor,
+        partial_lse=tensor,
+        num_splits=1,
+        extension=None,
+        partial_launch=partial,
+        merge_launch=merge,
+        combined_launch=combined,
+    )
+
+    assert plan.run_two_call() is tensor
+    assert calls == ["partial", "merge"]
+    calls.clear()
+    assert plan.run_combined() is tensor
+    assert calls == ["combined"]
 
 
 def _has_h100_and_cutlass() -> bool:

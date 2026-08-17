@@ -77,6 +77,49 @@ def _time_repeated(fn, *, warmup: int, iters: int, repeats: int) -> tuple[float,
     return float(statistics.median(samples)), samples
 
 
+def _paired_cuda_ratio(
+    candidate,
+    reference,
+    *,
+    device: torch.device,
+    warmup: int,
+    iters: int,
+    repeats: int,
+) -> dict[str, Any]:
+    """Time candidate/reference in alternating order and report reference/candidate."""
+
+    candidate_ms: list[float] = []
+    reference_ms: list[float] = []
+    ratios: list[float] = []
+    for pair_idx in range(repeats):
+        if pair_idx % 2 == 0:
+            candidate_value = _time_cuda(
+                candidate, device=device, warmup=warmup, iters=iters
+            )
+            reference_value = _time_cuda(
+                reference, device=device, warmup=warmup, iters=iters
+            )
+        else:
+            reference_value = _time_cuda(
+                reference, device=device, warmup=warmup, iters=iters
+            )
+            candidate_value = _time_cuda(
+                candidate, device=device, warmup=warmup, iters=iters
+            )
+        candidate_ms.append(float(candidate_value))
+        reference_ms.append(float(reference_value))
+        ratios.append(float(reference_value / candidate_value))
+    return {
+        "candidate_ms": candidate_ms,
+        "reference_ms": reference_ms,
+        "ratios": ratios,
+        "ratio_median": float(statistics.median(ratios)),
+        "ratio_min": float(min(ratios)),
+        "wins": int(sum(ratio > 1.0 for ratio in ratios)),
+        "trials": len(ratios),
+    }
+
+
 def _flashinfer_batched_runner(
     q: torch.Tensor,
     k_nhd: torch.Tensor,
@@ -537,7 +580,42 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "workspace_bytes": backend_plan.workspace_bytes,
         "backend": backend_plan.backend,
     }
+    backend_plan.run_combined()
+    torch.cuda.synchronize()
+    first_combined_output = backend_plan.output.clone()
+    backend_plan.run_combined()
+    torch.cuda.synchronize()
+    backend_plan_combined_ms, backend_plan_combined_samples = _time_repeated(
+        backend_plan.run_combined,
+        warmup=args.warmup,
+        iters=args.iters,
+        repeats=args.repeats,
+    )
+    backend_plan_combined_quality = {
+        **_error(
+            backend_plan.output.view(
+                args.batch * args.kv_heads, 8, args.head_dim
+            ).float(),
+            exact_reference_out,
+        ),
+        "repeat_max_abs_diff": float(
+            (backend_plan.output - first_combined_output).abs().max().item()
+        ),
+        "nonfinite_count": int((~torch.isfinite(backend_plan.output)).sum().item()),
+        "workspace_bytes": backend_plan.workspace_bytes,
+        "backend": backend_plan.backend,
+    }
+    combined_vs_two_call = _paired_cuda_ratio(
+        backend_plan.run_combined,
+        backend_plan.run_two_call,
+        device=device,
+        warmup=args.warmup,
+        iters=args.iters,
+        repeats=max(9, args.repeats),
+    )
     serving_dispatch_quality = None
+    serving_dispatch_ms = None
+    serving_dispatch_samples: list[float] = []
     if (
         args.batch == 4
         and args.q_heads == 16
@@ -567,44 +645,38 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "backend_variant": serving_runner.backend_variant,
             "nonfinite_count": int((~torch.isfinite(serving_output)).sum().item()),
         }
+        serving_dispatch_ms, serving_dispatch_samples = _time_repeated(
+            serving_runner.run,
+            warmup=args.warmup,
+            iters=args.iters,
+            repeats=args.repeats,
+        )
     paired_exact_ms: list[float] = []
     paired_flashinfer_ms: list[float] = []
     paired_speedups: list[float] = []
+    paired_combined_vs_flashinfer = None
     if flashinfer_ms is not None:
-        run_paired_exact = backend_plan.run
-
-        for pair_idx in range(max(5, args.repeats)):
-            if pair_idx % 2 == 0:
-                exact_ms = _time_cuda(
-                    run_paired_exact,
-                    device=device,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                )
-                fi_ms = _time_cuda(
-                    flashinfer_run,
-                    device=device,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                )
-            else:
-                fi_ms = _time_cuda(
-                    flashinfer_run,
-                    device=device,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                )
-                exact_ms = _time_cuda(
-                    run_paired_exact,
-                    device=device,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                )
-            paired_exact_ms.append(float(exact_ms))
-            paired_flashinfer_ms.append(float(fi_ms))
-            paired_speedups.append(float(fi_ms / exact_ms))
-        paired_speedup_median = float(statistics.median(paired_speedups))
-        paired_speedup_min = float(min(paired_speedups))
+        paired_two_call_vs_flashinfer = _paired_cuda_ratio(
+            backend_plan.run_two_call,
+            flashinfer_run,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+            repeats=max(9, args.repeats),
+        )
+        paired_exact_ms = paired_two_call_vs_flashinfer["candidate_ms"]
+        paired_flashinfer_ms = paired_two_call_vs_flashinfer["reference_ms"]
+        paired_speedups = paired_two_call_vs_flashinfer["ratios"]
+        paired_speedup_median = paired_two_call_vs_flashinfer["ratio_median"]
+        paired_speedup_min = paired_two_call_vs_flashinfer["ratio_min"]
+        paired_combined_vs_flashinfer = _paired_cuda_ratio(
+            backend_plan.run_combined,
+            flashinfer_run,
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+            repeats=max(9, args.repeats),
+        )
     else:
         paired_speedup_median = None
         paired_speedup_min = None
@@ -664,6 +736,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "best_exact_end_to_end_ms": best_exact_end_to_end_ms,
             "backend_plan_ms": backend_plan_ms,
             "backend_plan_samples_ms": backend_plan_samples,
+            "backend_plan_two_call_ms": backend_plan_ms,
+            "backend_plan_two_call_samples_ms": backend_plan_samples,
+            "backend_plan_combined_ms": backend_plan_combined_ms,
+            "backend_plan_combined_samples_ms": backend_plan_combined_samples,
+            "serving_dispatch_ms": serving_dispatch_ms,
+            "serving_dispatch_samples_ms": serving_dispatch_samples,
+            "paired_combined_vs_two_call": combined_vs_two_call,
+            "paired_combined_vs_flashinfer": paired_combined_vs_flashinfer,
             "flashinfer_batched_exact_ms": flashinfer_ms,
             "flashinfer_samples_ms": flashinfer_samples,
             "qk_budget_fraction_of_flashinfer": (
@@ -701,6 +781,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "exact_partial_quality": exact_partial_quality,
         "exact_merged_quality": exact_merged_quality,
         "backend_plan_quality": backend_plan_quality,
+        "backend_plan_combined_quality": backend_plan_combined_quality,
         "serving_dispatch_quality": serving_dispatch_quality,
         "exact_vs_flashinfer_quality": flashinfer_quality,
         "flashinfer_error": flashinfer_error,
@@ -725,6 +806,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 and backend_plan_quality["repeat_max_abs_diff"] == 0.0
                 and backend_plan_quality["max_abs_error"] <= 5.0e-4
                 else "fail"
+            ),
+            "combined_dispatch_gate": (
+                "pass"
+                if combined_vs_two_call["ratio_median"] > 1.0
+                and combined_vs_two_call["ratio_min"] > 0.995
+                and backend_plan_combined_quality["nonfinite_count"] == 0
+                and backend_plan_combined_quality["repeat_max_abs_diff"] == 0.0
+                and backend_plan_combined_quality["max_abs_error"] <= 5.0e-4
+                else "fail"
+            ),
+            "combined_dispatch_criterion": (
+                "paired median faster than two-call plan, paired min >=0.995x, "
+                "max output delta <=5e-4, finite and deterministic"
             ),
             "exact_native_criterion": (
                 "paired median faster than matching FlashInfer, paired min >=0.98x, "

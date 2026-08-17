@@ -224,6 +224,7 @@ class ExactDecodePlan:
     extension: Any
     partial_launch: Any
     merge_launch: Any
+    combined_launch: Any
     backend: str = "sm90_transposed_gqa_wgmma_exact"
 
     @classmethod
@@ -305,6 +306,7 @@ class ExactDecodePlan:
             extension=extension,
             partial_launch=extension.exact_partial_out,
             merge_launch=extension.exact_merge_out,
+            combined_launch=extension.exact_decode_out,
         )
 
     @property
@@ -313,8 +315,8 @@ class ExactDecodePlan:
             self.partial_lse.numel() * self.partial_lse.element_size()
         )
 
-    def run(self) -> torch.Tensor:
-        """Launch producer and merge kernels without allocation or compilation."""
+    def run_two_call(self) -> torch.Tensor:
+        """Launch producer and merge through separate extension dispatches."""
 
         self.partial_launch(
             self.query_group,
@@ -328,3 +330,22 @@ class ExactDecodePlan:
             self.partial_output, self.partial_lse, self.output_group
         )
         return self.output
+
+    def run_combined(self) -> torch.Tensor:
+        """Launch producer and merge through one extension dispatch."""
+
+        self.combined_launch(
+            self.query_group,
+            self.key_cache,
+            self.value_cache,
+            self.partial_output,
+            self.partial_lse,
+            self.output_group,
+            self.num_splits,
+        )
+        return self.output
+
+    def run(self) -> torch.Tensor:
+        """Run the promoted path; retained as two-call until the H100 gate."""
+
+        return self.run_two_call()

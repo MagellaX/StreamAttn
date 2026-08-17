@@ -41,6 +41,15 @@ void streamattn_transposed_wgmma_exact_merge_out_cuda(
     torch::Tensor partial_lse,
     torch::Tensor output);
 
+void streamattn_transposed_wgmma_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("qk_out", &streamattn_transposed_wgmma_qk_out_cuda,
         "StreamAttn transposed m64n8k16 exact QK (out variant)");
@@ -54,6 +63,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "StreamAttn transposed m64n8k16 exact attention partial states");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
         "StreamAttn exact split-state merge");
+  m.def("exact_decode_out", &streamattn_transposed_wgmma_exact_decode_out_cuda,
+        "StreamAttn exact producer and merge (single host dispatch)");
 }
 """
 
@@ -1213,6 +1224,84 @@ void streamattn_transposed_wgmma_exact_merge_out_cuda(
       reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
       groups,
       num_splits);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_transposed_wgmma_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  TORCH_CHECK(q_group.is_cuda() && k_cache.is_cuda() && v_cache.is_cuda() &&
+              partial_o.is_cuda() && partial_lse.is_cuda() && output.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(q_group.is_contiguous() && k_cache.is_contiguous() &&
+              v_cache.is_contiguous() && partial_o.is_contiguous() &&
+              partial_lse.is_contiguous() && output.is_contiguous(),
+              "all tensors must be contiguous");
+  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16 &&
+              k_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              v_cache.scalar_type() == at::ScalarType::BFloat16,
+              "q_group, k_cache, and v_cache must be bf16");
+  TORCH_CHECK(partial_o.scalar_type() == at::ScalarType::Float &&
+              partial_lse.scalar_type() == at::ScalarType::Float,
+              "partial outputs must be fp32");
+  TORCH_CHECK(output.scalar_type() == at::ScalarType::BFloat16,
+              "output must be bf16");
+  TORCH_CHECK(q_group.dim() == 4 && q_group.size(2) == kBlockN &&
+              q_group.size(3) == kHeadDim,
+              "q_group must have shape [B,Hkv,8,64]");
+  TORCH_CHECK(k_cache.sizes() == v_cache.sizes(),
+              "k_cache and v_cache must match");
+  TORCH_CHECK(k_cache.dim() == 4 && k_cache.size(3) == kHeadDim,
+              "K/V must have shape [B,Hkv,N,64]");
+  TORCH_CHECK(k_cache.size(0) == q_group.size(0) &&
+              k_cache.size(1) == q_group.size(1),
+              "q_group and K/V batch/KV-head dimensions must match");
+  TORCH_CHECK(k_cache.size(2) % kBlockM == 0,
+              "kv_len must be divisible by 64");
+
+  const int groups = static_cast<int>(q_group.size(0) * q_group.size(1));
+  const int kv_len = static_cast<int>(k_cache.size(2));
+  const int num_tiles = kv_len / kBlockM;
+  TORCH_CHECK(num_splits > 0 && num_splits <= num_tiles,
+              "num_splits must be in [1, kv_len/64]");
+  TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN, kHeadDim}),
+              "partial_o must have shape [B*Hkv,num_splits,8,64]");
+  TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN}),
+              "partial_lse must have shape [B*Hkv,num_splits,8]");
+  TORCH_CHECK(output.sizes() == torch::IntArrayRef(
+                  {groups, kBlockN, kHeadDim}),
+              "output must have shape [B*Hkv,8,64]");
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  const dim3 partial_grid(groups * static_cast<int>(num_splits));
+  const dim3 partial_block(128);
+  streamattn_transposed_wgmma_exact_partial_kernel<<<
+      partial_grid, partial_block, 0, stream>>>(
+      reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      groups,
+      kv_len,
+      static_cast<int>(num_splits));
+
+  const dim3 merge_grid(groups * kBlockN);
+  const dim3 merge_block(kHeadDim);
+  streamattn_transposed_wgmma_exact_merge_kernel<<<
+      merge_grid, merge_block, 0, stream>>>(
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      groups,
+      static_cast<int>(num_splits));
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 """

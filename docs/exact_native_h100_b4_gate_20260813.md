@@ -109,6 +109,46 @@ variant passed. Therefore the backend is promoted for exact ownership and this
 guarded cell, while broader speed claims remain performance-gated by paired
 measurements.
 
+## Host-dispatch decomposition
+
+An August 18 follow-up added a single C++ extension entry point that validates
+the fixed buffers once and launches the existing producer and merge kernels on
+the same CUDA stream. The original two-extension-call plan remained unchanged
+as the control. Nine alternating H100 trials found:
+
+| Comparison | Median ratio | Minimum | Wins |
+| --- | ---: | ---: | ---: |
+| Combined dispatch vs two-call plan | `0.99997x` | `0.99882x` | `4/9` |
+| Combined dispatch vs FlashInfer | `0.98935x` | `0.98725x` | `0/9` |
+| Two-call plan vs FlashInfer | `0.98900x` | `0.98816x` | `0/9` |
+
+The combined path remained finite, deterministic, and retained the same
+`9.01e-5` maximum FP32-reference error. It did not improve latency. This
+disproves the interpretation that the earlier difference between independently
+timed raw and planned paths was a removable `~0.55 us` Python dispatch tax.
+
+The same run measured:
+
+```text
+producer:  28.128 us
+merge:      3.324 us
+raw total: 32.024 us
+```
+
+Independent serving timing reached `31.928 us` while paired measurements later
+in the same process were near `32.05 us`, further demonstrating that independent
+benchmark phases cannot be subtracted to attribute sub-microsecond overhead.
+The combined entry point remains an experimental measurement path; the promoted
+plan continues to use the established two-call implementation. The next exact
+backend work is merge-kernel profiling and controlled merge variants, followed
+by repeatability and adjacent-shape mapping.
+
+Artifact:
+
+```text
+artifacts/gate0/transposed_wgmma_exact_combined_dispatch_modal_h100_20260818.json
+```
+
 ## Scope
 
 This is an exact-kernel victory for one important decode cell, not a universal
