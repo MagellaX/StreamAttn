@@ -1,0 +1,109 @@
+{
+  "schema": "streamattn.sm90_exact_group_size_phase_diagram.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "shape_family": {
+    "q_heads": 16,
+    "kv_heads": 4,
+    "group_size": 4,
+    "head_dim": 64,
+    "dtype": "bf16",
+    "wgmma_column_utilization": 0.5
+  },
+  "summary": {
+    "cells": 3,
+    "promotion_candidates": 2,
+    "candidate_cells": [
+      {
+        "batch": 1,
+        "kv_len": 16384
+      },
+      {
+        "batch": 1,
+        "kv_len": 32768
+      }
+    ]
+  },
+  "cells": [
+    {
+      "batch": 1,
+      "kv_len": 16384,
+      "split_candidates": [
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128,
+        160
+      ],
+      "best_splits": 64,
+      "producer_ctas": 256,
+      "streamattn_ms": 0.011101439793904622,
+      "partial_ms": 0.007018773555755615,
+      "merge_ms": 0.004805226723353068,
+      "paired_speedup_median": 1.4632668958512887,
+      "paired_speedup_min": 1.4183869216340852,
+      "paired_wins": 9,
+      "paired_trials": 9,
+      "max_abs_error": 0.0001063905656337738,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b1_frontier_h100_20260818_cells/b1_n16384_g4_d64.json"
+    },
+    {
+      "batch": 1,
+      "kv_len": 32768,
+      "split_candidates": [
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128,
+        160
+      ],
+      "best_splits": 128,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.01423210620880127,
+      "partial_ms": 0.009074453512827556,
+      "merge_ms": 0.004487893184026082,
+      "paired_speedup_median": 1.2112393224070601,
+      "paired_speedup_min": 1.1779280506465708,
+      "paired_wins": 9,
+      "paired_trials": 9,
+      "max_abs_error": 7.063150405883789e-05,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b1_frontier_h100_20260818_cells/b1_n32768_g4_d64.json"
+    },
+    {
+      "batch": 1,
+      "kv_len": 65536,
+      "split_candidates": [
+        32,
+        48,
+        64,
+        80,
+        96,
+        112,
+        128,
+        160
+      ],
+      "best_splits": 64,
+      "producer_ctas": 256,
+      "streamattn_ms": 0.03211125373840332,
+      "partial_ms": 0.02790741284688314,
+      "merge_ms": 0.004277439912160238,
+      "paired_speedup_median": 0.9845312138605122,
+      "paired_speedup_min": 0.9820193818093071,
+      "paired_wins": 0,
+      "paired_trials": 9,
+      "max_abs_error": 6.415694952011108e-05,
+      "correctness": "pass",
+      "promotion_candidate": false,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b1_frontier_h100_20260818_cells/b1_n65536_g4_d64.json"
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "schema": "streamattn.sm90_exact_group_size_phase_diagram.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "shape_family": {
+    "q_heads": 16,
+    "kv_heads": 4,
+    "group_size": 4,
+    "head_dim": 64,
+    "dtype": "bf16",
+    "wgmma_column_utilization": 0.5
+  },
+  "summary": {
+    "cells": 3,
+    "promotion_candidates": 3,
+    "candidate_cells": [
+      {
+        "batch": 16,
+        "kv_len": 16384
+      },
+      {
+        "batch": 16,
+        "kv_len": 32768
+      },
+      {
+        "batch": 16,
+        "kv_len": 65536
+      }
+    ]
+  },
+  "cells": [
+    {
+      "batch": 16,
+      "kv_len": 16384,
+      "split_candidates": [
+        2,
+        4,
+        8
+      ],
+      "best_splits": 8,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.09564821243286133,
+      "partial_ms": 0.0926848030090332,
+      "merge_ms": 0.002722666660944621,
+      "paired_speedup_median": 1.0675481761564267,
+      "paired_speedup_min": 1.0673899068934771,
+      "paired_wins": 9,
+      "paired_trials": 9,
+      "max_abs_error": 0.0001553557813167572,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b16_confirmation_h100_20260818_cells/b16_n16384_g4_d64.json"
+    },
+    {
+      "batch": 16,
+      "kv_len": 32768,
+      "split_candidates": [
+        2,
+        4,
+        8
+      ],
+      "best_splits": 8,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.1809762191772461,
+      "partial_ms": 0.17800671895345052,
+      "merge_ms": 0.00270581324895223,
+      "paired_speedup_median": 1.0698915969476142,
+      "paired_speedup_min": 1.0691657108984267,
+      "paired_wins": 9,
+      "paired_trials": 9,
+      "max_abs_error": 0.00012717396020889282,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b16_confirmation_h100_20260818_cells/b16_n32768_g4_d64.json"
+    },
+    {
+      "batch": 16,
+      "kv_len": 65536,
+      "split_candidates": [
+        2,
+        4,
+        8
+      ],
+      "best_splits": 8,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.3528203837076823,
+      "partial_ms": 0.34959253946940105,
+      "merge_ms": 0.0027014400561650594,
+      "paired_speedup_median": 1.0727240374961193,
+      "paired_speedup_min": 1.0714833715373278,
+      "paired_wins": 9,
+      "paired_trials": 9,
+      "max_abs_error": 7.609277963638306e-05,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "cell_artifact": "/artifacts/gate0/sm90_exact_g4_b16_confirmation_h100_20260818_cells/b16_n65536_g4_d64.json"
+    }
+  ]
+}

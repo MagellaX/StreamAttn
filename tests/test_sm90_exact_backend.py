@@ -3,6 +3,7 @@ import torch
 
 from stream_attention.backends.sm90.transposed_gqa_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_G4_SPLITS,
     PROMOTED_EXACT_SPLITS,
     _shape_reasons,
     choose_num_splits,
@@ -59,6 +60,42 @@ def test_promoted_shape_contract_requires_head_major_bf16_buffers():
     assert "unpromoted_shape" in _shape_reasons(
         q_b2, k_b2_64k, k_b2_64k, promoted_only=True
     )
+
+
+def test_group_size_four_uses_a_discrete_promoted_region():
+    assert PROMOTED_EXACT_G4_SPLITS == {
+        (1, 16384): 64,
+        (1, 32768): 128,
+        (2, 16384): 64,
+        (2, 32768): 64,
+        (2, 65536): 64,
+        (4, 16384): 32,
+        (4, 32768): 32,
+        (4, 65536): 32,
+        (8, 16384): 16,
+        (8, 32768): 16,
+        (8, 65536): 16,
+        (16, 16384): 8,
+        (16, 32768): 8,
+        (16, 65536): 8,
+    }
+    q = torch.empty(1, 1, 16, 64, dtype=torch.bfloat16, device="meta")
+    k = torch.empty(1, 4, 65536, 64, dtype=torch.bfloat16, device="meta")
+    v = torch.empty_like(k)
+
+    assert _shape_reasons(q, k, v, promoted_only=False) == []
+    promoted_reasons = _shape_reasons(q, k, v, promoted_only=True)
+    assert "unpromoted_shape" in promoted_reasons
+
+    q_green = torch.empty(4, 1, 16, 64, dtype=torch.bfloat16, device="meta")
+    k_green = torch.empty(4, 4, 32768, 64, dtype=torch.bfloat16, device="meta")
+    assert _shape_reasons(q_green, k_green, k_green, promoted_only=True) == []
+
+
+def test_exact_source_pads_g4_inside_the_wgmma_producer():
+    assert "head < active_heads" in CUDA_SOURCE
+    assert "groups * active_heads" in CUDA_SOURCE
+    assert "[B,Hkv,4|8,64]" in CUDA_SOURCE
 
 
 def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():

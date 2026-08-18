@@ -40,6 +40,32 @@ PROMOTED_EXACT_SPLITS = {
     (8, 65536): 32,
 }
 
+# G4 reuses the m64n8 WGMMA atom with four active columns. These cells passed
+# exact-reference checks and two independent 9-trial paired H100 gates against
+# FlashInfer. B1/64K is intentionally absent: dense split sweeps remained below
+# parity there.
+PROMOTED_EXACT_G4_SPLITS = {
+    (1, 16384): 64,
+    (1, 32768): 128,
+    (2, 16384): 64,
+    (2, 32768): 64,
+    (2, 65536): 64,
+    (4, 16384): 32,
+    (4, 32768): 32,
+    (4, 65536): 32,
+    (8, 16384): 16,
+    (8, 32768): 16,
+    (8, 65536): 16,
+    (16, 16384): 8,
+    (16, 32768): 8,
+    (16, 65536): 8,
+}
+
+PROMOTED_EXACT_SHAPES = {
+    (16, 2, 8, 64): PROMOTED_EXACT_SPLITS,
+    (16, 4, 4, 64): PROMOTED_EXACT_G4_SPLITS,
+}
+
 _EXTENSIONS: dict[tuple[str, str], Any] = {}
 _EXTENSION_LOCK = threading.Lock()
 
@@ -171,7 +197,9 @@ def _shape_reasons(
     kv_batch, kv_heads, kv_len, kv_dim = map(int, key_cache.shape)
     if batch != kv_batch or dim != kv_dim:
         reasons.append("shape")
-    if kv_heads <= 0 or q_heads % kv_heads or q_heads // kv_heads != 8:
+    group_size = q_heads // kv_heads if kv_heads > 0 and q_heads % kv_heads == 0 else 0
+    supported_groups = (4, 8)
+    if kv_heads <= 0 or q_heads % kv_heads or group_size not in supported_groups:
         reasons.append("gqa")
     if dim != 64:
         reasons.append("head_dim")
@@ -182,12 +210,10 @@ def _shape_reasons(
     if not all(t.is_contiguous() for t in (query, key_cache, value_cache)):
         reasons.append("layout")
     if promoted_only:
-        expected = PROMOTED_EXACT_SHAPE
-        if (
-            q_heads != expected["q_heads"]
-            or kv_heads != expected["kv_heads"]
-            or (batch, kv_len) not in PROMOTED_EXACT_SPLITS
-        ):
+        promoted_splits = PROMOTED_EXACT_SHAPES.get(
+            (q_heads, kv_heads, group_size, dim)
+        )
+        if promoted_splits is None or (batch, kv_len) not in promoted_splits:
             reasons.append("unpromoted_shape")
     return reasons
 
@@ -272,7 +298,9 @@ class ExactDecodePlan:
         if num_splits is not None:
             splits = num_splits
         elif promoted_only:
-            splits = PROMOTED_EXACT_SPLITS[(batch, kv_len)]
+            splits = PROMOTED_EXACT_SHAPES[
+                (q_heads, kv_heads, q_heads // kv_heads, dim)
+            ][(batch, kv_len)]
         else:
             splits = choose_num_splits(
                 batch=batch, kv_heads=kv_heads, kv_len=kv_len
