@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 import torch
 
-from .transposed_gqa_exact_sources import CPP_SOURCE, CUDA_SOURCE
+from .transposed_gqa_exact_sources import CPP_SOURCE, cuda_source_for_head_dim
 
 
 PROMOTED_EXACT_SHAPE = {
@@ -61,12 +61,27 @@ PROMOTED_EXACT_G4_SPLITS = {
     (16, 65536): 8,
 }
 
+# D128 needs twice the QK K-steps and two PV M-tiles. Reusing each consumed K
+# stage for V keeps shared memory under the SM90 block limit, while predicated
+# stage descriptors keep WGMMA outside runtime control flow. Promote only cells
+# that passed two independent paired H100 gates; low-batch one-off wins remain
+# experimental because adjacent cells still cross parity.
+PROMOTED_EXACT_D128_G4_SPLITS = {
+    (4, 32768): 8,
+    (4, 65536): 8,
+    (8, 16384): 4,
+    (8, 65536): 4,
+    (16, 32768): 2,
+    (16, 65536): 2,
+}
+
 PROMOTED_EXACT_SHAPES = {
     (16, 2, 8, 64): PROMOTED_EXACT_SPLITS,
     (16, 4, 4, 64): PROMOTED_EXACT_G4_SPLITS,
+    (32, 8, 4, 128): PROMOTED_EXACT_D128_G4_SPLITS,
 }
 
-_EXTENSIONS: dict[tuple[str, str], Any] = {}
+_EXTENSIONS: dict[tuple[str, str, int], Any] = {}
 _EXTENSION_LOCK = threading.Lock()
 
 
@@ -121,6 +136,7 @@ def compile_transposed_gqa_exact_extension(
     *,
     cutlass_root: Optional[Path] = None,
     build_dir: Optional[Path] = None,
+    head_dim: int = 64,
     verbose: bool = False,
 ):
     """Compile once during planning and cache the loaded SM90 extension."""
@@ -133,14 +149,15 @@ def compile_transposed_gqa_exact_extension(
     resolved_build = (
         str(Path(build_dir).expanduser().resolve()) if build_dir is not None else ""
     )
-    key = (str(resolved_cutlass), resolved_build)
+    cuda_source = cuda_source_for_head_dim(head_dim)
+    key = (str(resolved_cutlass), resolved_build, head_dim)
     with _EXTENSION_LOCK:
         cached = _EXTENSIONS.get(key)
         if cached is not None:
             return cached
 
         source_id = hashlib.sha1(
-            (CPP_SOURCE + CUDA_SOURCE + key[0]).encode("utf-8")
+            (CPP_SOURCE + cuda_source + key[0]).encode("utf-8")
         ).hexdigest()[:12]
         kwargs: dict[str, Any] = {}
         if build_dir is not None:
@@ -154,7 +171,7 @@ def compile_transposed_gqa_exact_extension(
             extension = load_inline(
                 name=f"streamattn_sm90_exact_{source_id}",
                 cpp_sources=CPP_SOURCE,
-                cuda_sources=CUDA_SOURCE,
+                cuda_sources=cuda_source,
                 extra_include_paths=[str(resolved_cutlass / "include")],
                 extra_cflags=["-O3", "-std=c++17"],
                 extra_cuda_cflags=[
@@ -201,7 +218,7 @@ def _shape_reasons(
     supported_groups = (4, 8)
     if kv_heads <= 0 or q_heads % kv_heads or group_size not in supported_groups:
         reasons.append("gqa")
-    if dim != 64:
+    if dim not in (64, 128):
         reasons.append("head_dim")
     if kv_len <= 0 or kv_len % 64:
         reasons.append("kv_len")
@@ -333,6 +350,7 @@ class ExactDecodePlan:
         extension = compile_transposed_gqa_exact_extension(
             cutlass_root=cutlass_root,
             build_dir=build_dir,
+            head_dim=dim,
             verbose=compile_verbose,
         )
         return cls(

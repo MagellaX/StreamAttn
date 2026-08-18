@@ -76,8 +76,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     group_size = args.q_heads // args.kv_heads
     if group_size not in (4, 8):
         raise ValueError("this experiment supports group_size 4 or 8")
-    if args.head_dim != 64:
-        raise ValueError("this experiment currently supports D64")
+    if args.head_dim not in (64, 128):
+        raise ValueError("this experiment supports D64 or D128")
     if args.kv_len % 64:
         raise ValueError("kv_len must be divisible by 64")
 
@@ -282,10 +282,18 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         },
         "kernel": {
             "wgmma_atom": "m64n8k16.f32.bf16.bf16",
+            "qk_k_steps": args.head_dim // 16,
+            "pv_m_tiles": args.head_dim // 64,
             "active_wgmma_columns": group_size,
             "physical_wgmma_columns": 8,
             "column_utilization": group_size / 8.0,
             "inactive_columns_zero_filled_in_kernel": group_size < 8,
+            "estimated_static_shared_bytes": (
+                2 * (2 if args.head_dim == 64 else 1) * 64 * args.head_dim * 2
+                + 8 * args.head_dim * 2
+                + 64 * 8 * 2
+                + (4 * 8 + 8 + 8) * 4
+            ),
         },
         "benchmark": {
             "warmup": args.warmup,

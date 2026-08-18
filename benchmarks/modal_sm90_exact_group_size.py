@@ -1,4 +1,4 @@
-"""Map the experimental G4 exact-native region on one Modal H100."""
+"""Map experimental exact-native GQA shape families on one Modal H100."""
 
 from __future__ import annotations
 
@@ -82,7 +82,10 @@ def run(
         )
         for kv_len in _parse_ints(kv_lens):
             valid = [value for value in candidates if value <= kv_len // 64]
-            cell_output = cell_dir / f"b{batch}_n{kv_len}_g4_d64.json"
+            group_size = q_heads // kv_heads
+            cell_output = cell_dir / (
+                f"b{batch}_n{kv_len}_g{group_size}_d{head_dim}.json"
+            )
             cmd = [
                 "python",
                 "benchmarks/profile_sm90_exact_group_size.py",

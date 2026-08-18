@@ -96,6 +96,8 @@ using Accum = float;
 static constexpr int kBlockM = 64;
 static constexpr int kBlockN = 8;
 static constexpr int kHeadDim = 64;
+static constexpr int kPipelineStages = 2;
+static constexpr int kSeparateVStages = kHeadDim == 64 ? 2 : 0;
 
 using SmemLayoutK = decltype(tile_to_shape(
     GMMA::Layout_K_SW128_Atom<Element>{},
@@ -137,10 +139,12 @@ struct alignas(128) AsyncSharedStorage {
 };
 
 struct alignas(128) AsyncQKPVSharedStorage {
-  cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> k0;
-  cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> k1;
-  cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> v0;
-  cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> v1;
+  cute::array_aligned<
+      Element, cute::cosize_v<SmemLayoutK> * kPipelineStages> k;
+  cute::array_aligned<
+      Element, kSeparateVStages == 2
+          ? cute::cosize_v<SmemLayoutV> * kSeparateVStages
+          : 1> v;
   cute::array_aligned<Element, cute::cosize_v<SmemLayoutQ>> q;
   cute::array_aligned<Element, cute::cosize_v<SmemLayoutPOrigin>> p;
   Accum row_reduce[4][kBlockN];
@@ -488,12 +492,19 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
 
   __shared__ AsyncQKPVSharedStorage storage;
   __shared__ Accum reduction[128];
-  Tensor sK0 = make_tensor(make_smem_ptr(storage.k0.data()), SmemLayoutK{});
-  Tensor sK1 = make_tensor(make_smem_ptr(storage.k1.data()), SmemLayoutK{});
-  Tensor sV0 = make_tensor(make_smem_ptr(storage.v0.data()), SmemLayoutV{});
-  Tensor sV1 = make_tensor(make_smem_ptr(storage.v1.data()), SmemLayoutV{});
-  Tensor sVt0 = make_tensor(make_smem_ptr(storage.v0.data()), SmemLayoutVt{});
-  Tensor sVt1 = make_tensor(make_smem_ptr(storage.v1.data()), SmemLayoutVt{});
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr = storage.k.data() +
+      (kPipelineStages == 2 ? cute::cosize_v<SmemLayoutK> : 0);
+  Element* v0_ptr = kSeparateVStages == 2 ? storage.v.data() : k0_ptr;
+  Element* v1_ptr = kSeparateVStages == 2
+      ? storage.v.data() + cute::cosize_v<SmemLayoutV>
+      : k1_ptr;
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutV{});
+  Tensor sV1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutV{});
+  Tensor sVt0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutVt{});
+  Tensor sVt1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutVt{});
   Tensor sQ = make_tensor(make_smem_ptr(storage.q.data()), SmemLayoutQ{});
   Tensor sPOrigin = make_tensor(make_smem_ptr(storage.p.data()), SmemLayoutPOrigin{});
   Tensor sP = make_tensor(make_smem_ptr(storage.p.data()), SmemLayoutP{});
@@ -543,7 +554,9 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
     Tensor tKgK = thr_copy_kv.partition_S(gK);
     Tensor tVgV = thr_copy_kv.partition_S(gV);
     cute::copy(copy_kv, tKgK, tK0sK0);
-    cute::copy(copy_kv, tVgV, tV0sV0);
+    if constexpr (kSeparateVStages == 2) {
+      cute::copy(copy_kv, tVgV, tV0sV0);
+    }
     cute::cp_async_fence();
     cute::cp_async_wait<0>();
     __syncthreads();
@@ -564,10 +577,14 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
       Tensor tVgVNext = thr_copy_kv.partition_S(gVNext);
       if (write_pipe == 0) {
         cute::copy(copy_kv, tKgKNext, tK0sK0);
-        cute::copy(copy_kv, tVgVNext, tV0sV0);
+        if constexpr (kSeparateVStages == 2) {
+          cute::copy(copy_kv, tVgVNext, tV0sV0);
+        }
       } else {
         cute::copy(copy_kv, tKgKNext, tK1sK1);
-        cute::copy(copy_kv, tVgVNext, tV1sV1);
+        if constexpr (kSeparateVStages == 2) {
+          cute::copy(copy_kv, tVgVNext, tV1sV1);
+        }
       }
       cute::cp_async_fence();
     }
@@ -586,10 +603,29 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
     warpgroup_wait<0>();
     warpgroup_fence_operand(tCrS);
 
+    if constexpr (kSeparateVStages == 0) {
+      const Element* current_v =
+          group_v + static_cast<int64_t>(tile) * kBlockM * kHeadDim;
+      Tensor gVCurrent = make_tensor(
+          make_gmem_ptr(current_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
+          make_stride(Int<kHeadDim>{}, _1{}));
+      if (read_pipe == 0) {
+        cute::copy(copy_kv, thr_copy_kv.partition_S(gVCurrent), tV0sV0);
+      } else {
+        cute::copy(copy_kv, thr_copy_kv.partition_S(gVCurrent), tV1sV1);
+      }
+      cute::cp_async_fence();
+    }
+
     Tensor rP = streamattn_convert_type<Element>(tCrS);
     cute::copy(rP, tPsP);
     cutlass::arch::fence_view_async_shared();
     __syncthreads();
+
+    if constexpr (kSeparateVStages == 0) {
+      cute::cp_async_wait<0>();
+      __syncthreads();
+    }
 
     warpgroup_fence_operand(tOrO);
     warpgroup_arrive();
@@ -603,9 +639,13 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
     warpgroup_fence_operand(tOrO);
 
     if (next_tile < tile_end) {
-      cute::cp_async_wait<0>();
-      __syncthreads();
-      read_pipe = write_pipe;
+      if constexpr (kSeparateVStages == 2) {
+        cute::cp_async_wait<0>();
+        __syncthreads();
+        read_pipe = write_pipe;
+      } else {
+        read_pipe = write_pipe;
+      }
     }
   }
 
@@ -660,12 +700,19 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
   }
 
   __shared__ AsyncQKPVSharedStorage storage;
-  Tensor sK0 = make_tensor(make_smem_ptr(storage.k0.data()), SmemLayoutK{});
-  Tensor sK1 = make_tensor(make_smem_ptr(storage.k1.data()), SmemLayoutK{});
-  Tensor sV0 = make_tensor(make_smem_ptr(storage.v0.data()), SmemLayoutV{});
-  Tensor sV1 = make_tensor(make_smem_ptr(storage.v1.data()), SmemLayoutV{});
-  Tensor sVt0 = make_tensor(make_smem_ptr(storage.v0.data()), SmemLayoutVt{});
-  Tensor sVt1 = make_tensor(make_smem_ptr(storage.v1.data()), SmemLayoutVt{});
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr = storage.k.data() +
+      (kPipelineStages == 2 ? cute::cosize_v<SmemLayoutK> : 0);
+  Element* v0_ptr = kSeparateVStages == 2 ? storage.v.data() : k0_ptr;
+  Element* v1_ptr = kSeparateVStages == 2
+      ? storage.v.data() + cute::cosize_v<SmemLayoutV>
+      : k1_ptr;
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutV{});
+  Tensor sV1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutV{});
+  Tensor sVt0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutVt{});
+  Tensor sVt1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutVt{});
   Tensor sQ = make_tensor(make_smem_ptr(storage.q.data()), SmemLayoutQ{});
   Tensor sPOrigin = make_tensor(make_smem_ptr(storage.p.data()), SmemLayoutPOrigin{});
   Tensor sP = make_tensor(make_smem_ptr(storage.p.data()), SmemLayoutP{});
@@ -734,13 +781,17 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     Tensor gV = make_tensor(make_gmem_ptr(first_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
                             make_stride(Int<kHeadDim>{}, _1{}));
     cute::copy(copy_kv, thr_copy_kv.partition_S(gK), tK0sK0);
-    cute::copy(copy_kv, thr_copy_kv.partition_S(gV), tV0sV0);
+    if constexpr (kSeparateVStages == 2) {
+      cute::copy(copy_kv, thr_copy_kv.partition_S(gV), tV0sV0);
+    }
     cute::cp_async_fence();
     cute::cp_async_wait<0>();
     __syncthreads();
   }
 
-  constexpr Accum kSoftmaxScaleLog2 = 0.18033688011112042f;
+  constexpr Accum kSoftmaxScaleLog2 = kHeadDim == 64
+      ? 0.18033688011112042f
+      : 0.12751743082459868f;
   int read_pipe = 0;
   for (int tile = tile_begin; tile < tile_end; ++tile) {
     const int next_tile = tile + 1;
@@ -752,7 +803,10 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
                                   make_stride(Int<kHeadDim>{}, _1{}));
       Tensor gVNext = make_tensor(make_gmem_ptr(next_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
                                   make_stride(Int<kHeadDim>{}, _1{}));
-      if (write_pipe == 0) {
+      if constexpr (kSeparateVStages == 0) {
+        auto tKsKWrite = write_pipe == 0 ? tK0sK0 : tK1sK1;
+        cute::copy(copy_kv, thr_copy_kv.partition_S(gKNext), tKsKWrite);
+      } else if (write_pipe == 0) {
         cute::copy(copy_kv, thr_copy_kv.partition_S(gKNext), tK0sK0);
         cute::copy(copy_kv, thr_copy_kv.partition_S(gVNext), tV0sV0);
       } else {
@@ -767,7 +821,10 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     clear(tCrS);
     warpgroup_fence_operand(tCrS);
     warpgroup_arrive();
-    if (read_pipe == 0) {
+    if constexpr (kSeparateVStages == 0) {
+      auto tSrKRead = read_pipe == 0 ? tSrK0 : tSrK1;
+      cute::gemm(tiled_mma, tSrKRead, tSrQ, tCrS);
+    } else if (read_pipe == 0) {
       cute::gemm(tiled_mma, tSrK0, tSrQ, tCrS);
     } else {
       cute::gemm(tiled_mma, tSrK1, tSrQ, tCrS);
@@ -775,6 +832,17 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     warpgroup_commit_batch();
     warpgroup_wait<0>();
     warpgroup_fence_operand(tCrS);
+
+    if constexpr (kSeparateVStages == 0) {
+      const Element* current_v =
+          group_v + static_cast<int64_t>(tile) * kBlockM * kHeadDim;
+      Tensor gVCurrent = make_tensor(
+          make_gmem_ptr(current_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
+          make_stride(Int<kHeadDim>{}, _1{}));
+      auto tVsVRead = read_pipe == 0 ? tV0sV0 : tV1sV1;
+      cute::copy(copy_kv, thr_copy_kv.partition_S(gVCurrent), tVsVRead);
+      cute::cp_async_fence();
+    }
 
     Tensor scores = make_tensor(
         tCrS.data(), streamattn_acc_rowcol<true>(tCrS.layout()));
@@ -834,9 +902,17 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     cutlass::arch::fence_view_async_shared();
     __syncthreads();
 
+    if constexpr (kSeparateVStages == 0) {
+      cute::cp_async_wait<0>();
+      __syncthreads();
+    }
+
     warpgroup_fence_operand(tOrO);
     warpgroup_arrive();
-    if (read_pipe == 0) {
+    if constexpr (kSeparateVStages == 0) {
+      auto tOrVRead = read_pipe == 0 ? tOrV0 : tOrV1;
+      cute::gemm(tiled_mma_o, tOrVRead, tOrP, tOrO);
+    } else if (read_pipe == 0) {
       cute::gemm(tiled_mma_o, tOrV0, tOrP, tOrO);
     } else {
       cute::gemm(tiled_mma_o, tOrV1, tOrP, tOrO);
@@ -846,9 +922,13 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     warpgroup_fence_operand(tOrO);
 
     if (next_tile < tile_end) {
-      cute::cp_async_wait<0>();
-      __syncthreads();
-      read_pipe = write_pipe;
+      if constexpr (kSeparateVStages == 2) {
+        cute::cp_async_wait<0>();
+        __syncthreads();
+        read_pipe = write_pipe;
+      } else {
+        read_pipe = write_pipe;
+      }
     }
   }
 
@@ -896,7 +976,7 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
   }
 }
 
-__global__ __launch_bounds__(64)
+__global__ __launch_bounds__(128)
 void streamattn_transposed_wgmma_exact_merge_kernel(
     const Accum* __restrict__ partial_o,
     const Accum* __restrict__ partial_lse,
@@ -1008,22 +1088,23 @@ void streamattn_transposed_wgmma_exact_merge_warp_kernel(
   normalizer += __shfl_xor_sync(0xffffffffu, normalizer, 1);
   __syncwarp();
 
-  Accum value0 = 0.0f;
-  Accum value1 = 0.0f;
-  const int dim0 = lane * 2;
-  for (int split = 0; split < num_splits; ++split) {
-    const int64_t base =
-        ((static_cast<int64_t>(group) * num_splits + split) * kBlockN +
-         head) * kHeadDim + dim0;
-    const float2 pair = *reinterpret_cast<const float2*>(partial_o + base);
-    const Accum weight = weights[split];
-    value0 += weight * pair.x;
-    value1 += weight * pair.y;
-  }
   const Accum inverse_normalizer = 1.0f / normalizer;
-  const int64_t output_base = static_cast<int64_t>(row) * kHeadDim + dim0;
-  output[output_base] = Element(value0 * inverse_normalizer);
-  output[output_base + 1] = Element(value1 * inverse_normalizer);
+  for (int dim0 = lane * 2; dim0 < kHeadDim; dim0 += 64) {
+    Accum value0 = 0.0f;
+    Accum value1 = 0.0f;
+    for (int split = 0; split < num_splits; ++split) {
+      const int64_t base =
+          ((static_cast<int64_t>(group) * num_splits + split) * kBlockN +
+           head) * kHeadDim + dim0;
+      const float2 pair = *reinterpret_cast<const float2*>(partial_o + base);
+      const Accum weight = weights[split];
+      value0 += weight * pair.x;
+      value1 += weight * pair.y;
+    }
+    const int64_t output_base = static_cast<int64_t>(row) * kHeadDim + dim0;
+    output[output_base] = Element(value0 * inverse_normalizer);
+    output[output_base + 1] = Element(value1 * inverse_normalizer);
+  }
 }
 
 void streamattn_transposed_wgmma_qk_out_cuda(
@@ -1433,3 +1514,17 @@ void streamattn_transposed_wgmma_exact_decode_out_cuda(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 """
+
+
+def cuda_source_for_head_dim(head_dim: int) -> str:
+    """Return a separately compiled source specialization for D64 or D128."""
+
+    if head_dim == 64:
+        return CUDA_SOURCE
+    if head_dim == 128:
+        return CUDA_SOURCE.replace(
+            "static constexpr int kHeadDim = 64;",
+            "static constexpr int kHeadDim = 128;",
+            1,
+        )
+    raise ValueError("SM90 exact source supports head_dim 64 or 128")

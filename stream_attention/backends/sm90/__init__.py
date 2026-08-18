@@ -2,6 +2,7 @@
 
 from .transposed_gqa_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_D128_G4_SPLITS,
     PROMOTED_EXACT_G4_SPLITS,
     PROMOTED_EXACT_SHAPE,
     PROMOTED_EXACT_SHAPES,
@@ -13,6 +14,7 @@ from .transposed_gqa_exact import (
 
 __all__ = [
     "ExactDecodePlan",
+    "PROMOTED_EXACT_D128_G4_SPLITS",
     "PROMOTED_EXACT_G4_SPLITS",
     "PROMOTED_EXACT_SHAPE",
     "PROMOTED_EXACT_SHAPES",

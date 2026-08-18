@@ -1,0 +1,53 @@
+{
+  "schema": "streamattn.sm90_exact_group_size_phase_diagram.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "shape_family": {
+    "q_heads": 16,
+    "kv_heads": 4,
+    "group_size": 4,
+    "head_dim": 64,
+    "dtype": "bf16",
+    "wgmma_column_utilization": 0.5
+  },
+  "summary": {
+    "cells": 1,
+    "promotion_candidates": 1,
+    "candidate_cells": [
+      {
+        "batch": 4,
+        "kv_len": 32768
+      }
+    ]
+  },
+  "cells": [
+    {
+      "batch": 4,
+      "kv_len": 32768,
+      "split_candidates": [
+        16,
+        32,
+        64
+      ],
+      "best_splits": 32,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.052839998404184976,
+      "partial_ms": 0.04954586823781331,
+      "merge_ms": 0.0029529333114624023,
+      "paired_speedup_median": 1.0548034648192084,
+      "paired_speedup_min": 1.053635298906296,
+      "paired_wins": 15,
+      "paired_trials": 15,
+      "max_abs_error": 9.328871965408325e-05,
+      "correctness": "pass",
+      "promotion_candidate": true,
+      "serving_backend": "sm90_transposed_gqa_wgmma_exact",
+      "serving_num_splits": 32,
+      "serving_speedup_median": 1.0498419393316836,
+      "serving_speedup_min": 1.0487722060565898,
+      "serving_wins": 15,
+      "serving_trials": 15,
+      "serving_gate": "pass",
+      "cell_artifact": "/artifacts/gate0/sm90_exact_d64_g4_d128_change_regression_h100_20260819_cells/b4_n32768_g4_d64.json"
+    }
+  ]
+}

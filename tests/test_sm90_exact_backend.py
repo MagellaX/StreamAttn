@@ -3,6 +3,7 @@ import torch
 
 from stream_attention.backends.sm90.transposed_gqa_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_D128_G4_SPLITS,
     PROMOTED_EXACT_G4_SPLITS,
     PROMOTED_EXACT_SPLITS,
     _shape_reasons,
@@ -13,6 +14,7 @@ from stream_attention.backends.sm90.transposed_gqa_exact import (
 from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
     CPP_SOURCE,
     CUDA_SOURCE,
+    cuda_source_for_head_dim,
 )
 
 
@@ -96,6 +98,46 @@ def test_exact_source_pads_g4_inside_the_wgmma_producer():
     assert "head < active_heads" in CUDA_SOURCE
     assert "groups * active_heads" in CUDA_SOURCE
     assert "[B,Hkv,4|8,64]" in CUDA_SOURCE
+
+
+def test_d128_source_and_shape_use_a_discrete_promoted_region():
+    d128_source = cuda_source_for_head_dim(128)
+    assert "static constexpr int kHeadDim = 128;" in d128_source
+    assert "dim0 += 64" in d128_source
+    assert "tSrKRead" in d128_source
+    assert cuda_source_for_head_dim(64) is CUDA_SOURCE
+
+    assert PROMOTED_EXACT_D128_G4_SPLITS == {
+        (4, 32768): 8,
+        (4, 65536): 8,
+        (8, 16384): 4,
+        (8, 65536): 4,
+        (16, 32768): 2,
+        (16, 65536): 2,
+    }
+
+    q = torch.empty(4, 1, 32, 128, dtype=torch.bfloat16, device="meta")
+    k = torch.empty(4, 8, 32768, 128, dtype=torch.bfloat16, device="meta")
+    assert _shape_reasons(q, k, k, promoted_only=False) == []
+    assert _shape_reasons(q, k, k, promoted_only=True) == []
+
+    q_red = torch.empty(4, 1, 32, 128, dtype=torch.bfloat16, device="meta")
+    k_red = torch.empty(4, 8, 16384, 128, dtype=torch.bfloat16, device="meta")
+    assert "unpromoted_shape" in _shape_reasons(
+        q_red, k_red, k_red, promoted_only=True
+    )
+
+    q_g8 = torch.empty(4, 1, 32, 128, dtype=torch.bfloat16, device="meta")
+    k_g8 = torch.empty(4, 4, 32768, 128, dtype=torch.bfloat16, device="meta")
+    assert "unpromoted_shape" in _shape_reasons(
+        q_g8, k_g8, k_g8, promoted_only=True
+    )
+
+    q_fragile = torch.empty(8, 1, 32, 128, dtype=torch.bfloat16, device="meta")
+    k_fragile = torch.empty(8, 8, 32768, 128, dtype=torch.bfloat16, device="meta")
+    assert "unpromoted_shape" in _shape_reasons(
+        q_fragile, k_fragile, k_fragile, promoted_only=True
+    )
 
 
 def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
