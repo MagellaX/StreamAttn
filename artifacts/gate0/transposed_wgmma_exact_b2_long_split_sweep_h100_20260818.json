@@ -1,0 +1,133 @@
+{
+  "schema": "streamattn.transposed_wgmma_exact_phase_diagram.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "shape_family": {
+    "q_heads": 16,
+    "kv_heads": 2,
+    "group_size": 8,
+    "head_dim": 64,
+    "dtype": "bf16"
+  },
+  "benchmark": {
+    "warmup": 20,
+    "iters": 200,
+    "repeats": 9,
+    "target_producer_ctas": 256,
+    "split_search": "64,96,128,160,192,224,256"
+  },
+  "summary": {
+    "cells": 4,
+    "robust_wins": 0,
+    "robust_win_cells": []
+  },
+  "cells": [
+    {
+      "batch": 2,
+      "kv_len": 40960,
+      "split_candidates": [
+        64,
+        96,
+        128,
+        160,
+        192,
+        224,
+        256
+      ],
+      "best_splits": 128,
+      "producer_ctas": 512,
+      "streamattn_ms": 0.018899999856948853,
+      "flashinfer_ms": 0.01822751998901367,
+      "paired_speedup_median": 0.9359390697494165,
+      "paired_speedup_min": 0.923182492992885,
+      "paired_wins": 0,
+      "paired_trials": 9,
+      "max_abs_error": 9.214133024215698e-05,
+      "repeat_max_abs_diff": 0.0,
+      "nonfinite_count": 0,
+      "exact_native_gate": "fail",
+      "robust_win": false,
+      "cell_artifact": "/artifacts/gate0/transposed_wgmma_exact_b2_long_split_sweep_h100_20260818_cells/b2_n40960_h16_kv2_d64.json"
+    },
+    {
+      "batch": 2,
+      "kv_len": 49152,
+      "split_candidates": [
+        64,
+        96,
+        128,
+        160,
+        192,
+        224,
+        256
+      ],
+      "best_splits": 64,
+      "producer_ctas": 256,
+      "streamattn_ms": 0.028049280643463136,
+      "flashinfer_ms": 0.026941280364990234,
+      "paired_speedup_median": 0.9566266338286307,
+      "paired_speedup_min": 0.9542327278330994,
+      "paired_wins": 0,
+      "paired_trials": 9,
+      "max_abs_error": 7.204152643680573e-05,
+      "repeat_max_abs_diff": 0.0,
+      "nonfinite_count": 0,
+      "exact_native_gate": "fail",
+      "robust_win": false,
+      "cell_artifact": "/artifacts/gate0/transposed_wgmma_exact_b2_long_split_sweep_h100_20260818_cells/b2_n49152_h16_kv2_d64.json"
+    },
+    {
+      "batch": 2,
+      "kv_len": 57344,
+      "split_candidates": [
+        64,
+        96,
+        128,
+        160,
+        192,
+        224,
+        256
+      ],
+      "best_splits": 64,
+      "producer_ctas": 256,
+      "streamattn_ms": 0.03083359956741333,
+      "flashinfer_ms": 0.03043263912200928,
+      "paired_speedup_median": 0.9840563127208342,
+      "paired_speedup_min": 0.9810005837547165,
+      "paired_wins": 0,
+      "paired_trials": 9,
+      "max_abs_error": 7.671304047107697e-05,
+      "repeat_max_abs_diff": 0.0,
+      "nonfinite_count": 0,
+      "exact_native_gate": "fail",
+      "robust_win": false,
+      "cell_artifact": "/artifacts/gate0/transposed_wgmma_exact_b2_long_split_sweep_h100_20260818_cells/b2_n57344_h16_kv2_d64.json"
+    },
+    {
+      "batch": 2,
+      "kv_len": 65536,
+      "split_candidates": [
+        64,
+        96,
+        128,
+        160,
+        192,
+        224,
+        256
+      ],
+      "best_splits": 64,
+      "producer_ctas": 256,
+      "streamattn_ms": 0.032774879932403564,
+      "flashinfer_ms": 0.032407679557800294,
+      "paired_speedup_median": 0.9871211597463898,
+      "paired_speedup_min": 0.9854069164803612,
+      "paired_wins": 0,
+      "paired_trials": 9,
+      "max_abs_error": 5.810149013996124e-05,
+      "repeat_max_abs_diff": 0.0,
+      "nonfinite_count": 0,
+      "exact_native_gate": "fail",
+      "robust_win": false,
+      "cell_artifact": "/artifacts/gate0/transposed_wgmma_exact_b2_long_split_sweep_h100_20260818_cells/b2_n65536_h16_kv2_d64.json"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import torch
 
 from stream_attention.backends.sm90.transposed_gqa_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_SPLITS,
     _shape_reasons,
     choose_num_splits,
     resolve_cutlass_root,
@@ -21,16 +22,43 @@ def test_split_rule_preserves_256_producer_cta_target():
 
 
 def test_promoted_shape_contract_requires_head_major_bf16_buffers():
-    q = torch.empty(4, 1, 16, 64, dtype=torch.bfloat16)
-    k_head_major = torch.empty(4, 2, 32768, 64, dtype=torch.bfloat16)
+    assert PROMOTED_EXACT_SPLITS == {
+        (2, 16384): 64,
+        (4, 16384): 64,
+        (4, 32768): 64,
+        (4, 65536): 64,
+        (8, 16384): 32,
+        (8, 32768): 32,
+        (8, 65536): 32,
+    }
+    q = torch.empty(4, 1, 16, 64, dtype=torch.bfloat16, device="meta")
+    k_head_major = torch.empty(
+        4, 2, 32768, 64, dtype=torch.bfloat16, device="meta"
+    )
     v_head_major = torch.empty_like(k_head_major)
     assert _shape_reasons(q, k_head_major, v_head_major, promoted_only=True) == []
 
-    k_token_major = torch.empty(4, 32768, 2, 64, dtype=torch.bfloat16)
+    k_token_major = torch.empty(
+        4, 32768, 2, 64, dtype=torch.bfloat16, device="meta"
+    )
     reasons = _shape_reasons(q, k_token_major, k_token_major, promoted_only=True)
     assert "gqa" in reasons
     assert "unpromoted_shape" in reasons
     assert not supports_transposed_gqa_exact(q, k_head_major, v_head_major)
+
+    q_b2 = torch.empty(2, 1, 16, 64, dtype=torch.bfloat16, device="meta")
+    k_b2_16k = torch.empty(
+        2, 2, 16384, 64, dtype=torch.bfloat16, device="meta"
+    )
+    assert _shape_reasons(
+        q_b2, k_b2_16k, k_b2_16k, promoted_only=True
+    ) == []
+    k_b2_64k = torch.empty(
+        2, 2, 65536, 64, dtype=torch.bfloat16, device="meta"
+    )
+    assert "unpromoted_shape" in _shape_reasons(
+        q_b2, k_b2_64k, k_b2_64k, promoted_only=True
+    )
 
 
 def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
@@ -122,5 +150,5 @@ def test_promoted_exact_plan_reuses_workspace_and_tracks_query_mutation():
     torch.cuda.synchronize()
     assert second.data_ptr() == output_ptr
     assert not torch.equal(first, second)
-    assert plan.num_splits == 32
+    assert plan.num_splits == 64
     assert plan.workspace_bytes > 0

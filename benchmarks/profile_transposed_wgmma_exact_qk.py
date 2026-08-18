@@ -43,6 +43,7 @@ except Exception as exc:  # pragma: no cover - depends on benchmark environment
 from stream_attention.backends.sm90.transposed_gqa_exact import (  # noqa: E402
     ExactDecodePlan,
     compile_transposed_gqa_exact_extension,
+    supports_transposed_gqa_exact,
 )
 
 
@@ -614,7 +615,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         q.unsqueeze(1),
         k_group,
         v_group,
-        num_splits=int(best_exact_end_to_end_splits),
+        num_splits=int(best_exact_end_to_end_warp_splits),
         cutlass_root=cutlass_root,
         build_dir=Path(args.build_dir) if args.build_dir else None,
         promoted_only=False,
@@ -719,12 +720,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     serving_dispatch_quality = None
     serving_dispatch_ms = None
     serving_dispatch_samples: list[float] = []
-    if (
-        args.batch == 4
-        and args.q_heads == 16
-        and args.kv_heads == 2
-        and args.kv_len == 32768
-        and args.head_dim == 64
+    serving_runner = None
+    if supports_transposed_gqa_exact(
+        q.unsqueeze(1), k_group, v_group, require_cutlass=False
     ):
         from stream_attention.decode import StreamAttnExactNativeDirectRunner
 
@@ -746,6 +744,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 exact_reference_out,
             ),
             "backend_variant": serving_runner.backend_variant,
+            "num_splits": serving_runner._sm90_plan.num_splits,
             "nonfinite_count": int((~torch.isfinite(serving_output)).sum().item()),
         }
         serving_dispatch_ms, serving_dispatch_samples = _time_repeated(
@@ -760,6 +759,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     paired_two_call_vs_flashinfer = None
     paired_combined_vs_flashinfer = None
     paired_warp_merge_vs_flashinfer = None
+    paired_serving_vs_flashinfer = None
     if flashinfer_ms is not None:
         paired_two_call_vs_flashinfer = _paired_cuda_ratio(
             backend_plan.run_two_call,
@@ -790,6 +790,15 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         paired_speedups = paired_warp_merge_vs_flashinfer["ratios"]
         paired_speedup_median = paired_warp_merge_vs_flashinfer["ratio_median"]
         paired_speedup_min = paired_warp_merge_vs_flashinfer["ratio_min"]
+        if serving_runner is not None:
+            paired_serving_vs_flashinfer = _paired_cuda_ratio(
+                serving_runner.run,
+                flashinfer_run,
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+                repeats=max(9, args.repeats),
+            )
     else:
         paired_speedup_median = None
         paired_speedup_min = None
@@ -874,6 +883,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "paired_two_call_vs_flashinfer": paired_two_call_vs_flashinfer,
             "paired_combined_vs_flashinfer": paired_combined_vs_flashinfer,
             "paired_warp_merge_vs_flashinfer": paired_warp_merge_vs_flashinfer,
+            "paired_serving_vs_flashinfer": paired_serving_vs_flashinfer,
             "flashinfer_batched_exact_ms": flashinfer_ms,
             "flashinfer_samples_ms": flashinfer_samples,
             "qk_budget_fraction_of_flashinfer": (
@@ -895,6 +905,11 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "exact_end_to_end_speedup_vs_flashinfer": (
                 flashinfer_ms / best_exact_end_to_end_ms
+                if flashinfer_ms is not None
+                else None
+            ),
+            "exact_end_to_end_warp_speedup_vs_flashinfer": (
+                flashinfer_ms / best_exact_end_to_end_warp_ms
                 if flashinfer_ms is not None
                 else None
             ),
@@ -933,8 +948,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 and paired_speedup_min > 0.98
                 and flashinfer_quality is not None
                 and flashinfer_quality["max_abs_error"] <= 5.0e-4
-                and exact_merged_quality[best_exact_end_to_end_splits]["nonfinite_count"] == 0
-                and exact_merged_quality[best_exact_end_to_end_splits]["repeat_max_abs_diff"] == 0.0
+                and exact_merged_warp_quality[best_exact_end_to_end_warp_splits]["nonfinite_count"] == 0
+                and exact_merged_warp_quality[best_exact_end_to_end_warp_splits]["repeat_max_abs_diff"] == 0.0
                 and backend_plan_quality["nonfinite_count"] == 0
                 and backend_plan_quality["repeat_max_abs_diff"] == 0.0
                 and backend_plan_quality["max_abs_error"] <= 5.0e-4
@@ -965,6 +980,23 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "warp_merge_criterion": (
                 "paired median faster than the 64-thread merge plan, paired min "
                 ">=0.995x, max output delta <=5e-4, finite and deterministic"
+            ),
+            "serving_dispatch_gate": (
+                "not_applicable"
+                if paired_serving_vs_flashinfer is None
+                else (
+                    "pass"
+                    if paired_serving_vs_flashinfer["ratio_median"] > 1.0
+                    and paired_serving_vs_flashinfer["ratio_min"] > 0.98
+                    and serving_dispatch_quality is not None
+                    and serving_dispatch_quality["nonfinite_count"] == 0
+                    and serving_dispatch_quality["max_abs_error"] <= 5.0e-4
+                    else "fail"
+                )
+            ),
+            "serving_dispatch_criterion": (
+                "public runner paired median faster than matching FlashInfer, "
+                "paired min >=0.98x, max output delta <=5e-4 and finite"
             ),
             "exact_native_criterion": (
                 "paired median faster than matching FlashInfer, paired min >=0.98x, "

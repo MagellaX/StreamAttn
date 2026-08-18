@@ -20,13 +20,24 @@ from .transposed_gqa_exact_sources import CPP_SOURCE, CUDA_SOURCE
 
 
 PROMOTED_EXACT_SHAPE = {
-    "batch": 4,
     "q_heads": 16,
     "kv_heads": 2,
     "group_size": 8,
-    "kv_len": 32768,
     "head_dim": 64,
     "dtype": torch.bfloat16,
+}
+
+# Calibrated with paired FlashInfer gates on H100 80GB. Keep this discrete:
+# nearby cells can cross parity because producer waves and tiles/split are
+# quantized, while the split-state merge grows with the split count.
+PROMOTED_EXACT_SPLITS = {
+    (2, 16384): 64,
+    (4, 16384): 64,
+    (4, 32768): 64,
+    (4, 65536): 64,
+    (8, 16384): 32,
+    (8, 32768): 32,
+    (8, 65536): 32,
 }
 
 _EXTENSIONS: dict[tuple[str, str], Any] = {}
@@ -173,10 +184,9 @@ def _shape_reasons(
     if promoted_only:
         expected = PROMOTED_EXACT_SHAPE
         if (
-            batch != expected["batch"]
-            or q_heads != expected["q_heads"]
+            q_heads != expected["q_heads"]
             or kv_heads != expected["kv_heads"]
-            or kv_len != expected["kv_len"]
+            or (batch, kv_len) not in PROMOTED_EXACT_SPLITS
         ):
             reasons.append("unpromoted_shape")
     return reasons
@@ -259,9 +269,14 @@ class ExactDecodePlan:
         batch, _, q_heads, dim = map(int, query.shape)
         kv_heads = int(key_cache.shape[1])
         kv_len = int(key_cache.shape[2])
-        splits = num_splits or choose_num_splits(
-            batch=batch, kv_heads=kv_heads, kv_len=kv_len
-        )
+        if num_splits is not None:
+            splits = num_splits
+        elif promoted_only:
+            splits = PROMOTED_EXACT_SPLITS[(batch, kv_len)]
+        else:
+            splits = choose_num_splits(
+                batch=batch, kv_heads=kv_heads, kv_len=kv_len
+            )
         if splits <= 0 or splits > kv_len // 64:
             raise ValueError("num_splits must be in [1, kv_len/64]")
         if output is None:

@@ -202,8 +202,9 @@ determine whether this is a useful D64/G8 region or a single-cell optimum.
 ## Scope
 
 This is an exact-kernel victory for one important decode cell, not a universal
-claim. The production specialization is narrowly guarded to H100, BF16, D64,
-G8, B4, and head-major contiguous 32K KV.
+claim. This document records the original H100, BF16, D64, G8, B4/32K gate.
+The replicated adjacent-cell map and current guarded region are documented in
+`docs/exact_native_h100_phase_diagram_20260818.md`.
 
 It does establish two separate StreamAttn advantages:
 
