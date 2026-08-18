@@ -191,6 +191,19 @@ def test_combined_exact_dispatch_is_bound_and_plan_keeps_two_call_control():
     assert calls == ["partial", "warp_merge"]
 
 
+def test_exact_source_contains_architecture_valid_ws_cp_async_floor():
+    assert "qkpv_ws_cp_async_checksum_out" in CPP_SOURCE
+    assert "__launch_bounds__(256, 1)" in CUDA_SOURCE
+    assert "WsPipelineK = cutlass::PipelineAsync<kPipelineStages>" in CUDA_SOURCE
+    assert "WsPipelineV = cutlass::PipelineAsync<1>" in CUDA_SOURCE
+    assert "threadIdx.x - 128" in CUDA_SOURCE
+    assert "producer_arv_count = 128" in CUDA_SOURCE
+    assert "consumer_arv_count = 128" in CUDA_SOURCE
+    assert "NamedBarrier::sync(128, 0)" in CUDA_SOURCE
+    assert "warpgroup_reg_alloc<ConsumerRegisters>" in CUDA_SOURCE
+    assert "qkpv_floor_resource_info" in CPP_SOURCE
+
+
 def _has_h100_and_cutlass() -> bool:
     if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (9, 0):
         return False

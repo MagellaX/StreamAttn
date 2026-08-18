@@ -96,10 +96,13 @@ The code-level comparison explains the remaining gap:
 - StreamAttn D128 currently uses cooperative `cp.async` plus transposed GQA.
 
 The predicated-stage experiment removed one local serialization source, but
-the remaining 0.2-1.2% serving margin is narrow. The next high-value exact
-backend experiment is a TMA producer/consumer D128 specialization. More split
-sweeps are unlikely to change the architecture: all useful cells already
-converge on the same 256-CTA producer floor.
+the remaining 0.2-1.2% serving margin is narrow. Follow-up floor probes tested
+both TMA data movement and an architecture-valid warp-specialized `cp.async`
+QK+PV mainloop. TMA lost every measured copy-floor cell, and the best
+warp-specialized result remained 2.86% slower after restoring two resident
+blocks/SM. The full evidence and stop decision are recorded in
+`docs/sm90_d128_pipeline_ablation_20260819.md`. More split sweeps or combining
+the two negative mechanisms is not justified.
 
 ## Evidence artifacts
 

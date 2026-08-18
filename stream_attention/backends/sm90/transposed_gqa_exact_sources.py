@@ -28,6 +28,17 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_out_cuda(
     torch::Tensor checksums,
     int64_t num_splits);
 
+void streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor checksums,
+    int64_t num_splits,
+    int64_t consumer_registers);
+
+torch::Tensor streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda(
+    int64_t consumer_registers);
+
 void streamattn_transposed_wgmma_exact_partial_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_cache,
@@ -64,6 +75,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "StreamAttn transposed m64n8k16 exact QK (cp.async double-buffer checksum variant)");
   m.def("qkpv_async_checksum_out", &streamattn_transposed_wgmma_qkpv_async_checksum_out_cuda,
         "StreamAttn transposed m64n8k16 QK+PV floor (cp.async checksum variant)");
+  m.def("qkpv_ws_cp_async_checksum_out",
+        &streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_out_cuda,
+        "StreamAttn transposed QK+PV floor (warp-specialized cp.async)");
+  m.def("qkpv_floor_resource_info",
+        &streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda,
+        "Compiled resources for cooperative and warp-specialized QK+PV floors");
   m.def("exact_partial_out", &streamattn_transposed_wgmma_exact_partial_out_cuda,
         "StreamAttn transposed m64n8k16 exact attention partial states");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
@@ -84,9 +101,11 @@ CUDA_SOURCE = r"""
 
 #include <cute/tensor.hpp>
 #include <cutlass/arch/barrier.h>
+#include <cutlass/arch/reg_reconfig.h>
 #include <cutlass/numeric_conversion.h>
 #include <cutlass/cutlass.h>
 #include <cutlass/numeric_types.h>
+#include <cutlass/pipeline/pipeline.hpp>
 
 using namespace cute;
 
@@ -150,6 +169,19 @@ struct alignas(128) AsyncQKPVSharedStorage {
   Accum row_reduce[4][kBlockN];
   Accum row_max[kBlockN];
   Accum row_sum[kBlockN];
+};
+
+using WsPipelineK = cutlass::PipelineAsync<kPipelineStages>;
+using WsPipelineV = cutlass::PipelineAsync<1>;
+
+struct alignas(128) WsQKPVSharedStorage {
+  cute::array_aligned<Element, cute::cosize_v<SmemLayoutK> * 2> k;
+  cute::array_aligned<Element, cute::cosize_v<SmemLayoutV>> v;
+  cute::array_aligned<Element, cute::cosize_v<SmemLayoutQ>> q;
+  cute::array_aligned<Element, cute::cosize_v<SmemLayoutPOrigin>> p;
+  typename WsPipelineK::SharedStorage pipeline_k;
+  typename WsPipelineV::SharedStorage pipeline_v;
+  Accum reduction[128];
 };
 
 using GmemCopyK = decltype(make_tiled_copy(
@@ -664,6 +696,199 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_kernel(
   }
   if (threadIdx.x == 0) {
     checksums[static_cast<int64_t>(group) * num_splits + split] = reduction[0];
+  }
+}
+
+template <int ConsumerRegisters>
+__global__ __launch_bounds__(256, 1)
+void streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_kernel(
+    const Element* __restrict__ q_group,
+    const Element* __restrict__ k_cache,
+    const Element* __restrict__ v_cache,
+    Accum* __restrict__ checksums,
+    int groups,
+    int kv_len,
+    int num_splits) {
+  const int work = blockIdx.x;
+  const int group = work / num_splits;
+  const int split = work - group * num_splits;
+  if (group >= groups) {
+    return;
+  }
+
+  const int num_tiles = kv_len / kBlockM;
+  const int tiles_per_split = (num_tiles + num_splits - 1) / num_splits;
+  const int tile_begin = split * tiles_per_split;
+  const int tile_end = min(num_tiles, tile_begin + tiles_per_split);
+  if (tile_begin >= tile_end) {
+    if (threadIdx.x == 0) {
+      checksums[static_cast<int64_t>(group) * num_splits + split] = 0.0f;
+    }
+    return;
+  }
+
+  extern __shared__ char shared_memory[];
+  auto& storage = *reinterpret_cast<WsQKPVSharedStorage*>(shared_memory);
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr = storage.k.data() + cute::cosize_v<SmemLayoutK>;
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV = make_tensor(make_smem_ptr(storage.v.data()), SmemLayoutV{});
+  Tensor sVt = make_tensor(make_smem_ptr(storage.v.data()), SmemLayoutVt{});
+  Tensor sQ = make_tensor(make_smem_ptr(storage.q.data()), SmemLayoutQ{});
+  Tensor sPOrigin = make_tensor(
+      make_smem_ptr(storage.p.data()), SmemLayoutPOrigin{});
+  Tensor sP = make_tensor(make_smem_ptr(storage.p.data()), SmemLayoutP{});
+
+  typename WsPipelineK::Params params_k;
+  params_k.role = threadIdx.x < 128
+      ? WsPipelineK::ThreadCategory::Producer
+      : WsPipelineK::ThreadCategory::Consumer;
+  params_k.producer_arv_count = 128;
+  params_k.consumer_arv_count = 128;
+  WsPipelineK pipeline_k(storage.pipeline_k, params_k);
+
+  typename WsPipelineV::Params params_v;
+  params_v.role = threadIdx.x < 128
+      ? WsPipelineV::ThreadCategory::Producer
+      : WsPipelineV::ThreadCategory::Consumer;
+  params_v.producer_arv_count = 128;
+  params_v.consumer_arv_count = 128;
+  WsPipelineV pipeline_v(storage.pipeline_v, params_v);
+
+  if (threadIdx.x < 128) {
+    const Element* q_ptr =
+        q_group + static_cast<int64_t>(group) * kBlockN * kHeadDim;
+    for (int idx = threadIdx.x; idx < kBlockN * kHeadDim; idx += 128) {
+      const int row = idx / kHeadDim;
+      const int col = idx - row * kHeadDim;
+      sQ(row, col) = q_ptr[idx];
+    }
+  }
+  cutlass::arch::fence_view_async_shared();
+  __syncthreads();
+
+  const Element* group_k =
+      k_cache + static_cast<int64_t>(group) * kv_len * kHeadDim;
+  const Element* group_v =
+      v_cache + static_cast<int64_t>(group) * kv_len * kHeadDim;
+
+  if (threadIdx.x < 128) {
+    cutlass::arch::warpgroup_reg_dealloc<24>();
+    GmemCopyK copy_kv;
+    auto thr_copy = copy_kv.get_thread_slice(threadIdx.x);
+    Tensor tK0sK0 = thr_copy.partition_D(sK0);
+    Tensor tK1sK1 = thr_copy.partition_D(sK1);
+    Tensor tVsV = thr_copy.partition_D(sV);
+    typename WsPipelineK::PipelineState write_k =
+        cutlass::make_producer_start_state<WsPipelineK>();
+    typename WsPipelineV::PipelineState write_v =
+        cutlass::make_producer_start_state<WsPipelineV>();
+
+    for (int tile = tile_begin; tile < tile_end; ++tile) {
+      const Element* k_ptr =
+          group_k + static_cast<int64_t>(tile) * kBlockM * kHeadDim;
+      Tensor gK = make_tensor(
+          make_gmem_ptr(k_ptr),
+          Shape<Int<kBlockM>, Int<kHeadDim>>{},
+          make_stride(Int<kHeadDim>{}, _1{}));
+      pipeline_k.producer_acquire(write_k);
+      if (write_k.index() == 0) {
+        cute::copy(copy_kv, thr_copy.partition_S(gK), tK0sK0);
+      } else {
+        cute::copy(copy_kv, thr_copy.partition_S(gK), tK1sK1);
+      }
+      cute::cp_async_fence();
+      cute::cp_async_wait<0>();
+      pipeline_k.producer_commit(write_k);
+      ++write_k;
+
+      const Element* v_ptr =
+          group_v + static_cast<int64_t>(tile) * kBlockM * kHeadDim;
+      Tensor gV = make_tensor(
+          make_gmem_ptr(v_ptr),
+          Shape<Int<kBlockM>, Int<kHeadDim>>{},
+          make_stride(Int<kHeadDim>{}, _1{}));
+      pipeline_v.producer_acquire(write_v);
+      cute::copy(copy_kv, thr_copy.partition_S(gV), tVsV);
+      cute::cp_async_fence();
+      cute::cp_async_wait<0>();
+      pipeline_v.producer_commit(write_v);
+      ++write_v;
+    }
+    pipeline_k.producer_tail(write_k);
+    pipeline_v.producer_tail(write_v);
+  } else {
+    cutlass::arch::warpgroup_reg_alloc<ConsumerRegisters>();
+    const int consumer_idx = threadIdx.x - 128;
+    TiledMma tiled_mma;
+    auto thr_mma = tiled_mma.get_thread_slice(consumer_idx);
+    Tensor tSrK0 = thr_mma.partition_fragment_A(sK0);
+    Tensor tSrK1 = thr_mma.partition_fragment_A(sK1);
+    Tensor tSrQ = thr_mma.partition_fragment_B(sQ);
+    Tensor tPsP = thr_mma.partition_C(sPOrigin);
+
+    TiledMmaO tiled_mma_o;
+    auto thr_mma_o = tiled_mma_o.get_thread_slice(consumer_idx);
+    Tensor tOrV = thr_mma_o.partition_fragment_A(sVt);
+    Tensor tOrP = thr_mma_o.partition_fragment_B(sP);
+    Tensor tOrO = partition_fragment_C(
+        tiled_mma_o, Shape<Int<kHeadDim>, Int<kBlockN>>{});
+    clear(tOrO);
+
+    typename WsPipelineK::PipelineState read_k;
+    typename WsPipelineV::PipelineState read_v;
+    for (int tile = tile_begin; tile < tile_end; ++tile) {
+      auto token_k = pipeline_k.consumer_try_wait(read_k);
+      pipeline_k.consumer_wait(read_k, token_k);
+      Tensor tCrS = partition_fragment_C(
+          tiled_mma, Shape<Int<kBlockM>, Int<kBlockN>>{});
+      clear(tCrS);
+      warpgroup_fence_operand(tCrS);
+      warpgroup_arrive();
+      if (read_k.index() == 0) {
+        cute::gemm(tiled_mma, tSrK0, tSrQ, tCrS);
+      } else {
+        cute::gemm(tiled_mma, tSrK1, tSrQ, tCrS);
+      }
+      warpgroup_commit_batch();
+      warpgroup_wait<0>();
+      warpgroup_fence_operand(tCrS);
+      pipeline_k.consumer_release(read_k);
+      ++read_k;
+
+      Tensor rP = streamattn_convert_type<Element>(tCrS);
+      cute::copy(rP, tPsP);
+      cutlass::arch::fence_view_async_shared();
+      cutlass::arch::NamedBarrier::sync(128, 0);
+
+      auto token_v = pipeline_v.consumer_try_wait(read_v);
+      pipeline_v.consumer_wait(read_v, token_v);
+      warpgroup_fence_operand(tOrO);
+      warpgroup_arrive();
+      cute::gemm(tiled_mma_o, tOrV, tOrP, tOrO);
+      warpgroup_commit_batch();
+      warpgroup_wait<0>();
+      warpgroup_fence_operand(tOrO);
+      pipeline_v.consumer_release(read_v);
+      ++read_v;
+    }
+
+    Accum local_sum = 0.0f;
+    CUTE_UNROLL
+    for (int idx = 0; idx < size(tOrO); ++idx) {
+      local_sum += tOrO(idx);
+    }
+    storage.reduction[consumer_idx] = local_sum;
+    cutlass::arch::NamedBarrier::sync(128, 1);
+    if (consumer_idx == 0) {
+      Accum total = 0.0f;
+      CUTE_UNROLL
+      for (int idx = 0; idx < 128; ++idx) {
+        total += storage.reduction[idx];
+      }
+      checksums[static_cast<int64_t>(group) * num_splits + split] = total;
+    }
   }
 }
 
@@ -1287,6 +1512,157 @@ void streamattn_transposed_wgmma_qkpv_async_checksum_out_cuda(
       kv_len,
       static_cast<int>(num_splits));
   C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+template <int ConsumerRegisters>
+void launch_streamattn_qkpv_ws_cp_async(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor checksums,
+    int groups,
+    int kv_len,
+    int num_splits) {
+  const int smem = static_cast<int>(sizeof(WsQKPVSharedStorage));
+  auto kernel =
+      streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_kernel<
+          ConsumerRegisters>;
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+  const dim3 grid(groups * num_splits);
+  const dim3 block(256);
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  kernel<<<grid, block, smem, stream>>>(
+      reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
+      checksums.data_ptr<float>(),
+      groups,
+      kv_len,
+      num_splits);
+}
+
+void streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor checksums,
+    int64_t num_splits,
+    int64_t consumer_registers) {
+  TORCH_CHECK(q_group.is_cuda() && k_cache.is_cuda() &&
+              v_cache.is_cuda() && checksums.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(q_group.is_contiguous() && k_cache.is_contiguous() &&
+              v_cache.is_contiguous() && checksums.is_contiguous(),
+              "all tensors must be contiguous");
+  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16 &&
+              k_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              v_cache.scalar_type() == at::ScalarType::BFloat16,
+              "q_group, k_cache, and v_cache must be bf16");
+  TORCH_CHECK(checksums.scalar_type() == at::ScalarType::Float,
+              "checksums must be fp32");
+  TORCH_CHECK(q_group.dim() == 4 && q_group.size(2) == kBlockN &&
+              q_group.size(3) == kHeadDim,
+              "q_group must have shape [B,Hkv,8,D]");
+  TORCH_CHECK(k_cache.sizes() == v_cache.sizes(),
+              "k_cache and v_cache must match");
+  TORCH_CHECK(k_cache.dim() == 4 && k_cache.size(3) == kHeadDim,
+              "K/V must have shape [B,Hkv,N,D]");
+  TORCH_CHECK(k_cache.size(0) == q_group.size(0) &&
+              k_cache.size(1) == q_group.size(1),
+              "q_group and K/V batch/KV-head dimensions must match");
+  TORCH_CHECK(k_cache.size(2) % kBlockM == 0,
+              "kv_len must be divisible by 64");
+
+  const int groups = static_cast<int>(q_group.size(0) * q_group.size(1));
+  const int kv_len = static_cast<int>(k_cache.size(2));
+  const int num_tiles = kv_len / kBlockM;
+  TORCH_CHECK(num_splits > 0 && num_splits <= num_tiles,
+              "num_splits must be in [1, kv_len/64]");
+  TORCH_CHECK(checksums.numel() == static_cast<int64_t>(groups) * num_splits,
+              "checksums must have B*Hkv*num_splits elements");
+
+  switch (consumer_registers) {
+    case 96:
+      launch_streamattn_qkpv_ws_cp_async<96>(
+          q_group, k_cache, v_cache, checksums, groups, kv_len, int(num_splits));
+      break;
+    case 112:
+      launch_streamattn_qkpv_ws_cp_async<112>(
+          q_group, k_cache, v_cache, checksums, groups, kv_len, int(num_splits));
+      break;
+    case 128:
+      launch_streamattn_qkpv_ws_cp_async<128>(
+          q_group, k_cache, v_cache, checksums, groups, kv_len, int(num_splits));
+      break;
+    case 160:
+      launch_streamattn_qkpv_ws_cp_async<160>(
+          q_group, k_cache, v_cache, checksums, groups, kv_len, int(num_splits));
+      break;
+    default:
+      TORCH_CHECK(false, "consumer_registers must be 96, 112, 128, or 160");
+  }
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+template <int ConsumerRegisters>
+void append_ws_resource_info(std::vector<int64_t>& values) {
+  auto kernel =
+      streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_kernel<
+          ConsumerRegisters>;
+  const int smem = static_cast<int>(sizeof(WsQKPVSharedStorage));
+  cudaFuncAttributes attrs{};
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+  C10_CUDA_CHECK(cudaFuncGetAttributes(&attrs, kernel));
+  int blocks = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &blocks, kernel, 256, smem));
+  values.push_back(attrs.numRegs);
+  values.push_back(attrs.sharedSizeBytes);
+  values.push_back(smem);
+  values.push_back(blocks);
+  values.push_back(attrs.maxThreadsPerBlock);
+}
+
+torch::Tensor streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda(
+    int64_t consumer_registers) {
+  cudaFuncAttributes cooperative{};
+  C10_CUDA_CHECK(cudaFuncGetAttributes(
+      &cooperative, streamattn_transposed_wgmma_qkpv_async_checksum_kernel));
+  const int specialized_smem = static_cast<int>(sizeof(WsQKPVSharedStorage));
+  int cooperative_blocks = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &cooperative_blocks,
+      streamattn_transposed_wgmma_qkpv_async_checksum_kernel,
+      128,
+      0));
+  std::vector<int64_t> values = {
+          cooperative.numRegs,
+          static_cast<int64_t>(cooperative.sharedSizeBytes),
+          int64_t(0),
+          cooperative_blocks,
+          cooperative.maxThreadsPerBlock,
+      };
+  switch (consumer_registers) {
+    case 96:
+      append_ws_resource_info<96>(values);
+      break;
+    case 112:
+      append_ws_resource_info<112>(values);
+      break;
+    case 128:
+      append_ws_resource_info<128>(values);
+      break;
+    case 160:
+      append_ws_resource_info<160>(values);
+      break;
+    default:
+      TORCH_CHECK(false, "consumer_registers must be 96, 112, 128, or 160");
+  }
+  values.push_back(static_cast<int64_t>(sizeof(AsyncQKPVSharedStorage)));
+  values.push_back(specialized_smem);
+  return torch::tensor(values, torch::TensorOptions().dtype(torch::kInt64));
 }
 
 void streamattn_transposed_wgmma_exact_partial_out_cuda(
