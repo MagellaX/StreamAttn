@@ -1,6 +1,11 @@
-# StreamAttention: Fused Online Softmax Attention
+# StreamAttn: Native Streaming Attention Engine
 
-A high-performance attention mechanism that computes softmax normalization in a single streaming pass using running accumulators (online softmax). The design achieves O(N) memory, strong numerical stability via log-sum-exp, and competitive throughput with modern flash attention baselines.
+A self-owned attention engine built around single-pass streaming attention and
+online softmax. StreamAttn now contains native exact-decode and model-validated
+reduced-work decode paths; FlashInfer and FlashAttention are benchmark/reference
+backends rather than required serving dependencies. The general fused training
+path still uses running log-sum-exp accumulators to achieve O(N) auxiliary
+memory with numerically stable softmax normalization.
 
 This repository provides:
 - A production-oriented `StreamAttention` module for drop-in use in transformer models
@@ -12,9 +17,41 @@ This repository provides:
 
 ## Recent Updates
 
+- Added guarded SM90 exact-native BF16 decode families for D64/G4, D64/G8, and
+  D128/G4. These kernels compute attention over every KV token and beat
+  FlashInfer on the explicitly promoted H100 cells.
+- Added a Qwen2.5-3B 32K/B8 product fast-path candidate measuring `1.193x`
+  actual-model decode speedup on H100 over 32 validated steps. Stress and
+  unknown request tiers remain exact-native.
+- Added a strict 128-step `verified_auto` candidate measuring `1.157x` actual
+  model speedup with zero top1/sample changes and all distribution gates
+  passing. Its bucket-step canary is offline-calibrated, so it is not yet a
+  general runtime verifier.
+- Evaluated TMA data movement and an architecture-valid warp-specialized D128
+  QK+PV mainloop. Both lost to the promoted cooperative kernel, so neither is
+  registered for serving.
 - Added a single-sweep Triton backward path (streaming dQ/dK/dV using saved `lse`) that mirrors the forward pass, including masks, dropout, and ALiBi.
 - Triton forward now supports boolean/additive masks, dropout, deterministic Philox seeding, and ALiBi bias without SDPA fallback.
 - Expanded tests/docs covering mask/dropout/ALiBi parity plus deterministic mode usage.
+
+## Measured H100 Status
+
+The table below reports guarded results, not universal backend claims. Exact
+rows compare full all-token BF16 decode against FlashInfer 0.6.12. Model rows
+compare complete Qwen decode steps against the dense Hugging Face model path.
+
+| Route | Measured scope | Speedup | Status |
+|---|---|---:|---|
+| Exact native D64/G8 | 7 H100 cells, B2-B8, 16K-64K | `1.025x-1.432x` | promoted per-cell |
+| Exact native D64/G4 | 14 H100 cells, B1-B16, 16K-64K | `1.027x-1.449x` | promoted per-cell |
+| Exact native D128/G4 | 6 H100 cells, B4-B16, 16K-64K | `1.002x-1.012x` | promoted per-cell |
+| Qwen2.5-3B seed fast path | 32K, B8, validated buckets, 32 steps | `1.193x` | product candidate |
+| Qwen2.5-3B verified auto | 32K, B8, validated suite, 128 steps | `1.157x` | strict pass; offline canary |
+
+All unlisted exact shapes fail closed to another StreamAttn exact path or remain
+unsupported. The model route sends adversarial stress and unknown risk tiers to
+exact-native. No A100, B200, paged-KV, FP8, or universal model-family claim is
+made by these H100 measurements.
 
 
 
@@ -128,6 +165,32 @@ StreamAttn is being shaped as a self-owned attention serving engine:
   reference backends, not required serving fallbacks.
 - General frontier-model coverage requires a policy compiler over model,
   layer, KV-length, batch, dtype, GQA/MQA/MHA shape, and device buckets.
+
+### Exact-native H100 backend
+
+The promoted SM90 backend maps exact GQA decode into transposed WGMMA:
+
+```text
+context tokens  -> WGMMA M dimension
+query heads     -> WGMMA N dimension
+head dimension  -> WGMMA K reduction
+```
+
+It performs full-context QK, online softmax, PV, and exact split-state merge.
+The public runner plans and allocates once, reuses fixed buffers, and dispatches
+only measured cells from a discrete batch/context/shape table. FlashInfer is
+used only for paired comparison.
+
+The latest D128 investigation tested both a TMA copy floor and a 256-thread
+producer/consumer `cp.async` QK+PV mainloop. TMA lost every measured copy cell;
+after register rebalancing restored two blocks/SM, the best warp-specialized
+result was still `0.9714x` of the cooperative baseline. The serving backend
+therefore retains the cooperative D128 implementation. See:
+
+- `docs/exact_native_h100_phase_diagram_20260818.md`
+- `docs/exact_native_h100_g4_phase_diagram_20260818.md`
+- `docs/exact_native_h100_d128_g4_phase_diagram_20260819.md`
+- `docs/sm90_d128_pipeline_ablation_20260819.md`
 
 The seed-only backend is guided by explicit kernel economics. For true GQA with
 group size `G = Hq / Hkv`, StreamAttn can intentionally duplicate tiny seed K/V
@@ -289,8 +352,35 @@ modal run benchmarks/modal_seed_only_route_bundle_decode.py \
 ```
 
 This fuses Qwen RoPE, native K/V append, and seed-only attention for routed
-layers. The current H100 result is safety clean (`0` top1/sample changes, KL max
-`9.66e-05`) and reaches `1.163x` full-model decode speedup.
+layers. It was the intermediate `1.163x` actual-model result. The current
+validated-bucket preset also enables packed QKV projection, direct `o_proj`,
+mixed L2-S416 policy support, and measured per-layer kernel overrides:
+
+```bash
+modal run benchmarks/modal_seed_only_route_bundle_decode.py \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --product-fast-path qwen25_3b_b8_validated \
+  --batch-size 8 \
+  --max-seq 32768 \
+  --steps 32
+```
+
+On H100 this preset measured `1.1926x` complete-model decode speedup, zero
+top1/sample changes, and KL max `9.96e-05` over the 32-step validated suite.
+It is not a universal request route: adversarial stress and unknown risk tiers
+fail closed to exact-native.
+
+The unverified fast path did not pass the stricter 128-step margin gate despite
+zero top1/sample changes (`1.1638x`, KL max `1.039e-04`, top-5 overlap 3/5).
+The current `verified_auto` research candidate performs row-selective native
+exact refresh from an offline bucket-step canary. It passed all strict 128-step
+gates over 1,024 cases at `1.1569x` model speedup, with KL max `9.32e-05` and
+top-5 overlap at least 4/5. This proves that verification can preserve both
+strict safety and a model-level win, but the offline trigger schedule must be
+replaced by a selective live signal before general product deployment. See:
+
+- `stream_attention/policies/qwen25_3b_32k_b8_bucket_conditioned_route.json`
+- `stream_attention/policies/qwen25_3b_32k_b8_verified_auto_route.json`
 
 
 ## API Reference
