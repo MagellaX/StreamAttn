@@ -7,7 +7,7 @@ name = "stream-attention"
 version = "1.0.0"
 description = "Native streaming attention engine with exact and model-validated decode paths"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{name = "StreamAttn Team"}]
 requires-python = ">=3.10"

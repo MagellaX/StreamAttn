@@ -58,6 +58,7 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qwen25_3b_l35_32k_seed_only_batched",
     }
     green = [entry for entry in policies if entry.get("status") == "green"]
+    green_names = {entry.get("name") for entry in green}
 
     if payload.get("schema") != "streamattn.policy_registry.v1":
         failures.append("registry_schema_mismatch")
@@ -69,16 +70,32 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         failures.append("registry_duplicate_name")
     if len(policy_ids) != len(set(policy_ids)):
         failures.append("registry_duplicate_policy_id")
-    if len(green) < len(expected_names):
-        failures.append("registry_green_policy_count_mismatch")
+    lookup_keys: set[str] = set()
     for entry in policies:
         name = str(entry.get("name") or "<unnamed>")
         status = entry.get("status")
         if status not in {"green", "candidate"}:
             failures.append(f"registry_status_invalid:{name}:{status}")
 
+        keys = (
+            entry.get("name"),
+            entry.get("policy_id"),
+            *(entry.get("aliases") or []),
+        )
+        for key in keys:
+            if not isinstance(key, str) or not key:
+                failures.append(f"registry_lookup_key_invalid:{name}")
+            elif key in lookup_keys:
+                failures.append(f"registry_lookup_key_duplicate:{name}:{key}")
+            else:
+                lookup_keys.add(key)
+
         min_batch = entry.get("min_batch")
-        if not isinstance(min_batch, int) or min_batch < 1:
+        if (
+            isinstance(min_batch, bool)
+            or not isinstance(min_batch, int)
+            or min_batch < 1
+        ):
             failures.append(f"registry_min_batch_invalid:{name}")
             continue
         kernel_modes = entry.get("kernel_modes") or {}
@@ -115,7 +132,7 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
                     f"registry_artifact_kernel_mode_mismatch:{name}:{key}"
                 )
 
-    missing_names = sorted(expected_names - set(names))
+    missing_names = sorted(expected_names - green_names)
     for name in missing_names:
         failures.append(f"registry_missing_green_cell:{name}")
 
@@ -268,7 +285,7 @@ def main() -> None:
     try:
         result["route"] = _check_route_with_torch()
     except ModuleNotFoundError as exc:
-        if not args.allow_no_torch:
+        if not args.allow_no_torch or exc.name != "torch":
             raise
         result["route"] = {
             "route_skipped": True,

@@ -2,7 +2,7 @@
 
 Describe the problem and the smallest coherent change that solves it.
 
-## Claim type
+## Claim type (select exactly one)
 
 - [ ] Portable code, tests, documentation, or packaging
 - [ ] Exact attention kernel

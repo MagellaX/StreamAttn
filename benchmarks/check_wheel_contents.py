@@ -17,6 +17,7 @@ FORBIDDEN_PREFIXES = ("artifacts/", "benchmarks/", "tests/")
 EXPECTED_METADATA = {
     "Name": "stream-attention",
     "Requires-Python": ">=3.10",
+    "License-Expression": "Apache-2.0",
 }
 EXPECTED_REPOSITORY_URL = "https://github.com/MagellaX/StreamAttn"
 
@@ -63,15 +64,31 @@ def check_wheel(path: Path) -> dict[str, object]:
 
         registry_name = "stream_attention/policies/registry.json"
         if registry_name in names:
-            registry = json.loads(wheel.read(registry_name))
-            for entry in registry.get("policies") or []:
-                relative = entry.get("path")
-                if not isinstance(relative, str):
-                    failures.append(f"registry_path_invalid:{entry.get('name')}")
-                    continue
-                packaged = f"stream_attention/{relative}"
-                if packaged not in names:
-                    failures.append(f"registry_policy_missing:{packaged}")
+            try:
+                registry = json.loads(wheel.read(registry_name))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                failures.append("registry_json_invalid")
+            else:
+                if not isinstance(registry, dict):
+                    failures.append("registry_root_invalid")
+                else:
+                    policies = registry.get("policies") or []
+                    if not isinstance(policies, list):
+                        failures.append("registry_policies_invalid")
+                        policies = []
+                    for entry in policies:
+                        if not isinstance(entry, dict):
+                            failures.append("registry_entry_invalid")
+                            continue
+                        relative = entry.get("path")
+                        if not isinstance(relative, str):
+                            failures.append(
+                                f"registry_path_invalid:{entry.get('name')}"
+                            )
+                            continue
+                        packaged = f"stream_attention/{relative}"
+                        if packaged not in names:
+                            failures.append(f"registry_policy_missing:{packaged}")
 
     return {
         "schema": "streamattn.wheel_contents.v1",
