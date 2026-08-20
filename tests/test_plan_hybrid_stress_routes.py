@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from benchmarks.plan_hybrid_stress_routes import build_hybrid_specs, build_plan
 
 
@@ -30,7 +32,10 @@ def test_build_hybrid_plan_emits_modal_commands_with_secret_flag():
     assert "--dynamic-selector-profile" in command
     assert "support_extreme4_mean_refine32" in command
     assert "--use-hf-token-secret" in command
-    assert "out\\stress_l27_exact_l26_dynamic_extreme4_32step_h100.json" in command
+    output_path = command[command.index("--output-json") + 1]
+    assert Path(output_path) == Path(
+        "out/stress_l27_exact_l26_dynamic_extreme4_32step_h100.json"
+    )
 
 
 def test_build_hybrid_plan_marks_l26_l27_exact_route():
