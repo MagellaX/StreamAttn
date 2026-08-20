@@ -33,10 +33,11 @@ def _load_registry_json() -> Dict[str, Any]:
 
 
 def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
-    failures = []
+    failures: list[str] = []
     policies = payload.get("policies") or []
     default = payload.get("default")
-    names = {entry.get("name") for entry in policies}
+    names = [entry.get("name") for entry in policies]
+    policy_ids = [entry.get("policy_id") for entry in policies]
     expected_names = {
         "qwen25_05b_l1_32k_seed_only_batched",
         "qwen25_05b_l2_32k_seed_only_batched",
@@ -47,6 +48,7 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qwen25_15b_l0_32k_seed_only_batched",
         "qwen25_15b_l3_32k_seed_only_batched",
         "qwen25_3b_l0_32k_seed_only_batched",
+        "qwen25_3b_l2_s416_32k_seed_only_batched",
         "qwen25_3b_l14_32k_seed_only_batched",
         "qwen25_3b_l16_32k_seed_only_batched",
         "qwen25_3b_l24_32k_seed_only_batched",
@@ -56,6 +58,7 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         "qwen25_3b_l35_32k_seed_only_batched",
     }
     green = [entry for entry in policies if entry.get("status") == "green"]
+    green_names = {entry.get("name") for entry in green}
 
     if payload.get("schema") != "streamattn.policy_registry.v1":
         failures.append("registry_schema_mismatch")
@@ -63,14 +66,73 @@ def _check_policy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
         failures.append("registry_default_mismatch")
     if default not in names:
         failures.append("registry_default_missing")
-    if len(green) < len(expected_names):
-        failures.append("registry_green_policy_count_mismatch")
-    for entry in green:
-        if entry.get("min_batch") != 4:
-            failures.append("registry_green_min_batch_mismatch")
-        if entry.get("kernel_modes", {}).get("batch_ge_4") != "head_private_direct_seed":
-            failures.append("registry_green_kernel_mode_mismatch")
-    missing_names = sorted(expected_names - names)
+    if len(names) != len(set(names)):
+        failures.append("registry_duplicate_name")
+    if len(policy_ids) != len(set(policy_ids)):
+        failures.append("registry_duplicate_policy_id")
+    lookup_keys: set[str] = set()
+    for entry in policies:
+        name = str(entry.get("name") or "<unnamed>")
+        status = entry.get("status")
+        if status not in {"green", "candidate"}:
+            failures.append(f"registry_status_invalid:{name}:{status}")
+
+        keys = (
+            entry.get("name"),
+            entry.get("policy_id"),
+            *(entry.get("aliases") or []),
+        )
+        for key in keys:
+            if not isinstance(key, str) or not key:
+                failures.append(f"registry_lookup_key_invalid:{name}")
+            elif key in lookup_keys:
+                failures.append(f"registry_lookup_key_duplicate:{name}:{key}")
+            else:
+                lookup_keys.add(key)
+
+        min_batch = entry.get("min_batch")
+        if (
+            isinstance(min_batch, bool)
+            or not isinstance(min_batch, int)
+            or min_batch < 1
+        ):
+            failures.append(f"registry_min_batch_invalid:{name}")
+            continue
+        kernel_modes = entry.get("kernel_modes") or {}
+        if kernel_modes.get(f"batch_ge_{min_batch}") != "head_private_direct_seed":
+            failures.append(f"registry_kernel_mode_direct_mismatch:{name}")
+        if kernel_modes.get(f"batch_lt_{min_batch}") != "exact_native":
+            failures.append(f"registry_kernel_mode_fallback_mismatch:{name}")
+
+        relative_path = entry.get("path")
+        if not isinstance(relative_path, str):
+            failures.append(f"registry_policy_path_missing:{name}")
+            continue
+        artifact_path = REPO_ROOT / "stream_attention" / relative_path
+        if not artifact_path.is_file():
+            failures.append(f"registry_policy_file_missing:{name}:{relative_path}")
+            continue
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        for key in (
+            "policy_id",
+            "model_id",
+            "layer_id",
+            "mode",
+            "tensor_space",
+            "dtype",
+            "kv_len_bucket",
+            "min_batch",
+        ):
+            if artifact.get(key) != entry.get(key):
+                failures.append(f"registry_artifact_{key}_mismatch:{name}")
+        artifact_kernel_modes = artifact.get("kernel_modes") or {}
+        for key, value in kernel_modes.items():
+            if artifact_kernel_modes.get(key) != value:
+                failures.append(
+                    f"registry_artifact_kernel_mode_mismatch:{name}:{key}"
+                )
+
+    missing_names = sorted(expected_names - green_names)
     for name in missing_names:
         failures.append(f"registry_missing_green_cell:{name}")
 
@@ -223,7 +285,7 @@ def main() -> None:
     try:
         result["route"] = _check_route_with_torch()
     except ModuleNotFoundError as exc:
-        if not args.allow_no_torch:
+        if not args.allow_no_torch or exc.name != "torch":
             raise
         result["route"] = {
             "route_skipped": True,

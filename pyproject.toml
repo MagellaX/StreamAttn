@@ -1,23 +1,74 @@
 [build-system]
-requires = [
-    "setuptools>=61",
-    "wheel",
-]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "stream-attention"
 version = "1.0.0"
-description = "Production-ready multi-GPU FlashAttention implementation with support for extremely long contexts"
-authors = [{name = "StreamAttention Team", email = "streamattention@example.com"}]
+description = "Native streaming attention engine with exact and model-validated decode paths"
 readme = "README.md"
-license = {file = "LICENSE"}
-requires-python = ">=3.8"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "StreamAttn Team"}]
+requires-python = ">=3.10"
+keywords = [
+    "attention",
+    "cuda",
+    "flash-attention",
+    "gpu",
+    "inference",
+    "long-context",
+    "pytorch",
+    "transformer",
+    "triton",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
-    "torch==2.1.0",
-    "triton==2.1.0",
+    "torch>=2.1",
     "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+triton = ["triton>=2.1; platform_system == 'Linux' and platform_machine == 'x86_64'"]
+hf = ["transformers>=4.39"]
+transformers = ["transformers>=4.39"]
+distributed = []
+docs = []
+dev = [
+    "build>=1.2",
+    "numpy>=1.24",
+    "pytest>=7",
+    "twine>=5",
+]
+
+[project.urls]
+Documentation = "https://github.com/MagellaX/StreamAttn#readme"
+Issues = "https://github.com/MagellaX/StreamAttn/issues"
+Repository = "https://github.com/MagellaX/StreamAttn"
+
+[project.scripts]
+stream-attention-benchmark = "stream_attention.benchmarks.benchmark_suite:main"
+stream-attention-test = "stream_attention.benchmarks.accuracy_test:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["stream_attention*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+stream_attention = ["*.yaml", "*.json", "policies/*.json"]
+"stream_attention.policies" = ["*.json"]
 
 [tool.stream_attention]
 cuda_version = "12.1"
