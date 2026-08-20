@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a scoped API, backend, model-family, or tooling improvement.
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and documentation for this request.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the concrete user or engineering problem, not only the proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed direction
+      description: Include API shape, supported devices/models, and exact versus approximate semantics.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or references
+      description: Link relevant papers, code, traces, benchmarks, or failure artifacts.
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Scope and fallback
+      description: State unsupported cases and expected fail-closed behavior.

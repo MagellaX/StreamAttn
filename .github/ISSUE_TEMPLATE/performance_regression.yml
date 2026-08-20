@@ -1,0 +1,50 @@
+name: Performance regression
+description: Report a measured regression with reproducible timing and correctness evidence.
+title: "[Performance] "
+labels: [bug]
+body:
+  - type: checkboxes
+    id: measurement_checklist
+    attributes:
+      label: Measurement checklist
+      options:
+        - label: I used fixed buffers, warmups, synchronization, and repeated measurements.
+          required: true
+        - label: I identified whether the route is exact or approximate.
+          required: true
+        - label: I removed credentials and stopped any paid GPU job used for this report.
+          required: true
+  - type: dropdown
+    id: semantics
+    attributes:
+      label: Attention semantics
+      options:
+        - Exact full-context attention
+        - Seed-only/model-validated approximation
+        - Verified-auto hybrid
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: Device and shape
+      description: GPU, B, Hq, Hkv, N, D, dtype, KV layout, and cache mode.
+      placeholder: "H100; B=4 Hq=16 Hkv=4 N=32768 D=64 BF16; contiguous BHND"
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Reproduction and timing protocol
+      description: Exact command, baseline/version, warmups, iterations, repeats, and graph/eager mode.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results and correctness
+      description: Raw times, ratios, paired wins, tolerance, and artifact path.
+    validations:
+      required: true

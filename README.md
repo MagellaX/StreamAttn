@@ -1,5 +1,7 @@
 # StreamAttn: Native Streaming Attention Engine
 
+[![CI](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml)
+
 A self-owned attention engine built around single-pass streaming attention and
 online softmax. StreamAttn now contains native exact-decode and model-validated
 reduced-work decode paths; FlashInfer and FlashAttention are benchmark/reference
@@ -65,6 +67,8 @@ pip install -e .
 
 # Optional extras
 pip install -e .[hf]        # Hugging Face integration helpers
+pip install -e .[triton]    # Triton kernels on supported Linux/x86-64 systems
+pip install -e .[dev]       # Test and package-validation tooling
 ```
 
 Notes:
@@ -381,6 +385,15 @@ replaced by a selective live signal before general product deployment. See:
 
 - `stream_attention/policies/qwen25_3b_32k_b8_bucket_conditioned_route.json`
 - `stream_attention/policies/qwen25_3b_32k_b8_verified_auto_route.json`
+
+## Contributing
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) and use the structured GitHub
+issue or pull-request templates. Every contribution must pass the stable
+`CI / Required checks` result, which aggregates policy integrity, CPU tests on
+Python 3.10/3.11, and package validation. GPU performance claims additionally
+require an owner-run device artifact with the shape, baseline, correctness
+gate, and timing protocol recorded explicitly.
 
 
 ## API Reference

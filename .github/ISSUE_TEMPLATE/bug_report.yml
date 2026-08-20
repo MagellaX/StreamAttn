@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible correctness, API, installation, or runtime problem.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed API keys, access tokens, and private data from this report.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation or packaging
+        - Portable Python API
+        - Triton training/forward path
+        - Exact-native decode
+        - Seed-only or verified-auto decode
+        - Policy registry or routing
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include a command or small code sample that reproduces the issue.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, PyTorch, Triton, CUDA/driver, GPU, and StreamAttn commit.
+      placeholder: |
+        OS:
+        Python:
+        PyTorch:
+        Triton:
+        CUDA / driver:
+        GPU:
+        Commit:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste the shortest useful traceback or log. Do not include credentials.
+      render: text
