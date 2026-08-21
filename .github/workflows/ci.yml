@@ -56,6 +56,36 @@ jobs:
       - name: Run CPU test suite
         run: python -m pytest -q
 
+  gpu-source-contract:
+    name: GPU source contract (no hardware)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install GPU source-contract dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+          python -m pip install triton==3.1.0 pytest numpy pyyaml
+          python -m pip install --no-deps -e .
+      - name: Validate shipped Triton and SM90 source
+        run: |
+          python benchmarks/check_gpu_source_contract.py
+          python -m pytest -q \
+            tests/test_gate0_projection_bitmask_triton.py \
+            tests/test_gate0_projection_mask_triton.py \
+            tests/test_gate0_projection_scan_triton.py \
+            tests/test_gate0_summary_scan_triton.py \
+            tests/test_qwen_o_proj_triton.py \
+            tests/test_seed_only_split_seed.py \
+            tests/test_sm90_exact_backend.py
+
   package:
     name: Source and wheel package
     runs-on: ubuntu-latest
@@ -88,7 +118,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [policy-integrity, unit-tests, package]
+    needs: [policy-integrity, unit-tests, gpu-source-contract, package]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -96,8 +126,10 @@ jobs:
         env:
           POLICY_RESULT: ${{ needs.policy-integrity.result }}
           TEST_RESULT: ${{ needs.unit-tests.result }}
+          GPU_SOURCE_RESULT: ${{ needs.gpu-source-contract.result }}
           PACKAGE_RESULT: ${{ needs.package.result }}
         run: |
           test "$POLICY_RESULT" = success
           test "$TEST_RESULT" = success
+          test "$GPU_SOURCE_RESULT" = success
           test "$PACKAGE_RESULT" = success

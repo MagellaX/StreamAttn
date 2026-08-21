@@ -1,560 +1,467 @@
-# StreamAttn: Native Streaming Attention Engine
+# StreamAttn
 
 [![CI](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml)
+[![CUDA Source Build](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml)
 
-A self-owned attention engine built around single-pass streaming attention and
-online softmax. StreamAttn now contains native exact-decode and model-validated
-reduced-work decode paths; FlashInfer and FlashAttention are benchmark/reference
-backends rather than required serving dependencies. The general fused training
-path still uses running log-sum-exp accumulators to achieve O(N) auxiliary
-memory with numerically stable softmax normalization.
+**A native attention engine for exact streaming attention and model-validated
+reduced-work decode.**
 
-This repository provides:
-- A production-oriented `StreamAttention` module for drop-in use in transformer models
-- A fused online softmax kernel in Triton with safe PyTorch SDPA fallbacks
-- A FlashAttention-3 baseline wrapper
-- Benchmark and accuracy CLIs for reproducible comparisons
-- Utilities for memory profiling and KV-cache compression
-- Optional integration helpers for Hugging Face models
+StreamAttn owns its attention kernels. Its default native serving path does not
+call FlashInfer or FlashAttention; those projects are comparison baselines. At
+runtime, StreamAttn can compute exact attention over the full KV cache or, for
+an explicitly calibrated model/shape cell, execute a much smaller seed-only
+schedule and fail closed to exact attention when the cell does not match.
 
-## Recent Updates
+The common foundation is single-pass streaming attention with online softmax:
+K/V tiles are consumed once, numerically stable running statistics are updated
+on the fly, and the full attention matrix is never materialized.
 
-- Added guarded SM90 exact-native BF16 decode families for D64/G4, D64/G8, and
-  D128/G4. These kernels compute attention over every KV token and beat
-  FlashInfer on the explicitly promoted H100 cells.
-- Added a Qwen2.5-3B 32K/B8 product fast-path candidate measuring `1.193x`
-  actual-model decode speedup on H100 over 32 validated steps. Stress and
-  unknown request tiers remain exact-native.
-- Added a strict 128-step `verified_auto` candidate measuring `1.157x` actual
-  model speedup with zero top1/sample changes and all distribution gates
-  passing. Its bucket-step canary is offline-calibrated, so it is not yet a
-  general runtime verifier.
-- Evaluated TMA data movement and an architecture-valid warp-specialized D128
-  QK+PV mainloop. Both lost to the promoted cooperative kernel, so neither is
-  registered for serving.
-- Added a single-sweep Triton backward path (streaming dQ/dK/dV using saved `lse`) that mirrors the forward pass, including masks, dropout, and ALiBi.
-- Triton forward now supports boolean/additive masks, dropout, deterministic Philox seeding, and ALiBi bias without SDPA fallback.
-- Expanded tests/docs covering mask/dropout/ALiBi parity plus deterministic mode usage.
+> **Project status:** research engine with guarded H100 routes. StreamAttn has
+> apples-to-apples exact decode wins over FlashInfer on promoted shapes and a
+> measured model-level Qwen decode win on a validated request tier. It is not a
+> universal replacement for FlashInfer, FlashAttention, or a full serving
+> runtime yet.
 
-## Measured H100 Status
+## Why StreamAttn Exists
 
-The table below reports guarded results, not universal backend claims. Exact
-rows compare full all-token BF16 decode against FlashInfer 0.6.12. Model rows
-compare complete Qwen decode steps against the dense Hugging Face model path.
-
-| Route | Measured scope | Speedup | Status |
-|---|---|---:|---|
-| Exact native D64/G8 | 7 H100 cells, B2-B8, 16K-64K | `1.025x-1.432x` | promoted per-cell |
-| Exact native D64/G4 | 14 H100 cells, B1-B16, 16K-64K | `1.027x-1.449x` | promoted per-cell |
-| Exact native D128/G4 | 6 H100 cells, B4-B16, 16K-64K | `1.002x-1.012x` | promoted per-cell |
-| Qwen2.5-3B seed fast path | 32K, B8, validated buckets, 32 steps | `1.193x` | product candidate |
-| Qwen2.5-3B verified auto | 32K, B8, validated suite, 128 steps | `1.157x` | strict pass; offline canary |
-
-All unlisted exact shapes fail closed to another StreamAttn exact path or remain
-unsupported. The model route sends adversarial stress and unknown risk tiers to
-exact-native. No A100, B200, paged-KV, FP8, or universal model-family claim is
-made by these H100 measurements.
-
-
-
-## Installation
-
-The project depends on PyTorch (CUDA optional) and Triton (optional for the custom fused kernel).
-
-```bash
-# Editable install (preferred for development)
-pip install -e .
-
-# Optional extras
-pip install -e .[hf]        # Hugging Face integration helpers
-pip install -e .[triton]    # Triton kernels on supported Linux/x86-64 systems
-pip install -e .[dev]       # Test and package-validation tooling
-```
-
-Notes:
-- If the environment is system-managed, you may need to pass `--break-system-packages` to pip or use a virtual environment.
-- Triton is optional. If Triton is not available, the implementation falls back to PyTorch SDPA (flash backend on CUDA where available).
-
-
-## Quick Start
-
-```python
-import torch
-from stream_attention import StreamAttention, StreamAttentionConfig
-
-# Configure the attention
-config = StreamAttentionConfig(
-    num_heads=32,
-    head_dim=128,
-    tile_size_q=128,
-    tile_size_k=64,
-    use_qkv_projections=True
-)
-
-# Create the module
-attention = (StreamAttention(config).cuda() if torch.cuda.is_available() else StreamAttention(config))
-
-# Hidden-states path (with internal Q,K,V projections)
-batch_size, seq_len = 2, 1024
-hidden_dim = config.num_heads * config.head_dim
-x = torch.randn(batch_size, seq_len, hidden_dim, device=attention.attention.device, dtype=(torch.float16 if torch.cuda.is_available() else torch.float32))
-
-with torch.no_grad():
-    y = attention(hidden_states=x)
-print(y.shape)
-
-# Explicit Q,K,V path (supports attn_mask/dropout/ALiBi in Triton, falling back to SDPA when needed)
-q = torch.randn(batch_size, seq_len, config.num_heads, config.head_dim, device=x.device, dtype=x.dtype)
-k = torch.randn_like(q)
-v = torch.randn_like(q)
-with torch.no_grad():
-    # Example boolean mask [B, S_k]
-    key_padding_mask = torch.ones(batch_size, seq_len, dtype=torch.bool, device=x.device)
-    key_padding_mask[:, -16:] = False  # mask out last 16 positions
-    y_qkv = attention(q, k, v, causal=True, attention_mask=key_padding_mask)
-print(y_qkv.shape)
-```
-
-## Seed-Only Serving Wedge
-
-The first deployable StreamAttn decode route is intentionally narrow and
-fail-closed: Qwen2.5-0.5B layer 8, post-RoPE true-GQA tensors, 32K KV bucket,
-fp16, batch >= 4. It uses the packaged seed-only policy when the request
-matches and otherwise stays inside StreamAttn exact-native mode. FlashInfer is
-kept as a benchmark/reference injection, not a required serving fallback.
-
-Validated seed-only cells are indexed by
-`stream_attention/policies/registry.json`. Use
-`list_packaged_gate0_seed_only_batched_policies()` or
-`find_packaged_gate0_seed_only_batched_policies(...)` to discover green routes
-before loading an artifact. Today the registry contains sixteen green
-Qwen-family 32K cells: six Qwen2.5-0.5B cells (L1, L2, L5, L6, L8, L18), two
-Qwen2.5-1.5B cells (L0, L3), and eight Qwen2.5-3B cells (L0, L14, L16, L24,
-L26, L27, L29, L35). New frontier-model or additional-layer routes should enter
-through this registry only after their runtime and distribution-safety artifacts
-pass.
-
-```python
-from stream_attention import StreamAttnSeedOnlyDecodeService
-
-service = StreamAttnSeedOnlyDecodeService.from_packaged()
-
-out, info = service.run(q, k_cache, v_cache, mode="auto")
-print(info.to_dict())
-```
-
-CPU-safe fail-closed smoke:
-
-```bash
-python examples/seed_only_serving_decode.py --batch 4 --kv-len 128 --dtype fp32
-```
-
-Real serving-shape smoke with FlashInfer as an external reference backend:
-
-```bash
-python examples/seed_only_serving_decode.py --backend flashinfer --device cuda --batch 4 --kv-len 32768 --dtype fp16
-```
-
-## Engine Direction
-
-The narrow Qwen L8 route is the first executable wedge, not the final goal.
-StreamAttn is being shaped as a self-owned attention serving engine:
-
-- `streamattn_exact_native`: exact decode owned by StreamAttn. It starts as the
-  internal dense reference path and is the replacement point for TK/CUDA exact
-  kernels.
-- `gate0_seed_only_batched`: the first optimized native mode, enabled only for
-  validated logit-safe cells.
-- FlashInfer and FlashAttention-class kernels are development baselines and
-  reference backends, not required serving fallbacks.
-- General frontier-model coverage requires a policy compiler over model,
-  layer, KV-length, batch, dtype, GQA/MQA/MHA shape, and device buckets.
-
-### Exact-native H100 backend
-
-The promoted SM90 backend maps exact GQA decode into transposed WGMMA:
+Fast exact kernels answer this question:
 
 ```text
-context tokens  -> WGMMA M dimension
-query heads     -> WGMMA N dimension
+How efficiently can the GPU compute all requested attention work?
+```
+
+StreamAttn also asks:
+
+```text
+What is the cheapest native attention route that is valid for this request?
+```
+
+That produces three decode modes:
+
+| Mode | Work performed | Semantics | Current use |
+|---|---|---|---|
+| `exact_native` | All KV tokens | Exact attention, within numerical tolerance | Default and fail-closed route |
+| `seed_only_native` | A small sink/middle/recent seed set | Approximate; only for a packaged, validated policy cell | Explicit opt-in and calibrated serving |
+| `verified_auto` | Seed-only when policy invariants match, otherwise exact | Policy-verified, fail-closed routing | Default planning mode; live generic verification is still research |
+
+StreamAttn is therefore not just another sparse mask. The engine owns the
+kernel, policy artifact, fixed-buffer plan, route decision, and exact fallback.
+
+## What Is Proven Today
+
+### Exact native decode
+
+The promoted SM90 kernels compute full-context GQA decode and use online
+softmax plus exact split-state merging. These are direct comparisons against
+FlashInfer 0.6.12 on H100:
+
+| Shape family | Measured region | StreamAttn speedup | Status |
+|---|---|---:|---|
+| D64, GQA group 8 | 7 cells; B2-B8; 16K-64K KV | `1.025x-1.432x` | Promoted per cell |
+| D64, GQA group 4 | 14 cells; B1-B16; 16K-64K KV | `1.027x-1.449x` | Promoted per cell |
+| D128, GQA group 4 | 6 cells; B4-B16; 16K-64K KV | `1.002x-1.012x` | Promoted per cell |
+
+The exact backend uses transposed WGMMA so that long context occupies the
+hardware-friendly matrix dimension:
+
+```text
+context tokens  -> WGMMA M
+query heads     -> WGMMA N
 head dimension  -> WGMMA K reduction
 ```
 
-It performs full-context QK, online softmax, PV, and exact split-state merge.
-The public runner plans and allocates once, reuses fixed buffers, and dispatches
-only measured cells from a discrete batch/context/shape table. FlashInfer is
-used only for paired comparison.
+See the measured phase diagrams for the actual promoted cells:
 
-The latest D128 investigation tested both a TMA copy floor and a 256-thread
-producer/consumer `cp.async` QK+PV mainloop. TMA lost every measured copy cell;
-after register rebalancing restored two blocks/SM, the best warp-specialized
-result was still `0.9714x` of the cooperative baseline. The serving backend
-therefore retains the cooperative D128 implementation. See:
+- [D64/G8 H100 phase diagram](docs/exact_native_h100_phase_diagram_20260818.md)
+- [D64/G4 H100 phase diagram](docs/exact_native_h100_g4_phase_diagram_20260818.md)
+- [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
 
-- `docs/exact_native_h100_phase_diagram_20260818.md`
-- `docs/exact_native_h100_g4_phase_diagram_20260818.md`
-- `docs/exact_native_h100_d128_g4_phase_diagram_20260819.md`
-- `docs/sm90_d128_pipeline_ablation_20260819.md`
+### Model-aware reduced-work decode
 
-The seed-only backend is guided by explicit kernel economics. For true GQA with
-group size `G = Hq / Hkv`, StreamAttn can intentionally duplicate tiny seed K/V
-reads across Q heads when:
+For calibrated Qwen-family cells, the seed-only backend reads a small set of
+sink, middle, and recent KV blocks. A representative 32K policy uses 384 seed
+tokens, or `1.17%` of the full context. In true GQA, duplicating those reads
+across query heads is still inexpensive when:
 
 ```text
 G * seed_tokens / kv_len << 1
 ```
 
-For the packaged Qwen L8 32K route this is about `8.2%`, while the seed window
-itself is only `384 / 32768 = 1.17%` of the KV cache. The autotuner in
-`benchmarks/profile_seed_kernel_mode_autotune.py` reports these ratios, CTA
-counts, and whether the next kernel should use head-private direct seed,
-head-private split-seed, or a GQA-shared seed path.
+For the original Qwen route, that ratio is about `8.2%` of exact KV traffic.
+The extra head-private work creates enough independent CTAs to occupy the GPU
+while avoiding most of the exact QK, softmax, and PV work.
 
-The first two-kernel split-seed prototype is intentionally diagnostic: it writes
-partial online-softmax states and merges them in a second kernel. The H100
-below-B8 artifact in `artifacts/seed_only_split_seed_below8_h100.json` shows
-this path is numerically correct against direct seed-only but not product
-profitable. On that run, direct seed already wins at B4, while split-seed loses
-to direct seed for every batch and does not recover B1/B2. Merge and extra
-launch overhead dominate, so batch `<4` needs a lower-overhead single-kernel
-CUDA/TK cooperative split design, not the current two-kernel Triton
-decomposition.
+Measured complete-model results on H100:
 
-The direct seed-only batch-threshold gate in
-`artifacts/seed_only_direct_below8_h100_gate.json` narrows that target further.
-On captured Qwen L8 32K rows, the raw direct seed kernel first beats the
-FlashInfer exact reference at batch 4, and the planned direct service path now
-clears the same product gate at batch 4. The ordinary wrapper route remains as
-a comparison path, but `StreamAttnSeedOnlyDecodeService` defaults to a bound
-planned-direct runner for eligible fixed-buffer CUDA decode loops. The measured
-native route rule is therefore:
+| Route | Scope | Speedup | Distribution result | Status |
+|---|---|---:|---|---|
+| Qwen2.5-3B fast path | 32K, B8, validated request suite, 32 decode steps | `1.193x` | Zero top-1/sample changes; KL max `9.96e-05` | Candidate |
+| Qwen2.5-3B `verified_auto` | 32K, B8, validated suite, 128 decode steps | `1.157x` | Zero top-1/sample changes; strict gates pass | Research candidate; offline canary |
 
-```text
-B >= 4: head_private_direct_seed
-B < 4: exact_native until a single-kernel cooperative split-seed path proves out
-```
+These rows compare complete model decode against the dense Hugging Face model,
+not just selected attention calls. Adversarial stress and unknown request tiers
+remain exact. The 128-step verifier currently uses an offline-calibrated
+trigger schedule, so it is evidence for the design rather than a general live
+verifier.
 
-The next expansion is not new sparse-attention policy work; it is extending
-that planned/native path across more layers, lengths, devices, and model
-families, while treating B1/B2 as a separate backend-kernel project.
+### What the numbers do not claim
 
-The artifact-driven policy compiler turns sweep/rollout evidence into policy
-cells and registry metadata:
+- StreamAttn is not universally faster than FlashInfer on every exact shape.
+- Seed-only speedups are not exact-kernel speedups; they come from validated
+  work avoidance.
+- No A100, B200, paged-KV, FP8, or non-Qwen model-family performance claim has
+  been promoted yet. A native paged-KV implementation exists, but its H100
+  phase diagram is still pending.
+- The repository does not currently claim a direct universal win over
+  FlashAttention training kernels.
+
+## Installation
+
+StreamAttn requires Python 3.10+ and PyTorch. Triton is optional for CPU use but
+required for the native CUDA paths.
 
 ```bash
-python benchmarks/compile_streamattn_seed_policy.py \
-  --sweep-json artifacts/gate0/seed_only_layer_sweep_l0_l23_b4_h100.json \
-  --closed-loop-dir artifacts/gate0 \
-  --summary-json artifacts/gate0/compiled_seed_policy_qwen25_05b_32k_b4_h100.json
+git clone https://github.com/MagellaX/StreamAttn.git
+cd StreamAttn
+
+# Development install
+python -m pip install -e ".[dev]"
+
+# Native Triton kernels on supported Linux/x86-64 systems
+python -m pip install -e ".[triton]"
+
+# Optional Hugging Face helpers
+python -m pip install -e ".[hf]"
 ```
 
-For the current Qwen2.5-0.5B 32K B4 evidence, the compiler reproduces the six
-green layers L1, L2, L5, L6, L8, and L18. It requires both the last-32 layer
-sweep gate and per-layer 32-step teacher-forced, greedy, and coupled top-p
-rollout gates before a cell can enter the registry.
+The package is currently a portable `py3-none-any` wheel. GPU kernels are
+compiled for the installed device at runtime, so separate A100/H100/B200 Python
+wheels are not needed.
 
-For new model buckets, use the Modal policy pipeline to run sweep, validate
-candidates, and compile a summary in one H100 job:
+## Quick Start
 
-```bash
-modal run benchmarks/modal_compile_streamattn_seed_policy.py \
-  --model Qwen/Qwen2.5-1.5B-Instruct \
-  --layers 0-27 \
-  --kv-len 32768 \
-  --batch-size 4 \
-  --output-dir artifacts/gate0/qwen25_15b_32k_b4
-```
+### One-shot exact decode
 
-The pipeline only runs closed-loop rollout for sweep-passing candidate layers.
-It writes the sweep, per-candidate rollout artifacts, compiled policy summary,
-and `seed_policy_pipeline_summary.json` into the output directory.
-
-Qwen2.5-3B is the current largest packaged Qwen-family expansion. The 32K/B4
-pipeline found ten candidate layers and packaged eight green layers: L0, L14,
-L16, L24, L26, L27, L29, and L35. The multi-layer threshold gate in
-`artifacts/gate0/qwen25_3b_32k_b4_runtime/threshold_layers_h100.json` confirms
-all eight cells are already profitable at B4 with the planned direct seed path,
-so these cells do not need the two-kernel split-seed path.
-
-Multi-layer safety is stricter than isolated per-layer safety. For Qwen2.5-3B,
-the strict B4 route bundle is seven layers:
-
-```text
-L0, L14, L16, L24, L26, L27, L35
-```
-
-The all-eight bundle including L29 kept top1/greedy/sample tokens stable but
-exceeded the strict KL gate. The seven-layer bundle passes teacher-forced,
-greedy, and coupled top-p rollout and is captured in
-`stream_attention/policies/qwen25_3b_32k_b4_seed_only_bundle.json`.
-
-To benchmark several validated layers against the same capture, pass `--layers`
-to the Modal threshold runner:
-
-```bash
-modal run benchmarks/modal_seed_only_wrapper_batch_threshold.py \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --layers 0,14,16,24,26,27,29,35 \
-  --kv-len 32768 \
-  --batch-sizes 4,8 \
-  --product-min-batch 4 \
-  --output-json artifacts/gate0/qwen25_3b_32k_b4_runtime/threshold_layers_h100.json
-```
-
-To validate a multi-layer route bundle in one model forward path:
-
-```bash
-modal run benchmarks/modal_gate0_seed_only_multi_layer_rollout.py \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --layers 0,14,16,24,26,27,35 \
-  --max-seq 32768 \
-  --batch-size 4 \
-  --steps 32 \
-  --output-json artifacts/gate0/qwen25_3b_32k_b4_multi_layer/drop_l29_rollout_h100.json
-```
-
-`StreamAttnSeedOnlyDecodeService.plan_direct_seed_only(...)` is the first step
-in that direction: it validates policy and tensor invariants once, binds fixed
-Q/K/V/output buffers, and returns a `StreamAttnSeedOnlyDirectRunner` whose
-steady-state `run()` path launches the prechecked direct seed kernel without
-per-step routing.
-
-The B4 promotion is backed by `artifacts/seed_only_direct_below8_h100_gate.json`
-for runtime and `artifacts/gate0/seed_only_b4_closed_loop_h100.json` for
-32-step teacher-forced, greedy, coupled top-p, and forced-same-token safety.
-
-The first actual-model decode speedup for the Qwen2.5-3B strict route uses the
-native routed cache prototype:
-
-```bash
-modal run benchmarks/modal_seed_only_route_bundle_decode.py \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --layers 0,14,16,24,26,27,35 \
-  --no-use-packaged-policies \
-  --batch-size 8 \
-  --max-seq 32768 \
-  --steps 32 \
-  --native-routed-cache
-```
-
-On H100 this measured `1.136x` full-model decode speedup with strict safety
-passing and zero routed-layer `DynamicCache.update` calls. StreamAttn now owns
-the routed K/V cache and mask-length bookkeeping for this route.
-
-A fused routed-layer path is also available:
-
-```bash
-modal run benchmarks/modal_seed_only_route_bundle_decode.py \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --layers 0,14,16,24,26,27,35 \
-  --no-use-packaged-policies \
-  --batch-size 8 \
-  --max-seq 32768 \
-  --steps 32 \
-  --native-routed-cache \
-  --fused-rope-append-seed
-```
-
-This fuses Qwen RoPE, native K/V append, and seed-only attention for routed
-layers. It was the intermediate `1.163x` actual-model result. The current
-validated-bucket preset also enables packed QKV projection, direct `o_proj`,
-mixed L2-S416 policy support, and measured per-layer kernel overrides:
-
-```bash
-modal run benchmarks/modal_seed_only_route_bundle_decode.py \
-  --model Qwen/Qwen2.5-3B-Instruct \
-  --product-fast-path qwen25_3b_b8_validated \
-  --batch-size 8 \
-  --max-seq 32768 \
-  --steps 32
-```
-
-On H100 this preset measured `1.1926x` complete-model decode speedup, zero
-top1/sample changes, and KL max `9.96e-05` over the 32-step validated suite.
-It is not a universal request route: adversarial stress and unknown risk tiers
-fail closed to exact-native.
-
-The unverified fast path did not pass the stricter 128-step margin gate despite
-zero top1/sample changes (`1.1638x`, KL max `1.039e-04`, top-5 overlap 3/5).
-The current `verified_auto` research candidate performs row-selective native
-exact refresh from an offline bucket-step canary. It passed all strict 128-step
-gates over 1,024 cases at `1.1569x` model speedup, with KL max `9.32e-05` and
-top-5 overlap at least 4/5. This proves that verification can preserve both
-strict safety and a model-level win, but the offline trigger schedule must be
-replaced by a selective live signal before general product deployment. See:
-
-- `stream_attention/policies/qwen25_3b_32k_b8_bucket_conditioned_route.json`
-- `stream_attention/policies/qwen25_3b_32k_b8_verified_auto_route.json`
-
-## Contributing
-
-Start with [CONTRIBUTING.md](CONTRIBUTING.md) and use the structured GitHub
-issue or pull-request templates. Every contribution must pass the stable
-`CI / Required checks` result, which aggregates policy integrity, CPU tests on
-Python 3.10/3.11, and package validation. GPU performance claims additionally
-require an owner-run device artifact with the shape, baseline, correctness
-gate, and timing protocol recorded explicitly.
-
-
-## API Reference
-
-### StreamAttention
-- Purpose: High-level module. Accepts either `hidden_states` ([B, T, H*D]) or explicit `(query, key, value)` ([B, T, H, D]).
-- Signature (selected):
-  - `forward(query, key, value, causal: bool=True, return_lse: bool=False, attention_mask: Optional[Tensor]=None, dropout_p: float=0.0, alibi_slopes: Optional[Tensor]=None, deterministic: Optional[bool]=None)` -> `Tensor` (and `lse` if requested)
-  - `benchmark(seq_len: int, batch_size: int=1, warmup: int=10, iterations: int=100)` -> metrics dict
-  - `set_deterministic(enabled: bool, seed: Optional[int]=None)` -> control deterministic dropout/mask behavior
-- Autograd: The Triton kernel now runs a single-sweep backward pass (streaming dQ/dK/dV using the saved `lse`) covering masks, dropout, and ALiBi. PyTorch SDPA is used only when Triton is unavailable.
-
-### Multihead-style wrapper
-Use `create_stream_attention` to obtain an attention layer with a familiar
-`nn.MultiheadAttention` interface. Triton kernels are used automatically when
-available, otherwise PyTorch's SDPA backend is selected:
+Decode tensors use `[batch, sequence, heads, head_dim]`. For autoregressive
+decode the query sequence is normally one token.
 
 ```python
 import torch
-from stream_attention import create_stream_attention
+import stream_attention as stream_attn
 
-mha = create_stream_attention(embed_dim=512, num_heads=8, batch_first=True)
-x = torch.randn(2, 16, 512)
-out, _ = mha(x, x, x)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.bfloat16 if device == "cuda" else torch.float32
+
+q = torch.randn(4, 1, 16, 64, device=device, dtype=dtype)
+k_cache = torch.randn(4, 32768, 2, 64, device=device, dtype=dtype)
+v_cache = torch.randn_like(k_cache)
+
+output, info = stream_attn.decode(
+    q,
+    k_cache,
+    v_cache,
+    mode="exact_native",
+)
+
+print(output.shape)
+print(info.backend_used)
 ```
 
-### FlashAttentionV3
-- Purpose: Baseline using PyTorch SDPA with the flash backend on CUDA, falling back gracefully on CPU.
-- Signature (selected):
-  - `forward(query, key, value, causal: bool=True)` → `Tensor`
-  - `benchmark(...)` → metrics dict
+On an unsupported native CUDA shape, the exact path uses the safe exact
+implementation available in the installed environment. Promoted serving cells
+are always explicit; StreamAttn does not infer a performance claim from a
+successful launch.
 
-### StreamAttentionConfig
-Selected fields (see source for full set):
-- `num_heads`, `head_dim`
-- `tile_size_q`, `tile_size_k`
-- `use_fp16`, `use_qkv_projections`, `qkv_bias`, `use_layer_norm`, `dropout`
-- `enable_distributed`
-- `max_sequence_length`
-- Ring/Star attention parameters for long-context variants
-- `.from_env()` reads `STREAM_ATTENTION_*` variables; see `.env.example`
+### Exact decode from a paged KV cache
 
+Paged decode accepts physical NHD or HND pages and a per-request block table.
+The native kernel resolves logical tokens to physical pages inside the
+online-softmax loop; it does not gather pages into a contiguous cache.
 
-## Benchmarking vs FlashAttention-3
+~~~python
+import torch
+import stream_attention as stream_attn
 
-Two CLIs are provided:
+q = torch.randn(4, 1, 16, 64, device="cuda", dtype=torch.bfloat16)
+k_pages = torch.randn(8192, 16, 2, 64, device="cuda", dtype=torch.bfloat16)
+v_pages = torch.randn_like(k_pages)
+page_table = torch.arange(
+    8192, device="cuda", dtype=torch.int32
+).view(4, 2048)
+sequence_lengths = torch.full(
+    (4,), 32768, device="cuda", dtype=torch.int32
+)
+
+cache = stream_attn.PagedKVCache(
+    key=k_pages,
+    value=v_pages,
+    page_table=page_table,
+    sequence_lengths=sequence_lengths,
+    layout="NHD",
+)
+
+plan = stream_attn.StreamAttnEngine().plan(
+    q,
+    cache,
+    mode="exact_native",
+)
+output, info = plan.run()
+~~~
+
+The page table and sequence-length buffers may be updated in place between
+steps, provided they continue to satisfy the bounds validated during planning.
+The current paged backend is exact and allocation-free after planning, but it
+is not yet a promoted performance route.
+
+### Plan once for a decode loop
+
+Stable serving loops should validate shapes and policy once, then reuse the
+same Q/K/V and output buffers:
+
+```python
+import torch
+from stream_attention import StreamAttnEngine
+
+q = torch.randn(4, 1, 14, 64, device="cuda", dtype=torch.float16)
+k_cache = torch.randn(4, 32768, 2, 64, device="cuda", dtype=torch.float16)
+v_cache = torch.randn_like(k_cache)
+
+engine = StreamAttnEngine(
+    policy_name="qwen25_05b_l8_32k_seed_only_batched",
+    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    layer_id=8,
+)
+
+plan = engine.plan(
+    q,
+    k_cache,
+    v_cache,
+    mode="verified_auto",
+)
+
+# Update q/k_cache/v_cache contents in place between decode steps.
+output, info = plan.run()
+print(info.backend_used, plan.reason)
+```
+
+`verified_auto` selects seed-only only when model, layer, dtype, batch, KV
+bucket, GQA shape, device, and policy constraints match. Otherwise it executes
+exact attention. `seed_only_native` is the strict explicit mode and raises when
+the requested seed route cannot be planned.
+
+### General forward and training module
+
+`StreamAttention` provides the fused online-softmax forward/backward path for
+standard transformer experimentation:
+
+```python
+import torch
+from stream_attention import StreamAttention, StreamAttentionConfig
+
+config = StreamAttentionConfig(num_heads=8, head_dim=64)
+attention = StreamAttention(config).cuda()
+
+q = torch.randn(2, 1024, 8, 64, device="cuda", dtype=torch.float16,
+                requires_grad=True)
+k = torch.randn_like(q)
+v = torch.randn_like(q)
+
+output = attention(q, k, v, causal=True)
+output.square().mean().backward()
+```
+
+The Triton path supports boolean/additive masks, dropout, deterministic Philox
+seeding, ALiBi, and a streaming backward pass. Unsupported environments fall
+back to PyTorch SDPA.
+
+## Decode Request Lifecycle
+
+The native engine deliberately separates model-specific work from attention:
+
+```text
+request
+  -> model adapter projects Q/K/V and applies RoPE
+  -> adapter appends K/V to its cache
+  -> StreamAttn validates or reuses a fixed-buffer plan
+       -> exact_native: stream every KV tile
+       -> seed_only_native: stream the validated seed blocks
+       -> verified_auto: choose seed only on a matching policy cell
+  -> online softmax produces [B, 1, Hq, D]
+  -> model adapter applies output projection
+  -> sampler chooses the next token
+```
+
+Planning is kept outside the steady-state loop. The hot path reuses workspaces,
+seed schedules, output buffers, and native cache views instead of rebuilding
+Python metadata on every token.
+
+## Online Softmax
+
+For each query row, StreamAttn carries a running maximum `m`, normalizer `l`,
+and weighted value numerator `n`. When a new score tile arrives:
+
+```text
+m_new = max(m, max(scores_tile))
+alpha = exp(m - m_new)
+p     = exp(scores_tile - m_new)
+
+l = alpha * l + sum(p)
+n = alpha * n + p @ V_tile
+m = m_new
+
+output = n / l
+```
+
+This is numerically stable, requires linear auxiliary memory, and composes
+across split tiles. Exact mode applies it to every KV tile. Seed-only mode uses
+the same normalization over the policy-selected KV set.
+
+## Policy Boundaries
+
+Packaged policy cells live in
+[`stream_attention/policies/registry.json`](stream_attention/policies/registry.json).
+Each cell records the model and layer, tensor space, dtype, KV bucket, minimum
+batch, head geometry, seed schedule, safety gates, and measured performance.
+
+A layer that passes in isolation is not automatically safe in a multi-layer
+route. Route bundles are evaluated with teacher-forced replay, greedy rollout,
+coupled sampling, and adversarial stress prompts. Failed or unknown cells are
+not silently promoted.
+
+The dynamic-selector research follows the same rule: query-aware block
+selection is interesting only if its selection overhead, model-level safety,
+and net decode latency all pass. Research utilities are not part of the default
+serving path.
+
+## Benchmarking
+
+The lightweight package CLIs exercise the general fused attention module:
 
 ```bash
-# Performance comparison across sequence lengths
-stream-attention-benchmark --seq 512 1024 2048 4096 --batch 1 --heads 8 --dim 64 --warmup 10 --iters 50
+stream-attention-benchmark \
+  --seq 512 1024 2048 4096 \
+  --batch 1 --heads 8 --dim 64 --warmup 10 --iters 50
 
-# Accuracy sanity check on random inputs
-stream-attention-test --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
+stream-attention-test \
+  --seq 1024 --batch 2 --heads 8 --dim 64 --dtype fp16
 ```
 
-Behavior and methodology:
-- On CUDA, the baseline uses PyTorch SDPA with the flash backend (FlashAttention-3 path). On CPU, both implementations use SDPA in fp32.
-- Metrics reported: per-iteration latency, estimated TFLOPS, and approximate bandwidth based on tensor traffic. Measurements are averaged after warmup.
-- The fused kernel uses Triton on CUDA for forward and single-sweep backward when the custom path is available. Mask, dropout, ALiBi, and deterministic replay are covered by the Triton path; SDPA remains the safety fallback when Triton or a requested shape/backend is unavailable.
-- For reproducibility, fix random seeds, pin CUDA clocks if applicable, and isolate runs. Actual performance depends on GPU architecture, drivers, and PyTorch/Triton versions.
+For native decode research, start with the profiler help instead of assuming a
+default shape:
 
-Example output (format):
-```
-SeqLen  Fused(ms)  Fused(TF)  FA3(ms)  FA3(TF)  FA3/Fused(ms)
-  1024      0.650     90.12     0.700     83.70          1.08
+```bash
+python benchmarks/profile_transposed_wgmma_exact_qk.py --help
+python benchmarks/profile_paged_exact_decode.py --help
+python benchmarks/profile_seed_only_route_bundle_decode.py --help
+python benchmarks/profile_seed_kernel_mode_autotune.py --help
 ```
 
+A publishable performance result should record:
 
-## Kernel Design (Fused Online Softmax)
+- GPU model, CUDA, driver, PyTorch, Triton, and baseline versions
+- batch, KV length, Q/KV heads, head dimension, dtype, and cache layout
+- warmup, repetitions, timing method, and clock/power conditions
+- numerical tolerance or model-distribution gate
+- paired raw timings, not speedup alone
 
-The fused kernel streams over K/V tiles while maintaining per-query running statistics for online softmax, avoiding materialization of the full attention matrix.
+FlashInfer is the exact decode reference used by the promoted H100 phase
+diagrams. PyTorch SDPA is the general correctness fallback and training
+reference. FlashAttention-class implementations remain external references,
+not hidden StreamAttn dependencies.
 
-- Tiling:
-  - Queries are processed in blocks of `TILE_M` (configurable via autotune); keys/values are streamed in tiles of `TILE_N`.
-  - Head dimension `D` is processed vectorized. The kernel uses `tl.dot(q, tl.trans(k))` to compute `QK^T` for each tile.
+## Supported Surface
 
-- Online softmax with log-sum-exp:
-  - Maintain `running_max[m]`, `acc_num[m, :]`, `acc_den[m]` for each query row `m`.
-  - For each K/V tile:
-    - `tile_max = max_j qk[m, j]`, `new_max = max(running_max[m], tile_max)`
-    - Rescale previous accumulators by `exp(running_max - new_max)`
-    - `exp_qk = exp(qk - new_max)`
-    - `acc_num += exp_qk @ V_tile`, `acc_den += sum(exp_qk, axis=tile)`
-    - `running_max = new_max`
-  - Final output: `acc_num / acc_den[:, None]`. Log-sum-exp `lse = running_max + log(acc_den)` may be returned for analysis.
+| Area | Current support |
+|---|---|
+| Python | 3.10+ |
+| PyTorch | 2.1+ |
+| CPU | Correctness and SDPA fallback |
+| Native GPU evidence | NVIDIA H100 / SM90 |
+| Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
+| Paged exact decode | Direct NHD/HND page-table kernel; experimental until paired H100 gates pass |
+| Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
+| Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
+| Distributed research | Ring and Star attention prototypes |
+| Not yet promoted | A100, B200, paged KV, FP8 seed cache, second model family |
 
-- Autotuning:
-  - Multiple Triton configurations for `TILE_M`/`TILE_N`, warps, and stages are provided.
-  - Kernel grid: `(ceil_div(M, TILE_M), batch, heads)`
+## Repository Guide
 
-- Numerical stability:
-  - The log-sum-exp re-centering preserves stability across tiles and long sequences.
-  - On CPU, fp16/bf16 inputs are upcast to fp32 where necessary.
+```text
+stream_attention/
+  engine.py                 public fixed-buffer decode engine
+  decode.py                 native modes, planning, and fail-closed service
+  backends/sm90/            promoted Hopper exact kernels and dispatch
+  kernels/                  Triton/CUDA attention kernels
+  policies/                 calibrated policy cells and route bundles
+  core/                     general forward/backward attention modules
+  integration/              model integration helpers
 
-- Backward:
-  - The Triton autograd path recomputes QK tiles using saved `lse`, streams dQ/dK/dV, and avoids materializing the attention matrix. PyTorch SDPA remains the fallback for unsupported environments.
-
-
-## Distributed and Long-Context Variants
-
-- Ring Attention (`stream_attention/core/ring_attention.py`): partitions sequences across devices with overlapped communication and computation. Suitable for near-infinite contexts with linear memory scaling.
-- Star Attention (`stream_attention/core/star_attention.py`): two-phase approach (context encoding, then query processing with aggregated attention). Reduces end-to-end latency for long sequences while preserving accuracy.
-
-Both modules follow numerically stable aggregation strategies (log-sum-exp weighted combining) and can be paired with KV compression.
-
-
-## Memory Optimization Utilities
-
-- KV-cache compression strategies: importance-based, chunk-based, quantized, and hybrid.
-- Gradient checkpointing helpers for sequential modules.
-- `MemoryProfiler` to snapshot and report peak allocations.
-
-Example:
-```python
-from stream_attention.utils.memory import create_kv_compressor
-comp = create_kv_compressor('hybrid')
-ck, cv, stats = comp.compress(keys, values, compression_ratio=8.0)
-print(stats)
+benchmarks/                 profilers, policy compilers, and evidence tools
+docs/                       phase diagrams and research decisions
+examples/                   minimal usage and integration examples
+tests/                      CPU, policy, API, and CUDA-gated tests
 ```
 
+The detailed experiment history is intentionally kept in `docs/` rather than
+the README. Start with:
 
-## Hugging Face Integration
+- [Documentation index](docs/Index.md)
+- [Qwen2.5-3B route evidence](docs/qwen25_3b_32k_b4_seed_policy.md)
+- [Dynamic selector findings](docs/qwen25_3b_dynamic_selector_findings.md)
+- [D128 pipeline ablation](docs/sm90_d128_pipeline_ablation_20260819.md)
+- [Paged exact decode](docs/paged_exact_decode.md)
+- [Literature and backend decision ledger](docs/streamattn_literature_decision_ledger.md)
 
-Helpers are provided to replace attention modules in HF models:
+## Contributing
 
-```python
-from transformers import AutoModel
-from stream_attention.integration.hf import replace_llama_attention
-from stream_attention import StreamAttentionConfig
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. The
+required CI result covers policy integrity, Python 3.10/3.11 CPU tests, package
+validation, and GPU-source contracts. CUDA-source changes also trigger an
+offline SM90 compile check on a standard hosted runner; contributors are not
+expected to pay for GPU CI.
 
-model = AutoModel.from_pretrained("meta-llama/Llama-2-7b-hf")
-cfg = StreamAttentionConfig(num_heads=model.config.num_attention_heads, head_dim=model.config.hidden_size // model.config.num_attention_heads)
-num_replaced = replace_llama_attention(model, cfg)
-print(f"Replaced {num_replaced} attention modules")
+Actual-device performance claims still require a reproducible hardware
+artifact. The contributor harness and evidence requirements are documented in
+[GPU CI and wheels](docs/gpu_ci_and_wheels.md).
+
+Useful local checks:
+
+```bash
+python -m pytest -q
+python benchmarks/check_gpu_source_contract.py
+python -m build
+python benchmarks/check_wheel_contents.py dist/*.whl
 ```
-
-
-## Supported Environments
-
-- PyTorch 2.0+
-- CUDA: fp16 and bf16 supported via SDPA (flash backend where available). Triton kernel requires CUDA.
-- CPU: falls back to SDPA with fp32 compute for correctness and stability.
-- Distributed: query sharding is supported in the fused module for multi-GPU; ring/star provides long-context strategies.
-
 
 ## Roadmap
 
-- Native RoPE / relative positional bias fusion in the Triton kernel (forward + backward)
-- Advanced pipelining (warp specialization, asynchronous staging) and Hopper-specific paths (WGMMA/TMA)
-- Extended autotune coverage across architectures and sequence regimes
-- Optional FP8 path with block-wise scaling
+The project has completed the first proof: StreamAttn-owned exact kernels can
+beat a strong exact decode baseline on guarded H100 cells, and a calibrated
+reduced-work route can speed up complete model decode. The next milestones are:
 
+1. Stabilize the engine surface around `stream_attn.decode(...)`, then add
+   first-class `prefill(...)` and `train(...)` entry points.
+2. Replace offline verification schedules with a selective live runtime
+   verifier.
+3. Add a second model family to test whether policy discovery generalizes
+   beyond Qwen.
+4. Gate paged-KV decode on H100, then expand exact-native evidence to A100 and
+   B200.
+5. Improve B1/B2 economics with a single-kernel cooperative seed path.
+6. Promote query-aware dynamic selection only where it beats exact fallback
+   after selector overhead.
+7. Evaluate FP8/FP4 seed caches under the same distribution-level gates.
 
-## Development and Testing
+The long-term API target is:
 
-- Benchmarks: `stream-attention-benchmark` CLI
-- Accuracy checks: `stream-attention-test` CLI
-- Examples: `examples/` directory includes basic usage, integrations, and long-context runs
-- Environment variables: see `.env.example`; `StreamAttentionConfig.from_env()` can bootstrap configuration
+```python
+stream_attn.decode(...)
+stream_attn.prefill(...)
+stream_attn.train(...)
+```
 
+with native exact, seed-only, adaptive, and verified routes behind one engine.
 
 ## License
 
-Apache License. See `LICENSE` for details.
+Apache-2.0. See [LICENSE](LICENSE).

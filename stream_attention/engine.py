@@ -26,6 +26,12 @@ from .decode import (
     StreamAttnServingInfo,
     normalize_stream_attn_mode,
 )
+from .paged import (
+    PAGED_EXACT_NATIVE_BACKEND,
+    PagedExactDecodePlan,
+    PagedExactDecodeRunner,
+    PagedKVCache,
+)
 
 
 @dataclass(frozen=True)
@@ -38,11 +44,15 @@ class StreamAttnEnginePlan:
     model_id: Optional[str]
     layer_id: Optional[int]
     query: torch.Tensor
-    key_cache: torch.Tensor
-    value_cache: torch.Tensor
+    key_cache: Union[torch.Tensor, PagedKVCache]
+    value_cache: Optional[torch.Tensor]
     service: StreamAttnSeedOnlyDecodeService
     direct_runner: Optional[
-        Union[StreamAttnSeedOnlyDirectRunner, StreamAttnExactNativeDirectRunner]
+        Union[
+            StreamAttnSeedOnlyDirectRunner,
+            StreamAttnExactNativeDirectRunner,
+            PagedExactDecodeRunner,
+        ]
     ] = None
 
     @property
@@ -58,6 +68,8 @@ class StreamAttnEnginePlan:
                 if return_info
                 else self.direct_runner.run()
             )
+        if self.value_cache is None or not isinstance(self.key_cache, torch.Tensor):
+            raise RuntimeError("non-native plan is missing contiguous KV tensors")
         return self.service.run(
             self.query,
             self.key_cache,
@@ -134,11 +146,71 @@ class StreamAttnEngine:
             direct_runner=direct_runner,
         )
 
+    def _paged_exact_plan(
+        self,
+        *,
+        mode: str,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+    ) -> StreamAttnEnginePlan:
+        if mode == STREAMATTN_MODE_SEED_ONLY_NATIVE:
+            raise ValueError(
+                "seed_only_native does not yet support paged KV; "
+                "use exact_native or verified_auto"
+            )
+        paged_plan = PagedExactDecodePlan.build(query, cache)
+        reason = (
+            "explicit_paged_exact_native"
+            if mode == STREAMATTN_MODE_EXACT_NATIVE
+            else "paged_kv_exact_only"
+        )
+        kv_len = int(cache.sequence_lengths.max().item())
+        backend = paged_plan.backend
+        info = StreamAttnServingInfo(
+            backend_used=backend,
+            policy_id=None,
+            fallback_reason=None,
+            batch_size=int(query.shape[0]),
+            kv_len=kv_len,
+            layer_id=None,
+            model_id=None,
+            dtype=str(query.dtype).removeprefix("torch."),
+            device=str(query.device),
+            plan_backend=backend,
+            plan_reason=reason,
+            seed_only_enabled=False,
+            safety_policy_matched=False,
+            runtime_counters={
+                "backend_counts": {backend: 1},
+                "fallback_reasons": {},
+            },
+            stats={
+                "layout": cache.normalized_layout,
+                "page_size": cache.page_size,
+                "max_pages_per_request": cache.max_pages_per_request,
+                "splits": paged_plan.splits,
+                "workspace_bytes": paged_plan.workspace_bytes,
+            },
+        )
+        runner = PagedExactDecodeRunner(plan=paged_plan, info=info)
+        return StreamAttnEnginePlan(
+            mode=mode,
+            backend=backend,
+            reason=reason,
+            model_id=None,
+            layer_id=None,
+            query=query,
+            key_cache=cache,
+            value_cache=None,
+            service=self.service,
+            direct_runner=runner,
+        )
+
     def plan(
         self,
         query: torch.Tensor,
-        key_cache: torch.Tensor,
-        value_cache: torch.Tensor,
+        key_cache: Union[torch.Tensor, PagedKVCache],
+        value_cache: Optional[torch.Tensor] = None,
         *,
         mode: str = STREAMATTN_MODE_VERIFIED_AUTO,
         model_id: Optional[str] = None,
@@ -147,6 +219,18 @@ class StreamAttnEngine:
         """Validate once and bind a native decode plan to stable buffers."""
 
         normalized_mode = normalize_stream_attn_mode(mode)
+        if isinstance(key_cache, PagedKVCache):
+            if value_cache is not None:
+                raise ValueError(
+                    "value_cache must be omitted when key_cache is PagedKVCache"
+                )
+            return self._paged_exact_plan(
+                mode=normalized_mode,
+                query=query,
+                cache=key_cache,
+            )
+        if value_cache is None:
+            raise ValueError("value_cache is required for contiguous KV decode")
         effective_model_id = model_id if model_id is not None else self.service.model_id
         effective_layer_id = layer_id if layer_id is not None else self.service.layer_id
         if normalized_mode == STREAMATTN_MODE_EXACT_NATIVE:
@@ -197,8 +281,8 @@ class StreamAttnEngine:
     def decode(
         self,
         query: torch.Tensor,
-        key_cache: torch.Tensor,
-        value_cache: torch.Tensor,
+        key_cache: Union[torch.Tensor, PagedKVCache],
+        value_cache: Optional[torch.Tensor] = None,
         *,
         mode: str = STREAMATTN_MODE_VERIFIED_AUTO,
         model_id: Optional[str] = None,
@@ -219,8 +303,8 @@ class StreamAttnEngine:
 
 def stream_attn_decode(
     query: torch.Tensor,
-    key_cache: torch.Tensor,
-    value_cache: torch.Tensor,
+    key_cache: Union[torch.Tensor, PagedKVCache],
+    value_cache: Optional[torch.Tensor] = None,
     *,
     mode: str = STREAMATTN_MODE_VERIFIED_AUTO,
     engine: Optional[StreamAttnEngine] = None,

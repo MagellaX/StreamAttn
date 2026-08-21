@@ -11,6 +11,10 @@ from pathlib import Path
 
 REQUIRED_FILES = {
     "stream_attention/__init__.py",
+    "stream_attention/backends/sm90/transposed_gqa_exact.py",
+    "stream_attention/backends/sm90/transposed_gqa_exact_sources.py",
+    "stream_attention/kernels/gate0_seed_only_triton.py",
+    "stream_attention/kernels/qwen_o_proj_triton.py",
     "stream_attention/policies/registry.json",
 }
 FORBIDDEN_PREFIXES = ("artifacts/", "benchmarks/", "tests/")
@@ -24,6 +28,8 @@ EXPECTED_REPOSITORY_URL = "https://github.com/MagellaX/StreamAttn"
 
 def check_wheel(path: Path) -> dict[str, object]:
     failures: list[str] = []
+    if not path.name.endswith("-py3-none-any.whl"):
+        failures.append(f"wheel_tag_not_portable:{path.name}")
     with zipfile.ZipFile(path) as wheel:
         names = set(wheel.namelist())
         for required in sorted(REQUIRED_FILES):
@@ -61,6 +67,10 @@ def check_wheel(path: Path) -> dict[str, object]:
                 failures.append("metadata_triton_is_mandatory")
         if len(wheel_files) != 1:
             failures.append(f"wheel_file_count:{len(wheel_files)}")
+        else:
+            wheel_metadata = BytesParser().parsebytes(wheel.read(wheel_files[0]))
+            if "py3-none-any" not in (wheel_metadata.get_all("Tag") or []):
+                failures.append("wheel_metadata_portable_tag_missing")
 
         registry_name = "stream_attention/policies/registry.json"
         if registry_name in names:

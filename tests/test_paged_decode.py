@@ -1,0 +1,185 @@
+import math
+
+import pytest
+import torch
+
+import stream_attention as stream_attn
+from stream_attention.paged import (
+    PAGED_EXACT_NATIVE_BACKEND,
+    PagedExactDecodePlan,
+    PagedKVCache,
+    choose_paged_exact_splits,
+    paged_exact_reference,
+)
+
+
+def _make_paged_inputs(*, layout: str = "NHD", device: str = "cpu"):
+    torch.manual_seed(17)
+    batch = 2
+    query_heads = 4
+    kv_heads = 2
+    dim = 8
+    page_size = 4
+    num_pages = 5
+    query = torch.randn(
+        batch, 1, query_heads, dim, device=device, dtype=torch.float32
+    )
+    key_nhd = torch.randn(
+        num_pages, page_size, kv_heads, dim, device=device, dtype=torch.float32
+    )
+    value_nhd = torch.randn_like(key_nhd)
+    page_table = torch.tensor(
+        [[3, 0, -1], [1, 4, 2]], device=device, dtype=torch.int32
+    )
+    sequence_lengths = torch.tensor([7, 10], device=device, dtype=torch.int32)
+    if layout == "NHD":
+        key, value = key_nhd, value_nhd
+    else:
+        key = key_nhd.permute(0, 2, 1, 3).contiguous()
+        value = value_nhd.permute(0, 2, 1, 3).contiguous()
+    cache = PagedKVCache(
+        key=key,
+        value=value,
+        page_table=page_table,
+        sequence_lengths=sequence_lengths,
+        layout=layout,
+    )
+    return query, cache
+
+
+def _dense_expected(query: torch.Tensor, cache: PagedKVCache) -> torch.Tensor:
+    output = torch.empty_like(query)
+    group_size = query.shape[2] // cache.kv_heads
+    scale = 1.0 / math.sqrt(float(query.shape[3]))
+    for batch_idx in range(query.shape[0]):
+        sequence_length = int(cache.sequence_lengths[batch_idx].item())
+        pages = []
+        active_pages = (sequence_length + cache.page_size - 1) // cache.page_size
+        for logical_page in range(active_pages):
+            physical_page = int(cache.page_table[batch_idx, logical_page].item())
+            if cache.normalized_layout == "NHD":
+                pages.append(cache.key[physical_page])
+            else:
+                pages.append(cache.key[physical_page].transpose(0, 1))
+        keys = torch.cat(pages, dim=0)[:sequence_length]
+        pages = []
+        for logical_page in range(active_pages):
+            physical_page = int(cache.page_table[batch_idx, logical_page].item())
+            if cache.normalized_layout == "NHD":
+                pages.append(cache.value[physical_page])
+            else:
+                pages.append(cache.value[physical_page].transpose(0, 1))
+        values = torch.cat(pages, dim=0)[:sequence_length]
+        for head_idx in range(query.shape[2]):
+            kv_head = head_idx // group_size
+            scores = (
+                keys[:, kv_head].float() @ query[batch_idx, 0, head_idx].float()
+            ) * scale
+            output[batch_idx, 0, head_idx] = (
+                scores.softmax(dim=0)[:, None] * values[:, kv_head].float()
+            ).sum(dim=0)
+    return output
+
+
+@pytest.mark.parametrize("layout", ["NHD", "HND"])
+def test_paged_reference_matches_dense_without_repacking_runtime(layout):
+    query, cache = _make_paged_inputs(layout=layout)
+
+    output = paged_exact_reference(query, cache)
+    expected = _dense_expected(query, cache)
+
+    torch.testing.assert_close(output, expected, atol=1e-6, rtol=1e-5)
+
+
+def test_paged_plan_reuses_output_and_observes_page_mutation():
+    query, cache = _make_paged_inputs()
+    plan = PagedExactDecodePlan.build(query, cache)
+
+    first = plan.run().clone()
+    output_pointer = plan.output.data_ptr()
+    cache.key[3].add_(0.5)
+    second = plan.run()
+
+    assert second.data_ptr() == output_pointer
+    assert not torch.equal(first, second)
+    assert plan.workspace_bytes == 0
+    assert plan.backend == "torch_paged_exact_reference"
+
+
+def test_public_decode_accepts_paged_cache_and_verified_auto_fails_closed_exact():
+    query, cache = _make_paged_inputs()
+
+    output, info = stream_attn.decode(query, cache, mode="verified_auto")
+    expected = _dense_expected(query, cache)
+
+    torch.testing.assert_close(output, expected, atol=1e-6, rtol=1e-5)
+    assert info.backend_used == "torch_paged_exact_reference"
+    assert info.plan_reason == "paged_kv_exact_only"
+    assert info.seed_only_enabled is False
+    assert info.stats["page_size"] == 4
+
+
+def test_public_decode_rejects_seed_only_and_redundant_value_cache():
+    query, cache = _make_paged_inputs()
+
+    with pytest.raises(ValueError, match="does not yet support paged KV"):
+        stream_attn.decode(query, cache, mode="seed_only_native")
+    with pytest.raises(ValueError, match="value_cache must be omitted"):
+        stream_attn.decode(query, cache, torch.empty_like(query), mode="exact_native")
+
+
+def test_paged_metadata_validation_rejects_bad_active_page_and_length():
+    query, cache = _make_paged_inputs()
+    bad_table = cache.page_table.clone()
+    bad_table[0, 1] = cache.num_pages
+    bad_page_cache = PagedKVCache(
+        cache.key,
+        cache.value,
+        bad_table,
+        cache.sequence_lengths,
+        cache.layout,
+    )
+    with pytest.raises(ValueError, match="active page_table"):
+        bad_page_cache.validate(query)
+
+    bad_lengths = cache.sequence_lengths.clone()
+    bad_lengths[1] = cache.max_sequence_length + 1
+    bad_length_cache = PagedKVCache(
+        cache.key,
+        cache.value,
+        cache.page_table,
+        bad_lengths,
+        cache.layout,
+    )
+    with pytest.raises(ValueError, match="exceed page_table capacity"):
+        bad_length_cache.validate(query)
+
+
+def test_paged_split_rule_targets_producer_parallelism():
+    assert choose_paged_exact_splits(
+        batch=1, query_heads=16, max_pages_per_request=2048
+    ) == 16
+    assert choose_paged_exact_splits(
+        batch=4, query_heads=16, max_pages_per_request=2048
+    ) == 4
+    assert choose_paged_exact_splits(
+        batch=8, query_heads=16, max_pages_per_request=2048
+    ) == 2
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="requires CUDA",
+)
+def test_cuda_paged_exact_matches_dense_and_uses_native_backend():
+    from stream_attention.kernels.paged_exact_triton import TRITON_AVAILABLE
+
+    if not TRITON_AVAILABLE:
+        pytest.skip("requires Triton")
+    query, cache = _make_paged_inputs(device="cuda")
+    output, info = stream_attn.decode(query, cache, mode="exact_native")
+    expected = _dense_expected(query, cache)
+
+    torch.testing.assert_close(output, expected, atol=2e-4, rtol=2e-4)
+    assert info.backend_used == PAGED_EXACT_NATIVE_BACKEND
+    assert info.stats["workspace_bytes"] > 0

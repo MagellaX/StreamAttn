@@ -17,6 +17,8 @@ Describe the problem and the smallest coherent change that solves it.
 - [ ] New behavior has focused tests
 - [ ] README/docs reflect changed public claims or boundaries
 - [ ] No secrets, private artifacts, or credentials are included
+- [ ] SM90-source changes pass `CUDA Source Build`, or this PR does not change SM90 source
+- [ ] GPU behavior changes include `run_gpu_correctness_ci.py` device output
 
 For GPU/performance changes, provide the device, software versions, complete
 shape, exact command, timing protocol, correctness tolerance, paired baseline,
