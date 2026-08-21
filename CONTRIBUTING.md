@@ -12,6 +12,8 @@ claim type, correctness evidence, and performance evidence agree.
 4. Run the portable checks locally.
 5. Open a pull request using the repository template.
 6. Resolve the required `CI / Required checks` result and maintainer review.
+7. For SM90-source changes, resolve the path-triggered `CUDA Source Build`
+   check and attach runtime GPU evidence as described below.
 
 Do not include API keys, access tokens, private model artifacts, or credentials
 in issues, logs, commits, or benchmark output.
@@ -28,13 +30,22 @@ python benchmarks/check_wheel_contents.py dist/*.whl
 ```
 
 The GitHub workflow repeats policy integrity, the CPU suite on Python 3.10 and
-3.11, and source/wheel validation. GitHub-hosted CI does not claim GPU kernel
-qualification.
+3.11, and source/wheel validation. GPU-source changes also trigger free
+CPU-hosted Triton import checks and an offline SM90 CUDA build. These checks do
+not claim that a kernel executed correctly on hardware.
 
 ## GPU and performance changes
 
 CUDA, Triton, exact-native, and seed-only performance claims require an
-owner-run GPU artifact in addition to portable CI. Include:
+actual-device artifact in addition to portable CI. Start with:
+
+```bash
+python -m pip install -e .[dev,triton]
+python benchmarks/run_gpu_correctness_ci.py
+```
+
+For promoted SM90 exact-native changes, also run the harness with
+`--require-sm90 --cutlass-root /path/to/FlashMLA-ETAP/csrc/cutlass`. Include:
 
 - GPU model, driver, CUDA, PyTorch, Triton, and baseline versions;
 - `B`, `Hq`, `Hkv`, `N`, `D`, dtype, cache layout, and attention semantics;
@@ -43,6 +54,11 @@ owner-run GPU artifact in addition to portable CI. Include:
 - numerical reference, tolerances, finite-output and mutation checks;
 - the JSON artifact path or an attached artifact;
 - confirmation that every paid GPU job was stopped after completion.
+
+The current wheel is intentionally `py3-none-any`: it ships Triton/CUDA source
+and compiles device-specific code at runtime. Do not add per-GPU wheels unless
+the package begins embedding native binaries. See
+[`docs/gpu_ci_and_wheels.md`](docs/gpu_ci_and_wheels.md).
 
 Never describe a seed-only result as an exact-attention victory. Never promote
 one measured GPU cell into a universal device, model, or shape claim. New

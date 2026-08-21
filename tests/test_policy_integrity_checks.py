@@ -59,8 +59,24 @@ Project-URL: Repository, https://github.com/MagellaX/StreamAttn
         archive.writestr("stream_attention/__init__.py", "")
         archive.writestr("stream_attention/policies/registry.json", "not-json")
         archive.writestr("stream_attention-1.0.0.dist-info/METADATA", metadata)
-        archive.writestr("stream_attention-1.0.0.dist-info/WHEEL", "Wheel-Version: 1.0\n")
+        archive.writestr(
+            "stream_attention-1.0.0.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nTag: py3-none-any\n",
+        )
 
     result = check_wheel(wheel)
 
     assert "registry_json_invalid" in result["failures"]
+
+
+def test_wheel_checker_rejects_platform_tag(tmp_path: Path):
+    wheel = tmp_path / "stream_attention-1.0.0-cp311-cp311-linux_x86_64.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("stream_attention/__init__.py", "")
+
+    result = check_wheel(wheel)
+
+    assert any(
+        failure.startswith("wheel_tag_not_portable:")
+        for failure in result["failures"]
+    )

@@ -15,7 +15,7 @@ Key Features:
 
 __version__ = "1.0.0"
 __author__ = "StreamAttention Team"
-__license__ = "MIT"
+__license__ = "Apache-2.0"
 
 from .core.config import StreamAttentionConfig
 from .core.fused_online_attention import (
@@ -103,6 +103,14 @@ from .engine import (
     stream_attn_decode,
 )
 from .backends.sm90 import ExactDecodePlan
+from .paged import (
+    PAGED_EXACT_NATIVE_BACKEND,
+    PagedExactDecodePlan,
+    PagedKVCache,
+    choose_paged_exact_splits,
+    paged_exact_reference,
+    stream_attn_paged_exact_decode,
+)
 
 # ``import stream_attention as stream_attn; stream_attn.decode(...)``
 decode = stream_attn_decode
@@ -205,6 +213,12 @@ __all__ = [
     "StreamAttnEngine",
     "StreamAttnEnginePlan",
     "ExactDecodePlan",
+    "PAGED_EXACT_NATIVE_BACKEND",
+    "PagedExactDecodePlan",
+    "PagedKVCache",
+    "choose_paged_exact_splits",
+    "paged_exact_reference",
+    "stream_attn_paged_exact_decode",
     "stream_attn_decode",
     "decode",
     "SeedKernelAutotuneResult",

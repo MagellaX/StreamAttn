@@ -1,0 +1,63 @@
+name: CUDA Source Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/gpu-source.yml"
+      - "benchmarks/check_sm90_cuda_compile.py"
+      - "stream_attention/backends/sm90/**"
+      - "stream_attention/kernels/**"
+      - "stream_attention/paged.py"
+      - "tests/test_paged_decode.py"
+      - "tests/test_sm90_exact_backend.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/gpu-source.yml"
+      - "benchmarks/check_sm90_cuda_compile.py"
+      - "stream_attention/backends/sm90/**"
+      - "stream_attention/kernels/**"
+      - "stream_attention/paged.py"
+      - "tests/test_paged_decode.py"
+      - "tests/test_sm90_exact_backend.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuda-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sm90-offline-build:
+    name: SM90 CUDA compile (no GPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Offline-compile D64, D128, and TMA SM90 extensions
+        run: |
+          docker run --rm \
+            -e MAX_JOBS=2 \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel \
+            bash -lc '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq git ninja-build
+              python -m pip install -q ninja
+              git clone --filter=blob:none --no-checkout https://github.com/pengcuo/FlashMLA-ETAP.git /tmp/flashmla-etap
+              cd /tmp/flashmla-etap
+              git sparse-checkout init --cone
+              git sparse-checkout set csrc/cutlass/include
+              git fetch --depth=1 origin 39e616041ae6fb1243a0f6ac891e72d576b640e5
+              git checkout 39e616041ae6fb1243a0f6ac891e72d576b640e5
+              cd /workspace
+              python benchmarks/check_sm90_cuda_compile.py \
+                --cutlass-root /tmp/flashmla-etap/csrc/cutlass \
+                --build-root /tmp/streamattn-sm90-build
+            '
