@@ -2,9 +2,9 @@
 
 ## Status
 
-StreamAttn has an experimental exact decode path that consumes a paged KV cache
-directly. It is wired into the public engine but is not a promoted performance
-route until paired H100 measurements pass.
+StreamAttn has a promoted Hopper exact decode path that consumes HND physical
+pages directly, plus a generic Triton exact fallback for other supported paged
+layouts. Neither path gathers or repacks KV during decode.
 
 ## Contract
 
@@ -26,7 +26,30 @@ Trailing page-table slots may contain -1. Every active slot must reference a
 valid physical page. Planning validates the initial metadata once; serving code
 may update the same buffers in place while preserving those invariants.
 
-## Kernel
+## Kernels
+
+### Promoted SM90 path
+
+The Hopper specialization is intentionally narrow:
+
+~~~text
+GPU:       H100 / SM90
+dtype:     BF16
+Q heads:   16
+KV heads:  2
+head dim:  64
+layout:    HND
+page size: 64
+lengths:   full fixed 16K/32K/64K buckets
+~~~
+
+One physical page is one 64-token WGMMA tile. A producer CTA owns one
+`(batch, kv_head, split)` group, looks up each physical page once, and computes
+all eight query heads together with transposed `m64n8k16` WGMMA. This preserves
+true-GQA K/V sharing across the query group while retaining exact online
+softmax and split-state merging.
+
+### Generic Triton path
 
 The Triton backend launches split-K producers over:
 
@@ -34,10 +57,10 @@ The Triton backend launches split-K producers over:
 [batch, query_heads, splits]
 ~~~
 
-Each producer:
+Each head-private producer:
 
 1. Loads the query head once.
-2. Walks its logical page interval.
+2. Walks its logical page interval in multi-page token tiles.
 3. Loads the physical page ID from the block table.
 4. Reads K/V directly from that page.
 5. Maintains FP32 online-softmax state (m, l, numerator).
@@ -55,6 +78,24 @@ out = n / l
 No per-request contiguous KV tensor is created. Workspace and output buffers
 are allocated once by PagedExactDecodePlan.
 
+## H100 Evidence
+
+Paired against FlashInfer 0.6.12 on an H100 80GB with randomized physical page
+order. Each promoted cell passed nine alternating-order paired trials and the
+exact output tolerance. The values below are paired median speedups:
+
+| Batch | 16K | 32K | 64K |
+|---:|---:|---:|---:|
+| 1 | `2.17x` | `2.24x` | `1.46x` |
+| 2 | `2.09x` | `1.79x` | `1.46x` |
+| 4 | `1.82x` | `1.50x` | `1.31x` |
+| 8 | `1.53x` | `1.32x` | `1.21x` |
+
+All 12 cells won `9/9` trials. The minimum paired ratio observed across the
+matrix was `1.19x`; max absolute output error was at most `2.44e-4` in BF16.
+The raw artifact is
+`artifacts/gate0/paged_sm90_exact_strict_matrix_h100_20260822.json`.
+
 ## Benchmark
 
 Run a paired benchmark against FlashInfer:
@@ -66,7 +107,8 @@ python benchmarks/profile_paged_exact_decode.py \
   --q-heads 16 \
   --kv-heads 2 \
   --head-dim 64 \
-  --page-size 16 \
+  --page-size 64 \
+  --layout HND \
   --dtype bf16 \
   --output-json artifacts/paged_exact_b4_32k_d64_g8_h100.json
 ~~~
@@ -87,14 +129,15 @@ no page-to-contiguous copy occurs in the timed path
 workspace and output buffers are reused
 ~~~
 
-The first matrix is H100, BF16:
+The promoted matrix is H100, BF16:
 
 ~~~text
 B = 1, 2, 4, 8
 N = 16K, 32K, 64K
-D64/G4
-D64/G8
+D64/G8, HND, page-64
 ~~~
 
-D128/G4 follows after the D64 phase diagram identifies whether page-table
-lookup, duplicated GQA reads, or split-state merge is the limiting term.
+Page-16 WGMMA is the next paged backend target. It must stage four physical
+pages into each 64-token WGMMA tile without introducing a gather buffer or
+losing asynchronous copy overlap. Until that gate passes, page-16 uses the
+generic exact path and carries no performance claim.

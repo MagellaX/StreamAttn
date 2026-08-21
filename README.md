@@ -60,6 +60,7 @@ FlashInfer 0.6.12 on H100:
 | D64, GQA group 8 | 7 cells; B2-B8; 16K-64K KV | `1.025x-1.432x` | Promoted per cell |
 | D64, GQA group 4 | 14 cells; B1-B16; 16K-64K KV | `1.027x-1.449x` | Promoted per cell |
 | D128, GQA group 4 | 6 cells; B4-B16; 16K-64K KV | `1.002x-1.012x` | Promoted per cell |
+| Paged D64, GQA group 8 | HND/page-64; B1-B8; 16K-64K KV | `1.21x-2.24x` paired median | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -75,6 +76,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [D64/G8 H100 phase diagram](docs/exact_native_h100_phase_diagram_20260818.md)
 - [D64/G4 H100 phase diagram](docs/exact_native_h100_g4_phase_diagram_20260818.md)
 - [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
+- [Paged D64/G8 H100 phase diagram](docs/paged_exact_decode.md)
 
 ### Model-aware reduced-work decode
 
@@ -109,9 +111,10 @@ verifier.
 - StreamAttn is not universally faster than FlashInfer on every exact shape.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
-- No A100, B200, paged-KV, FP8, or non-Qwen model-family performance claim has
-  been promoted yet. A native paged-KV implementation exists, but its H100
-  phase diagram is still pending.
+- No A100, B200, FP8, or non-Qwen model-family performance claim has been
+  promoted yet. Paged exact promotion is currently restricted to H100 BF16,
+  D64/G8, full fixed-length buckets, HND layout, and 64-token pages; page-16
+  and variable-length batches remain exact fallbacks without a speed claim.
 - The repository does not currently claim a direct universal win over
   FlashAttention training kernels.
 
@@ -175,19 +178,21 @@ successful launch.
 ### Exact decode from a paged KV cache
 
 Paged decode accepts physical NHD or HND pages and a per-request block table.
-The native kernel resolves logical tokens to physical pages inside the
-online-softmax loop; it does not gather pages into a contiguous cache.
+The native kernels resolve logical tokens to physical pages inside the
+online-softmax loop; they do not gather pages into a contiguous cache. The
+promoted H100 specialization uses HND pages with 64 tokens so one physical
+page maps directly to one transposed-GQA WGMMA tile.
 
 ~~~python
 import torch
 import stream_attention as stream_attn
 
 q = torch.randn(4, 1, 16, 64, device="cuda", dtype=torch.bfloat16)
-k_pages = torch.randn(8192, 16, 2, 64, device="cuda", dtype=torch.bfloat16)
+k_pages = torch.randn(2048, 2, 64, 64, device="cuda", dtype=torch.bfloat16)
 v_pages = torch.randn_like(k_pages)
 page_table = torch.arange(
-    8192, device="cuda", dtype=torch.int32
-).view(4, 2048)
+    2048, device="cuda", dtype=torch.int32
+).view(4, 512)
 sequence_lengths = torch.full(
     (4,), 32768, device="cuda", dtype=torch.int32
 )
@@ -197,7 +202,7 @@ cache = stream_attn.PagedKVCache(
     value=v_pages,
     page_table=page_table,
     sequence_lengths=sequence_lengths,
-    layout="NHD",
+    layout="HND",
 )
 
 plan = stream_attn.StreamAttnEngine().plan(
@@ -208,10 +213,10 @@ plan = stream_attn.StreamAttnEngine().plan(
 output, info = plan.run()
 ~~~
 
-The page table and sequence-length buffers may be updated in place between
-steps, provided they continue to satisfy the bounds validated during planning.
-The current paged backend is exact and allocation-free after planning, but it
-is not yet a promoted performance route.
+The page table may be updated in place between steps while preserving its
+validated shape and bounds. The promoted WGMMA plan requires every request to
+remain at the full planned bucket length; variable lengths use the generic
+exact paged backend. Both paths are allocation-free after planning.
 
 ### Plan once for a decode loop
 
@@ -378,11 +383,11 @@ not hidden StreamAttn dependencies.
 | CPU | Correctness and SDPA fallback |
 | Native GPU evidence | NVIDIA H100 / SM90 |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND page-table kernel; experimental until paired H100 gates pass |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-64 D64/G8 cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
-| Not yet promoted | A100, B200, paged KV, FP8 seed cache, second model family |
+| Not yet promoted | A100, B200, page-16 WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
 
@@ -445,8 +450,8 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Gate paged-KV decode on H100, then expand exact-native evidence to A100 and
-   B200.
+4. Extend paged WGMMA from page-64 to common page-16 caches, then expand
+   exact-native evidence to A100 and B200.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.

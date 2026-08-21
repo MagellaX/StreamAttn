@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from stream_attention import PagedExactDecodePlan, PagedKVCache
+from stream_attention.paged import PAGED_EXACT_SM90_BACKEND
 
 
 def _dtype(name: str) -> torch.dtype:
@@ -59,9 +60,6 @@ def _flashinfer_runner(
         import flashinfer
     except Exception as exc:
         raise RuntimeError("FlashInfer is required for the paired benchmark") from exc
-    if cache.normalized_layout != "NHD":
-        raise ValueError("the paired FlashInfer helper currently requires NHD pages")
-
     batch = int(query.shape[0])
     pages_per_request = cache.max_pages_per_request
     indptr = torch.arange(
@@ -83,7 +81,7 @@ def _flashinfer_runner(
     )
     wrapper = flashinfer.decode.BatchDecodeWithPagedKVCacheWrapper(
         workspace,
-        "NHD",
+        cache.normalized_layout,
         use_tensor_cores=True,
         backend="auto",
     )
@@ -138,14 +136,21 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         device=device,
         dtype=dtype,
     )
-    key = torch.randn(
-        total_pages,
-        args.page_size,
-        args.kv_heads,
-        args.head_dim,
-        device=device,
-        dtype=dtype,
-    )
+    if args.layout == "NHD":
+        cache_shape = (
+            total_pages,
+            args.page_size,
+            args.kv_heads,
+            args.head_dim,
+        )
+    else:
+        cache_shape = (
+            total_pages,
+            args.kv_heads,
+            args.page_size,
+            args.head_dim,
+        )
+    key = torch.randn(*cache_shape, device=device, dtype=dtype)
     value = torch.randn_like(key)
     page_table = torch.randperm(
         total_pages, device=device, dtype=torch.int64
@@ -161,12 +166,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         value=value,
         page_table=page_table,
         sequence_lengths=sequence_lengths,
-        layout="NHD",
+        layout=args.layout,
     )
     plan = PagedExactDecodePlan.build(
         query,
         cache,
         splits=args.splits,
+        tokens_per_tile=args.tokens_per_tile,
+        partial_num_warps=args.partial_num_warps,
     )
     flashinfer_run = _flashinfer_runner(
         query,
@@ -200,6 +207,43 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     )
     stream_ms = float(statistics.median(stream_samples))
     flashinfer_ms = float(statistics.median(flashinfer_samples))
+    paired_trials: list[dict[str, float | int | str]] = []
+    for trial in range(args.paired_trials):
+        if trial % 2 == 0:
+            stream_trial = _time_cuda(
+                plan.run, warmup=0, repeats=args.paired_repeats
+            )
+            flashinfer_trial = _time_cuda(
+                flashinfer_run, warmup=0, repeats=args.paired_repeats
+            )
+            order = "streamattn_first"
+        else:
+            flashinfer_trial = _time_cuda(
+                flashinfer_run, warmup=0, repeats=args.paired_repeats
+            )
+            stream_trial = _time_cuda(
+                plan.run, warmup=0, repeats=args.paired_repeats
+            )
+            order = "flashinfer_first"
+        stream_trial_ms = float(statistics.median(stream_trial))
+        flashinfer_trial_ms = float(statistics.median(flashinfer_trial))
+        paired_trials.append(
+            {
+                "trial": trial,
+                "order": order,
+                "streamattn_ms": stream_trial_ms,
+                "flashinfer_ms": flashinfer_trial_ms,
+                "speedup_vs_flashinfer": flashinfer_trial_ms / stream_trial_ms,
+            }
+        )
+    paired_speedups = [
+        float(trial["speedup_vs_flashinfer"]) for trial in paired_trials
+    ]
+    producer_groups = (
+        args.batch * args.kv_heads
+        if plan.backend == PAGED_EXACT_SM90_BACKEND
+        else args.batch * args.q_heads
+    )
     return {
         "schema": "streamattn.paged_exact_decode_profile.v1",
         "timestamp_unix": time.time(),
@@ -214,10 +258,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "head_dim": args.head_dim,
         "dtype": args.dtype,
         "page_size": args.page_size,
+        "layout": args.layout,
         "pages_per_request": pages_per_request,
         "physical_page_order": "randomized",
         "splits": plan.splits,
-        "producer_ctas": args.batch * args.q_heads * plan.splits,
+        "tokens_per_tile": plan.tokens_per_tile,
+        "partial_num_warps": plan.partial_num_warps,
+        "backend_variant": plan.backend,
+        "producer_ctas": producer_groups * plan.splits,
         "workspace_bytes": plan.workspace_bytes,
         "streamattn_ms": stream_ms,
         "flashinfer_ms": flashinfer_ms,
@@ -228,6 +276,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "repeats": args.repeats,
         "streamattn_samples_ms": stream_samples,
         "flashinfer_samples_ms": flashinfer_samples,
+        "paired": {
+            "trials": paired_trials,
+            "speedup_median": float(statistics.median(paired_speedups)),
+            "speedup_min": float(min(paired_speedups)),
+            "wins": sum(speedup > 1.0 for speedup in paired_speedups),
+            "trial_count": len(paired_speedups),
+        },
     }
 
 
@@ -239,11 +294,16 @@ def main() -> None:
     parser.add_argument("--kv-heads", type=int, default=2)
     parser.add_argument("--head-dim", type=int, default=64)
     parser.add_argument("--page-size", type=int, default=16)
+    parser.add_argument("--layout", choices=("NHD", "HND"), default="NHD")
     parser.add_argument("--dtype", choices=("fp16", "bf16"), default="bf16")
     parser.add_argument("--splits", type=int)
+    parser.add_argument("--tokens-per-tile", type=int, default=512)
+    parser.add_argument("--partial-num-warps", type=int, default=4)
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
+    parser.add_argument("--paired-trials", type=int, default=9)
+    parser.add_argument("--paired-repeats", type=int, default=10)
     parser.add_argument("--atol", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output-json", type=Path)

@@ -6,10 +6,15 @@ import torch
 import stream_attention as stream_attn
 from stream_attention.paged import (
     PAGED_EXACT_NATIVE_BACKEND,
+    PROMOTED_PAGED_EXACT_SPLITS,
     PagedExactDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
     paged_exact_reference,
+)
+from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
+    CPP_SOURCE,
+    CUDA_SOURCE,
 )
 
 
@@ -158,13 +163,23 @@ def test_paged_metadata_validation_rejects_bad_active_page_and_length():
 def test_paged_split_rule_targets_producer_parallelism():
     assert choose_paged_exact_splits(
         batch=1, query_heads=16, max_pages_per_request=2048
-    ) == 16
+    ) == 32
     assert choose_paged_exact_splits(
         batch=4, query_heads=16, max_pages_per_request=2048
-    ) == 4
+    ) == 8
     assert choose_paged_exact_splits(
         batch=8, query_heads=16, max_pages_per_request=2048
-    ) == 2
+    ) == 4
+
+
+def test_promoted_paged_sm90_cells_and_source_contract():
+    assert PROMOTED_PAGED_EXACT_SPLITS[(1, 16384)] == 64
+    assert PROMOTED_PAGED_EXACT_SPLITS[(4, 32768)] == 32
+    assert PROMOTED_PAGED_EXACT_SPLITS[(8, 65536)] == 32
+    assert len(PROMOTED_PAGED_EXACT_SPLITS) == 12
+    assert "paged_exact_decode_out" in CPP_SOURCE
+    assert "streamattn_exact_tile_ptr<kPaged>" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_exact_partial_kernel<true>" in CUDA_SOURCE
 
 
 @pytest.mark.skipif(

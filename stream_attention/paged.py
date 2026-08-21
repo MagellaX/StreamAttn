@@ -10,6 +10,22 @@ import torch
 
 
 PAGED_EXACT_NATIVE_BACKEND = "streamattn_paged_exact_native"
+PAGED_EXACT_SM90_BACKEND = "streamattn_paged_sm90_wgmma_exact"
+
+PROMOTED_PAGED_EXACT_SPLITS = {
+    (1, 16384): 64,
+    (1, 32768): 64,
+    (1, 65536): 64,
+    (2, 16384): 64,
+    (2, 32768): 64,
+    (2, 65536): 64,
+    (4, 16384): 32,
+    (4, 32768): 32,
+    (4, 65536): 64,
+    (8, 16384): 32,
+    (8, 32768): 32,
+    (8, 65536): 32,
+}
 
 
 @dataclass(frozen=True)
@@ -138,7 +154,7 @@ def choose_paged_exact_splits(
     batch: int,
     query_heads: int,
     max_pages_per_request: int,
-    target_ctas: int = 256,
+    target_ctas: int = 512,
     max_splits: int = 32,
 ) -> int:
     """Choose the minimum split count needed to expose enough producer CTAs."""
@@ -219,6 +235,10 @@ class PagedExactDecodePlan:
     workspace: Optional[dict[str, torch.Tensor]]
     backend: str
     launch: Optional[Any] = None
+    tokens_per_tile: int = 512
+    partial_num_warps: int = 4
+    query_group: Optional[torch.Tensor] = None
+    output_group: Optional[torch.Tensor] = None
 
     @classmethod
     def build(
@@ -228,6 +248,8 @@ class PagedExactDecodePlan:
         *,
         output: Optional[torch.Tensor] = None,
         splits: Optional[int] = None,
+        tokens_per_tile: int = 512,
+        partial_num_warps: int = 4,
         validate_metadata: bool = True,
     ) -> "PagedExactDecodePlan":
         cache.validate(query, validate_metadata=validate_metadata)
@@ -249,8 +271,83 @@ class PagedExactDecodePlan:
         )
         if selected_splits <= 0 or selected_splits > cache.max_pages_per_request:
             raise ValueError("splits must be in [1, max_pages_per_request]")
+        if tokens_per_tile < cache.page_size or tokens_per_tile & (tokens_per_tile - 1):
+            raise ValueError("tokens_per_tile must be a power of two >= page_size")
+        if tokens_per_tile % cache.page_size:
+            raise ValueError("tokens_per_tile must be divisible by page_size")
+        if partial_num_warps not in {1, 2, 4, 8}:
+            raise ValueError("partial_num_warps must be one of 1, 2, 4, or 8")
 
         if query.is_cuda:
+            full_lengths = bool(
+                torch.all(cache.sequence_lengths == cache.max_sequence_length).item()
+            )
+            use_sm90_paged = (
+                torch.cuda.get_device_capability(query.device) == (9, 0)
+                and query.dtype == torch.bfloat16
+                and cache.normalized_layout == "HND"
+                and cache.page_size == 64
+                and int(query.shape[2]) == 16
+                and cache.kv_heads == 2
+                and int(query.shape[3]) == 64
+                and cache.page_table.dtype == torch.int32
+                and full_lengths
+                and (
+                    int(query.shape[0]), cache.max_sequence_length
+                ) in PROMOTED_PAGED_EXACT_SPLITS
+            )
+            if use_sm90_paged:
+                from .backends.sm90.transposed_gqa_exact import (
+                    choose_num_splits,
+                    compile_transposed_gqa_exact_extension,
+                    resolve_cutlass_root,
+                )
+
+                try:
+                    resolve_cutlass_root()
+                except FileNotFoundError:
+                    use_sm90_paged = False
+
+            if use_sm90_paged:
+                if splits is None:
+                    selected_splits = PROMOTED_PAGED_EXACT_SPLITS.get(
+                        (int(query.shape[0]), cache.max_sequence_length),
+                        choose_num_splits(
+                            batch=int(query.shape[0]),
+                            kv_heads=cache.kv_heads,
+                            kv_len=cache.max_sequence_length,
+                        ),
+                    )
+                groups = int(query.shape[0]) * cache.kv_heads
+                partial_o = torch.empty(
+                    groups,
+                    selected_splits,
+                    8,
+                    64,
+                    device=query.device,
+                    dtype=torch.float32,
+                )
+                partial_lse = torch.empty(
+                    groups,
+                    selected_splits,
+                    8,
+                    device=query.device,
+                    dtype=torch.float32,
+                )
+                extension = compile_transposed_gqa_exact_extension(head_dim=64)
+                return cls(
+                    query=query,
+                    cache=cache,
+                    output=output,
+                    splits=selected_splits,
+                    workspace={"partial_o": partial_o, "partial_lse": partial_lse},
+                    backend=PAGED_EXACT_SM90_BACKEND,
+                    launch=extension.paged_exact_decode_out,
+                    tokens_per_tile=int(tokens_per_tile),
+                    partial_num_warps=int(partial_num_warps),
+                    query_group=query.view(int(query.shape[0]), 2, 8, 64),
+                    output_group=output.view(groups, 8, 64),
+                )
             from .kernels.paged_exact_triton import (
                 TRITON_AVAILABLE,
                 make_paged_exact_workspace,
@@ -274,6 +371,8 @@ class PagedExactDecodePlan:
                 workspace=workspace,
                 backend=PAGED_EXACT_NATIVE_BACKEND,
                 launch=paged_exact_decode_triton_forward_out,
+                tokens_per_tile=int(tokens_per_tile),
+                partial_num_warps=int(partial_num_warps),
             )
         return cls(
             query=query,
@@ -282,6 +381,8 @@ class PagedExactDecodePlan:
             splits=1,
             workspace=None,
             backend="torch_paged_exact_reference",
+            tokens_per_tile=int(tokens_per_tile),
+            partial_num_warps=int(partial_num_warps),
         )
 
     @property
@@ -296,6 +397,19 @@ class PagedExactDecodePlan:
         if self.launch is None:
             return paged_exact_reference(self.query, self.cache, output=self.output)
         assert self.workspace is not None
+        if self.backend == PAGED_EXACT_SM90_BACKEND:
+            assert self.query_group is not None and self.output_group is not None
+            self.launch(
+                self.query_group,
+                self.cache.key,
+                self.cache.value,
+                self.cache.page_table,
+                self.workspace["partial_o"],
+                self.workspace["partial_lse"],
+                self.output_group,
+                self.splits,
+            )
+            return self.output
         return self.launch(
             self.query,
             self.cache.key,
@@ -306,6 +420,8 @@ class PagedExactDecodePlan:
             layout=self.cache.normalized_layout,
             splits=self.splits,
             workspace=self.workspace,
+            tokens_per_tile=self.tokens_per_tile,
+            partial_num_warps=self.partial_num_warps,
         )
 
 

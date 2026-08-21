@@ -48,9 +48,10 @@ if TRITON_AVAILABLE:
         NUM_PHYSICAL_PAGES: tl.constexpr,
         MAX_PAGES: tl.constexpr,
         PAGE_SIZE: tl.constexpr,
-        PAGE_TILE: tl.constexpr,
+        TOKENS_PER_TILE: tl.constexpr,
         SPLITS: tl.constexpr,
         PAGES_PER_SPLIT: tl.constexpr,
+        TILES_PER_SPLIT: tl.constexpr,
         SCALE: tl.constexpr,
     ):
         off_b = tl.program_id(0)
@@ -58,7 +59,7 @@ if TRITON_AVAILABLE:
         off_split = tl.program_id(2)
         off_kv_h = off_h // GROUP_SIZE
         offs_d = tl.arange(0, D)
-        offs_token = tl.arange(0, PAGE_TILE)
+        offs_token = tl.arange(0, TOKENS_PER_TILE)
 
         q = tl.load(
             Q + off_b * Q_STRIDE_B + off_h * Q_STRIDE_H + offs_d
@@ -69,8 +70,12 @@ if TRITON_AVAILABLE:
         acc_den = tl.zeros([], dtype=tl.float32)
         acc_num = tl.zeros([D], dtype=tl.float32)
 
-        for local_page in tl.range(0, PAGES_PER_SPLIT):
-            logical_page = off_split * PAGES_PER_SPLIT + local_page
+        for local_tile in tl.range(0, TILES_PER_SPLIT):
+            local_token = local_tile * TOKENS_PER_TILE + offs_token
+            logical_page = (
+                off_split * PAGES_PER_SPLIT + local_token // PAGE_SIZE
+            )
+            page_token = local_token % PAGE_SIZE
             page_slot_valid = logical_page < MAX_PAGES
             physical_page = tl.load(
                 PageTable + off_b * PAGE_TABLE_STRIDE_B + logical_page,
@@ -83,17 +88,17 @@ if TRITON_AVAILABLE:
                 & (physical_page >= 0)
                 & (physical_page < NUM_PHYSICAL_PAGES)
             )
-            logical_token = logical_page * PAGE_SIZE + offs_token
+            logical_token = logical_page * PAGE_SIZE + page_token
             token_mask = (
                 page_valid
-                & (offs_token < PAGE_SIZE)
+                & (local_token < PAGES_PER_SPLIT * PAGE_SIZE)
                 & (logical_token < sequence_length)
             )
 
             k_tile = tl.load(
                 K
-                + physical_page * K_STRIDE_PAGE
-                + offs_token[:, None] * K_STRIDE_TOKEN
+                + physical_page[:, None] * K_STRIDE_PAGE
+                + page_token[:, None] * K_STRIDE_TOKEN
                 + off_kv_h * K_STRIDE_HEAD
                 + offs_d[None, :],
                 mask=token_mask[:, None],
@@ -116,8 +121,8 @@ if TRITON_AVAILABLE:
 
             v_tile = tl.load(
                 V
-                + physical_page * V_STRIDE_PAGE
-                + offs_token[:, None] * V_STRIDE_TOKEN
+                + physical_page[:, None] * V_STRIDE_PAGE
+                + page_token[:, None] * V_STRIDE_TOKEN
                 + off_kv_h * V_STRIDE_HEAD
                 + offs_d[None, :],
                 mask=token_mask[:, None],
@@ -196,6 +201,7 @@ def paged_exact_decode_triton_forward_out(
     layout: str,
     splits: int,
     workspace: dict[str, torch.Tensor],
+    tokens_per_tile: int = 512,
     partial_num_warps: int = 4,
     partial_num_stages: int = 2,
     merge_num_warps: int = 1,
@@ -239,7 +245,14 @@ def paged_exact_decode_triton_forward_out(
 
     max_pages = int(page_table.shape[1])
     pages_per_split = (max_pages + int(splits) - 1) // int(splits)
-    page_tile = _next_power_of_2(page_size)
+    tokens_per_tile = int(tokens_per_tile)
+    if tokens_per_tile < page_size or tokens_per_tile & (tokens_per_tile - 1):
+        raise ValueError("tokens_per_tile must be a power of two >= page_size")
+    if tokens_per_tile % page_size:
+        raise ValueError("tokens_per_tile must be divisible by page_size")
+    tiles_per_split = (
+        pages_per_split * page_size + tokens_per_tile - 1
+    ) // tokens_per_tile
     score_scale = 1.0 / math.sqrt(float(dim))
     partial_m = workspace["partial_m"]
     partial_l = workspace["partial_l"]
@@ -270,9 +283,10 @@ def paged_exact_decode_triton_forward_out(
         NUM_PHYSICAL_PAGES=num_pages,
         MAX_PAGES=max_pages,
         PAGE_SIZE=page_size,
-        PAGE_TILE=page_tile,
+        TOKENS_PER_TILE=tokens_per_tile,
         SPLITS=int(splits),
         PAGES_PER_SPLIT=pages_per_split,
+        TILES_PER_SPLIT=tiles_per_split,
         SCALE=score_scale,
         num_warps=int(partial_num_warps),
         num_stages=int(partial_num_stages),
