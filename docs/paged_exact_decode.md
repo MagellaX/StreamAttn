@@ -30,7 +30,7 @@ may update the same buffers in place while preserving those invariants.
 
 ### Promoted SM90 path
 
-The Hopper specialization is intentionally narrow:
+The Hopper specializations are intentionally narrow:
 
 ~~~text
 GPU:       H100 / SM90
@@ -39,15 +39,41 @@ Q heads:   16
 KV heads:  2
 head dim:  64
 layout:    HND
-page size: 64
+page size: 16 or 64
 lengths:   full fixed 16K/32K/64K buckets
 ~~~
 
-One physical page is one 64-token WGMMA tile. A producer CTA owns one
-`(batch, kv_head, split)` group, looks up each physical page once, and computes
-all eight query heads together with transposed `m64n8k16` WGMMA. This preserves
-true-GQA K/V sharing across the query group while retaining exact online
-softmax and split-state merging.
+A producer CTA owns one `(batch, kv_head, split)` group and computes all eight
+query heads together with transposed `m64n8k16` WGMMA. Page-64 maps one physical
+page directly to one compute tile. Page-16 aliases the same swizzled shared
+tile as `(16, D, 4)` and issues four direct physical-page copies into it. There
+is no global gather or repack buffer. Both paths preserve true-GQA K/V sharing,
+exact online softmax, and exact split-state merging.
+
+The page-16 load economics are favorable for D64 BF16:
+
+~~~text
+one K or V fragment = 16 * 64 * 2 bytes = 2 KiB
+four K+V fragments  = 4 * 2 * 2 KiB   = 16 KiB
+four page IDs       = 4 * 4 bytes       = 16 bytes
+page-table overhead / K+V bytes          = 0.098%
+~~~
+
+The bytes are therefore effectively unchanged from a contiguous 64-token
+tile; the risk is copy-command and synchronization overhead. The implementation
+follows the same aliasing principle as NVIDIA CUTLASS's paged GQA example: one
+MMA tile has a page-fragmented producer view and an unchanged consumer view.
+The selected split table then keeps producer parallelism near the H100 occupancy
+region:
+
+~~~text
+producer CTAs = batch * KV heads * splits
+B1-B4: 64 splits
+B8:    32 splits
+~~~
+
+Reference implementation pattern:
+[CUTLASS paged GQA](https://github.com/NVIDIA/cutlass/blob/main/examples/93_blackwell_low_latency_gqa/tgv_gqa_paged.cuh).
 
 ### Generic Triton path
 
@@ -81,8 +107,13 @@ are allocated once by PagedExactDecodePlan.
 ## H100 Evidence
 
 Paired against FlashInfer 0.6.12 on an H100 80GB with randomized physical page
-order. Each promoted cell passed nine alternating-order paired trials and the
-exact output tolerance. The values below are paired median speedups:
+order. FlashInfer `backend="auto"` resolved to `fa2` for these shapes. Each
+promoted cell passed nine alternating-order paired trials and the exact output
+tolerance.
+
+### Page-64
+
+Paired median speedups:
 
 | Batch | 16K | 32K | 64K |
 |---:|---:|---:|---:|
@@ -96,6 +127,23 @@ matrix was `1.19x`; max absolute output error was at most `2.44e-4` in BF16.
 The raw artifact is
 `artifacts/gate0/paged_sm90_exact_strict_matrix_h100_20260822.json`.
 
+### Page-16
+
+Paired median speedups:
+
+| Batch | 16K | 32K | 64K |
+|---:|---:|---:|---:|
+| 1 | `2.12x` | `1.75x` | `1.36x` |
+| 2 | `2.13x` | `1.74x` | `1.42x` |
+| 4 | `1.91x` | `1.45x` | `1.33x` |
+| 8 | `1.51x` | `1.30x` | `1.18x` |
+
+All 12 cells won `9/9` trials (`108/108` total). The minimum paired ratio was
+`1.18x`; max absolute output error was at most `2.44e-4` in BF16. Raw artifacts:
+
+- `artifacts/gate0/paged_exact_page16_selected_b1_b4_h100.json`
+- `artifacts/gate0/paged_exact_page16_selected_b8_h100.json`
+
 ## Benchmark
 
 Run a paired benchmark against FlashInfer:
@@ -107,7 +155,7 @@ python benchmarks/profile_paged_exact_decode.py \
   --q-heads 16 \
   --kv-heads 2 \
   --head-dim 64 \
-  --page-size 64 \
+  --page-size 16 \
   --layout HND \
   --dtype bf16 \
   --output-json artifacts/paged_exact_b4_32k_d64_g8_h100.json
@@ -134,10 +182,8 @@ The promoted matrix is H100, BF16:
 ~~~text
 B = 1, 2, 4, 8
 N = 16K, 32K, 64K
-D64/G8, HND, page-64
+D64/G8, HND, page-16 and page-64
 ~~~
 
-Page-16 WGMMA is the next paged backend target. It must stage four physical
-pages into each 64-token WGMMA tile without introducing a gather buffer or
-losing asynchronous copy overlap. Until that gate passes, page-16 uses the
-generic exact path and carries no performance claim.
+Other page sizes, variable sequence lengths inside a fixed plan, and NHD WGMMA
+remain on the generic exact backend until separately measured and promoted.

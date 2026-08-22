@@ -129,11 +129,14 @@ def run(
                 text=True,
             )
             assert process.stdout is not None
+            captured_output: list[str] = []
             for line in process.stdout:
+                captured_output.append(line)
                 if line.startswith("[transposed-qk]"):
                     print(line.rstrip(), flush=True)
             return_code = process.wait()
             if return_code:
+                print("".join(captured_output), flush=True)
                 raise subprocess.CalledProcessError(return_code, cmd)
 
             result = json.loads(cell_output.read_text(encoding="utf-8"))

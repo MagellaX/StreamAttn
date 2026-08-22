@@ -6,7 +6,9 @@ import torch
 import stream_attention as stream_attn
 from stream_attention.paged import (
     PAGED_EXACT_NATIVE_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_SPLITS,
     PagedExactDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
@@ -177,9 +179,18 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert PROMOTED_PAGED_EXACT_SPLITS[(4, 32768)] == 32
     assert PROMOTED_PAGED_EXACT_SPLITS[(8, 65536)] == 32
     assert len(PROMOTED_PAGED_EXACT_SPLITS) == 12
+    assert PROMOTED_PAGED_EXACT_PAGE16_SPLITS[(1, 32768)] == 64
+    assert PROMOTED_PAGED_EXACT_PAGE16_SPLITS[(4, 32768)] == 64
+    assert PROMOTED_PAGED_EXACT_PAGE16_SPLITS[(8, 65536)] == 32
+    assert len(PROMOTED_PAGED_EXACT_PAGE16_SPLITS) == 12
     assert "paged_exact_decode_out" in CPP_SOURCE
-    assert "streamattn_exact_tile_ptr<kPaged>" in CUDA_SOURCE
-    assert "streamattn_transposed_wgmma_exact_partial_kernel<true>" in CUDA_SOURCE
+    assert "paged_fragmented_exact_decode_out" in CPP_SOURCE
+    assert "streamattn_exact_tile_ptr<kPagedPageSize>" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_exact_partial_kernel<64>" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_exact_partial_kernel<16>" in CUDA_SOURCE
+    assert "using SmemLayoutPaged16" in CUDA_SOURCE
+    assert "streamattn_copy_paged16_tile" in CUDA_SOURCE
+    assert PAGED_EXACT_SM90_FRAGMENTED_BACKEND.endswith("fragmented_exact")
 
 
 @pytest.mark.skipif(

@@ -1,0 +1,113 @@
+{
+  "backend": "modal_h100",
+  "cells": [
+    {
+      "backend_variant": "streamattn_paged_sm90_wgmma_fragmented_exact",
+      "batch": 4,
+      "compute_capability": [
+        9,
+        0
+      ],
+      "device": "NVIDIA H100 80GB HBM3",
+      "dtype": "bf16",
+      "flashinfer": {
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "version": "0.6.12"
+      },
+      "flashinfer_ms": 0.05814400129020214,
+      "flashinfer_samples_ms": [
+        0.06265600025653839,
+        0.08745600283145905,
+        0.06732799857854843,
+        0.06022400036454201,
+        0.05737600103020668,
+        0.0589120015501976,
+        0.056063998490571976,
+        0.05580800026655197,
+        0.05612799897789955,
+        0.055296000093221664
+      ],
+      "group_size": 8,
+      "head_dim": 64,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "HND",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0360908820293844e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 1.5318965942897882,
+        "speedup_min": 1.493595317857087,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.05827200040221214,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.5590752916064157,
+            "streamattn_ms": 0.037376001477241516,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.05596800148487091,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 1.493595317857087,
+            "streamattn_ms": 0.03747199848294258,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.05686400085687637,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.5318965942897882,
+            "streamattn_ms": 0.03711999952793121,
+            "trial": 2
+          }
+        ],
+        "wins": 3
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": 4,
+      "producer_ctas": 512,
+      "q_heads": 16,
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v1",
+      "speedup_vs_flashinfer": 1.5339806202150366,
+      "splits": 64,
+      "streamattn_ms": 0.03790399990975857,
+      "streamattn_samples_ms": [
+        0.03951999917626381,
+        0.03993599861860275,
+        0.03846399858593941,
+        0.03711999952793121,
+        0.03782400116324425,
+        0.037728000432252884,
+        0.03654399886727333,
+        0.038015998899936676,
+        0.036768000572919846,
+        0.03798399865627289
+      ],
+      "timestamp_unix": 1787400969.4722397,
+      "tokens_per_tile": 512,
+      "torch_version": "2.7.1+cu128",
+      "warmup": 5,
+      "workspace_bytes": 1064960
+    }
+  ],
+  "schema": "streamattn.paged_exact_decode_matrix.v1",
+  "shape_family": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 64,
+    "kv_heads": 2,
+    "page_size": 16,
+    "q_heads": 16
+  },
+  "summary": {
+    "cells": 1,
+    "correct_cells": 1,
+    "streamattn_wins": 1,
+    "flashinfer_wins": 0
+  }
+}

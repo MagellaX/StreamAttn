@@ -61,6 +61,7 @@ FlashInfer 0.6.12 on H100:
 | D64, GQA group 4 | 14 cells; B1-B16; 16K-64K KV | `1.027x-1.449x` | Promoted per cell |
 | D128, GQA group 4 | 6 cells; B4-B16; 16K-64K KV | `1.002x-1.012x` | Promoted per cell |
 | Paged D64, GQA group 8 | HND/page-64; B1-B8; 16K-64K KV | `1.21x-2.24x` paired median | Promoted per cell |
+| Paged D64, GQA group 8 | HND/page-16; B1-B8; 16K-64K KV | `1.18x-2.13x` paired median | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -113,8 +114,8 @@ verifier.
   work avoidance.
 - No A100, B200, FP8, or non-Qwen model-family performance claim has been
   promoted yet. Paged exact promotion is currently restricted to H100 BF16,
-  D64/G8, full fixed-length buckets, HND layout, and 64-token pages; page-16
-  and variable-length batches remain exact fallbacks without a speed claim.
+  D64/G8, full fixed-length buckets, HND layout, and 16- or 64-token pages;
+  variable-length batches remain exact fallbacks without a speed claim.
 - The repository does not currently claim a direct universal win over
   FlashAttention training kernels.
 
@@ -180,19 +181,20 @@ successful launch.
 Paged decode accepts physical NHD or HND pages and a per-request block table.
 The native kernels resolve logical tokens to physical pages inside the
 online-softmax loop; they do not gather pages into a contiguous cache. The
-promoted H100 specialization uses HND pages with 64 tokens so one physical
-page maps directly to one transposed-GQA WGMMA tile.
+promoted H100 specializations use HND pages with 16 or 64 tokens. Page-64 maps
+directly to one transposed-GQA WGMMA tile; page-16 loads four physical pages
+directly into the same 64-token shared tile without a gather buffer.
 
 ~~~python
 import torch
 import stream_attention as stream_attn
 
 q = torch.randn(4, 1, 16, 64, device="cuda", dtype=torch.bfloat16)
-k_pages = torch.randn(2048, 2, 64, 64, device="cuda", dtype=torch.bfloat16)
+k_pages = torch.randn(8192, 2, 16, 64, device="cuda", dtype=torch.bfloat16)
 v_pages = torch.randn_like(k_pages)
 page_table = torch.arange(
-    2048, device="cuda", dtype=torch.int32
-).view(4, 512)
+    8192, device="cuda", dtype=torch.int32
+).view(4, 2048)
 sequence_lengths = torch.full(
     (4,), 32768, device="cuda", dtype=torch.int32
 )
@@ -383,11 +385,11 @@ not hidden StreamAttn dependencies.
 | CPU | Correctness and SDPA fallback |
 | Native GPU evidence | NVIDIA H100 / SM90 |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-64 D64/G8 cells |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16/page-64 D64/G8 cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
-| Not yet promoted | A100, B200, page-16 WGMMA, FP8 seed cache, second model family |
+| Not yet promoted | A100, B200, variable-length WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
 
@@ -450,7 +452,7 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Extend paged WGMMA from page-64 to common page-16 caches, then expand
+4. Extend paged WGMMA to variable lengths and additional layouts, then expand
    exact-native evidence to A100 and B200.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback

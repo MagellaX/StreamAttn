@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import math
 import statistics
@@ -18,7 +19,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from stream_attention import PagedExactDecodePlan, PagedKVCache
-from stream_attention.paged import PAGED_EXACT_SM90_BACKEND
+from stream_attention.paged import (
+    PAGED_EXACT_SM90_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
+)
 
 
 def _dtype(name: str) -> torch.dtype:
@@ -111,7 +115,14 @@ def _flashinfer_runner(
     def run() -> torch.Tensor:
         return wrapper.run(query[:, 0], combined_cache, out=output)
 
-    return run
+    resolved_backend = getattr(wrapper, "_backend", None)
+    return run, {
+        "version": importlib.metadata.version("flashinfer-python"),
+        "requested_backend": "auto",
+        "resolved_backend": (
+            None if resolved_backend is None else str(resolved_backend)
+        ),
+    }
 
 
 def profile(args: argparse.Namespace) -> dict[str, Any]:
@@ -174,8 +185,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         splits=args.splits,
         tokens_per_tile=args.tokens_per_tile,
         partial_num_warps=args.partial_num_warps,
+        sm90_fragmented_experimental=args.sm90_fragmented_experimental,
     )
-    flashinfer_run = _flashinfer_runner(
+    flashinfer_run, flashinfer_info = _flashinfer_runner(
         query,
         cache,
         workspace_mb=args.workspace_mb,
@@ -241,7 +253,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     ]
     producer_groups = (
         args.batch * args.kv_heads
-        if plan.backend == PAGED_EXACT_SM90_BACKEND
+        if plan.backend
+        in {PAGED_EXACT_SM90_BACKEND, PAGED_EXACT_SM90_FRAGMENTED_BACKEND}
         else args.batch * args.q_heads
     )
     return {
@@ -250,6 +263,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "device": torch.cuda.get_device_name(),
         "compute_capability": list(torch.cuda.get_device_capability()),
         "torch_version": torch.__version__,
+        "flashinfer": flashinfer_info,
         "batch": args.batch,
         "kv_len": args.kv_len,
         "q_heads": args.q_heads,
@@ -261,6 +275,12 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "layout": args.layout,
         "pages_per_request": pages_per_request,
         "physical_page_order": "randomized",
+        "physical_pages_per_compute_tile": (
+            64 // args.page_size
+            if plan.backend
+            in {PAGED_EXACT_SM90_BACKEND, PAGED_EXACT_SM90_FRAGMENTED_BACKEND}
+            else None
+        ),
         "splits": plan.splits,
         "tokens_per_tile": plan.tokens_per_tile,
         "partial_num_warps": plan.partial_num_warps,
@@ -299,6 +319,7 @@ def main() -> None:
     parser.add_argument("--splits", type=int)
     parser.add_argument("--tokens-per-tile", type=int, default=512)
     parser.add_argument("--partial-num-warps", type=int, default=4)
+    parser.add_argument("--sm90-fragmented-experimental", action="store_true")
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
