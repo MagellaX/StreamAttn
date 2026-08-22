@@ -22,7 +22,15 @@ from stream_attention import PagedExactDecodePlan, PagedKVCache
 from stream_attention.paged import (
     PAGED_EXACT_SM90_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
 )
+
+
+_SM90_PAGED_BACKENDS = {
+    PAGED_EXACT_SM90_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
+}
 
 
 def _dtype(name: str) -> torch.dtype:
@@ -31,6 +39,48 @@ def _dtype(name: str) -> torch.dtype:
     if name == "bf16":
         return torch.bfloat16
     raise ValueError("dtype must be fp16 or bf16")
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _profile_sequence_lengths(
+    profile: str,
+    *,
+    batch: int,
+    kv_len: int,
+    page_size: int,
+    device: torch.device,
+) -> torch.Tensor:
+    fractions = {
+        "full": (1.0,),
+        "tail": (1.0,),
+        "mild": (1.0, 0.875, 0.75, 0.625),
+        "severe": (1.0, 0.75, 0.5, 0.25),
+        "short": (0.5, 0.375, 0.25, 0.125),
+        "floor": (0.125,),
+        "tiny": (0.015625,),
+        "minimum": (0.0,),
+    }
+    if profile not in fractions:
+        raise ValueError(f"unknown length profile: {profile}")
+    if profile == "full":
+        values = [kv_len] * batch
+    elif profile == "minimum":
+        values = [1] * batch
+    else:
+        tail_offsets = (1, 7, 13, 3)
+        profile_fractions = fractions[profile]
+        values = []
+        for row in range(batch):
+            fraction = profile_fractions[row % len(profile_fractions)]
+            length = int(kv_len * fraction) - tail_offsets[row % 4]
+            values.append(max(page_size, length))
+    return torch.tensor(values, device=device, dtype=torch.int32)
 
 
 def _time_cuda(
@@ -64,19 +114,20 @@ def _flashinfer_runner(
         import flashinfer
     except Exception as exc:
         raise RuntimeError("FlashInfer is required for the paired benchmark") from exc
-    batch = int(query.shape[0])
-    pages_per_request = cache.max_pages_per_request
-    indptr = torch.arange(
-        0,
-        (batch + 1) * pages_per_request,
-        pages_per_request,
-        device=query.device,
-        dtype=torch.int32,
-    )
-    indices = cache.page_table.reshape(-1).to(dtype=torch.int32)
-    last_page_len = (
-        (cache.sequence_lengths - 1) % cache.page_size + 1
+    lengths_cpu = cache.sequence_lengths.detach().to("cpu", torch.int64).tolist()
+    active_pages = [
+        (int(length) + cache.page_size - 1) // cache.page_size for length in lengths_cpu
+    ]
+    indptr_values = [0]
+    for count in active_pages:
+        indptr_values.append(indptr_values[-1] + count)
+    indptr = torch.tensor(indptr_values, device=query.device, dtype=torch.int32)
+    indices = torch.cat(
+        [cache.page_table[row, :count] for row, count in enumerate(active_pages)]
     ).to(dtype=torch.int32)
+    last_page_len = ((cache.sequence_lengths - 1) % cache.page_size + 1).to(
+        dtype=torch.int32
+    )
     combined_cache = torch.stack((cache.key, cache.value), dim=1).contiguous()
     workspace = torch.empty(
         workspace_mb * 1024 * 1024,
@@ -118,6 +169,8 @@ def _flashinfer_runner(
     resolved_backend = getattr(wrapper, "_backend", None)
     return run, {
         "version": importlib.metadata.version("flashinfer-python"),
+        "cubin_version": _package_version("flashinfer-cubin"),
+        "jit_cache_version": _package_version("flashinfer-jit-cache"),
         "requested_backend": "auto",
         "resolved_backend": (
             None if resolved_backend is None else str(resolved_backend)
@@ -163,15 +216,23 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         )
     key = torch.randn(*cache_shape, device=device, dtype=dtype)
     value = torch.randn_like(key)
-    page_table = torch.randperm(
-        total_pages, device=device, dtype=torch.int64
-    ).to(torch.int32).view(args.batch, pages_per_request)
-    sequence_lengths = torch.full(
-        (args.batch,),
-        args.kv_len,
-        device=device,
-        dtype=torch.int32,
+    page_table = (
+        torch.randperm(total_pages, device=device, dtype=torch.int64)
+        .to(torch.int32)
+        .view(args.batch, pages_per_request)
+        .clone()
     )
+    sequence_lengths = _profile_sequence_lengths(
+        args.length_profile,
+        batch=args.batch,
+        kv_len=args.kv_len,
+        page_size=args.page_size,
+        device=device,
+    )
+    lengths_cpu = sequence_lengths.detach().to("cpu", torch.int64).tolist()
+    for row, length in enumerate(lengths_cpu):
+        active_pages = (int(length) + args.page_size - 1) // args.page_size
+        page_table[row, active_pages:] = -1
     cache = PagedKVCache(
         key=key,
         value=value,
@@ -186,6 +247,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         tokens_per_tile=args.tokens_per_tile,
         partial_num_warps=args.partial_num_warps,
         sm90_fragmented_experimental=args.sm90_fragmented_experimental,
+        sm90_fragmented_ragged_experimental=(args.sm90_fragmented_ragged_experimental),
     )
     flashinfer_run, flashinfer_info = _flashinfer_runner(
         query,
@@ -222,9 +284,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     paired_trials: list[dict[str, float | int | str]] = []
     for trial in range(args.paired_trials):
         if trial % 2 == 0:
-            stream_trial = _time_cuda(
-                plan.run, warmup=0, repeats=args.paired_repeats
-            )
+            stream_trial = _time_cuda(plan.run, warmup=0, repeats=args.paired_repeats)
             flashinfer_trial = _time_cuda(
                 flashinfer_run, warmup=0, repeats=args.paired_repeats
             )
@@ -233,9 +293,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             flashinfer_trial = _time_cuda(
                 flashinfer_run, warmup=0, repeats=args.paired_repeats
             )
-            stream_trial = _time_cuda(
-                plan.run, warmup=0, repeats=args.paired_repeats
-            )
+            stream_trial = _time_cuda(plan.run, warmup=0, repeats=args.paired_repeats)
             order = "flashinfer_first"
         stream_trial_ms = float(statistics.median(stream_trial))
         flashinfer_trial_ms = float(statistics.median(flashinfer_trial))
@@ -248,17 +306,23 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 "speedup_vs_flashinfer": flashinfer_trial_ms / stream_trial_ms,
             }
         )
-    paired_speedups = [
-        float(trial["speedup_vs_flashinfer"]) for trial in paired_trials
-    ]
+    paired_speedups = [float(trial["speedup_vs_flashinfer"]) for trial in paired_trials]
     producer_groups = (
         args.batch * args.kv_heads
-        if plan.backend
-        in {PAGED_EXACT_SM90_BACKEND, PAGED_EXACT_SM90_FRAGMENTED_BACKEND}
+        if plan.backend in _SM90_PAGED_BACKENDS
         else args.batch * args.q_heads
     )
+    active_producer_ctas = producer_groups * plan.splits
+    if plan.backend == PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND:
+        active_producer_ctas = args.kv_heads * sum(
+            math.ceil(
+                math.ceil(int(length) / 64)
+                / math.ceil(math.ceil(int(length) / 64) / plan.splits)
+            )
+            for length in lengths_cpu
+        )
     return {
-        "schema": "streamattn.paged_exact_decode_profile.v1",
+        "schema": "streamattn.paged_exact_decode_profile.v2",
         "timestamp_unix": time.time(),
         "device": torch.cuda.get_device_name(),
         "compute_capability": list(torch.cuda.get_device_capability()),
@@ -266,6 +330,12 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "flashinfer": flashinfer_info,
         "batch": args.batch,
         "kv_len": args.kv_len,
+        "length_profile": args.length_profile,
+        "sequence_lengths": [int(length) for length in lengths_cpu],
+        "total_sequence_tokens": int(sum(lengths_cpu)),
+        "batch_capacity_utilization": float(
+            sum(lengths_cpu) / (args.batch * args.kv_len)
+        ),
         "q_heads": args.q_heads,
         "kv_heads": args.kv_heads,
         "group_size": args.q_heads // args.kv_heads,
@@ -276,16 +346,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "pages_per_request": pages_per_request,
         "physical_page_order": "randomized",
         "physical_pages_per_compute_tile": (
-            64 // args.page_size
-            if plan.backend
-            in {PAGED_EXACT_SM90_BACKEND, PAGED_EXACT_SM90_FRAGMENTED_BACKEND}
-            else None
+            64 // args.page_size if plan.backend in _SM90_PAGED_BACKENDS else None
         ),
         "splits": plan.splits,
         "tokens_per_tile": plan.tokens_per_tile,
         "partial_num_warps": plan.partial_num_warps,
         "backend_variant": plan.backend,
         "producer_ctas": producer_groups * plan.splits,
+        "active_producer_ctas": active_producer_ctas,
         "workspace_bytes": plan.workspace_bytes,
         "streamattn_ms": stream_ms,
         "flashinfer_ms": flashinfer_ms,
@@ -320,6 +388,21 @@ def main() -> None:
     parser.add_argument("--tokens-per-tile", type=int, default=512)
     parser.add_argument("--partial-num-warps", type=int, default=4)
     parser.add_argument("--sm90-fragmented-experimental", action="store_true")
+    parser.add_argument("--sm90-fragmented-ragged-experimental", action="store_true")
+    parser.add_argument(
+        "--length-profile",
+        choices=(
+            "full",
+            "tail",
+            "mild",
+            "severe",
+            "short",
+            "floor",
+            "tiny",
+            "minimum",
+        ),
+        default="full",
+    )
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)

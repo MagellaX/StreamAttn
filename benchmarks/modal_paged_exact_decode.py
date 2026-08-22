@@ -12,9 +12,12 @@ image = (
     modal.Image.from_registry("pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
     .apt_install("git", "ninja-build")
     .pip_install(
-        "flashinfer-python==0.6.12",
-        "flashinfer-cubin==0.6.12",
+        "flashinfer-python==0.6.17",
         "ninja",
+    )
+    .run_commands(
+        "python -m pip install flashinfer-cubin==0.6.17 "
+        "--index-url https://flashinfer.ai/whl/"
     )
     .run_commands(
         "git clone --filter=blob:none --no-checkout "
@@ -53,6 +56,8 @@ def profile_h100(
     token_tiles: str,
     partial_num_warps: int,
     sm90_fragmented_experimental: bool,
+    sm90_fragmented_ragged_experimental: bool,
+    length_profiles: str,
     workspace_mb: int,
     warmup: int,
     repeats: int,
@@ -76,51 +81,60 @@ def profile_h100(
     )
     for batch in _parse_ints(batches):
         for kv_len in _parse_ints(kv_lens):
-            for splits in split_values:
-                for tokens_per_tile in _parse_ints(token_tiles):
-                    args = argparse.Namespace(
-                        batch=batch,
-                        kv_len=kv_len,
-                        q_heads=q_heads,
-                        kv_heads=kv_heads,
-                        head_dim=head_dim,
-                        page_size=page_size,
-                        layout=layout,
-                        dtype=dtype,
-                        splits=splits,
-                        tokens_per_tile=tokens_per_tile,
-                        partial_num_warps=partial_num_warps,
-                        sm90_fragmented_experimental=sm90_fragmented_experimental,
-                        workspace_mb=workspace_mb,
-                        warmup=warmup,
-                        repeats=repeats,
-                        paired_trials=paired_trials,
-                        paired_repeats=paired_repeats,
-                        atol=atol,
-                        seed=seed,
-                    )
-                    print(
-                        f"[paged-exact] starting B={batch} N={kv_len} "
-                        f"C={splits or 'auto'} T={tokens_per_tile} W={partial_num_warps} "
-                        f"Hq={q_heads} Hkv={kv_heads} D={head_dim} {dtype}",
-                        flush=True,
-                    )
-                    result = profile(args)
-                    cells.append(result)
-                    print(
-                        f"[paged-exact] B={batch} N={kv_len} splits={result['splits']} "
-                        f"tile={result['tokens_per_tile']} "
-                        f"stream={result['streamattn_ms']:.5f} ms "
-                        f"flashinfer={result['flashinfer_ms']:.5f} ms "
-                        f"speedup={result['speedup_vs_flashinfer']:.3f}x "
-                        f"max_err={result['max_abs_error']:.3e}",
-                        flush=True,
-                    )
+            for length_profile in (
+                item.strip() for item in length_profiles.split(",") if item.strip()
+            ):
+                for splits in split_values:
+                    for tokens_per_tile in _parse_ints(token_tiles):
+                        args = argparse.Namespace(
+                            batch=batch,
+                            kv_len=kv_len,
+                            q_heads=q_heads,
+                            kv_heads=kv_heads,
+                            head_dim=head_dim,
+                            page_size=page_size,
+                            layout=layout,
+                            dtype=dtype,
+                            splits=splits,
+                            tokens_per_tile=tokens_per_tile,
+                            partial_num_warps=partial_num_warps,
+                            sm90_fragmented_experimental=(sm90_fragmented_experimental),
+                            sm90_fragmented_ragged_experimental=(
+                                sm90_fragmented_ragged_experimental
+                            ),
+                            length_profile=length_profile,
+                            workspace_mb=workspace_mb,
+                            warmup=warmup,
+                            repeats=repeats,
+                            paired_trials=paired_trials,
+                            paired_repeats=paired_repeats,
+                            atol=atol,
+                            seed=seed,
+                        )
+                        print(
+                            f"[paged-exact] starting B={batch} N={kv_len} "
+                            f"profile={length_profile} C={splits or 'auto'} "
+                            f"T={tokens_per_tile} W={partial_num_warps} "
+                            f"Hq={q_heads} Hkv={kv_heads} D={head_dim} {dtype}",
+                            flush=True,
+                        )
+                        result = profile(args)
+                        cells.append(result)
+                        print(
+                            f"[paged-exact] B={batch} N={kv_len} "
+                            f"profile={length_profile} splits={result['splits']} "
+                            f"tile={result['tokens_per_tile']} "
+                            f"stream={result['streamattn_ms']:.5f} ms "
+                            f"flashinfer={result['flashinfer_ms']:.5f} ms "
+                            f"speedup={result['speedup_vs_flashinfer']:.3f}x "
+                            f"max_err={result['max_abs_error']:.3e}",
+                            flush=True,
+                        )
 
     correct = [cell for cell in cells if float(cell["max_abs_error"]) <= atol]
     winners = [cell for cell in correct if float(cell["speedup_vs_flashinfer"]) > 1.0]
     return {
-        "schema": "streamattn.paged_exact_decode_matrix.v1",
+        "schema": "streamattn.paged_exact_decode_matrix.v2",
         "backend": "modal_h100",
         "shape_family": {
             "q_heads": q_heads,
@@ -129,6 +143,9 @@ def profile_h100(
             "head_dim": head_dim,
             "page_size": page_size,
             "dtype": dtype,
+            "length_profiles": [
+                item.strip() for item in length_profiles.split(",") if item.strip()
+            ],
         },
         "summary": {
             "cells": len(cells),
@@ -154,6 +171,8 @@ def main(
     token_tiles: str = "128",
     partial_num_warps: int = 4,
     sm90_fragmented_experimental: bool = False,
+    sm90_fragmented_ragged_experimental: bool = False,
+    length_profiles: str = "full",
     workspace_mb: int = 128,
     warmup: int = 10,
     repeats: int = 30,
@@ -176,6 +195,8 @@ def main(
         token_tiles=token_tiles,
         partial_num_warps=partial_num_warps,
         sm90_fragmented_experimental=sm90_fragmented_experimental,
+        sm90_fragmented_ragged_experimental=(sm90_fragmented_ragged_experimental),
+        length_profiles=length_profiles,
         workspace_mb=workspace_mb,
         warmup=warmup,
         repeats=repeats,

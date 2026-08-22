@@ -1,0 +1,128 @@
+{
+  "backend": "modal_h100",
+  "cells": [
+    {
+      "active_producer_ctas": 512,
+      "backend_variant": "streamattn_paged_sm90_wgmma_fragmented_ragged_exact",
+      "batch": 4,
+      "batch_capacity_utilization": 0.81231689453125,
+      "compute_capability": [
+        9,
+        0
+      ],
+      "device": "NVIDIA H100 80GB HBM3",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "version": "0.6.17"
+      },
+      "flashinfer_ms": 0.05923199839890003,
+      "flashinfer_samples_ms": [
+        0.06681600213050842,
+        0.09097599983215332,
+        0.07030399888753891,
+        0.06345599889755249,
+        0.05846399813890457,
+        0.05999999865889549,
+        0.05724800005555153,
+        0.05686400085687637,
+        0.05619199946522713,
+        0.056223999708890915
+      ],
+      "group_size": 8,
+      "head_dim": 64,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "HND",
+      "length_profile": "mild",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.3297799998545088e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 1.6307961820254941,
+        "speedup_min": 1.498281773881443,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06111999973654747,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.6843033138534436,
+            "streamattn_ms": 0.036288000643253326,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.05580800026655197,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 1.498281773881443,
+            "streamattn_ms": 0.037248000502586365,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.059647999703884125,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.6307961820254941,
+            "streamattn_ms": 0.03657599911093712,
+            "trial": 2
+          }
+        ],
+        "wins": 3
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": 4,
+      "producer_ctas": 512,
+      "q_heads": 16,
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32767,
+        28665,
+        24563,
+        20477
+      ],
+      "speedup_vs_flashinfer": 1.5943152121837207,
+      "splits": 64,
+      "streamattn_ms": 0.037151999771595,
+      "streamattn_samples_ms": [
+        0.04070400074124336,
+        0.03964800015091896,
+        0.03830400109291077,
+        0.04025600105524063,
+        0.036479998379945755,
+        0.03587200120091438,
+        0.037696000188589096,
+        0.03587200120091438,
+        0.036607999354600906,
+        0.035232000052928925
+      ],
+      "timestamp_unix": 1787405379.6771033,
+      "tokens_per_tile": 512,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 106472,
+      "warmup": 5,
+      "workspace_bytes": 1064960
+    }
+  ],
+  "schema": "streamattn.paged_exact_decode_matrix.v2",
+  "shape_family": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 64,
+    "kv_heads": 2,
+    "length_profiles": [
+      "mild"
+    ],
+    "page_size": 16,
+    "q_heads": 16
+  },
+  "summary": {
+    "cells": 1,
+    "correct_cells": 1,
+    "flashinfer_wins": 0,
+    "streamattn_wins": 1
+  }
+}

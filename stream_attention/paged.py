@@ -11,8 +11,9 @@ import torch
 
 PAGED_EXACT_NATIVE_BACKEND = "streamattn_paged_exact_native"
 PAGED_EXACT_SM90_BACKEND = "streamattn_paged_sm90_wgmma_exact"
-PAGED_EXACT_SM90_FRAGMENTED_BACKEND = (
-    "streamattn_paged_sm90_wgmma_fragmented_exact"
+PAGED_EXACT_SM90_FRAGMENTED_BACKEND = "streamattn_paged_sm90_wgmma_fragmented_exact"
+PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND = (
+    "streamattn_paged_sm90_wgmma_fragmented_ragged_exact"
 )
 
 PROMOTED_PAGED_EXACT_SPLITS = {
@@ -45,6 +46,10 @@ PROMOTED_PAGED_EXACT_PAGE16_SPLITS = {
     (8, 65536): 32,
 }
 
+# Ragged rows use the same launch geometry as full rows. H100 evidence covers
+# every batch/bucket cell below from a one-token endpoint through full length.
+PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS = dict(PROMOTED_PAGED_EXACT_PAGE16_SPLITS)
+
 
 @dataclass(frozen=True)
 class PagedKVCache:
@@ -74,13 +79,17 @@ class PagedKVCache:
     def page_size(self) -> int:
         if self.key.dim() != 4:
             return 0
-        return int(self.key.shape[1] if self.normalized_layout == "NHD" else self.key.shape[2])
+        return int(
+            self.key.shape[1] if self.normalized_layout == "NHD" else self.key.shape[2]
+        )
 
     @property
     def kv_heads(self) -> int:
         if self.key.dim() != 4:
             return 0
-        return int(self.key.shape[2] if self.normalized_layout == "NHD" else self.key.shape[1])
+        return int(
+            self.key.shape[2] if self.normalized_layout == "NHD" else self.key.shape[1]
+        )
 
     @property
     def head_dim(self) -> int:
@@ -122,7 +131,11 @@ class PagedKVCache:
             raise ValueError("query and page_table batch sizes must match")
         if self.sequence_lengths.numel() != self.batch_size:
             raise ValueError("sequence_lengths size must match batch")
-        if self.num_pages <= 0 or self.page_size <= 0 or self.max_pages_per_request <= 0:
+        if (
+            self.num_pages <= 0
+            or self.page_size <= 0
+            or self.max_pages_per_request <= 0
+        ):
             raise ValueError("paged cache dimensions must be positive")
         if self.page_size > 256:
             raise ValueError("paged exact decode currently supports page_size <= 256")
@@ -164,7 +177,9 @@ class PagedKVCache:
             active_pages = (int(length) + self.page_size - 1) // self.page_size
             active = table[batch_idx, :active_pages]
             if bool(torch.any(active < 0)) or bool(torch.any(active >= self.num_pages)):
-                raise ValueError("active page_table entries must reference physical pages")
+                raise ValueError(
+                    "active page_table entries must reference physical pages"
+                )
 
 
 def choose_paged_exact_splits(
@@ -230,9 +245,8 @@ def paged_exact_reference(
                 new_max = torch.maximum(running_max, page_max)
                 correction = torch.exp(running_max - new_max)
                 probabilities = torch.exp(scores - new_max)
-                numerator = (
-                    numerator * correction
-                    + torch.sum(probabilities[:, None] * value_page.float(), dim=0)
+                numerator = numerator * correction + torch.sum(
+                    probabilities[:, None] * value_page.float(), dim=0
                 )
                 denominator = denominator * correction + probabilities.sum()
                 running_max = new_max
@@ -270,6 +284,7 @@ class PagedExactDecodePlan:
         partial_num_warps: int = 4,
         validate_metadata: bool = True,
         sm90_fragmented_experimental: bool = False,
+        sm90_fragmented_ragged_experimental: bool = False,
     ) -> "PagedExactDecodePlan":
         cache.validate(query, validate_metadata=validate_metadata)
         if output is None:
@@ -309,26 +324,38 @@ class PagedExactDecodePlan:
                 and cache.kv_heads == 2
                 and int(query.shape[3]) == 64
                 and cache.page_table.dtype == torch.int32
-                and full_lengths
             )
             use_sm90_page64 = (
                 common_sm90_shape
+                and full_lengths
                 and cache.page_size == 64
-                and (
-                    int(query.shape[0]), cache.max_sequence_length
-                ) in PROMOTED_PAGED_EXACT_SPLITS
+                and (int(query.shape[0]), cache.max_sequence_length)
+                in PROMOTED_PAGED_EXACT_SPLITS
             )
             use_sm90_page16 = (
                 common_sm90_shape
+                and full_lengths
                 and cache.page_size == 16
                 and (
                     sm90_fragmented_experimental
-                    or (
-                        int(query.shape[0]), cache.max_sequence_length
-                    ) in PROMOTED_PAGED_EXACT_PAGE16_SPLITS
+                    or (int(query.shape[0]), cache.max_sequence_length)
+                    in PROMOTED_PAGED_EXACT_PAGE16_SPLITS
                 )
             )
-            use_sm90_paged = use_sm90_page64 or use_sm90_page16
+            use_sm90_page16_ragged = (
+                common_sm90_shape
+                and not full_lengths
+                and cache.page_size == 16
+                and cache.sequence_lengths.dtype == torch.int32
+                and (
+                    sm90_fragmented_ragged_experimental
+                    or (int(query.shape[0]), cache.max_sequence_length)
+                    in PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS
+                )
+            )
+            use_sm90_paged = (
+                use_sm90_page64 or use_sm90_page16 or use_sm90_page16_ragged
+            )
             if use_sm90_paged:
                 from .backends.sm90.transposed_gqa_exact import (
                     choose_num_splits,
@@ -351,8 +378,13 @@ class PagedExactDecodePlan:
                             kv_len=cache.max_sequence_length,
                         ),
                     )
-                elif splits is None and use_sm90_page16:
-                    selected_splits = PROMOTED_PAGED_EXACT_PAGE16_SPLITS.get(
+                elif splits is None and (use_sm90_page16 or use_sm90_page16_ragged):
+                    split_table = (
+                        PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS
+                        if use_sm90_page16_ragged
+                        else PROMOTED_PAGED_EXACT_PAGE16_SPLITS
+                    )
+                    selected_splits = split_table.get(
                         (int(query.shape[0]), cache.max_sequence_length),
                         choose_num_splits(
                             batch=int(query.shape[0]),
@@ -390,14 +422,22 @@ class PagedExactDecodePlan:
                     splits=selected_splits,
                     workspace={"partial_o": partial_o, "partial_lse": partial_lse},
                     backend=(
-                        PAGED_EXACT_SM90_FRAGMENTED_BACKEND
-                        if use_sm90_page16
-                        else PAGED_EXACT_SM90_BACKEND
+                        PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND
+                        if use_sm90_page16_ragged
+                        else (
+                            PAGED_EXACT_SM90_FRAGMENTED_BACKEND
+                            if use_sm90_page16
+                            else PAGED_EXACT_SM90_BACKEND
+                        )
                     ),
                     launch=(
-                        extension.paged_fragmented_exact_decode_out
-                        if use_sm90_page16
-                        else extension.paged_exact_decode_out
+                        extension.paged_fragmented_ragged_exact_decode_out
+                        if use_sm90_page16_ragged
+                        else (
+                            extension.paged_fragmented_exact_decode_out
+                            if use_sm90_page16
+                            else extension.paged_exact_decode_out
+                        )
                     ),
                     tokens_per_tile=int(tokens_per_tile),
                     partial_num_warps=int(partial_num_warps),
@@ -456,18 +496,32 @@ class PagedExactDecodePlan:
         if self.backend in {
             PAGED_EXACT_SM90_BACKEND,
             PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
+            PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
         }:
             assert self.query_group is not None and self.output_group is not None
-            self.launch(
-                self.query_group,
-                self.cache.key,
-                self.cache.value,
-                self.cache.page_table,
-                self.workspace["partial_o"],
-                self.workspace["partial_lse"],
-                self.output_group,
-                self.splits,
-            )
+            if self.backend == PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND:
+                self.launch(
+                    self.query_group,
+                    self.cache.key,
+                    self.cache.value,
+                    self.cache.page_table,
+                    self.cache.sequence_lengths,
+                    self.workspace["partial_o"],
+                    self.workspace["partial_lse"],
+                    self.output_group,
+                    self.splits,
+                )
+            else:
+                self.launch(
+                    self.query_group,
+                    self.cache.key,
+                    self.cache.value,
+                    self.cache.page_table,
+                    self.workspace["partial_o"],
+                    self.workspace["partial_lse"],
+                    self.output_group,
+                    self.splits,
+                )
             return self.output
         return self.launch(
             self.query,

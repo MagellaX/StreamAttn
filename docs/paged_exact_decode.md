@@ -40,7 +40,8 @@ KV heads:  2
 head dim:  64
 layout:    HND
 page size: 16 or 64
-lengths:   full fixed 16K/32K/64K buckets
+capacity:  16K/32K/64K buckets
+lengths:   page-16 positive ragged rows; page-64 full rows
 ~~~
 
 A producer CTA owns one `(batch, kv_head, split)` group and computes all eight
@@ -49,6 +50,14 @@ page directly to one compute tile. Page-16 aliases the same swizzled shared
 tile as `(16, D, 4)` and issues four direct physical-page copies into it. There
 is no global gather or repack buffer. Both paths preserve true-GQA K/V sharing,
 exact online softmax, and exact split-state merging.
+
+The ragged page-16 producer derives its tile count from each request's device
+length. On the final tile it predicates scores beyond that length to negative
+infinity before online softmax. Missing fragments reuse the last valid physical
+page only as a safe load address; every reused value is masked and contributes
+zero probability. Empty split states merge with `lse=-inf`. The path therefore
+preserves exact attention semantics without gathering, repacking, or launching
+one kernel per sequence length.
 
 The page-16 load economics are favorable for D64 BF16:
 
@@ -106,10 +115,11 @@ are allocated once by PagedExactDecodePlan.
 
 ## H100 Evidence
 
-Paired against FlashInfer 0.6.12 on an H100 80GB with randomized physical page
-order. FlashInfer `backend="auto"` resolved to `fa2` for these shapes. Each
-promoted cell passed nine alternating-order paired trials and the exact output
-tolerance.
+Paired on an H100 80GB with randomized physical page order. Page-64 used
+FlashInfer 0.6.12. The current page-16 gate uses version-matched
+`flashinfer-python`/`flashinfer-cubin` 0.6.17; `backend="auto"` resolved to
+`fa2`. Each promoted cell passed nine alternating-order paired trials and the
+exact output tolerance.
 
 ### Page-64
 
@@ -133,16 +143,42 @@ Paired median speedups:
 
 | Batch | 16K | 32K | 64K |
 |---:|---:|---:|---:|
-| 1 | `2.12x` | `1.75x` | `1.36x` |
-| 2 | `2.13x` | `1.74x` | `1.42x` |
-| 4 | `1.91x` | `1.45x` | `1.33x` |
-| 8 | `1.51x` | `1.30x` | `1.18x` |
+| 1 | `2.07x` | `1.80x` | `1.43x` |
+| 2 | `2.06x` | `1.74x` | `1.51x` |
+| 4 | `1.93x` | `1.52x` | `1.35x` |
+| 8 | `1.57x` | `1.35x` | `1.21x` |
 
-All 12 cells won `9/9` trials (`108/108` total). The minimum paired ratio was
-`1.18x`; max absolute output error was at most `2.44e-4` in BF16. Raw artifacts:
+All 12 full-row controls won `9/9` trials (`108/108` total) against FlashInfer
+0.6.17. The minimum paired ratio was `1.20x`; max absolute output error was at
+most `2.44e-4` in BF16.
+
+### Page-16 ragged rows
+
+The ragged gate covers tail-only, mixed mild/severe, short-heavy, uniform
+`N/8`, uniform `N/64`, and one-token request profiles. Across the promoted
+B1/B2/B4/B8 and 16K/32K/64K capacity matrix:
+
+| Evidence | Result |
+|---|---:|
+| Ragged cells | `76/76` correct and faster |
+| Alternating-order trials | `684/684` StreamAttn wins |
+| Median of cell paired medians | `2.04x` |
+| Worst individual paired ratio | `1.17x` |
+| Max absolute BF16 error | `1.95e-3` |
+| One-token endpoint | `0` max error; all B1-B8 cells faster |
+
+The larger worst-case error occurs in the very short `N/64` profile; every
+cell remains below the benchmark's `1e-2` BF16 exact-output tolerance. Long
+tail/mild/severe profiles stay at or below `4.88e-4`.
+
+Raw page-16 artifacts:
 
 - `artifacts/gate0/paged_exact_page16_selected_b1_b4_h100.json`
 - `artifacts/gate0/paged_exact_page16_selected_b8_h100.json`
+- `artifacts/gate0/paged_exact_page16_ragged_phase_h100_flashinfer_0_6_17.json`
+- `artifacts/gate0/paged_exact_page16_ragged_short_boundary_h100_flashinfer_0_6_17.json`
+- `artifacts/gate0/paged_exact_page16_ragged_utilization_boundary_h100_flashinfer_0_6_17.json`
+- `artifacts/gate0/paged_exact_page16_ragged_minimum_h100_flashinfer_0_6_17.json`
 
 ## Benchmark
 
@@ -185,5 +221,5 @@ N = 16K, 32K, 64K
 D64/G8, HND, page-16 and page-64
 ~~~
 
-Other page sizes, variable sequence lengths inside a fixed plan, and NHD WGMMA
-remain on the generic exact backend until separately measured and promoted.
+Other page sizes, variable page-64 lengths, and NHD WGMMA remain on the generic
+exact backend until separately measured and promoted.

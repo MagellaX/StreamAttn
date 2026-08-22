@@ -7,8 +7,10 @@ import stream_attention as stream_attn
 from stream_attention.paged import (
     PAGED_EXACT_NATIVE_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS,
     PagedExactDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
@@ -28,16 +30,12 @@ def _make_paged_inputs(*, layout: str = "NHD", device: str = "cpu"):
     dim = 8
     page_size = 4
     num_pages = 5
-    query = torch.randn(
-        batch, 1, query_heads, dim, device=device, dtype=torch.float32
-    )
+    query = torch.randn(batch, 1, query_heads, dim, device=device, dtype=torch.float32)
     key_nhd = torch.randn(
         num_pages, page_size, kv_heads, dim, device=device, dtype=torch.float32
     )
     value_nhd = torch.randn_like(key_nhd)
-    page_table = torch.tensor(
-        [[3, 0, -1], [1, 4, 2]], device=device, dtype=torch.int32
-    )
+    page_table = torch.tensor([[3, 0, -1], [1, 4, 2]], device=device, dtype=torch.int32)
     sequence_lengths = torch.tensor([7, 10], device=device, dtype=torch.int32)
     if layout == "NHD":
         key, value = key_nhd, value_nhd
@@ -163,15 +161,18 @@ def test_paged_metadata_validation_rejects_bad_active_page_and_length():
 
 
 def test_paged_split_rule_targets_producer_parallelism():
-    assert choose_paged_exact_splits(
-        batch=1, query_heads=16, max_pages_per_request=2048
-    ) == 32
-    assert choose_paged_exact_splits(
-        batch=4, query_heads=16, max_pages_per_request=2048
-    ) == 8
-    assert choose_paged_exact_splits(
-        batch=8, query_heads=16, max_pages_per_request=2048
-    ) == 4
+    assert (
+        choose_paged_exact_splits(batch=1, query_heads=16, max_pages_per_request=2048)
+        == 32
+    )
+    assert (
+        choose_paged_exact_splits(batch=4, query_heads=16, max_pages_per_request=2048)
+        == 8
+    )
+    assert (
+        choose_paged_exact_splits(batch=8, query_heads=16, max_pages_per_request=2048)
+        == 4
+    )
 
 
 def test_promoted_paged_sm90_cells_and_source_contract():
@@ -183,14 +184,22 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert PROMOTED_PAGED_EXACT_PAGE16_SPLITS[(4, 32768)] == 64
     assert PROMOTED_PAGED_EXACT_PAGE16_SPLITS[(8, 65536)] == 32
     assert len(PROMOTED_PAGED_EXACT_PAGE16_SPLITS) == 12
+    assert PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS == (
+        PROMOTED_PAGED_EXACT_PAGE16_SPLITS
+    )
     assert "paged_exact_decode_out" in CPP_SOURCE
     assert "paged_fragmented_exact_decode_out" in CPP_SOURCE
+    assert "paged_fragmented_ragged_exact_decode_out" in CPP_SOURCE
     assert "streamattn_exact_tile_ptr<kPagedPageSize>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<64>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<16>" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_exact_partial_kernel<16, true>" in CUDA_SOURCE
     assert "using SmemLayoutPaged16" in CUDA_SOURCE
     assert "streamattn_copy_paged16_tile" in CUDA_SOURCE
     assert PAGED_EXACT_SM90_FRAGMENTED_BACKEND.endswith("fragmented_exact")
+    assert PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND.endswith(
+        "fragmented_ragged_exact"
+    )
 
 
 @pytest.mark.skipif(

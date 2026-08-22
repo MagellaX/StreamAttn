@@ -52,8 +52,8 @@ kernel, policy artifact, fixed-buffer plan, route decision, and exact fallback.
 ### Exact native decode
 
 The promoted SM90 kernels compute full-context GQA decode and use online
-softmax plus exact split-state merging. These are direct comparisons against
-FlashInfer 0.6.12 on H100:
+softmax plus exact split-state merging. Contiguous and page-64 results below
+use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 
 | Shape family | Measured region | StreamAttn speedup | Status |
 |---|---|---:|---|
@@ -61,7 +61,8 @@ FlashInfer 0.6.12 on H100:
 | D64, GQA group 4 | 14 cells; B1-B16; 16K-64K KV | `1.027x-1.449x` | Promoted per cell |
 | D128, GQA group 4 | 6 cells; B4-B16; 16K-64K KV | `1.002x-1.012x` | Promoted per cell |
 | Paged D64, GQA group 8 | HND/page-64; B1-B8; 16K-64K KV | `1.21x-2.24x` paired median | Promoted per cell |
-| Paged D64, GQA group 8 | HND/page-16; B1-B8; 16K-64K KV | `1.18x-2.13x` paired median | Promoted per cell |
+| Paged D64, GQA group 8 | HND/page-16 full rows; B1-B8; 16K-64K capacity | `1.21x-2.07x` paired median | Promoted per cell |
+| Paged D64, GQA group 8 | HND/page-16 ragged rows; same capacity matrix | `1.17x` worst paired trial; `2.04x` median cell | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -113,9 +114,9 @@ verifier.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
 - No A100, B200, FP8, or non-Qwen model-family performance claim has been
-  promoted yet. Paged exact promotion is currently restricted to H100 BF16,
-  D64/G8, full fixed-length buckets, HND layout, and 16- or 64-token pages;
-  variable-length batches remain exact fallbacks without a speed claim.
+  promoted yet. Paged exact promotion is restricted to H100 BF16, D64/G8,
+  HND layout, and measured 16K/32K/64K capacity cells. Page-16 supports exact
+  variable-length rows; page-64 still requires full fixed-length rows.
 - The repository does not currently claim a direct universal win over
   FlashAttention training kernels.
 
@@ -216,9 +217,11 @@ output, info = plan.run()
 ~~~
 
 The page table may be updated in place between steps while preserving its
-validated shape and bounds. The promoted WGMMA plan requires every request to
-remain at the full planned bucket length; variable lengths use the generic
-exact paged backend. Both paths are allocation-free after planning.
+validated shape and bounds. The promoted page-16 WGMMA plan accepts positive
+per-request lengths, masks the final 64-token compute tile exactly, and ignores
+inactive `-1` table slots. Page-64 WGMMA still requires full planned lengths;
+unsupported shapes use the generic exact paged backend. Both paths are
+allocation-free after planning.
 
 ### Plan once for a decode loop
 
@@ -385,11 +388,11 @@ not hidden StreamAttn dependencies.
 | CPU | Correctness and SDPA fallback |
 | Native GPU evidence | NVIDIA H100 / SM90 |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16/page-64 D64/G8 cells |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 ragged and page-64 full D64/G8 cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
-| Not yet promoted | A100, B200, variable-length WGMMA, FP8 seed cache, second model family |
+| Not yet promoted | A100, B200, ragged page-64 WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
 

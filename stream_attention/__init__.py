@@ -105,6 +105,7 @@ from .engine import (
 from .backends.sm90 import ExactDecodePlan
 from .paged import (
     PAGED_EXACT_NATIVE_BACKEND,
+    PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PagedExactDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
@@ -214,6 +215,7 @@ __all__ = [
     "StreamAttnEnginePlan",
     "ExactDecodePlan",
     "PAGED_EXACT_NATIVE_BACKEND",
+    "PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND",
     "PagedExactDecodePlan",
     "PagedKVCache",
     "choose_paged_exact_splits",
