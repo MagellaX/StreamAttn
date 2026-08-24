@@ -9,8 +9,14 @@ from stream_attention.paged import (
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS,
+    PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES,
+    PROMOTED_PAGED_EXACT_PAGE16_SHAPES,
     PagedExactDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
@@ -19,6 +25,7 @@ from stream_attention.paged import (
 from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
     CPP_SOURCE,
     CUDA_SOURCE,
+    cuda_source_for_head_dim,
 )
 
 
@@ -187,6 +194,25 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS == (
         PROMOTED_PAGED_EXACT_PAGE16_SPLITS
     )
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS[(1, 65536)] == 128
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS[(8, 65536)] == 16
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS[(8, 65536)] == 24
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS[(1, 65536)] == 32
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS[(8, 65536)] == 8
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(4, 32768)] == 12
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(4, 65536)] == 16
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(8, 32768)] == 12
+    assert PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(8, 65536)] == 16
+    assert PROMOTED_PAGED_EXACT_PAGE16_SHAPES == {
+        (16, 2, 8, 64): PROMOTED_PAGED_EXACT_PAGE16_SPLITS,
+        (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS,
+        (32, 8, 4, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS,
+    }
+    assert PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES == {
+        (16, 2, 8, 64): PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS,
+        (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS,
+        (32, 8, 4, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
+    }
     assert "paged_exact_decode_out" in CPP_SOURCE
     assert "paged_fragmented_exact_decode_out" in CPP_SOURCE
     assert "paged_fragmented_ragged_exact_decode_out" in CPP_SOURCE
@@ -196,6 +222,8 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert "streamattn_transposed_wgmma_exact_partial_kernel<16, true>" in CUDA_SOURCE
     assert "using SmemLayoutPaged16" in CUDA_SOURCE
     assert "streamattn_copy_paged16_tile" in CUDA_SOURCE
+    assert "static constexpr int kHeadDim = 128;" in cuda_source_for_head_dim(128)
+    assert CUDA_SOURCE.count("q_group must have shape [B,Hkv,4|8,D]") >= 2
     assert PAGED_EXACT_SM90_FRAGMENTED_BACKEND.endswith("fragmented_exact")
     assert PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND.endswith(
         "fragmented_ragged_exact"

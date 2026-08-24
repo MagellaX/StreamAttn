@@ -2196,9 +2196,10 @@ void streamattn_transposed_wgmma_paged_fragmented_exact_decode_out_cuda(
               "partial outputs must be fp32");
   TORCH_CHECK(output.scalar_type() == at::ScalarType::BFloat16,
               "output must be bf16");
-  TORCH_CHECK(q_group.dim() == 4 && q_group.size(2) == kBlockN &&
+  TORCH_CHECK(q_group.dim() == 4 &&
+              (q_group.size(2) == 4 || q_group.size(2) == kBlockN) &&
               q_group.size(3) == kHeadDim,
-              "q_group must have shape [B,Hkv,8,D]");
+              "q_group must have shape [B,Hkv,4|8,D]");
   TORCH_CHECK(k_pages.sizes() == v_pages.sizes(),
               "K/V page tensors must match");
   TORCH_CHECK(k_pages.dim() == 4 && k_pages.size(1) == q_group.size(1) &&
@@ -2211,7 +2212,7 @@ void streamattn_transposed_wgmma_paged_fragmented_exact_decode_out_cuda(
   const int batch = static_cast<int>(q_group.size(0));
   const int kv_heads = static_cast<int>(q_group.size(1));
   const int groups = batch * kv_heads;
-  const int active_heads = kBlockN;
+  const int active_heads = static_cast<int>(q_group.size(2));
   const int max_pages = static_cast<int>(page_table.size(1));
   TORCH_CHECK(max_pages % 4 == 0,
               "page-16 tables must contain a multiple of four pages");
@@ -2226,8 +2227,8 @@ void streamattn_transposed_wgmma_paged_fragmented_exact_decode_out_cuda(
                   {groups, num_splits, kBlockN}),
               "partial_lse must have shape [B*Hkv,num_splits,8]");
   TORCH_CHECK(output.sizes() == torch::IntArrayRef(
-                  {groups, kBlockN, kHeadDim}),
-              "output must have shape [B*Hkv,8,D]");
+                  {groups, active_heads, kHeadDim}),
+              "output must have shape [B*Hkv,4|8,D]");
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   const dim3 partial_grid(groups * static_cast<int>(num_splits));
@@ -2291,9 +2292,10 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
               "partial outputs must be fp32");
   TORCH_CHECK(output.scalar_type() == at::ScalarType::BFloat16,
               "output must be bf16");
-  TORCH_CHECK(q_group.dim() == 4 && q_group.size(2) == kBlockN &&
+  TORCH_CHECK(q_group.dim() == 4 &&
+              (q_group.size(2) == 4 || q_group.size(2) == kBlockN) &&
               q_group.size(3) == kHeadDim,
-              "q_group must have shape [B,Hkv,8,D]");
+              "q_group must have shape [B,Hkv,4|8,D]");
   TORCH_CHECK(k_pages.sizes() == v_pages.sizes(),
               "K/V page tensors must match");
   TORCH_CHECK(k_pages.dim() == 4 && k_pages.size(1) == q_group.size(1) &&
@@ -2309,7 +2311,7 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
   const int batch = static_cast<int>(q_group.size(0));
   const int kv_heads = static_cast<int>(q_group.size(1));
   const int groups = batch * kv_heads;
-  const int active_heads = kBlockN;
+  const int active_heads = static_cast<int>(q_group.size(2));
   const int max_pages = static_cast<int>(page_table.size(1));
   TORCH_CHECK(max_pages % 4 == 0,
               "page-16 tables must contain a multiple of four pages");
@@ -2324,8 +2326,8 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
                   {groups, num_splits, kBlockN}),
               "partial_lse must have shape [B*Hkv,num_splits,8]");
   TORCH_CHECK(output.sizes() == torch::IntArrayRef(
-                  {groups, kBlockN, kHeadDim}),
-              "output must have shape [B*Hkv,8,D]");
+                  {groups, active_heads, kHeadDim}),
+              "output must have shape [B*Hkv,4|8,D]");
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   const dim3 partial_grid(groups * static_cast<int>(num_splits));

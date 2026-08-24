@@ -30,26 +30,31 @@ may update the same buffers in place while preserving those invariants.
 
 ### Promoted SM90 path
 
-The Hopper specializations are intentionally narrow:
+The Hopper specializations are intentionally guarded by measured shape:
 
 ~~~text
 GPU:       H100 / SM90
 dtype:     BF16
-Q heads:   16
-KV heads:  2
-head dim:  64
 layout:    HND
-page size: 16 or 64
 capacity:  16K/32K/64K buckets
 lengths:   page-16 positive ragged rows; page-64 full rows
+
+page-16:   D64/G8, D128/G8, D128/G4
+page-64:   D64/G8
 ~~~
 
-A producer CTA owns one `(batch, kv_head, split)` group and computes all eight
-query heads together with transposed `m64n8k16` WGMMA. Page-64 maps one physical
-page directly to one compute tile. Page-16 aliases the same swizzled shared
-tile as `(16, D, 4)` and issues four direct physical-page copies into it. There
-is no global gather or repack buffer. Both paths preserve true-GQA K/V sharing,
-exact online softmax, and exact split-state merging.
+A producer CTA owns one `(batch, kv_head, split)` group and computes a GQA
+group with transposed `m64n8k16` WGMMA. G8 fills all eight WGMMA columns; G4
+uses four active columns and masks the four padded columns. Page-64 maps one
+physical page directly to one compute tile. Page-16 aliases the same swizzled
+shared tile as `(16, D, 4)` and issues four direct physical-page copies into
+it. There is no global gather or repack buffer. Every path preserves true-GQA
+K/V sharing, exact online softmax, and exact split-state merging.
+
+D128 does not keep K and V resident simultaneously. After WGMMA consumes a K
+stage, the producer reuses that stage for V and the consumer performs PV before
+the stage cycles. This two-phase lifetime keeps D128 inside Hopper's
+shared-memory budget without reducing the 64-token compute tile.
 
 The ragged page-16 producer derives its tile count from each request's device
 length. On the final tile it predicates scores beyond that length to negative
@@ -59,27 +64,37 @@ zero probability. Empty split states merge with `lse=-inf`. The path therefore
 preserves exact attention semantics without gathering, repacking, or launching
 one kernel per sequence length.
 
-The page-16 load economics are favorable for D64 BF16:
+The page-16 load economics are favorable for BF16:
 
 ~~~text
-one K or V fragment = 16 * 64 * 2 bytes = 2 KiB
-four K+V fragments  = 4 * 2 * 2 KiB   = 16 KiB
-four page IDs       = 4 * 4 bytes       = 16 bytes
-page-table overhead / K+V bytes          = 0.098%
+                     D64       D128
+one K/V fragment    2 KiB      4 KiB
+four K+V fragments  16 KiB     32 KiB
+four page IDs       16 bytes   16 bytes
+table / K+V bytes   0.098%     0.049%
 ~~~
 
 The bytes are therefore effectively unchanged from a contiguous 64-token
 tile; the risk is copy-command and synchronization overhead. The implementation
 follows the same aliasing principle as NVIDIA CUTLASS's paged GQA example: one
 MMA tile has a page-fragmented producer view and an unchanged consumer view.
-The selected split table then keeps producer parallelism near the H100 occupancy
-region:
+Split selection balances producer waves against partial-state merge traffic:
 
 ~~~text
 producer CTAs = batch * KV heads * splits
-B1-B4: 64 splits
-B8:    32 splits
+workspace     = O(batch * KV heads * splits * (D + 2))
+
+D128/G8 full:    B1=128, B2=64, B4=32, B8=16
+D128/G8 ragged:  same, except B8/N64K=24
+D128/G4 full:    B1=32, B2=16, B4=8, B8=8
+D128/G4 ragged:  B4/N32K=12, B4/N64K=16,
+                  B8/N32K=12, B8/N64K=16
 ~~~
+
+The ragged exceptions are deliberate. For example, D128/G8 B8/N64K moves
+from 256 to 384 producer CTAs: almost three H100 waves (396 CTA slots), which
+reduces the long-tail effect from unequal request lengths. `C=24` costs 25%
+less merge state than `C=32` while retaining the recovered latency margin.
 
 Reference implementation pattern:
 [CUTLASS paged GQA](https://github.com/NVIDIA/cutlass/blob/main/examples/93_blackwell_low_latency_gqa/tgv_gqa_paged.cuh).
@@ -118,8 +133,9 @@ are allocated once by PagedExactDecodePlan.
 Paired on an H100 80GB with randomized physical page order. Page-64 used
 FlashInfer 0.6.12. The current page-16 gate uses version-matched
 `flashinfer-python`/`flashinfer-cubin` 0.6.17; `backend="auto"` resolved to
-`fa2`. Each promoted cell passed nine alternating-order paired trials and the
-exact output tolerance.
+`fa2`, which also won explicit backend selection for D128. Every promoted
+schedule passed alternating-order paired trials; high-risk D128 boundaries
+were rerun with nine trials and an independently chosen seed.
 
 ### Page-64
 
@@ -137,7 +153,7 @@ matrix was `1.19x`; max absolute output error was at most `2.44e-4` in BF16.
 The raw artifact is
 `artifacts/gate0/paged_sm90_exact_strict_matrix_h100_20260822.json`.
 
-### Page-16
+### Page-16 D64/G8
 
 Paired median speedups:
 
@@ -152,7 +168,7 @@ All 12 full-row controls won `9/9` trials (`108/108` total) against FlashInfer
 0.6.17. The minimum paired ratio was `1.20x`; max absolute output error was at
 most `2.44e-4` in BF16.
 
-### Page-16 ragged rows
+### Page-16 D64/G8 ragged rows
 
 The ragged gate covers tail-only, mixed mild/severe, short-heavy, uniform
 `N/8`, uniform `N/64`, and one-token request profiles. Across the promoted
@@ -180,6 +196,55 @@ Raw page-16 artifacts:
 - `artifacts/gate0/paged_exact_page16_ragged_utilization_boundary_h100_flashinfer_0_6_17.json`
 - `artifacts/gate0/paged_exact_page16_ragged_minimum_h100_flashinfer_0_6_17.json`
 
+### Page-16 D128/G8
+
+The promoted D128/G8 matrix covers B1/B2/B4/B8, 16K/32K/64K capacity,
+full rows, and positive ragged rows down to one token. The automatic-route gate
+sampled full, severe, and tiny profiles across all 12 batch/capacity cells:
+
+| Evidence | Result |
+|---|---:|
+| Automatic-route cells | `36/36` correct and faster |
+| Alternating-order trials | `180/180` StreamAttn wins |
+| Median of cell paired medians | `1.75x` |
+| Worst individual paired ratio | `1.075x` |
+| Max StreamAttn error vs short-row FP32 reference | `1.68e-3` |
+| Max FlashInfer error vs the same reference | `2.23e-3` |
+
+An independent nine-trial B8/N64K ragged gate selected `C=24` after `C=16`
+fell to statistical parity under unequal request lengths. Mild, severe, and
+short profiles then won all `27/27` trials; the worst trial was `1.068x`.
+
+Raw artifacts:
+
+- `artifacts/gate0/paged_exact_d128_g8_page16_auto_promotion_h100.json`
+- `artifacts/gate0/paged_exact_d128_g8_b8_n64_ragged_promotion_h100.json`
+
+### Page-16 D128/G4
+
+The final D128/G4 route covers seven length profiles at every B1/B2/B4/B8 and
+16K/32K/64K capacity cell. The B8/N32K rows in the main matrix were superseded
+by a separate automatic-route confirmation after their ragged split changed
+from 8 to 12.
+
+| Evidence | Result |
+|---|---:|
+| Final selected cells | `84/84` correct and faster |
+| Alternating-order trials | `756/756` StreamAttn wins |
+| Median of cell paired medians | `1.34x` |
+| Worst individual paired ratio | `1.017x` |
+| Max StreamAttn error vs short-row FP32 reference | `2.24e-3` |
+| Max FlashInfer error vs the same reference | `2.25e-3` |
+
+The weakest final cells are high-batch 64K rows, where exact decode is already
+well occupied and StreamAttn's advantage is a few percent. Those cells remain
+shape-guarded; this evidence is not extrapolated to other dimensions or GPUs.
+
+Raw artifacts:
+
+- `artifacts/gate0/paged_exact_d128_g4_page16_final_promotion_h100.json`
+- `artifacts/gate0/paged_exact_d128_g4_b8_n32_promotion_h100.json`
+
 ## Benchmark
 
 Run a paired benchmark against FlashInfer:
@@ -190,23 +255,31 @@ python benchmarks/profile_paged_exact_decode.py \
   --kv-len 32768 \
   --q-heads 16 \
   --kv-heads 2 \
-  --head-dim 64 \
+  --head-dim 128 \
   --page-size 16 \
   --layout HND \
   --dtype bf16 \
-  --output-json artifacts/paged_exact_b4_32k_d64_g8_h100.json
+  --flashinfer-backends auto,fa2,fa3,trtllm-gen \
+  --output-json artifacts/paged_exact_b4_32k_d128_g8_h100.json
 ~~~
 
 The benchmark randomizes physical page order, checks output parity, reuses both
-plans, and reports paired raw samples. Packing time is excluded for both
+plans, and reports paired raw samples. When several FlashInfer backends are
+requested it selects the fastest correct initial median, rather than assuming
+that `auto` is the strongest baseline. Packing time is excluded for both
 backends because page construction belongs to cache management, not decode.
+
+For rows no longer than 2,048 tokens, the harness also materializes an
+independent FP32 dense reference. This matters in BF16: two valid reduction
+orders can differ by one representable output step (`0.00390625`) even when
+each is within roughly `0.0023` of FP32.
 
 ## Promotion Gate
 
 A cell can be promoted only when:
 
 ~~~text
-correctness passes against an exact reference
+correctness passes against a cross-backend or independent FP32 reference
 paired median speedup > 1.0
 at least 7 of 9 paired trials win
 no page-to-contiguous copy occurs in the timed path
@@ -219,7 +292,9 @@ The promoted matrix is H100, BF16:
 B = 1, 2, 4, 8
 N = 16K, 32K, 64K
 D64/G8, HND, page-16 and page-64
+D128/G4 and D128/G8, HND, page-16
 ~~~
 
-Other page sizes, variable page-64 lengths, and NHD WGMMA remain on the generic
-exact backend until separately measured and promoted.
+Other dimensions, page sizes, variable page-64 lengths, NHD WGMMA, and
+non-Hopper GPUs remain on the generic exact backend until separately measured
+and promoted.

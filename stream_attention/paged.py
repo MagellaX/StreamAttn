@@ -50,6 +50,64 @@ PROMOTED_PAGED_EXACT_PAGE16_SPLITS = {
 # every batch/bucket cell below from a one-token endpoint through full length.
 PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS = dict(PROMOTED_PAGED_EXACT_PAGE16_SPLITS)
 
+# D128 uses a two-phase K/V shared-memory pipeline. The split tables below are
+# measured H100 optima against FlashInfer FA2, not extrapolated shape support.
+PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS = {
+    (1, 16384): 128,
+    (1, 32768): 128,
+    (1, 65536): 128,
+    (2, 16384): 64,
+    (2, 32768): 64,
+    (2, 65536): 64,
+    (4, 16384): 32,
+    (4, 32768): 32,
+    (4, 65536): 32,
+    (8, 16384): 16,
+    (8, 32768): 16,
+    (8, 65536): 16,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS = dict(
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS
+)
+# Variable-length producers need a balanced third wave at this boundary.
+PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS[(8, 65536)] = 24
+
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS = {
+    (1, 16384): 32,
+    (1, 32768): 32,
+    (1, 65536): 32,
+    (2, 16384): 16,
+    (2, 32768): 16,
+    (2, 65536): 16,
+    (4, 16384): 8,
+    (4, 32768): 8,
+    (4, 65536): 8,
+    (8, 16384): 8,
+    (8, 32768): 8,
+    (8, 65536): 8,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS = dict(
+    PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS
+)
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(4, 32768)] = 12
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(4, 65536)] = 16
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(8, 32768)] = 12
+PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS[(8, 65536)] = 16
+
+PROMOTED_PAGED_EXACT_PAGE16_SHAPES = {
+    (16, 2, 8, 64): PROMOTED_PAGED_EXACT_PAGE16_SPLITS,
+    (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G8_SPLITS,
+    (32, 8, 4, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES = {
+    (16, 2, 8, 64): PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS,
+    (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS,
+    (32, 8, 4, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
+}
+
 
 @dataclass(frozen=True)
 class PagedKVCache:
@@ -316,17 +374,21 @@ class PagedExactDecodePlan:
             full_lengths = bool(
                 torch.all(cache.sequence_lengths == cache.max_sequence_length).item()
             )
+            q_heads = int(query.shape[2])
+            head_dim = int(query.shape[3])
+            group_size = q_heads // cache.kv_heads
+            page16_shape = (q_heads, cache.kv_heads, group_size, head_dim)
             common_sm90_shape = (
                 torch.cuda.get_device_capability(query.device) == (9, 0)
                 and query.dtype == torch.bfloat16
                 and cache.normalized_layout == "HND"
-                and int(query.shape[2]) == 16
-                and cache.kv_heads == 2
-                and int(query.shape[3]) == 64
+                and group_size in {4, 8}
+                and head_dim in {64, 128}
                 and cache.page_table.dtype == torch.int32
             )
             use_sm90_page64 = (
                 common_sm90_shape
+                and page16_shape == (16, 2, 8, 64)
                 and full_lengths
                 and cache.page_size == 64
                 and (int(query.shape[0]), cache.max_sequence_length)
@@ -338,8 +400,10 @@ class PagedExactDecodePlan:
                 and cache.page_size == 16
                 and (
                     sm90_fragmented_experimental
-                    or (int(query.shape[0]), cache.max_sequence_length)
-                    in PROMOTED_PAGED_EXACT_PAGE16_SPLITS
+                    or (
+                        (int(query.shape[0]), cache.max_sequence_length)
+                        in PROMOTED_PAGED_EXACT_PAGE16_SHAPES.get(page16_shape, {})
+                    )
                 )
             )
             use_sm90_page16_ragged = (
@@ -349,8 +413,12 @@ class PagedExactDecodePlan:
                 and cache.sequence_lengths.dtype == torch.int32
                 and (
                     sm90_fragmented_ragged_experimental
-                    or (int(query.shape[0]), cache.max_sequence_length)
-                    in PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS
+                    or (
+                        (int(query.shape[0]), cache.max_sequence_length)
+                        in PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES.get(
+                            page16_shape, {}
+                        )
+                    )
                 )
             )
             use_sm90_paged = (
@@ -379,11 +447,12 @@ class PagedExactDecodePlan:
                         ),
                     )
                 elif splits is None and (use_sm90_page16 or use_sm90_page16_ragged):
-                    split_table = (
-                        PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS
+                    shape_tables = (
+                        PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES
                         if use_sm90_page16_ragged
-                        else PROMOTED_PAGED_EXACT_PAGE16_SPLITS
+                        else PROMOTED_PAGED_EXACT_PAGE16_SHAPES
                     )
+                    split_table = shape_tables.get(page16_shape, {})
                     selected_splits = split_table.get(
                         (int(query.shape[0]), cache.max_sequence_length),
                         choose_num_splits(
@@ -403,7 +472,7 @@ class PagedExactDecodePlan:
                     groups,
                     selected_splits,
                     8,
-                    64,
+                    head_dim,
                     device=query.device,
                     dtype=torch.float32,
                 )
@@ -414,7 +483,7 @@ class PagedExactDecodePlan:
                     device=query.device,
                     dtype=torch.float32,
                 )
-                extension = compile_transposed_gqa_exact_extension(head_dim=64)
+                extension = compile_transposed_gqa_exact_extension(head_dim=head_dim)
                 return cls(
                     query=query,
                     cache=cache,
@@ -441,8 +510,10 @@ class PagedExactDecodePlan:
                     ),
                     tokens_per_tile=int(tokens_per_tile),
                     partial_num_warps=int(partial_num_warps),
-                    query_group=query.view(int(query.shape[0]), 2, 8, 64),
-                    output_group=output.view(groups, 8, 64),
+                    query_group=query.view(
+                        int(query.shape[0]), cache.kv_heads, group_size, head_dim
+                    ),
+                    output_group=output.view(groups, group_size, head_dim),
                 )
             from .kernels.paged_exact_triton import (
                 TRITON_AVAILABLE,

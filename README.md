@@ -63,6 +63,8 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D64, GQA group 8 | HND/page-64; B1-B8; 16K-64K KV | `1.21x-2.24x` paired median | Promoted per cell |
 | Paged D64, GQA group 8 | HND/page-16 full rows; B1-B8; 16K-64K capacity | `1.21x-2.07x` paired median | Promoted per cell |
 | Paged D64, GQA group 8 | HND/page-16 ragged rows; same capacity matrix | `1.17x` worst paired trial; `2.04x` median cell | Promoted per cell |
+| Paged D128, GQA group 8 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.075x` worst paired trial; `1.75x` median auto-gate cell | Promoted per cell |
+| Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -78,7 +80,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [D64/G8 H100 phase diagram](docs/exact_native_h100_phase_diagram_20260818.md)
 - [D64/G4 H100 phase diagram](docs/exact_native_h100_g4_phase_diagram_20260818.md)
 - [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
-- [Paged D64/G8 H100 phase diagram](docs/paged_exact_decode.md)
+- [Paged D64/D128 H100 phase diagram](docs/paged_exact_decode.md)
 
 ### Model-aware reduced-work decode
 
@@ -114,9 +116,10 @@ verifier.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
 - No A100, B200, FP8, or non-Qwen model-family performance claim has been
-  promoted yet. Paged exact promotion is restricted to H100 BF16, D64/G8,
-  HND layout, and measured 16K/32K/64K capacity cells. Page-16 supports exact
-  variable-length rows; page-64 still requires full fixed-length rows.
+  promoted yet. Paged exact promotion is restricted to H100 BF16, measured
+  D64/G8 and D128/G4/G8 HND cells at 16K/32K/64K capacity. Page-16 supports
+  exact variable-length rows; page-64 is D64/G8-only and still requires full
+  fixed-length rows.
 - The repository does not currently claim a direct universal win over
   FlashAttention training kernels.
 
@@ -222,6 +225,11 @@ per-request lengths, masks the final 64-token compute tile exactly, and ignores
 inactive `-1` table slots. Page-64 WGMMA still requires full planned lengths;
 unsupported shapes use the generic exact paged backend. Both paths are
 allocation-free after planning.
+
+The same page-16 API also promotes D128 BF16 cells with GQA group sizes four
+and eight. D128 reuses each shared-memory stage for V only after its K tile has
+been consumed, keeping the two-phase pipeline inside Hopper's shared-memory
+budget without gathering pages.
 
 ### Plan once for a decode loop
 
@@ -388,7 +396,7 @@ not hidden StreamAttn dependencies.
 | CPU | Correctness and SDPA fallback |
 | Native GPU evidence | NVIDIA H100 / SM90 |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 ragged and page-64 full D64/G8 cells |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 D64/G8 and D128/G4/G8 cells; page-64 full D64/G8 cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
@@ -455,8 +463,8 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Extend paged WGMMA to variable lengths and additional layouts, then expand
-   exact-native evidence to A100 and B200.
+4. Extend paged WGMMA to additional layouts and page sizes, then establish
+   separate exact-native phase diagrams on A100 and B200.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.

@@ -18,8 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from stream_attention import PagedExactDecodePlan, PagedKVCache
-from stream_attention.paged import (
+from stream_attention import PagedExactDecodePlan, PagedKVCache  # noqa: E402
+from stream_attention.paged import (  # noqa: E402
     PAGED_EXACT_SM90_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
@@ -109,6 +109,7 @@ def _flashinfer_runner(
     cache: PagedKVCache,
     *,
     workspace_mb: int,
+    backend: str,
 ):
     try:
         import flashinfer
@@ -138,7 +139,7 @@ def _flashinfer_runner(
         workspace,
         cache.normalized_layout,
         use_tensor_cores=True,
-        backend="auto",
+        backend=backend,
     )
     wrapper.plan(
         indptr,
@@ -171,11 +172,42 @@ def _flashinfer_runner(
         "version": importlib.metadata.version("flashinfer-python"),
         "cubin_version": _package_version("flashinfer-cubin"),
         "jit_cache_version": _package_version("flashinfer-jit-cache"),
-        "requested_backend": "auto",
+        "requested_backend": backend,
         "resolved_backend": (
             None if resolved_backend is None else str(resolved_backend)
         ),
     }
+
+
+def _dense_paged_reference(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+) -> torch.Tensor:
+    """Materialize short rows and evaluate dense attention in FP32."""
+
+    batch, _query_length, query_heads, head_dim = map(int, query.shape)
+    group_size = query_heads // cache.kv_heads
+    kv_head_indices = torch.arange(query_heads, device=query.device) // group_size
+    output = torch.empty_like(query, dtype=torch.float32)
+    scale = 1.0 / math.sqrt(float(head_dim))
+    for row in range(batch):
+        length = int(cache.sequence_lengths[row].item())
+        page_count = (length + cache.page_size - 1) // cache.page_size
+        physical_pages = cache.page_table[row, :page_count].to(torch.int64)
+        key_pages = cache.key.index_select(0, physical_pages)
+        value_pages = cache.value.index_select(0, physical_pages)
+        if cache.normalized_layout == "HND":
+            key_pages = key_pages.permute(0, 2, 1, 3)
+            value_pages = value_pages.permute(0, 2, 1, 3)
+        keys = key_pages.reshape(-1, cache.kv_heads, head_dim)[:length].float()
+        values = value_pages.reshape(-1, cache.kv_heads, head_dim)[:length].float()
+        keys = keys.index_select(1, kv_head_indices)
+        values = values.index_select(1, kv_head_indices)
+        q = query[row, 0].float()
+        scores = torch.einsum("nhd,hd->hn", keys, q) * scale
+        probabilities = torch.softmax(scores, dim=-1)
+        output[row, 0] = torch.einsum("hn,nhd->hd", probabilities, values)
+    return output
 
 
 def profile(args: argparse.Namespace) -> dict[str, Any]:
@@ -249,37 +281,118 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         sm90_fragmented_experimental=args.sm90_fragmented_experimental,
         sm90_fragmented_ragged_experimental=(args.sm90_fragmented_ragged_experimental),
     )
-    flashinfer_run, flashinfer_info = _flashinfer_runner(
-        query,
-        cache,
-        workspace_mb=args.workspace_mb,
-    )
-
     stream_output = plan.run().clone()
-    flashinfer_output = flashinfer_run().view_as(query).clone()
     torch.cuda.synchronize()
-    max_abs_error = float(
-        (stream_output.float() - flashinfer_output.float()).abs().max().item()
-    )
-    mean_abs_error = float(
-        (stream_output.float() - flashinfer_output.float()).abs().mean().item()
-    )
-    if max_abs_error > args.atol:
-        raise RuntimeError(
-            f"paged exact correctness failed: {max_abs_error} > {args.atol}"
-        )
-
+    reference_output = None
+    stream_reference_max_error = None
+    stream_reference_mean_error = None
+    if max(lengths_cpu) <= 2048:
+        reference_output = _dense_paged_reference(query, cache)
+        stream_reference_error = (stream_output.float() - reference_output).abs()
+        stream_reference_max_error = float(stream_reference_error.max().item())
+        stream_reference_mean_error = float(stream_reference_error.mean().item())
     stream_samples = _time_cuda(
         plan.run,
         warmup=args.warmup,
         repeats=args.repeats,
     )
-    flashinfer_samples = _time_cuda(
-        flashinfer_run,
-        warmup=args.warmup,
-        repeats=args.repeats,
-    )
     stream_ms = float(statistics.median(stream_samples))
+
+    requested_flashinfer_backends = [
+        backend.strip()
+        for backend in getattr(args, "flashinfer_backends", "auto").split(",")
+        if backend.strip()
+    ]
+    if not requested_flashinfer_backends:
+        raise ValueError("flashinfer_backends must contain at least one backend")
+    flashinfer_candidates: list[dict[str, Any]] = []
+    valid_flashinfer_candidates: list[dict[str, Any]] = []
+    for requested_backend in requested_flashinfer_backends:
+        try:
+            candidate_run, candidate_info = _flashinfer_runner(
+                query,
+                cache,
+                workspace_mb=args.workspace_mb,
+                backend=requested_backend,
+            )
+            candidate_output = candidate_run().view_as(query).clone()
+            torch.cuda.synchronize()
+            candidate_max_error = float(
+                (stream_output.float() - candidate_output.float()).abs().max().item()
+            )
+            candidate_mean_error = float(
+                (stream_output.float() - candidate_output.float()).abs().mean().item()
+            )
+            candidate_reference_max_error = None
+            candidate_reference_mean_error = None
+            correct = candidate_max_error <= args.atol
+            if reference_output is not None:
+                candidate_reference_error = (
+                    candidate_output.float() - reference_output
+                ).abs()
+                candidate_reference_max_error = float(
+                    candidate_reference_error.max().item()
+                )
+                candidate_reference_mean_error = float(
+                    candidate_reference_error.mean().item()
+                )
+                correct = bool(
+                    stream_reference_max_error <= args.atol
+                    and candidate_reference_max_error <= args.atol
+                )
+            candidate_samples = _time_cuda(
+                candidate_run,
+                warmup=args.warmup,
+                repeats=args.repeats,
+            )
+            candidate_ms = float(statistics.median(candidate_samples))
+            candidate = {
+                **candidate_info,
+                "status": "correct" if correct else "mismatch",
+                "max_abs_error": candidate_max_error,
+                "mean_abs_error": candidate_mean_error,
+                "reference_max_abs_error": candidate_reference_max_error,
+                "reference_mean_abs_error": candidate_reference_mean_error,
+                "median_ms": candidate_ms,
+                "samples_ms": candidate_samples,
+                "run": candidate_run,
+            }
+            flashinfer_candidates.append(candidate)
+            if correct:
+                valid_flashinfer_candidates.append(candidate)
+        except Exception as exc:
+            torch.cuda.synchronize()
+            flashinfer_candidates.append(
+                {
+                    "requested_backend": requested_backend,
+                    "status": "unsupported",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+    if not valid_flashinfer_candidates:
+        raise RuntimeError(
+            "no correct FlashInfer backend was available: "
+            + "; ".join(
+                f"{candidate['requested_backend']}={candidate['status']}"
+                for candidate in flashinfer_candidates
+            )
+        )
+    selected_flashinfer = min(
+        valid_flashinfer_candidates,
+        key=lambda candidate: float(candidate["median_ms"]),
+    )
+    flashinfer_run = selected_flashinfer.pop("run")
+    for candidate in flashinfer_candidates:
+        candidate.pop("run", None)
+    flashinfer_info = {
+        key: value
+        for key, value in selected_flashinfer.items()
+        if key not in {"samples_ms", "median_ms", "max_abs_error", "mean_abs_error"}
+    }
+    flashinfer_info["selection"] = "fastest_correct_initial_median"
+    max_abs_error = float(selected_flashinfer["max_abs_error"])
+    mean_abs_error = float(selected_flashinfer["mean_abs_error"])
+    flashinfer_samples = list(selected_flashinfer["samples_ms"])
     flashinfer_ms = float(statistics.median(flashinfer_samples))
     paired_trials: list[dict[str, float | int | str]] = []
     for trial in range(args.paired_trials):
@@ -328,6 +441,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "compute_capability": list(torch.cuda.get_device_capability()),
         "torch_version": torch.__version__,
         "flashinfer": flashinfer_info,
+        "flashinfer_candidates": flashinfer_candidates,
         "batch": args.batch,
         "kv_len": args.kv_len,
         "length_profile": args.length_profile,
@@ -360,6 +474,16 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "speedup_vs_flashinfer": flashinfer_ms / stream_ms,
         "max_abs_error": max_abs_error,
         "mean_abs_error": mean_abs_error,
+        "reference": {
+            "available": reference_output is not None,
+            "max_sequence_length": int(max(lengths_cpu)),
+            "streamattn_max_abs_error": stream_reference_max_error,
+            "streamattn_mean_abs_error": stream_reference_mean_error,
+            "flashinfer_max_abs_error": selected_flashinfer["reference_max_abs_error"],
+            "flashinfer_mean_abs_error": selected_flashinfer[
+                "reference_mean_abs_error"
+            ],
+        },
         "warmup": args.warmup,
         "repeats": args.repeats,
         "streamattn_samples_ms": stream_samples,
@@ -404,6 +528,7 @@ def main() -> None:
         default="full",
     )
     parser.add_argument("--workspace-mb", type=int, default=128)
+    parser.add_argument("--flashinfer-backends", default="auto")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--paired-trials", type=int, default=9)
