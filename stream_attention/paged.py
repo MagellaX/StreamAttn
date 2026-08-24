@@ -10,10 +10,18 @@ import torch
 
 
 PAGED_EXACT_NATIVE_BACKEND = "streamattn_paged_exact_native"
+PAGED_EXACT_SM80_GROUPED_BACKEND = "streamattn_paged_sm80_grouped_exact"
+PAGED_EXACT_SM100_GROUPED_BACKEND = "streamattn_paged_sm100_grouped_exact"
 PAGED_EXACT_SM90_BACKEND = "streamattn_paged_sm90_wgmma_exact"
 PAGED_EXACT_SM90_FRAGMENTED_BACKEND = "streamattn_paged_sm90_wgmma_fragmented_exact"
 PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND = (
     "streamattn_paged_sm90_wgmma_fragmented_ragged_exact"
+)
+PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND = (
+    "streamattn_paged_sm90_wgmma_nhd_fragmented_exact"
+)
+PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND = (
+    "streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact"
 )
 
 PROMOTED_PAGED_EXACT_SPLITS = {
@@ -106,6 +114,46 @@ PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES = {
     (16, 2, 8, 64): PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SPLITS,
     (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G8_RAGGED_SPLITS,
     (32, 8, 4, 128): PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
+}
+
+# Direct NHD D128/G8 measured optima on H100. These copy strided token rows
+# directly into the WGMMA shared tile; no cache transpose or repack is allowed.
+PROMOTED_PAGED_EXACT_PAGE16_NHD_D128_G8_SPLITS = {
+    (1, 16384): 64,
+    (1, 32768): 128,
+    (1, 65536): 64,
+    (2, 16384): 64,
+    (2, 32768): 64,
+    (2, 65536): 128,
+    (4, 16384): 32,
+    (4, 32768): 32,
+    (4, 65536): 64,
+    (8, 16384): 32,
+    (8, 32768): 32,
+    (8, 65536): 32,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_NHD_D128_G8_RAGGED_SPLITS = {
+    (1, 16384): 64,
+    (1, 32768): 64,
+    (1, 65536): 128,
+    (2, 16384): 64,
+    (2, 32768): 64,
+    (2, 65536): 128,
+    (4, 16384): 64,
+    (4, 32768): 32,
+    (4, 65536): 64,
+    (8, 16384): 16,
+    (8, 32768): 32,
+    (8, 65536): 32,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_NHD_SHAPES = {
+    (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_NHD_D128_G8_SPLITS,
+}
+
+PROMOTED_PAGED_EXACT_PAGE16_NHD_RAGGED_SHAPES = {
+    (16, 2, 8, 128): PROMOTED_PAGED_EXACT_PAGE16_NHD_D128_G8_RAGGED_SPLITS,
 }
 
 
@@ -341,6 +389,8 @@ class PagedExactDecodePlan:
         tokens_per_tile: int = 512,
         partial_num_warps: int = 4,
         validate_metadata: bool = True,
+        sm80_grouped_experimental: bool = False,
+        sm100_grouped_experimental: bool = False,
         sm90_fragmented_experimental: bool = False,
         sm90_fragmented_ragged_experimental: bool = False,
     ) -> "PagedExactDecodePlan":
@@ -378,16 +428,26 @@ class PagedExactDecodePlan:
             head_dim = int(query.shape[3])
             group_size = q_heads // cache.kv_heads
             page16_shape = (q_heads, cache.kv_heads, group_size, head_dim)
+            promoted_page16_shapes = (
+                PROMOTED_PAGED_EXACT_PAGE16_NHD_SHAPES
+                if cache.normalized_layout == "NHD"
+                else PROMOTED_PAGED_EXACT_PAGE16_SHAPES
+            )
+            promoted_page16_ragged_shapes = (
+                PROMOTED_PAGED_EXACT_PAGE16_NHD_RAGGED_SHAPES
+                if cache.normalized_layout == "NHD"
+                else PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES
+            )
             common_sm90_shape = (
                 torch.cuda.get_device_capability(query.device) == (9, 0)
                 and query.dtype == torch.bfloat16
-                and cache.normalized_layout == "HND"
                 and group_size in {4, 8}
                 and head_dim in {64, 128}
                 and cache.page_table.dtype == torch.int32
             )
             use_sm90_page64 = (
                 common_sm90_shape
+                and cache.normalized_layout == "HND"
                 and page16_shape == (16, 2, 8, 64)
                 and full_lengths
                 and cache.page_size == 64
@@ -402,7 +462,7 @@ class PagedExactDecodePlan:
                     sm90_fragmented_experimental
                     or (
                         (int(query.shape[0]), cache.max_sequence_length)
-                        in PROMOTED_PAGED_EXACT_PAGE16_SHAPES.get(page16_shape, {})
+                        in promoted_page16_shapes.get(page16_shape, {})
                     )
                 )
             )
@@ -415,9 +475,7 @@ class PagedExactDecodePlan:
                     sm90_fragmented_ragged_experimental
                     or (
                         (int(query.shape[0]), cache.max_sequence_length)
-                        in PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES.get(
-                            page16_shape, {}
-                        )
+                        in promoted_page16_ragged_shapes.get(page16_shape, {})
                     )
                 )
             )
@@ -448,9 +506,9 @@ class PagedExactDecodePlan:
                     )
                 elif splits is None and (use_sm90_page16 or use_sm90_page16_ragged):
                     shape_tables = (
-                        PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES
+                        promoted_page16_ragged_shapes
                         if use_sm90_page16_ragged
-                        else PROMOTED_PAGED_EXACT_PAGE16_SHAPES
+                        else promoted_page16_shapes
                     )
                     split_table = shape_tables.get(page16_shape, {})
                     selected_splits = split_table.get(
@@ -491,21 +549,37 @@ class PagedExactDecodePlan:
                     splits=selected_splits,
                     workspace={"partial_o": partial_o, "partial_lse": partial_lse},
                     backend=(
-                        PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND
-                        if use_sm90_page16_ragged
+                        PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND
+                        if use_sm90_page16_ragged and cache.normalized_layout == "NHD"
                         else (
-                            PAGED_EXACT_SM90_FRAGMENTED_BACKEND
-                            if use_sm90_page16
-                            else PAGED_EXACT_SM90_BACKEND
+                            PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND
+                            if use_sm90_page16_ragged
+                            else (
+                                PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND
+                                if use_sm90_page16 and cache.normalized_layout == "NHD"
+                                else (
+                                    PAGED_EXACT_SM90_FRAGMENTED_BACKEND
+                                    if use_sm90_page16
+                                    else PAGED_EXACT_SM90_BACKEND
+                                )
+                            )
                         )
                     ),
                     launch=(
-                        extension.paged_fragmented_ragged_exact_decode_out
-                        if use_sm90_page16_ragged
+                        extension.paged_fragmented_nhd_ragged_exact_decode_out
+                        if use_sm90_page16_ragged and cache.normalized_layout == "NHD"
                         else (
-                            extension.paged_fragmented_exact_decode_out
-                            if use_sm90_page16
-                            else extension.paged_exact_decode_out
+                            extension.paged_fragmented_ragged_exact_decode_out
+                            if use_sm90_page16_ragged
+                            else (
+                                extension.paged_fragmented_nhd_exact_decode_out
+                                if use_sm90_page16 and cache.normalized_layout == "NHD"
+                                else (
+                                    extension.paged_fragmented_exact_decode_out
+                                    if use_sm90_page16
+                                    else extension.paged_exact_decode_out
+                                )
+                            )
                         )
                     ),
                     tokens_per_tile=int(tokens_per_tile),
@@ -518,6 +592,7 @@ class PagedExactDecodePlan:
             from .kernels.paged_exact_triton import (
                 TRITON_AVAILABLE,
                 make_paged_exact_workspace,
+                paged_exact_decode_grouped_forward_out,
                 paged_exact_decode_triton_forward_out,
             )
 
@@ -530,14 +605,48 @@ class PagedExactDecodePlan:
                 dim=int(query.shape[3]),
                 device=query.device,
             )
+            use_sm80_grouped = (
+                sm80_grouped_experimental
+                and torch.cuda.get_device_capability(query.device) == (8, 0)
+                and query.dtype == torch.bfloat16
+                and cache.page_size == 16
+                and group_size == 8
+                and head_dim == 128
+                and cache.page_table.dtype == torch.int32
+                and cache.sequence_lengths.dtype == torch.int32
+                and tokens_per_tile in {64, 128}
+            )
+            use_sm100_grouped = (
+                sm100_grouped_experimental
+                and torch.cuda.get_device_capability(query.device) == (10, 0)
+                and query.dtype == torch.bfloat16
+                and cache.page_size == 16
+                and group_size == 8
+                and head_dim == 128
+                and cache.page_table.dtype == torch.int32
+                and cache.sequence_lengths.dtype == torch.int32
+                and tokens_per_tile in {64, 128}
+            )
             return cls(
                 query=query,
                 cache=cache,
                 output=output,
                 splits=selected_splits,
                 workspace=workspace,
-                backend=PAGED_EXACT_NATIVE_BACKEND,
-                launch=paged_exact_decode_triton_forward_out,
+                backend=(
+                    PAGED_EXACT_SM100_GROUPED_BACKEND
+                    if use_sm100_grouped
+                    else (
+                        PAGED_EXACT_SM80_GROUPED_BACKEND
+                        if use_sm80_grouped
+                        else PAGED_EXACT_NATIVE_BACKEND
+                    )
+                ),
+                launch=(
+                    paged_exact_decode_grouped_forward_out
+                    if use_sm80_grouped or use_sm100_grouped
+                    else paged_exact_decode_triton_forward_out
+                ),
                 tokens_per_tile=int(tokens_per_tile),
                 partial_num_warps=int(partial_num_warps),
             )
@@ -568,9 +677,14 @@ class PagedExactDecodePlan:
             PAGED_EXACT_SM90_BACKEND,
             PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
             PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
+            PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
+            PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
         }:
             assert self.query_group is not None and self.output_group is not None
-            if self.backend == PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND:
+            if self.backend in {
+                PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
+                PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+            }:
                 self.launch(
                     self.query_group,
                     self.cache.key,

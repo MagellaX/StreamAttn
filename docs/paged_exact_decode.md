@@ -2,9 +2,10 @@
 
 ## Status
 
-StreamAttn has a promoted Hopper exact decode path that consumes HND physical
-pages directly, plus a generic Triton exact fallback for other supported paged
-layouts. Neither path gathers or repacks KV during decode.
+StreamAttn has promoted Hopper exact decode paths that consume HND physical
+pages and D128/G8 NHD page-16 storage directly, plus generic and
+architecture-guarded Triton exact backends. No path gathers or repacks KV
+during decode.
 
 ## Contract
 
@@ -35,7 +36,7 @@ The Hopper specializations are intentionally guarded by measured shape:
 ~~~text
 GPU:       H100 / SM90
 dtype:     BF16
-layout:    HND
+layout:    HND; NHD for page-16 D128/G8
 capacity:  16K/32K/64K buckets
 lengths:   page-16 positive ragged rows; page-64 full rows
 
@@ -50,6 +51,11 @@ physical page directly to one compute tile. Page-16 aliases the same swizzled
 shared tile as `(16, D, 4)` and issues four direct physical-page copies into
 it. There is no global gather or repack buffer. Every path preserves true-GQA
 K/V sharing, exact online softmax, and exact split-state merging.
+
+For NHD `[page, token, kv_head, D]`, each D128 token vector remains contiguous.
+The direct producer therefore keeps 16-byte vector copies and changes only the
+source row stride from `D` to `Hkv * D`. It writes the same swizzled shared K/V
+tile as HND, so the WGMMA consumer, online softmax, and split merge are shared.
 
 D128 does not keep K and V resident simultaneously. After WGMMA consumes a K
 stage, the producer reuses that stage for V and the consumer performs PV before
@@ -89,6 +95,13 @@ D128/G8 ragged:  same, except B8/N64K=24
 D128/G4 full:    B1=32, B2=16, B4=8, B8=8
 D128/G4 ragged:  B4/N32K=12, B4/N64K=16,
                   B8/N32K=12, B8/N64K=16
+
+NHD D128/G8 full:
+  B1=(64,128,64), B2=(64,64,128),
+  B4=(32,32,64), B8=(32,32,32) for N=(16K,32K,64K)
+NHD D128/G8 ragged:
+  B1=(64,64,128), B2=(64,64,128),
+  B4=(64,32,64), B8=(16,32,32)
 ~~~
 
 The ragged exceptions are deliberate. For example, D128/G8 B8/N64K moves
@@ -220,6 +233,27 @@ Raw artifacts:
 - `artifacts/gate0/paged_exact_d128_g8_page16_auto_promotion_h100.json`
 - `artifacts/gate0/paged_exact_d128_g8_b8_n64_ragged_promotion_h100.json`
 
+### Page-16 D128/G8 direct NHD
+
+The NHD route removes the previous HND-only promotion boundary without a
+transpose or repack. The automatic-route confirmation covered full and severe
+ragged profiles for every B1/B2/B4/B8 and 16K/32K/64K capacity cell:
+
+| Evidence | Result |
+|---|---:|
+| Automatic-route cells | `24/24` correct and faster |
+| Alternating-order trials | `216/216` StreamAttn wins |
+| Median of cell paired medians | `1.283x` |
+| Best cell paired median | `1.967x` |
+| Worst individual paired ratio | `1.058x` |
+| Max absolute BF16 cross-backend error | `4.88e-4` |
+
+The weakest cells are B8/64K, where both backends are already well occupied.
+They still retained `1.058x` minimum paired margin. The raw artifacts are:
+
+- `artifacts/gate0/paged_exact_nhd_d128_g8_phase_h100.json`
+- `artifacts/gate0/paged_exact_nhd_d128_g8_auto_promotion_h100.json`
+
 ### Page-16 D128/G4
 
 The final D128/G4 route covers seven length profiles at every B1/B2/B4/B8 and
@@ -245,6 +279,32 @@ Raw artifacts:
 - `artifacts/gate0/paged_exact_d128_g4_page16_final_promotion_h100.json`
 - `artifacts/gate0/paged_exact_d128_g4_b8_n32_promotion_h100.json`
 
+## A100 and B200 Evidence
+
+Portability uses separate architecture guards, not one universal kernel. The
+experimental grouped Triton backend assigns one producer to
+`(batch, kv_head, split)`, reads each K/V row once for all eight query heads,
+uses tensor-core QK/PV tiles, maintains online softmax, and reuses the exact
+split-state merge.
+
+On A100 80GB PCIe, the head-private generic floor was `0.404 ms` versus
+FlashInfer `0.116 ms` at B4/32K. True-GQA grouping reduced the StreamAttn side
+substantially, and all `96/96` phase cells were correct, but no cell was
+promoted. The best paired cell reached `0.992x`; the best unpaired median was
+`0.909x`. This is a near-parity research boundary, not a speedup claim.
+
+On B200, all `108/108` grouped phase cells were correct, but none beat the
+fastest correct FlashInfer backend. The best paired cell reached `0.667x`.
+Blackwell makes the non-MMA pipeline decisive: the next backend must use paged
+TMA issue, TMEM, fully asynchronous MMA, and overlapped softmax/epilogue rather
+than more split-count tuning. NVIDIA CUTLASS example 93 is the implementation
+reference for that path.
+
+Raw artifacts:
+
+- `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_a100.json`
+- `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_b200.json`
+
 ## Benchmark
 
 Run a paired benchmark against FlashInfer:
@@ -257,7 +317,7 @@ python benchmarks/profile_paged_exact_decode.py \
   --kv-heads 2 \
   --head-dim 128 \
   --page-size 16 \
-  --layout HND \
+  --layout NHD \
   --dtype bf16 \
   --flashinfer-backends auto,fa2,fa3,trtllm-gen \
   --output-json artifacts/paged_exact_b4_32k_d128_g8_h100.json
@@ -293,8 +353,10 @@ B = 1, 2, 4, 8
 N = 16K, 32K, 64K
 D64/G8, HND, page-16 and page-64
 D128/G4 and D128/G8, HND, page-16
+D128/G8, NHD, page-16
 ~~~
 
-Other dimensions, page sizes, variable page-64 lengths, NHD WGMMA, and
-non-Hopper GPUs remain on the generic exact backend until separately measured
-and promoted.
+Other dimensions, page sizes, variable page-64 lengths, and non-Hopper GPUs
+remain on generic or explicitly experimental exact backends until separately
+measured and promoted. A100 and B200 have measured negative phase diagrams;
+successful compilation or correctness alone does not enable their routes.

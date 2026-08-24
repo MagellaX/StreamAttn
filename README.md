@@ -64,6 +64,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D64, GQA group 8 | HND/page-16 full rows; B1-B8; 16K-64K capacity | `1.21x-2.07x` paired median | Promoted per cell |
 | Paged D64, GQA group 8 | HND/page-16 ragged rows; same capacity matrix | `1.17x` worst paired trial; `2.04x` median cell | Promoted per cell |
 | Paged D128, GQA group 8 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.075x` worst paired trial; `1.75x` median auto-gate cell | Promoted per cell |
+| Paged D128, GQA group 8 | NHD/page-16; B1-B8; 16K-64K; full and ragged | `1.058x` worst paired trial; `1.283x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
@@ -81,6 +82,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [D64/G4 H100 phase diagram](docs/exact_native_h100_g4_phase_diagram_20260818.md)
 - [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
 - [Paged D64/D128 H100 phase diagram](docs/paged_exact_decode.md)
+- [Paged exact SM80/SM90/SM100 architecture phase](docs/paged_exact_architecture_phase_20260824.md)
 
 ### Model-aware reduced-work decode
 
@@ -116,10 +118,12 @@ verifier.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
 - No A100, B200, FP8, or non-Qwen model-family performance claim has been
-  promoted yet. Paged exact promotion is restricted to H100 BF16, measured
-  D64/G8 and D128/G4/G8 HND cells at 16K/32K/64K capacity. Page-16 supports
-  exact variable-length rows; page-64 is D64/G8-only and still requires full
-  fixed-length rows.
+  promoted yet. Separate true-GQA grouped A100 and B200 backends are correct
+  but remain experimental: their measured phase diagrams did not beat the
+  fastest correct FlashInfer path. H100 paged exact promotion covers measured
+  D64/G8 and D128/G4/G8 HND cells plus D128/G8 NHD cells at 16K/32K/64K.
+  Page-16 supports exact variable-length rows; page-64 is D64/G8-only and
+  still requires full fixed-length rows.
 - The repository does not currently claim a direct universal win over
   FlashAttention training kernels.
 
@@ -185,9 +189,10 @@ successful launch.
 Paged decode accepts physical NHD or HND pages and a per-request block table.
 The native kernels resolve logical tokens to physical pages inside the
 online-softmax loop; they do not gather pages into a contiguous cache. The
-promoted H100 specializations use HND pages with 16 or 64 tokens. Page-64 maps
-directly to one transposed-GQA WGMMA tile; page-16 loads four physical pages
-directly into the same 64-token shared tile without a gather buffer.
+promoted H100 page-16 specializations accept HND, plus direct NHD for D128/G8.
+Page-64 maps HND directly to one transposed-GQA WGMMA tile. Page-16 loads four
+physical pages directly into the same 64-token shared tile without a gather
+buffer; NHD changes only the producer's token stride, not the WGMMA consumer.
 
 ~~~python
 import torch
@@ -396,10 +401,11 @@ not hidden StreamAttn dependencies.
 | CPU | Correctness and SDPA fallback |
 | Native GPU evidence | NVIDIA H100 / SM90 |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 D64/G8 and D128/G4/G8 cells; page-64 full D64/G8 cells |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 D64/G8 and D128/G4/G8 plus NHD/page-16 D128/G8; page-64 full D64/G8 cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
+| Experimental hardware | A100/SM80 and B200/SM100 true-GQA grouped backends are correct; neither phase diagram beats FlashInfer yet |
 | Not yet promoted | A100, B200, ragged page-64 WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
@@ -463,8 +469,8 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Extend paged WGMMA to additional layouts and page sizes, then establish
-   separate exact-native phase diagrams on A100 and B200.
+4. Replace the measured A100/B200 grouped floors with architecture-native
+   pipelines: SM80 `cp.async`+MMA and SM100 paged TMA+TMEM+async MMA.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.

@@ -1,4 +1,4 @@
-"""Run native paged exact decode correctness and latency gates on Modal H100."""
+"""Run native paged exact decode correctness and latency gates on NVIDIA GPUs."""
 
 from __future__ import annotations
 
@@ -41,8 +41,7 @@ def _parse_ints(value: str) -> list[int]:
     return [int(item.strip()) for item in value.split(",") if item.strip()]
 
 
-@app.function(image=image, gpu="H100", timeout=60 * 60)
-def profile_h100(
+def _profile_gpu(
     *,
     batches: str,
     kv_lens: str,
@@ -55,6 +54,8 @@ def profile_h100(
     split_counts: str,
     token_tiles: str,
     partial_num_warps: int,
+    sm80_grouped_experimental: bool,
+    sm100_grouped_experimental: bool,
     sm90_fragmented_experimental: bool,
     sm90_fragmented_ragged_experimental: bool,
     length_profiles: str,
@@ -99,6 +100,8 @@ def profile_h100(
                             splits=splits,
                             tokens_per_tile=tokens_per_tile,
                             partial_num_warps=partial_num_warps,
+                            sm80_grouped_experimental=sm80_grouped_experimental,
+                            sm100_grouped_experimental=sm100_grouped_experimental,
                             sm90_fragmented_experimental=(sm90_fragmented_experimental),
                             sm90_fragmented_ragged_experimental=(
                                 sm90_fragmented_ragged_experimental
@@ -135,9 +138,13 @@ def profile_h100(
 
     correct = [cell for cell in cells if float(cell["max_abs_error"]) <= atol]
     winners = [cell for cell in correct if float(cell["speedup_vs_flashinfer"]) > 1.0]
+    device_name = str(cells[0]["device"]) if cells else "unknown"
+    capability = cells[0].get("compute_capability") if cells else None
     return {
         "schema": "streamattn.paged_exact_decode_matrix.v2",
-        "backend": "modal_h100",
+        "backend": "gpu_remote",
+        "device": device_name,
+        "compute_capability": capability,
         "shape_family": {
             "q_heads": q_heads,
             "kv_heads": kv_heads,
@@ -159,8 +166,24 @@ def profile_h100(
     }
 
 
+@app.function(image=image, gpu="H100!", timeout=60 * 60)
+def profile_h100(kwargs: dict[str, object]) -> dict[str, object]:
+    return _profile_gpu(**kwargs)
+
+
+@app.function(image=image, gpu="A100-80GB", timeout=60 * 60)
+def profile_a100(kwargs: dict[str, object]) -> dict[str, object]:
+    return _profile_gpu(**kwargs)
+
+
+@app.function(image=image, gpu="B200", timeout=60 * 60)
+def profile_b200(kwargs: dict[str, object]) -> dict[str, object]:
+    return _profile_gpu(**kwargs)
+
+
 @app.local_entrypoint()
 def main(
+    gpu_type: str = "H100",
     batches: str = "4",
     kv_lens: str = "32768",
     q_heads: int = 16,
@@ -172,6 +195,8 @@ def main(
     split_counts: str = "4",
     token_tiles: str = "128",
     partial_num_warps: int = 4,
+    sm80_grouped_experimental: bool = False,
+    sm100_grouped_experimental: bool = False,
     sm90_fragmented_experimental: bool = False,
     sm90_fragmented_ragged_experimental: bool = False,
     length_profiles: str = "full",
@@ -185,29 +210,44 @@ def main(
     seed: int = 17,
     output_json: str = "",
 ) -> None:
-    result = profile_h100.remote(
-        batches=batches,
-        kv_lens=kv_lens,
-        q_heads=q_heads,
-        kv_heads=kv_heads,
-        head_dim=head_dim,
-        page_size=page_size,
-        layout=layout,
-        dtype=dtype,
-        split_counts=split_counts,
-        token_tiles=token_tiles,
-        partial_num_warps=partial_num_warps,
-        sm90_fragmented_experimental=sm90_fragmented_experimental,
-        sm90_fragmented_ragged_experimental=(sm90_fragmented_ragged_experimental),
-        length_profiles=length_profiles,
-        flashinfer_backends=flashinfer_backends,
-        workspace_mb=workspace_mb,
-        warmup=warmup,
-        repeats=repeats,
-        paired_trials=paired_trials,
-        paired_repeats=paired_repeats,
-        atol=atol,
-        seed=seed,
+    profiles = {
+        "H100": profile_h100,
+        "A100": profile_a100,
+        "A100-80GB": profile_a100,
+        "B200": profile_b200,
+    }
+    normalized_gpu = gpu_type.strip().upper()
+    if normalized_gpu not in profiles:
+        raise ValueError("gpu_type must be H100, A100-80GB, or B200")
+    result = profiles[normalized_gpu].remote(
+        {
+            "batches": batches,
+            "kv_lens": kv_lens,
+            "q_heads": q_heads,
+            "kv_heads": kv_heads,
+            "head_dim": head_dim,
+            "page_size": page_size,
+            "layout": layout,
+            "dtype": dtype,
+            "split_counts": split_counts,
+            "token_tiles": token_tiles,
+            "partial_num_warps": partial_num_warps,
+            "sm80_grouped_experimental": sm80_grouped_experimental,
+            "sm100_grouped_experimental": sm100_grouped_experimental,
+            "sm90_fragmented_experimental": sm90_fragmented_experimental,
+            "sm90_fragmented_ragged_experimental": (
+                sm90_fragmented_ragged_experimental
+            ),
+            "length_profiles": length_profiles,
+            "flashinfer_backends": flashinfer_backends,
+            "workspace_mb": workspace_mb,
+            "warmup": warmup,
+            "repeats": repeats,
+            "paired_trials": paired_trials,
+            "paired_repeats": paired_repeats,
+            "atol": atol,
+            "seed": seed,
+        }
     )
     payload = json.dumps(result, indent=2, sort_keys=True)
     if output_json:

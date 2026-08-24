@@ -97,6 +97,27 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
     torch::Tensor output,
     int64_t num_splits);
 
+void streamattn_transposed_wgmma_paged_fragmented_nhd_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_pages,
+    torch::Tensor v_pages,
+    torch::Tensor page_table,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits);
+
+void streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_pages,
+    torch::Tensor v_pages,
+    torch::Tensor page_table,
+    torch::Tensor sequence_lengths,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("qk_out", &streamattn_transposed_wgmma_qk_out_cuda,
         "StreamAttn transposed m64n8k16 exact QK (out variant)");
@@ -129,6 +150,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("paged_fragmented_ragged_exact_decode_out",
         &streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda,
         "StreamAttn HND page-16 ragged fragmented exact producer and merge");
+  m.def("paged_fragmented_nhd_exact_decode_out",
+        &streamattn_transposed_wgmma_paged_fragmented_nhd_exact_decode_out_cuda,
+        "StreamAttn direct NHD page-16 fragmented exact producer and merge");
+  m.def("paged_fragmented_nhd_ragged_exact_decode_out",
+        &streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cuda,
+        "StreamAttn direct NHD page-16 ragged fragmented exact producer and merge");
 }
 """
 
@@ -963,7 +990,8 @@ __forceinline__ __device__ const Element* streamattn_exact_tile_ptr(
   }
 }
 
-template <bool kVariableLength, class SmemTensor, class TiledCopy, class ThrCopy>
+template <bool kNHD, bool kVariableLength,
+          class SmemTensor, class TiledCopy, class ThrCopy>
 __forceinline__ __device__ void streamattn_copy_paged16_tile(
     const Element* base,
     const int* page_table,
@@ -986,12 +1014,22 @@ __forceinline__ __device__ void streamattn_copy_paged16_tile(
     const int logical_page = min(
         logical_page_base + fragment, active_pages - 1);
     const int physical_page = page_table[batch * max_pages + logical_page];
-    const Element* page = base +
-        (static_cast<int64_t>(physical_page) * kv_heads + kv_head) *
-            16 * kHeadDim;
+    const Element* page;
+    int token_stride;
+    if constexpr (kNHD) {
+      page = base +
+          (static_cast<int64_t>(physical_page) * 16 * kv_heads + kv_head) *
+              kHeadDim;
+      token_stride = kv_heads * kHeadDim;
+    } else {
+      page = base +
+          (static_cast<int64_t>(physical_page) * kv_heads + kv_head) *
+              16 * kHeadDim;
+      token_stride = kHeadDim;
+    }
     Tensor source = make_tensor(
         make_gmem_ptr(page), Shape<Int<16>, Int<kHeadDim>>{},
-        make_stride(Int<kHeadDim>{}, _1{}));
+        make_stride(token_stride, _1{}));
     Tensor destination_fragment = destination(_, _, fragment);
     cute::copy(
         tiled_copy,
@@ -1000,7 +1038,8 @@ __forceinline__ __device__ void streamattn_copy_paged16_tile(
   }
 }
 
-template <int kPagedPageSize = 0, bool kVariableLength = false>
+template <int kPagedPageSize = 0, bool kVariableLength = false,
+          bool kNHD = false>
 __global__ __launch_bounds__(128)
 void streamattn_transposed_wgmma_exact_partial_kernel(
     const Element* __restrict__ q_group,
@@ -1120,12 +1159,12 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
 
   if (tile_begin < tile_end) {
     if constexpr (kPagedPageSize == 16) {
-      streamattn_copy_paged16_tile<kVariableLength>(
+      streamattn_copy_paged16_tile<kNHD, kVariableLength>(
           k_cache, page_table, group, tile_begin, max_pages, kv_heads,
           sequence_length,
           sK0Paged16, copy_kv, thr_copy_kv);
       if constexpr (kSeparateVStages == 2) {
-        streamattn_copy_paged16_tile<kVariableLength>(
+        streamattn_copy_paged16_tile<kNHD, kVariableLength>(
             v_cache, page_table, group, tile_begin, max_pages, kv_heads,
             sequence_length,
             sV0Paged16, copy_kv, thr_copy_kv);
@@ -1159,23 +1198,23 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     if (next_tile < tile_end) {
       if constexpr (kPagedPageSize == 16) {
         if (write_pipe == 0) {
-          streamattn_copy_paged16_tile<kVariableLength>(
+          streamattn_copy_paged16_tile<kNHD, kVariableLength>(
               k_cache, page_table, group, next_tile, max_pages, kv_heads,
               sequence_length,
               sK0Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
-            streamattn_copy_paged16_tile<kVariableLength>(
+            streamattn_copy_paged16_tile<kNHD, kVariableLength>(
                 v_cache, page_table, group, next_tile, max_pages, kv_heads,
                 sequence_length,
                 sV0Paged16, copy_kv, thr_copy_kv);
           }
         } else {
-          streamattn_copy_paged16_tile<kVariableLength>(
+          streamattn_copy_paged16_tile<kNHD, kVariableLength>(
               k_cache, page_table, group, next_tile, max_pages, kv_heads,
               sequence_length,
               sK1Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
-            streamattn_copy_paged16_tile<kVariableLength>(
+            streamattn_copy_paged16_tile<kNHD, kVariableLength>(
                 v_cache, page_table, group, next_tile, max_pages, kv_heads,
                 sequence_length,
                 sV1Paged16, copy_kv, thr_copy_kv);
@@ -1224,12 +1263,12 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     if constexpr (kSeparateVStages == 0) {
       if constexpr (kPagedPageSize == 16) {
         if (read_pipe == 0) {
-          streamattn_copy_paged16_tile<kVariableLength>(
+          streamattn_copy_paged16_tile<kNHD, kVariableLength>(
               v_cache, page_table, group, tile, max_pages, kv_heads,
               sequence_length,
               sV0Paged16, copy_kv, thr_copy_kv);
         } else {
-          streamattn_copy_paged16_tile<kVariableLength>(
+          streamattn_copy_paged16_tile<kNHD, kVariableLength>(
               v_cache, page_table, group, tile, max_pages, kv_heads,
               sequence_length,
               sV1Paged16, copy_kv, thr_copy_kv);
@@ -2359,6 +2398,140 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
       static_cast<int>(num_splits),
       active_heads);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+template <bool kVariableLength>
+void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
+    torch::Tensor q_group,
+    torch::Tensor k_pages,
+    torch::Tensor v_pages,
+    torch::Tensor page_table,
+    const torch::Tensor* sequence_lengths,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  TORCH_CHECK(q_group.is_cuda() && k_pages.is_cuda() && v_pages.is_cuda() &&
+              page_table.is_cuda() && partial_o.is_cuda() &&
+              partial_lse.is_cuda() && output.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(q_group.is_contiguous() && k_pages.is_contiguous() &&
+              v_pages.is_contiguous() && page_table.is_contiguous() &&
+              partial_o.is_contiguous() && partial_lse.is_contiguous() &&
+              output.is_contiguous(), "all tensors must be contiguous");
+  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16 &&
+              k_pages.scalar_type() == at::ScalarType::BFloat16 &&
+              v_pages.scalar_type() == at::ScalarType::BFloat16,
+              "q_group and K/V pages must be bf16");
+  TORCH_CHECK(page_table.scalar_type() == at::ScalarType::Int,
+              "page_table must be int32");
+  TORCH_CHECK(partial_o.scalar_type() == at::ScalarType::Float &&
+              partial_lse.scalar_type() == at::ScalarType::Float,
+              "partial outputs must be fp32");
+  TORCH_CHECK(output.scalar_type() == at::ScalarType::BFloat16,
+              "output must be bf16");
+  TORCH_CHECK(q_group.dim() == 4 &&
+              (q_group.size(2) == 4 || q_group.size(2) == kBlockN) &&
+              q_group.size(3) == kHeadDim,
+              "q_group must have shape [B,Hkv,4|8,D]");
+  TORCH_CHECK(k_pages.sizes() == v_pages.sizes(),
+              "K/V page tensors must match");
+  TORCH_CHECK(k_pages.dim() == 4 && k_pages.size(1) == 16 &&
+              k_pages.size(2) == q_group.size(1) &&
+              k_pages.size(3) == kHeadDim,
+              "NHD K/V pages must have shape [pages,16,Hkv,D]");
+  TORCH_CHECK(page_table.dim() == 2 &&
+              page_table.size(0) == q_group.size(0),
+              "page_table must have shape [B,max_pages]");
+  if constexpr (kVariableLength) {
+    TORCH_CHECK(sequence_lengths != nullptr && sequence_lengths->is_cuda() &&
+                sequence_lengths->is_contiguous() &&
+                sequence_lengths->scalar_type() == at::ScalarType::Int &&
+                sequence_lengths->dim() == 1 &&
+                sequence_lengths->size(0) == q_group.size(0),
+                "sequence_lengths must be contiguous CUDA int32 [B]");
+  }
+
+  const int batch = static_cast<int>(q_group.size(0));
+  const int kv_heads = static_cast<int>(q_group.size(1));
+  const int groups = batch * kv_heads;
+  const int active_heads = static_cast<int>(q_group.size(2));
+  const int max_pages = static_cast<int>(page_table.size(1));
+  TORCH_CHECK(max_pages % 4 == 0,
+              "page-16 tables must contain a multiple of four pages");
+  const int kv_len = max_pages * 16;
+  const int logical_tiles = max_pages / 4;
+  TORCH_CHECK(num_splits > 0 && num_splits <= logical_tiles,
+              "num_splits must be in [1,max_pages/4]");
+  TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN, kHeadDim}),
+              "partial_o must have shape [B*Hkv,num_splits,8,D]");
+  TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN}),
+              "partial_lse must have shape [B*Hkv,num_splits,8]");
+  TORCH_CHECK(output.sizes() == torch::IntArrayRef(
+                  {groups, active_heads, kHeadDim}),
+              "output must have shape [B*Hkv,4|8,D]");
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  const dim3 partial_grid(groups * static_cast<int>(num_splits));
+  const dim3 partial_block(128);
+  streamattn_transposed_wgmma_exact_partial_kernel<
+      16, kVariableLength, true><<<partial_grid, partial_block, 0, stream>>>(
+      reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(k_pages.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(v_pages.data_ptr<at::BFloat16>()),
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      groups,
+      kv_len,
+      static_cast<int>(num_splits),
+      active_heads,
+      page_table.data_ptr<int>(),
+      max_pages,
+      kv_heads,
+      kVariableLength ? sequence_lengths->data_ptr<int>() : nullptr);
+
+  const dim3 merge_grid(groups * active_heads);
+  const dim3 merge_block(32);
+  streamattn_transposed_wgmma_exact_merge_warp_kernel<<<
+      merge_grid, merge_block, 0, stream>>>(
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      groups,
+      static_cast<int>(num_splits),
+      active_heads);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_transposed_wgmma_paged_fragmented_nhd_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_pages,
+    torch::Tensor v_pages,
+    torch::Tensor page_table,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  streamattn_transposed_wgmma_paged_fragmented_nhd_impl<false>(
+      q_group, k_pages, v_pages, page_table, nullptr, partial_o, partial_lse,
+      output, num_splits);
+}
+
+void streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_pages,
+    torch::Tensor v_pages,
+    torch::Tensor page_table,
+    torch::Tensor sequence_lengths,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  streamattn_transposed_wgmma_paged_fragmented_nhd_impl<true>(
+      q_group, k_pages, v_pages, page_table, &sequence_lengths, partial_o,
+      partial_lse, output, num_splits);
 }
 """
 

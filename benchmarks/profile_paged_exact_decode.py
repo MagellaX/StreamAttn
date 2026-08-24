@@ -23,6 +23,8 @@ from stream_attention.paged import (  # noqa: E402
     PAGED_EXACT_SM90_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
+    PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
 )
 
 
@@ -30,6 +32,8 @@ _SM90_PAGED_BACKENDS = {
     PAGED_EXACT_SM90_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
+    PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
 }
 
 
@@ -278,6 +282,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         splits=args.splits,
         tokens_per_tile=args.tokens_per_tile,
         partial_num_warps=args.partial_num_warps,
+        sm80_grouped_experimental=getattr(args, "sm80_grouped_experimental", False),
+        sm100_grouped_experimental=getattr(args, "sm100_grouped_experimental", False),
         sm90_fragmented_experimental=args.sm90_fragmented_experimental,
         sm90_fragmented_ragged_experimental=(args.sm90_fragmented_ragged_experimental),
     )
@@ -529,6 +535,8 @@ def main() -> None:
     )
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--flashinfer-backends", default="auto")
+    parser.add_argument("--sm80-grouped-experimental", action="store_true")
+    parser.add_argument("--sm100-grouped-experimental", action="store_true")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--paired-trials", type=int, default=9)
