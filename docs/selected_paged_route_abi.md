@@ -138,3 +138,31 @@ Promotion requires total selected runtime at least 10% below exact-native,
 paired wins, no K/V gather, live page-remap correctness, and the existing
 closed-loop distribution gate. The 10% margin is an engineering guard against
 selector and distribution variance, not an attention identity.
+
+## H100 Static Executor
+
+The first executor now consumes this ABI directly. Its static schedule is:
+
+```text
+grid = B * Hkv * max_routes_per_row
+one producer CTA = one PackedRoute64 record
+workspace = [B * Hkv, max_routes_per_row, 8, D]
+```
+
+Rows with fewer routes emit neutral partials (`O=0`, `LSE=-inf`). Per-atom
+head and token masks are applied to QK scores before online softmax. Existing
+exact split-state merge math then combines route partials. This preserves the
+exact result over each Q head's selected token set, including Q-head-private
+routes unioned into a group-shared WGMMA launch.
+
+The measured 32K D128/G8 phase establishes two dispatch regions:
+
+```text
+selected tokens <= 16K -> static selected executor won measured B1/B4/B8 cells
+selected tokens == 32K -> exact split scheduler wins at B4/B8
+```
+
+The first general lowering takes roughly 2-5 ms after framework warmup. It is
+therefore suitable for a reused fixed schedule, not a per-token query-dynamic
+route. Dynamic selection requires a dedicated GPU preparation kernel before
+promotion. See [the complete evidence](paged_selected_h100_phase_20260825.md).

@@ -31,6 +31,8 @@ from .paged import (
     PagedExactDecodePlan,
     PagedExactDecodeRunner,
     PagedKVCache,
+    PagedSelectedDecodePlan,
+    PagedSelectedDecodeRunner,
 )
 from .planning import (
     ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
@@ -41,6 +43,7 @@ from .planning import (
     device_architecture,
     fixed_block_tile_ids,
 )
+from .selected_routes import prepare_paged_routes64
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ class StreamAttnEnginePlan:
             StreamAttnSeedOnlyDirectRunner,
             StreamAttnExactNativeDirectRunner,
             PagedExactDecodeRunner,
+            PagedSelectedDecodeRunner,
         ]
     ] = None
 
@@ -282,6 +286,79 @@ class StreamAttnEngine:
             value_cache=None,
             service=self.service,
             attention_problem=problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
+            direct_runner=runner,
+        )
+
+    def plan_selected_paged(
+        self,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        tile_plan: AttentionTilePlan,
+        *,
+        output: Optional[torch.Tensor] = None,
+    ) -> StreamAttnEnginePlan:
+        """Bind a verified selected schedule to the native H100 paged executor."""
+
+        routes = prepare_paged_routes64(tile_plan, cache)
+        paged_plan = PagedSelectedDecodePlan.build(
+            query,
+            cache,
+            routes,
+            schedule_epoch=tile_plan.schedule.schedule_epoch,
+            output=output,
+        )
+        backend = paged_plan.backend
+        reason = "distribution_verified_selected_paged"
+        info = StreamAttnServingInfo(
+            backend_used=backend,
+            policy_id=tile_plan.policy_id,
+            fallback_reason=None,
+            batch_size=int(query.shape[0]),
+            kv_len=max(tile_plan.problem.kv_lengths),
+            layer_id=None,
+            model_id=None,
+            dtype=str(query.dtype).removeprefix("torch."),
+            device=str(query.device),
+            plan_backend=backend,
+            plan_reason=reason,
+            seed_only_enabled=False,
+            safety_policy_matched=True,
+            runtime_counters={
+                "backend_counts": {backend: 1},
+                "fallback_reasons": {},
+            },
+            stats={
+                "layout": cache.normalized_layout,
+                "page_size": cache.page_size,
+                "route_count": routes.route_count,
+                "max_routes_per_row": paged_plan.max_routes_per_row,
+                "group_route_efficiency": routes.group_route_efficiency,
+                "scheduler_hint": routes.scheduler_hint,
+                "metadata_bytes": routes.metadata_bytes,
+                "workspace_bytes": paged_plan.workspace_bytes,
+            },
+        )
+        runner = PagedSelectedDecodeRunner(plan=paged_plan, info=info)
+        backend_plan = AttentionBackendPlan(
+            backend=backend,
+            reason=reason,
+            architecture=device_architecture(query.device),
+            splits=paged_plan.max_routes_per_row,
+            workspace_bytes=paged_plan.workspace_bytes,
+        )
+        return StreamAttnEnginePlan(
+            mode=STREAMATTN_MODE_VERIFIED_AUTO,
+            backend=backend,
+            reason=reason,
+            model_id=None,
+            layer_id=None,
+            query=query,
+            key_cache=cache,
+            value_cache=None,
+            service=self.service,
+            attention_problem=tile_plan.problem,
             tile_plan=tile_plan,
             backend_plan=backend_plan,
             direct_runner=runner,

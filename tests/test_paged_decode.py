@@ -17,6 +17,7 @@ from stream_attention.paged import (
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_SELECTED_SM90_STATIC_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_D128_G4_SPLITS,
@@ -31,10 +32,19 @@ from stream_attention.paged import (
     PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES,
     PROMOTED_PAGED_EXACT_PAGE16_SHAPES,
     PagedExactDecodePlan,
+    PagedSelectedDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
     paged_exact_reference,
+    paged_selected_reference,
 )
+from stream_attention.planning import (
+    ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+    AttentionProblem,
+    AttentionTilePlan,
+)
+from stream_attention.selected_routes import prepare_paged_routes64
 from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
     CPP_SOURCE,
     CUDA_SOURCE,
@@ -244,12 +254,18 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert "paged_fragmented_ragged_exact_decode_out" in CPP_SOURCE
     assert "paged_fragmented_nhd_exact_decode_out" in CPP_SOURCE
     assert "paged_fragmented_nhd_ragged_exact_decode_out" in CPP_SOURCE
+    assert "paged_selected_fragmented_exact_decode_out" in CPP_SOURCE
+    assert "paged_selected_fragmented_nhd_exact_decode_out" in CPP_SOURCE
     assert "streamattn_exact_tile_ptr<kPagedPageSize>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<64>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<16>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<16, true>" in CUDA_SOURCE
     assert "using SmemLayoutPaged16" in CUDA_SOURCE
     assert "streamattn_copy_paged16_tile" in CUDA_SOURCE
+    assert "streamattn_copy_selected_paged16_route" in CUDA_SOURCE
+    assert "kSelectedPaged" in CUDA_SOURCE
+    assert "route_active_head_masks" in CUDA_SOURCE
+    assert "route_token_valid_masks" in CUDA_SOURCE
     assert "make_stride(token_stride, _1{})" in CUDA_SOURCE
     assert "16, kVariableLength, true" in CUDA_SOURCE
     assert "static constexpr int kHeadDim = 128;" in cuda_source_for_head_dim(128)
@@ -266,6 +282,7 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert PAGED_EXACT_SM80_CP_ASYNC_BACKEND.endswith("sm80_cp_async_exact")
     assert PAGED_EXACT_SM100_GROUPED_BACKEND.endswith("sm100_grouped_exact")
     assert PAGED_EXACT_SM100_TGV_BACKEND.endswith("sm100_tgv_exact")
+    assert PAGED_SELECTED_SM90_STATIC_BACKEND.endswith("selected_static")
     assert PROMOTED_PAGED_EXACT_SM100_TGV_SPLITS == {
         (1, 32768): 16,
         (2, 32768): 16,
@@ -279,6 +296,143 @@ def test_promoted_paged_sm90_cells_and_source_contract():
 def test_sm90_plan_reports_native_64_token_logical_tile():
     source = inspect.getsource(PagedExactDecodePlan.build)
     assert "tokens_per_tile=64" in source
+
+
+def _make_selected_page16_inputs(
+    *,
+    device: str = "cpu",
+    dtype: torch.dtype = torch.float32,
+    dim: int = 8,
+) -> tuple[torch.Tensor, PagedKVCache, tuple[tuple[int, ...], ...]]:
+    torch.manual_seed(29)
+    batch = 1
+    q_heads = 8
+    kv_heads = 1
+    pages = 8
+    query = torch.randn(batch, 1, q_heads, dim, device=device, dtype=dtype)
+    key = torch.randn(pages, 16, kv_heads, dim, device=device, dtype=dtype)
+    value = torch.randn_like(key)
+    cache = PagedKVCache(
+        key=key,
+        value=value,
+        page_table=torch.tensor(
+            [[5, 2, 7, 0, 6, 1, 4, 3]], device=device, dtype=torch.int32
+        ),
+        sequence_lengths=torch.tensor([128], device=device, dtype=torch.int32),
+        layout="NHD",
+    )
+    rows = tuple(
+        (0, 2, 4, 6) if head % 2 == 0 else (1, 3, 5, 7)
+        for head in range(q_heads)
+    )
+    return query, cache, rows
+
+
+def _manual_selected_expected(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    rows: tuple[tuple[int, ...], ...],
+) -> torch.Tensor:
+    output = torch.empty_like(query)
+    scale = 1.0 / math.sqrt(float(query.shape[-1]))
+    for head, logical_pages in enumerate(rows):
+        physical_pages = [int(cache.page_table[0, page]) for page in logical_pages]
+        keys = torch.cat(
+            [cache.key[physical, :, 0] for physical in physical_pages], dim=0
+        ).float()
+        values = torch.cat(
+            [cache.value[physical, :, 0] for physical in physical_pages], dim=0
+        ).float()
+        scores = (keys @ query[0, 0, head].float()) * scale
+        output[0, 0, head] = (
+            scores.softmax(dim=0)[:, None] * values
+        ).sum(dim=0).to(output.dtype)
+    return output
+
+
+def _prepare_head_private_routes(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    rows: tuple[tuple[int, ...], ...],
+):
+    problem = AttentionProblem.from_paged(
+        query,
+        cache,
+        guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    )
+    plan = AttentionTilePlan.selected(
+        problem,
+        logical_tile_size=16,
+        tile_ids_per_row=rows,
+        policy_id="selected-paged-executor-test",
+        reason="per_head_selected_pages",
+        route_granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+        schedule_epoch=7,
+    ).with_device_routes(device=query.device)
+    return prepare_paged_routes64(plan, cache)
+
+
+def test_paged_selected_reference_preserves_per_head_route_semantics():
+    query, cache, rows = _make_selected_page16_inputs()
+    routes = _prepare_head_private_routes(query, cache, rows)
+
+    output = paged_selected_reference(
+        query,
+        cache,
+        routes,
+        schedule_epoch=7,
+    )
+    expected = _manual_selected_expected(query, cache, rows)
+
+    torch.testing.assert_close(output, expected, atol=1e-6, rtol=1e-5)
+    assert routes.group_route_efficiency == pytest.approx(0.5)
+
+
+def _has_h100_and_cutlass() -> bool:
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (9, 0):
+        return False
+    from stream_attention.backends.sm90.transposed_gqa_exact import (
+        resolve_cutlass_root,
+    )
+
+    try:
+        resolve_cutlass_root()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(
+    not _has_h100_and_cutlass(),
+    reason="requires H100 and CUTLASS/CUTE headers",
+)
+def test_h100_selected_paged_wgmma_matches_per_head_reference():
+    query, cache, rows = _make_selected_page16_inputs(
+        device="cuda",
+        dtype=torch.bfloat16,
+        dim=64,
+    )
+    routes = _prepare_head_private_routes(query, cache, rows)
+    expected = paged_selected_reference(
+        query,
+        cache,
+        routes,
+        schedule_epoch=7,
+    ).clone()
+    plan = PagedSelectedDecodePlan.build(
+        query,
+        cache,
+        routes,
+        schedule_epoch=7,
+    )
+
+    output = plan.run()
+    torch.cuda.synchronize()
+
+    torch.testing.assert_close(output.float(), expected.float(), atol=1e-2, rtol=1e-2)
+    assert plan.backend == PAGED_SELECTED_SM90_STATIC_BACKEND
+    assert plan.producer_ctas == routes.row_count * plan.max_routes_per_row
+    assert plan.workspace_bytes > 0
 
 
 def test_sm100_tgv_source_contract():

@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 import torch
 
+from .selected_routes import PackedPagedRoute64
+
 
 PAGED_EXACT_NATIVE_BACKEND = "streamattn_paged_exact_native"
 PAGED_EXACT_SM80_CP_ASYNC_BACKEND = "streamattn_paged_sm80_cp_async_exact"
@@ -36,6 +38,7 @@ PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND = (
 PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND = (
     "streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact"
 )
+PAGED_SELECTED_SM90_STATIC_BACKEND = "streamattn_paged_sm90_wgmma_selected_static"
 
 PROMOTED_PAGED_EXACT_SPLITS = {
     (1, 16384): 64,
@@ -371,6 +374,78 @@ def paged_exact_reference(
                 running_max = new_max
             output[batch_idx, 0, head_idx].copy_(
                 (numerator / denominator).to(output.dtype)
+            )
+    return output
+
+
+def paged_selected_reference(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    routes: PackedPagedRoute64,
+    *,
+    schedule_epoch: int,
+    output: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Exact reference over the per-head token sets encoded by PackedRoute64."""
+
+    cache.validate(query)
+    routes.validate_current(cache, schedule_epoch=schedule_epoch)
+    if routes.row_count != cache.batch_size * cache.kv_heads:
+        raise ValueError("selected route rows must match batch * KV heads")
+    if output is None:
+        output = torch.empty_like(query)
+    if output.shape != query.shape or output.dtype != query.dtype:
+        raise ValueError("output must match query shape and dtype")
+    if output.device != query.device or not output.is_contiguous():
+        raise ValueError("output must be contiguous and share the query device")
+
+    row_ptr = routes.row_ptr.detach().to(device="cpu", dtype=torch.int64).tolist()
+    physical_pages = routes.physical_page_ids.detach().to(
+        device="cpu", dtype=torch.int64
+    ).tolist()
+    head_masks = routes.active_head_masks.detach().to(
+        device="cpu", dtype=torch.int64
+    ).tolist()
+    token_masks = routes.token_valid_masks.detach().to(
+        device="cpu", dtype=torch.int64
+    ).tolist()
+    group_size = int(query.shape[2]) // cache.kv_heads
+    scale = 1.0 / math.sqrt(float(query.shape[3]))
+
+    for group in range(routes.row_count):
+        batch_idx = group // cache.kv_heads
+        kv_head = group % cache.kv_heads
+        for local_head in range(group_size):
+            key_fragments: list[torch.Tensor] = []
+            value_fragments: list[torch.Tensor] = []
+            for route_idx in range(row_ptr[group], row_ptr[group + 1]):
+                for atom in range(4):
+                    head_mask = int(head_masks[route_idx][atom]) & 0xFFFFFFFF
+                    token_mask = int(token_masks[route_idx][atom]) & 0xFFFF
+                    if not (head_mask & (1 << local_head)) or token_mask == 0:
+                        continue
+                    physical_page = int(physical_pages[route_idx][atom])
+                    token_ids = [
+                        token for token in range(16) if token_mask & (1 << token)
+                    ]
+                    if cache.normalized_layout == "NHD":
+                        key_page = cache.key[physical_page, token_ids, kv_head]
+                        value_page = cache.value[physical_page, token_ids, kv_head]
+                    else:
+                        key_page = cache.key[physical_page, kv_head, token_ids]
+                        value_page = cache.value[physical_page, kv_head, token_ids]
+                    key_fragments.append(key_page)
+                    value_fragments.append(value_page)
+            if not key_fragments:
+                raise ValueError(
+                    f"selected route row {group} has no tokens for head {local_head}"
+                )
+            keys = torch.cat(key_fragments, dim=0).float()
+            values = torch.cat(value_fragments, dim=0).float()
+            q_head = kv_head * group_size + local_head
+            scores = (keys @ query[batch_idx, 0, q_head].float()) * scale
+            output[batch_idx, 0, q_head].copy_(
+                (scores.softmax(dim=0)[:, None] * values).sum(dim=0).to(output.dtype)
             )
     return output
 
@@ -904,6 +979,188 @@ class PagedExactDecodePlan:
             tokens_per_tile=self.tokens_per_tile,
             partial_num_warps=self.partial_num_warps,
         )
+
+
+@dataclass
+class PagedSelectedDecodePlan:
+    """Allocation-free H100 decode over a prepared selected paged route."""
+
+    query: torch.Tensor
+    cache: PagedKVCache
+    routes: PackedPagedRoute64
+    schedule_epoch: int
+    output: torch.Tensor
+    max_routes_per_row: int
+    workspace: dict[str, torch.Tensor]
+    query_group: torch.Tensor
+    output_group: torch.Tensor
+    launch: Any
+    backend: str = PAGED_SELECTED_SM90_STATIC_BACKEND
+
+    @classmethod
+    def build(
+        cls,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        routes: PackedPagedRoute64,
+        *,
+        schedule_epoch: int,
+        output: Optional[torch.Tensor] = None,
+        validate_metadata: bool = True,
+    ) -> "PagedSelectedDecodePlan":
+        cache.validate(query, validate_metadata=validate_metadata)
+        routes.validate_current(cache, schedule_epoch=schedule_epoch)
+        if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
+            raise ValueError("selected paged WGMMA decode requires an H100/SM90 GPU")
+        if query.dtype != torch.bfloat16:
+            raise ValueError("selected paged WGMMA decode currently requires BF16")
+        if cache.page_size != 16 or cache.normalized_layout not in {"NHD", "HND"}:
+            raise ValueError("selected paged WGMMA decode requires NHD/HND page-16 KV")
+        if cache.page_table.dtype != torch.int32 or cache.sequence_lengths.dtype != torch.int32:
+            raise ValueError("selected paged WGMMA metadata must use int32")
+        if not cache.key.is_contiguous() or not cache.value.is_contiguous():
+            raise ValueError("selected paged WGMMA K/V pages must be contiguous")
+
+        batch = int(query.shape[0])
+        q_heads = int(query.shape[2])
+        head_dim = int(query.shape[3])
+        group_size = q_heads // cache.kv_heads
+        if group_size not in {4, 8} or head_dim not in {64, 128}:
+            raise ValueError("selected paged WGMMA supports G4/G8 and D64/D128")
+        groups = batch * cache.kv_heads
+        if routes.row_count != groups:
+            raise ValueError("selected route rows must match batch * KV heads")
+        if routes.device != query.device:
+            raise ValueError("selected routes and attention buffers must share a device")
+
+        row_ptr = routes.row_ptr.detach().to(device="cpu", dtype=torch.int64)
+        row_counts = row_ptr[1:] - row_ptr[:-1]
+        max_routes = int(row_counts.max().item()) if row_counts.numel() else 0
+        if max_routes <= 0:
+            raise ValueError("every selected execution plan needs at least one route")
+        masks = routes.active_head_masks.detach().to(device="cpu", dtype=torch.int64)
+        token_masks = routes.token_valid_masks.detach().to(
+            device="cpu", dtype=torch.int64
+        )
+        full_head_mask = (1 << group_size) - 1
+        for group in range(groups):
+            coverage = 0
+            for route_idx in range(int(row_ptr[group]), int(row_ptr[group + 1])):
+                for atom in range(4):
+                    if int(token_masks[route_idx, atom]) & 0xFFFF:
+                        coverage |= int(masks[route_idx, atom]) & 0xFFFFFFFF
+            if coverage & full_head_mask != full_head_mask:
+                raise ValueError(
+                    f"selected route row {group} leaves one or more Q heads empty"
+                )
+
+        if output is None:
+            output = torch.empty_like(query)
+        if output.shape != query.shape or output.dtype != query.dtype:
+            raise ValueError("output must match query shape and dtype")
+        if output.device != query.device or not output.is_contiguous():
+            raise ValueError("output must be contiguous and share the query device")
+
+        partial_o = torch.empty(
+            groups,
+            max_routes,
+            8,
+            head_dim,
+            device=query.device,
+            dtype=torch.float32,
+        )
+        partial_lse = torch.empty(
+            groups,
+            max_routes,
+            8,
+            device=query.device,
+            dtype=torch.float32,
+        )
+        from .backends.sm90.transposed_gqa_exact import (
+            compile_transposed_gqa_exact_extension,
+        )
+
+        extension = compile_transposed_gqa_exact_extension(head_dim=head_dim)
+        launch = (
+            extension.paged_selected_fragmented_nhd_exact_decode_out
+            if cache.normalized_layout == "NHD"
+            else extension.paged_selected_fragmented_exact_decode_out
+        )
+        return cls(
+            query=query,
+            cache=cache,
+            routes=routes,
+            schedule_epoch=int(schedule_epoch),
+            output=output,
+            max_routes_per_row=max_routes,
+            workspace={"partial_o": partial_o, "partial_lse": partial_lse},
+            query_group=query.view(batch, cache.kv_heads, group_size, head_dim),
+            output_group=output.view(groups, group_size, head_dim),
+            launch=launch,
+        )
+
+    @property
+    def workspace_bytes(self) -> int:
+        return sum(t.numel() * t.element_size() for t in self.workspace.values())
+
+    @property
+    def producer_ctas(self) -> int:
+        return self.routes.row_count * self.max_routes_per_row
+
+    def run(self) -> torch.Tensor:
+        """Run the static selected route and reject stale cache metadata."""
+
+        self.routes.validate_current(
+            self.cache,
+            schedule_epoch=self.schedule_epoch,
+        )
+        self.launch(
+            self.query_group,
+            self.cache.key,
+            self.cache.value,
+            self.routes.row_ptr,
+            self.routes.physical_page_ids,
+            self.routes.active_head_masks,
+            self.routes.token_valid_masks,
+            self.workspace["partial_o"],
+            self.workspace["partial_lse"],
+            self.output_group,
+            self.max_routes_per_row,
+        )
+        return self.output
+
+
+def stream_attn_paged_selected_decode(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    routes: PackedPagedRoute64,
+    *,
+    schedule_epoch: int,
+    output: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Plan and execute one H100 selected paged-KV decode call."""
+
+    return PagedSelectedDecodePlan.build(
+        query,
+        cache,
+        routes,
+        schedule_epoch=schedule_epoch,
+        output=output,
+    ).run()
+
+
+@dataclass
+class PagedSelectedDecodeRunner:
+    """Engine-compatible selected paged runner with serving telemetry."""
+
+    plan: PagedSelectedDecodePlan
+    info: Any
+
+    def run(self) -> torch.Tensor:
+        return self.plan.run()
+
+    def run_with_info(self):
+        return self.run(), self.info
 
 
 @dataclass

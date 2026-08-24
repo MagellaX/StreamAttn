@@ -74,10 +74,10 @@ sliding window    -> bounded logical tile range (planned)
 ```
 
 The runtime executes contiguous selected schedules and contiguous or paged
-exact schedules. Selected paged work now compiles into a device CSR schedule
-and page-native `PackedRoute64` metadata without copying K/V. The H100
-selected-paged WGMMA executor is the remaining promotion boundary; no speedup
-is claimed for that path yet. The shared planner means future adaptive,
+exact schedules. Selected paged work compiles into a device CSR schedule and
+page-native `PackedRoute64` metadata without copying K/V. H100 now executes
+those records directly with the same transposed WGMMA and online-softmax
+mainloop used by exact paged decode. The shared planner means future adaptive,
 compressed, prefill, and device backends do not need a second semantic API or
 a second online-softmax model. See [the universal tile
 planner](docs/universal_attention_tile_planner.md) and [the selected paged
@@ -122,6 +122,34 @@ See the measured phase diagrams for the actual promoted cells:
 - [Paged D64/D128 H100 phase diagram](docs/paged_exact_decode.md)
 - [Paged exact SM80/SM90/SM100 architecture phase](docs/paged_exact_architecture_phase_20260824.md)
 - [Native B200 exact backend and promotion boundary](docs/paged_exact_sm100_tgv_20260824.md)
+
+### Selected paged decode
+
+The H100 selected-paged backend consumes `PackedRoute64` records directly from
+page-16 NHD or HND caches. One producer CTA evaluates one selected 64-token
+record, applies per-page Q-head and token masks before softmax, and emits an
+exact online-softmax partial state. A static row merge produces the final
+output. K/V data is never gathered or repacked.
+
+Measured against the fastest tested FlashInfer exact decode backend at
+NHD/page-16, BF16, D128/G8, 32K:
+
+| Route | B1 | B4 | B8 | Paired evidence |
+|---|---:|---:|---:|---|
+| 384 selected tokens | `2.67x` | `5.16x` | `8.25x` | Independent confirmation; `45/45` wins |
+| 2,048 selected tokens | `2.76x` | `5.08x` | `7.18x` | Independent confirmation; `45/45` wins |
+| 8,192 selected tokens | `2.06x` | `2.84x` | `2.32x` | Initial phase; `21/21` wins |
+| 16,384 selected tokens | `1.69x` | `1.36x` | `1.36x` | Initial phase; `21/21` wins |
+| Full 32K control | unstable | `0.78x` | `0.75x` | Route to the exact split scheduler |
+
+All 15 phase cells matched an independent FP32 selected-token reference. A
+Q-head-private 384-token schedule with only `0.545` GQA union efficiency also
+won all `27/27` paired trials (`2.44x`, `5.21x`, and `8.20x` at B1/B4/B8).
+These are kernel/runtime results for a precomputed selected schedule. They do
+not certify that an arbitrary selection preserves model outputs, and the
+current general route lowering is plan-time work rather than a per-token
+dynamic selector. See the [H100 selected-paged phase
+diagram](docs/paged_selected_h100_phase_20260825.md).
 
 ### Model-aware reduced-work decode
 
@@ -509,9 +537,9 @@ The project has completed the first proof: StreamAttn-owned exact kernels can
 beat a strong exact decode baseline on guarded H100 cells, and a calibrated
 reduced-work route can speed up complete model decode. The next milestones are:
 
-1. Execute the new device CSR -> `PackedRoute64` selected-paged ABI in the
-   H100 transposed WGMMA backend, then gate static versus compact-ragged
-   scheduling with measured route variance.
+1. Add a GPU `AttentionRouteCSR -> PackedRoute64` preparation kernel for
+   query-dynamic schedules, and gate static versus compact-ragged execution
+   with measured route-count variance.
 2. Replace offline verification schedules with a selective live runtime
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
@@ -519,7 +547,8 @@ reduced-work route can speed up complete model decode. The next milestones are:
 4. Add first-class `prefill(...)` and `train(...)` entry points through the
    same `AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`
    contract.
-5. Lower the selected-route ABI into the B200 TMA+TMEM+`tcgen05` backend and
+5. Lower the now-executed selected-route ABI into the B200
+   TMA+TMEM+`tcgen05` backend and
    expand it beyond the promoted
    page-16 NHD D128/G8 full-row cells, and finish the A100 PV
    shared-to-register transpose so the SM80 candidate scales beyond B1.

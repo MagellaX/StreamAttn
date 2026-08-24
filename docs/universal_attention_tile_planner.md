@@ -57,7 +57,7 @@ The first integrated phase covers:
 | Contiguous NHD/HND | All logical tiles | Exact | Native exact or exact reference |
 | Paged NHD/HND | All logical tiles | Exact | Native paged exact or exact reference |
 | Contiguous NHD | Explicit calibrated blocks | Distribution verified | Native fixed-block kernel |
-| Paged NHD/HND | Device CSR -> `PackedRoute64` | Distribution verified | Metadata lowering complete; H100 executor not promoted |
+| Paged NHD/HND | Device CSR -> `PackedRoute64` | Distribution verified | H100 static selected WGMMA |
 
 Paged page-16 sources describe how four physical fragments form one logical
 64-token tile. Ragged requests preserve one logical tile count per row. The
@@ -91,21 +91,38 @@ pointer/version of the page table and sequence lengths. An in-place page remap
 therefore invalidates prepared metadata instead of silently reading stale
 physical pages. The lowering copies metadata only; it never gathers K/V.
 
+## H100 Execution Evidence
+
+The first physical consumer is a static SM90 executor:
+
+```text
+PackedRoute64 record -> one producer CTA
+four physical page-16 atoms -> one 64-token WGMMA tile
+per-atom head/token masks -> scores masked before online softmax
+fixed-stride partial states -> one-warp row merge
+```
+
+At NHD/page-16 BF16 D128/G8 and 32K, all selected routes through 16K tokens
+beat FlashInfer exact in the first B1/B4/B8 phase. Independent 384/2048-token
+confirmation won all 90 paired trials. The 32K control lost at B4/B8, proving
+the planner needs a route-density boundary between selected-static and the
+existing exact split scheduler. Full measurements are in
+[the H100 selected-paged phase](paged_selected_h100_phase_20260825.md).
+
 ## Remaining Work
 
 The planner contract is now shared; execution is not fully unified yet. The
 next engine work is:
 
-1. Make the H100 transposed WGMMA producer consume `PackedRoute64` directly.
-2. Benchmark static uniform routes before adding compact ragged tasks; add a
+1. Benchmark compact ragged tasks against the completed static executor; add a
    persistent queue only if measured task variance pays for it.
-3. Add segment/run producers for structured sink/middle/recent and sliding
+2. Add segment/run producers for structured sink/middle/recent and sliding
    schedules while retaining CSR as the irregular device ABI.
-4. Add a GPU route-preparation kernel for query-selected schedules so dynamic
+3. Add a GPU route-preparation kernel for query-selected schedules so dynamic
    selection has no CPU synchronization.
-5. Add a live verifier that can replace selected row/layer work with exact
+4. Add a live verifier that can replace selected row/layer work with exact
    tile schedules.
-6. Reuse the same contract for chunked prefill and mixed prefill/decode.
+5. Reuse the same contract for chunked prefill and mixed prefill/decode.
 
 Only after this H100 decode runtime is coherent should architecture expansion
 be treated as the main project direction. A100 and B200 backends are important

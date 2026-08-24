@@ -1,5 +1,6 @@
 import pytest
 import torch
+from types import SimpleNamespace
 
 import stream_attention as stream_attn
 from stream_attention.decode import (
@@ -18,7 +19,10 @@ from stream_attention.planning import (
     ATTENTION_GUARANTEE_EXACT,
     ATTENTION_SCHEDULE_ALL,
     ATTENTION_SCHEDULE_SELECTED,
+    AttentionProblem,
+    AttentionTilePlan,
 )
+from stream_attention.paged import PagedKVCache, PagedSelectedDecodePlan
 
 
 def _tensors():
@@ -148,6 +152,53 @@ def test_engine_lowers_verified_policy_to_selected_logical_tiles(monkeypatch):
     assert plan.tile_plan.schedule.selected_tile_ids == ((0, 2, 3), (0, 2, 3))
     assert plan.tile_plan.tile_coverage == 0.75
     assert plan.backend_plan.backend == "gate0_seed_only_triton"
+
+
+def test_engine_binds_selected_paged_tile_plan_to_native_runner(monkeypatch):
+    query = torch.randn(1, 1, 8, 8)
+    cache = PagedKVCache(
+        key=torch.randn(4, 16, 1, 8),
+        value=torch.randn(4, 16, 1, 8),
+        page_table=torch.arange(4, dtype=torch.int32).view(1, 4),
+        sequence_lengths=torch.tensor([64], dtype=torch.int32),
+        layout="NHD",
+    )
+    problem = AttentionProblem.from_paged(
+        query,
+        cache,
+        guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    )
+    tile_plan = AttentionTilePlan.selected(
+        problem,
+        logical_tile_size=16,
+        tile_ids_per_row=((0, 1, 2, 3),),
+        policy_id="engine-selected-paged-test",
+        reason="verified_test_schedule",
+        schedule_epoch=2,
+    )
+
+    def fake_build(_query, _cache, routes, **_kwargs):
+        return SimpleNamespace(
+            backend="fake_sm90_selected",
+            routes=routes,
+            max_routes_per_row=1,
+            workspace_bytes=4096,
+            run=lambda: query,
+        )
+
+    monkeypatch.setattr(PagedSelectedDecodePlan, "build", staticmethod(fake_build))
+    engine = StreamAttnEngine(policy=_policy(*_tensors()[:2]))
+    plan = engine.plan_selected_paged(query, cache, tile_plan)
+    output, info = plan.run()
+
+    assert output is query
+    assert plan.tile_plan is tile_plan
+    assert plan.backend == "fake_sm90_selected"
+    assert plan.uses_fixed_buffers is True
+    assert plan.backend_plan.workspace_bytes == 4096
+    assert info.policy_id == "engine-selected-paged-test"
+    assert info.stats["route_count"] == 1
+    assert info.stats["max_routes_per_row"] == 1
 
 
 @pytest.mark.skipif(
