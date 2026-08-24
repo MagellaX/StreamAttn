@@ -1,0 +1,132 @@
+{
+  "backend": "gpu_remote",
+  "cells": [
+    {
+      "active_producer_ctas": 256,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": 0.0007933080196380615,
+        "reference_mean_abs_error": 0.00010126519919140264,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0009765625,
+          "mean_abs_error": 8.512369822710752e-05,
+          "median_ms": 0.0614400003105402,
+          "reference_max_abs_error": 0.0007933080196380615,
+          "reference_mean_abs_error": 0.00010126519919140264,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.060416001826524734,
+            0.062463998794555664
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.0614400003105402,
+      "flashinfer_samples_ms": [
+        0.060416001826524734,
+        0.062463998794555664
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 1024,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0009765625,
+      "mean_abs_error": 8.512369822710752e-05,
+      "page_size": 16,
+      "pages_per_request": 64,
+      "paired": {
+        "speedup_median": 1.424242399187474,
+        "speedup_min": 1.424242399187474,
+        "trial_count": 1,
+        "trials": [
+          {
+            "flashinfer_ms": 0.048127999529242516,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.424242399187474,
+            "streamattn_ms": 0.03379200026392937,
+            "trial": 0
+          }
+        ],
+        "wins": 1
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 256,
+      "q_heads": 16,
+      "reference": {
+        "available": true,
+        "flashinfer_max_abs_error": 0.0007933080196380615,
+        "flashinfer_mean_abs_error": 0.00010126519919140264,
+        "max_sequence_length": 1024,
+        "streamattn_max_abs_error": 0.0007933080196380615,
+        "streamattn_mean_abs_error": 8.167845953721553e-05
+      },
+      "repeats": 2,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        1024,
+        1024
+      ],
+      "speedup_vs_flashinfer": 2.55319152724016,
+      "splits": 8,
+      "streamattn_ms": 0.024063999764621258,
+      "streamattn_samples_ms": [
+        0.025599999353289604,
+        0.02252800017595291
+      ],
+      "timestamp_unix": 1787587768.986309,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 2048,
+      "warmup": 1,
+      "workspace_bytes": 132096
+    }
+  ],
+  "compute_capability": [
+    8,
+    0
+  ],
+  "device": "NVIDIA A100-SXM4-80GB",
+  "schema": "streamattn.paged_exact_decode_matrix.v2",
+  "shape_family": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 128,
+    "kv_heads": 2,
+    "length_profiles": [
+      "full"
+    ],
+    "page_size": 16,
+    "q_heads": 16
+  },
+  "summary": {
+    "cells": 1,
+    "correct_cells": 1,
+    "flashinfer_wins": 0,
+    "streamattn_wins": 1
+  }
+}

@@ -282,6 +282,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         splits=args.splits,
         tokens_per_tile=args.tokens_per_tile,
         partial_num_warps=args.partial_num_warps,
+        sm80_cp_async_experimental=getattr(
+            args, "sm80_cp_async_experimental", False
+        ),
         sm80_grouped_experimental=getattr(args, "sm80_grouped_experimental", False),
         sm100_grouped_experimental=getattr(args, "sm100_grouped_experimental", False),
         sm90_fragmented_experimental=args.sm90_fragmented_experimental,
@@ -376,12 +379,24 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
     if not valid_flashinfer_candidates:
+        diagnostic = ""
+        if stream_reference_max_error is not None:
+            diagnostic = (
+                f"; stream_reference_max={stream_reference_max_error:.6g}"
+                f"; stream_reference_mean={stream_reference_mean_error:.6g}"
+            )
         raise RuntimeError(
             "no correct FlashInfer backend was available: "
             + "; ".join(
                 f"{candidate['requested_backend']}={candidate['status']}"
+                + (
+                    f"(reference_max={candidate['reference_max_abs_error']:.6g})"
+                    if candidate.get("reference_max_abs_error") is not None
+                    else ""
+                )
                 for candidate in flashinfer_candidates
             )
+            + diagnostic
         )
     selected_flashinfer = min(
         valid_flashinfer_candidates,
@@ -535,6 +550,7 @@ def main() -> None:
     )
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--flashinfer-backends", default="auto")
+    parser.add_argument("--sm80-cp-async-experimental", action="store_true")
     parser.add_argument("--sm80-grouped-experimental", action="store_true")
     parser.add_argument("--sm100-grouped-experimental", action="store_true")
     parser.add_argument("--warmup", type=int, default=10)

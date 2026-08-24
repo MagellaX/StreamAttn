@@ -10,6 +10,7 @@ import torch
 
 
 PAGED_EXACT_NATIVE_BACKEND = "streamattn_paged_exact_native"
+PAGED_EXACT_SM80_CP_ASYNC_BACKEND = "streamattn_paged_sm80_cp_async_exact"
 PAGED_EXACT_SM80_GROUPED_BACKEND = "streamattn_paged_sm80_grouped_exact"
 PAGED_EXACT_SM100_GROUPED_BACKEND = "streamattn_paged_sm100_grouped_exact"
 PAGED_EXACT_SM90_BACKEND = "streamattn_paged_sm90_wgmma_exact"
@@ -389,6 +390,7 @@ class PagedExactDecodePlan:
         tokens_per_tile: int = 512,
         partial_num_warps: int = 4,
         validate_metadata: bool = True,
+        sm80_cp_async_experimental: bool = False,
         sm80_grouped_experimental: bool = False,
         sm100_grouped_experimental: bool = False,
         sm90_fragmented_experimental: bool = False,
@@ -589,6 +591,78 @@ class PagedExactDecodePlan:
                     ),
                     output_group=output.view(groups, group_size, head_dim),
                 )
+
+            use_sm80_cp_async = (
+                sm80_cp_async_experimental
+                and torch.cuda.get_device_capability(query.device) == (8, 0)
+                and query.dtype == torch.bfloat16
+                and cache.normalized_layout == "NHD"
+                and cache.page_size == 16
+                and page16_shape == (16, 2, 8, 128)
+                and full_lengths
+                and cache.max_pages_per_request % 4 == 0
+                and cache.page_table.dtype == torch.int32
+                and cache.sequence_lengths.dtype == torch.int32
+            )
+            if use_sm80_cp_async:
+                from .backends.sm80.paged_gqa_exact import (
+                    compile_sm80_paged_gqa_extension,
+                    resolve_cutlass_root,
+                )
+
+                try:
+                    resolve_cutlass_root()
+                except FileNotFoundError:
+                    use_sm80_cp_async = False
+            if use_sm80_cp_async:
+                logical_tiles = (cache.max_pages_per_request + 3) // 4
+                if splits is None:
+                    target_ctas = 256
+                    group_count = int(query.shape[0]) * cache.kv_heads
+                    selected_splits = max(
+                        1,
+                        min(
+                            logical_tiles,
+                            (target_ctas + group_count - 1) // group_count,
+                        ),
+                    )
+                if selected_splits > min(logical_tiles, 512):
+                    raise ValueError(
+                        "SM80 cp.async splits must be <= "
+                        "min(ceil(max_pages/4), 512)"
+                    )
+                groups = int(query.shape[0]) * cache.kv_heads
+                partial_o = torch.empty(
+                    groups,
+                    selected_splits,
+                    8,
+                    head_dim,
+                    device=query.device,
+                    dtype=torch.float32,
+                )
+                partial_lse = torch.empty(
+                    groups,
+                    selected_splits,
+                    8,
+                    device=query.device,
+                    dtype=torch.float32,
+                )
+                extension = compile_sm80_paged_gqa_extension()
+                return cls(
+                    query=query,
+                    cache=cache,
+                    output=output,
+                    splits=selected_splits,
+                    workspace={"partial_o": partial_o, "partial_lse": partial_lse},
+                    backend=PAGED_EXACT_SM80_CP_ASYNC_BACKEND,
+                    launch=extension.paged_exact_decode_out,
+                    tokens_per_tile=64,
+                    partial_num_warps=4,
+                    query_group=query.view(
+                        int(query.shape[0]), cache.kv_heads, group_size, head_dim
+                    ),
+                    output_group=output.view(groups, group_size, head_dim),
+                )
             from .kernels.paged_exact_triton import (
                 TRITON_AVAILABLE,
                 make_paged_exact_workspace,
@@ -679,9 +753,22 @@ class PagedExactDecodePlan:
             PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
             PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
             PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+            PAGED_EXACT_SM80_CP_ASYNC_BACKEND,
         }:
             assert self.query_group is not None and self.output_group is not None
-            if self.backend in {
+            if self.backend == PAGED_EXACT_SM80_CP_ASYNC_BACKEND:
+                self.launch(
+                    self.query_group,
+                    self.cache.key,
+                    self.cache.value,
+                    self.cache.page_table,
+                    self.cache.sequence_lengths,
+                    self.workspace["partial_o"],
+                    self.workspace["partial_lse"],
+                    self.output_group,
+                    self.splits,
+                )
+            elif self.backend in {
                 PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
                 PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
             }:

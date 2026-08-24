@@ -1,0 +1,2359 @@
+{
+  "backend": "gpu_remote",
+  "cells": [
+    {
+      "active_producer_ctas": 512,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.095972013194114e-05,
+          "median_ms": 0.06758400052785873,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.07065600156784058,
+            0.06860800087451935,
+            0.06758400052785873,
+            0.09625600278377533,
+            0.07065600156784058,
+            0.06758400052785873,
+            0.06451199948787689,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.06143999844789505
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.095972013194114e-05,
+          "median_ms": 0.06195199862122536,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.07168000191450119,
+            0.0655359998345375,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.060416001826524734,
+            0.06451199948787689,
+            0.060416001826524734,
+            0.06143999844789505,
+            0.06143999844789505,
+            0.060416001826524734
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.06195199862122536,
+      "flashinfer_samples_ms": [
+        0.07168000191450119,
+        0.0655359998345375,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.060416001826524734,
+        0.06451199948787689,
+        0.060416001826524734,
+        0.06143999844789505,
+        0.06143999844789505,
+        0.060416001826524734
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.095972013194114e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.7439024368602148,
+        "speedup_min": 0.7317073105806445,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7439024368602148,
+            "streamattn_ms": 0.08396799862384796,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.06143999844789505,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.7317073105806445,
+            "streamattn_ms": 0.08396799862384796,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.06348799914121628,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7560975631397852,
+            "streamattn_ms": 0.08396799862384796,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 512,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.7289156552574098,
+      "splits": 32,
+      "streamattn_ms": 0.08499199897050858,
+      "streamattn_samples_ms": [
+        0.08601599931716919,
+        0.08499199897050858,
+        0.08499199897050858,
+        0.0870399996638298,
+        0.08499199897050858,
+        0.08601599931716919,
+        0.08396799862384796,
+        0.08499199897050858,
+        0.08396799862384796,
+        0.08499199897050858
+      ],
+      "timestamp_unix": 1787588760.8244321,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 264192
+    },
+    {
+      "active_producer_ctas": 768,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.076306554954499e-05,
+          "median_ms": 0.062463998794555664,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06656000018119812,
+            0.0655359998345375,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.06143999844789505,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.060416001826524734,
+            0.062463998794555664
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.076306554954499e-05,
+          "median_ms": 0.06348799914121628,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06758400052785873,
+            0.0655359998345375,
+            0.06451199948787689,
+            0.06860800087451935,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.06143999844789505,
+            0.06348799914121628
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.062463998794555664,
+      "flashinfer_samples_ms": [
+        0.06656000018119812,
+        0.0655359998345375,
+        0.062463998794555664,
+        0.06348799914121628,
+        0.06143999844789505,
+        0.06348799914121628,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.060416001826524734,
+        0.062463998794555664
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.076306554954499e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.9538461383470725,
+        "speedup_min": 0.9384615177960968,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06451199948787689,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9545454395124844,
+            "streamattn_ms": 0.06758400052785873,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.9384615177960968,
+            "streamattn_ms": 0.06656000018119812,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.06348799914121628,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9538461383470725,
+            "streamattn_ms": 0.06656000018119812,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 768,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.9312976870286284,
+      "splits": 48,
+      "streamattn_ms": 0.06707200035452843,
+      "streamattn_samples_ms": [
+        0.06860800087451935,
+        0.06758400052785873,
+        0.06860800087451935,
+        0.06656000018119812,
+        0.06758400052785873,
+        0.06758400052785873,
+        0.0655359998345375,
+        0.06656000018119812,
+        0.06656000018119812,
+        0.06656000018119812
+      ],
+      "timestamp_unix": 1787588760.839737,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 396288
+    },
+    {
+      "active_producer_ctas": 1024,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0824154489673674e-05,
+          "median_ms": 0.062463998794555664,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06860800087451935,
+            0.06860800087451935,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.07372800260782242,
+            0.06143999844789505,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.06143999844789505,
+            0.06143999844789505
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0824154489673674e-05,
+          "median_ms": 0.062463998794555664,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0655359998345375,
+            0.06348799914121628,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.06143999844789505,
+            0.06348799914121628,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.06143999844789505
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.062463998794555664,
+      "flashinfer_samples_ms": [
+        0.06860800087451935,
+        0.06860800087451935,
+        0.06451199948787689,
+        0.062463998794555664,
+        0.07372800260782242,
+        0.06143999844789505,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.06143999844789505,
+        0.06143999844789505
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0824154489673674e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.8999999688173254,
+        "speedup_min": 0.8840579343366984,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06451199948787689,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8999999688173254,
+            "streamattn_ms": 0.07168000191450119,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.8840579343366984,
+            "streamattn_ms": 0.07065600156784058,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.0655359998345375,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9275362089604365,
+            "streamattn_ms": 0.07065600156784058,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1024,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.8970587904854872,
+      "splits": 64,
+      "streamattn_ms": 0.06963200122117996,
+      "streamattn_samples_ms": [
+        0.07168000191450119,
+        0.06963200122117996,
+        0.06963200122117996,
+        0.06963200122117996,
+        0.06963200122117996,
+        0.06963200122117996,
+        0.07065600156784058,
+        0.07065600156784058,
+        0.07065600156784058,
+        0.06963200122117996
+      ],
+      "timestamp_unix": 1787588760.8526566,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 528384
+    },
+    {
+      "active_producer_ctas": 1280,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.9896586309187114e-05,
+          "median_ms": 0.06297599896788597,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06758400052785873,
+            0.06451199948787689,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.060416001826524734,
+            0.06143999844789505
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.9896586309187114e-05,
+          "median_ms": 0.062463998794555664,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06758400052785873,
+            0.06656000018119812,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.06143999844789505,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.05939200147986412,
+            0.06143999844789505,
+            0.060416001826524734
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.062463998794555664,
+      "flashinfer_samples_ms": [
+        0.06758400052785873,
+        0.06656000018119812,
+        0.06451199948787689,
+        0.062463998794555664,
+        0.06143999844789505,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.05939200147986412,
+        0.06143999844789505,
+        0.060416001826524734
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 1.9896586309187114e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.924242399187474,
+        "speedup_min": 0.924242399187474,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06348799914121628,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9253731100157356,
+            "streamattn_ms": 0.06860800087451935,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.924242399187474,
+            "streamattn_ms": 0.06758400052785873,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.924242399187474,
+            "streamattn_ms": 0.06758400052785873,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1280,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.9037036725638032,
+      "splits": 80,
+      "streamattn_ms": 0.06912000104784966,
+      "streamattn_samples_ms": [
+        0.07065600156784058,
+        0.06758400052785873,
+        0.06963200122117996,
+        0.06860800087451935,
+        0.06963200122117996,
+        0.06860800087451935,
+        0.06758400052785873,
+        0.0727040022611618,
+        0.06963200122117996,
+        0.06860800087451935
+      ],
+      "timestamp_unix": 1787588760.865227,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 660480
+    },
+    {
+      "active_producer_ctas": 1536,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0778838006663136e-05,
+          "median_ms": 0.06195199862122536,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06860800087451935,
+            0.0655359998345375,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.06143999844789505,
+            0.06143999844789505,
+            0.060416001826524734,
+            0.06143999844789505,
+            0.060416001826524734
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0778838006663136e-05,
+          "median_ms": 0.06092800013720989,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06758400052785873,
+            0.06451199948787689,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.060416001826524734,
+            0.06143999844789505,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.060416001826524734
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.06092800013720989,
+      "flashinfer_samples_ms": [
+        0.06758400052785873,
+        0.06451199948787689,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.060416001826524734,
+        0.06143999844789505,
+        0.060416001826524734,
+        0.060416001826524734,
+        0.060416001826524734,
+        0.060416001826524734
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0778838006663136e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.9677419241270171,
+        "speedup_min": 0.9677419241270171,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06348799914121628,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.0,
+            "streamattn_ms": 0.06348799914121628,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.06143999844789505,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.9677419241270171,
+            "streamattn_ms": 0.06348799914121628,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.06143999844789505,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9677419241270171,
+            "streamattn_ms": 0.06348799914121628,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1536,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.9444444540687271,
+      "splits": 96,
+      "streamattn_ms": 0.06451199948787689,
+      "streamattn_samples_ms": [
+        0.06451199948787689,
+        0.06451199948787689,
+        0.06451199948787689,
+        0.06348799914121628,
+        0.06348799914121628,
+        0.06451199948787689,
+        0.06348799914121628,
+        0.06451199948787689,
+        0.06451199948787689,
+        0.062463998794555664
+      ],
+      "timestamp_unix": 1787588760.8779705,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 792576
+    },
+    {
+      "active_producer_ctas": 1728,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.999989035539329e-05,
+          "median_ms": 0.06399999931454659,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06758400052785873,
+            0.06451199948787689,
+            0.06451199948787689,
+            0.06348799914121628,
+            0.06451199948787689,
+            0.06451199948787689,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.06348799914121628
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.999989035539329e-05,
+          "median_ms": 0.062463998794555664,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06963200122117996,
+            0.06758400052785873,
+            0.062463998794555664,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.060416001826524734,
+            0.06143999844789505,
+            0.06143999844789505,
+            0.06348799914121628
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.062463998794555664,
+      "flashinfer_samples_ms": [
+        0.06963200122117996,
+        0.06758400052785873,
+        0.062463998794555664,
+        0.06348799914121628,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.060416001826524734,
+        0.06143999844789505,
+        0.06143999844789505,
+        0.06348799914121628
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 1.999989035539329e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.9843749946709295,
+        "speedup_min": 0.9531249840127884,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.06451199948787689,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9843749946709295,
+            "streamattn_ms": 0.0655359998345375,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.9531249840127884,
+            "streamattn_ms": 0.0655359998345375,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.06451199948787689,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.0,
+            "streamattn_ms": 0.06451199948787689,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1728,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.9457364157448339,
+      "splits": 108,
+      "streamattn_ms": 0.06604800000786781,
+      "streamattn_samples_ms": [
+        0.06656000018119812,
+        0.06656000018119812,
+        0.06451199948787689,
+        0.0655359998345375,
+        0.0655359998345375,
+        0.06656000018119812,
+        0.06758400052785873,
+        0.0655359998345375,
+        0.06451199948787689,
+        0.06758400052785873
+      ],
+      "timestamp_unix": 1787588760.891414,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 891648
+    },
+    {
+      "active_producer_ctas": 2048,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0360646885819733e-05,
+          "median_ms": 0.06195199862122536,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06860800087451935,
+            0.06656000018119812,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.062463998794555664,
+            0.06143999844789505,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.060416001826524734
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0360646885819733e-05,
+          "median_ms": 0.06092800013720989,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.06451199948787689,
+            0.06348799914121628,
+            0.062463998794555664,
+            0.06143999844789505,
+            0.06143999844789505,
+            0.060416001826524734,
+            0.060416001826524734,
+            0.05939200147986412,
+            0.060416001826524734,
+            0.05939200147986412
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.06092800013720989,
+      "flashinfer_samples_ms": [
+        0.06451199948787689,
+        0.06348799914121628,
+        0.062463998794555664,
+        0.06143999844789505,
+        0.06143999844789505,
+        0.060416001826524734,
+        0.060416001826524734,
+        0.05939200147986412,
+        0.060416001826524734,
+        0.05939200147986412
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0360646885819733e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.9836065515109182,
+        "speedup_min": 0.9672131626608345,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.062463998794555664,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.0,
+            "streamattn_ms": 0.062463998794555664,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.060416001826524734,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.9672131626608345,
+            "streamattn_ms": 0.062463998794555664,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.06143999844789505,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.9836065515109182,
+            "streamattn_ms": 0.062463998794555664,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 2048,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.9754098570858764,
+      "splits": 128,
+      "streamattn_ms": 0.062463998794555664,
+      "streamattn_samples_ms": [
+        0.06451199948787689,
+        0.06348799914121628,
+        0.062463998794555664,
+        0.062463998794555664,
+        0.06143999844789505,
+        0.062463998794555664,
+        0.06348799914121628,
+        0.06143999844789505,
+        0.062463998794555664,
+        0.062463998794555664
+      ],
+      "timestamp_unix": 1787588760.9038327,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 3,
+      "workspace_bytes": 1056768
+    },
+    {
+      "active_producer_ctas": 1024,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.183231663366314e-05,
+          "median_ms": 0.08396799862384796,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0870399996638298,
+            0.08499199897050858,
+            0.08499199897050858,
+            0.08499199897050858,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08089599758386612,
+            0.08396799862384796
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.183231663366314e-05,
+          "median_ms": 0.08396799862384796,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0870399996638298,
+            0.08806400001049042,
+            0.08294399827718735,
+            0.08499199897050858,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.09113600105047226,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08396799862384796
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08396799862384796,
+      "flashinfer_samples_ms": [
+        0.0870399996638298,
+        0.08499199897050858,
+        0.08499199897050858,
+        0.08499199897050858,
+        0.08191999793052673,
+        0.08396799862384796,
+        0.08191999793052673,
+        0.08396799862384796,
+        0.08089599758386612,
+        0.08396799862384796
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.183231663366314e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.6833333393966315,
+        "speedup_min": 0.6722689096182354,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08499199897050858,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.6916666757616139,
+            "streamattn_ms": 0.1228799968957901,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08191999793052673,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.6722689096182354,
+            "streamattn_ms": 0.12185599654912949,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.6833333393966315,
+            "streamattn_ms": 0.1228799968957901,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1024,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.6804979303221073,
+      "splits": 32,
+      "streamattn_ms": 0.12339199706912041,
+      "streamattn_samples_ms": [
+        0.1228799968957901,
+        0.12492799758911133,
+        0.1228799968957901,
+        0.12390399724245071,
+        0.12083200365304947,
+        0.12390399724245071,
+        0.12390399724245071,
+        0.12390399724245071,
+        0.12185599654912949,
+        0.1228799968957901
+      ],
+      "timestamp_unix": 1787588760.930152,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 528384
+    },
+    {
+      "active_producer_ctas": 1536,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0305382349761203e-05,
+          "median_ms": 0.08243199810385704,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0870399996638298,
+            0.08806400001049042,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08191999793052673
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0305382349761203e-05,
+          "median_ms": 0.08243199810385704,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08499199897050858,
+            0.08499199897050858,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08806400001049042,
+            0.08191999793052673,
+            0.08294399827718735
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08243199810385704,
+      "flashinfer_samples_ms": [
+        0.0870399996638298,
+        0.08806400001049042,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08191999793052673,
+        0.08294399827718735,
+        0.08191999793052673,
+        0.08191999793052673,
+        0.08089599758386612,
+        0.08191999793052673
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0305382349761203e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.8333332828058517,
+        "speedup_min": 0.8229166129812174,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08294399827718735,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8350515595378132,
+            "streamattn_ms": 0.09932799637317657,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08089599758386612,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.8229166129812174,
+            "streamattn_ms": 0.09830400347709656,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08191999793052673,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8333332828058517,
+            "streamattn_ms": 0.09830400347709656,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 1536,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.8385416177181688,
+      "splits": 48,
+      "streamattn_ms": 0.09830400347709656,
+      "streamattn_samples_ms": [
+        0.09932799637317657,
+        0.09932799637317657,
+        0.09830400347709656,
+        0.09932799637317657,
+        0.09830400347709656,
+        0.09830400347709656,
+        0.09932799637317657,
+        0.09830400347709656,
+        0.09728000313043594,
+        0.09830400347709656
+      ],
+      "timestamp_unix": 1787588760.9456964,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 792576
+    },
+    {
+      "active_producer_ctas": 2048,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1340121747925878e-05,
+          "median_ms": 0.08191999793052673,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08806400001049042,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08294399827718735,
+            0.08089599758386612
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1340121747925878e-05,
+          "median_ms": 0.08191999793052673,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.09011200070381165,
+            0.08396799862384796,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08499199897050858,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08089599758386612
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08191999793052673,
+      "flashinfer_samples_ms": [
+        0.08806400001049042,
+        0.08396799862384796,
+        0.08294399827718735,
+        0.08191999793052673,
+        0.08089599758386612,
+        0.08191999793052673,
+        0.08191999793052673,
+        0.08191999793052673,
+        0.08294399827718735,
+        0.08089599758386612
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.1340121747925878e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.8437499526304859,
+        "speedup_min": 0.8247422773208093,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08191999793052673,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8247422773208093,
+            "streamattn_ms": 0.09932799637317657,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.8541666224551202,
+            "streamattn_ms": 0.09830400347709656,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08294399827718735,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8437499526304859,
+            "streamattn_ms": 0.09830400347709656,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 2048,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.8333332828058517,
+      "splits": 64,
+      "streamattn_ms": 0.09830400347709656,
+      "streamattn_samples_ms": [
+        0.09932799637317657,
+        0.09830400347709656,
+        0.09830400347709656,
+        0.09728000313043594,
+        0.09830400347709656,
+        0.09932799637317657,
+        0.09932799637317657,
+        0.09728000313043594,
+        0.09932799637317657,
+        0.09728000313043594
+      ],
+      "timestamp_unix": 1787588760.9611537,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 1056768
+    },
+    {
+      "active_producer_ctas": 2560,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.091487476718612e-05,
+          "median_ms": 0.08243199810385704,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08601599931716919,
+            0.08601599931716919,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08089599758386612,
+            0.08191999793052673,
+            0.0798719972372055,
+            0.08089599758386612,
+            0.08191999793052673
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.091487476718612e-05,
+          "median_ms": 0.08396799862384796,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08908800035715103,
+            0.08499199897050858,
+            0.08499199897050858,
+            0.08294399827718735,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.08396799862384796,
+            0.08294399827718735
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08243199810385704,
+      "flashinfer_samples_ms": [
+        0.08601599931716919,
+        0.08601599931716919,
+        0.08396799862384796,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08089599758386612,
+        0.08191999793052673,
+        0.0798719972372055,
+        0.08089599758386612,
+        0.08191999793052673
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.091487476718612e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.8526315338001537,
+        "speedup_min": 0.8229166129812174,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08294399827718735,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8526315338001537,
+            "streamattn_ms": 0.09728000313043594,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08089599758386612,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.8229166129812174,
+            "streamattn_ms": 0.09830400347709656,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8631578528144284,
+            "streamattn_ms": 0.09728000313043594,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 2560,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.8563829342573902,
+      "splits": 80,
+      "streamattn_ms": 0.09625600278377533,
+      "streamattn_samples_ms": [
+        0.09932799637317657,
+        0.09625600278377533,
+        0.09625600278377533,
+        0.09523200243711472,
+        0.09728000313043594,
+        0.09625600278377533,
+        0.09523200243711472,
+        0.09932799637317657,
+        0.09523200243711472,
+        0.10547199845314026
+      ],
+      "timestamp_unix": 1787588760.9781325,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 1320960
+    },
+    {
+      "active_producer_ctas": 3072,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.0967192540410906e-05,
+          "median_ms": 0.08294399827718735,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0870399996638298,
+            0.08601599931716919,
+            0.08294399827718735,
+            0.08499199897050858,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08191999793052673
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.0967192540410906e-05,
+          "median_ms": 0.08345599845051765,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08806400001049042,
+            0.08601599931716919,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08089599758386612,
+            0.08396799862384796
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08294399827718735,
+      "flashinfer_samples_ms": [
+        0.0870399996638298,
+        0.08601599931716919,
+        0.08294399827718735,
+        0.08499199897050858,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08191999793052673
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.0967192540410906e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.7321428351015318,
+        "speedup_min": 0.725663692881963,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.725663692881963,
+            "streamattn_ms": 0.1157120019197464,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.7321428351015318,
+            "streamattn_ms": 0.11468800157308578,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7321428351015318,
+            "streamattn_ms": 0.11468800157308578,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 3072,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.7199999741299289,
+      "splits": 96,
+      "streamattn_ms": 0.11520000174641609,
+      "streamattn_samples_ms": [
+        0.11673600226640701,
+        0.1157120019197464,
+        0.11161600053310394,
+        0.11468800157308578,
+        0.11468800157308578,
+        0.11673600226640701,
+        0.11161600053310394,
+        0.1157120019197464,
+        0.11366400122642517,
+        0.11673600226640701
+      ],
+      "timestamp_unix": 1787588760.9941432,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 1585152
+    },
+    {
+      "active_producer_ctas": 3456,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1211257262621075e-05,
+          "median_ms": 0.08140799775719643,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.0870399996638298,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.08396799862384796,
+            0.08089599758386612,
+            0.08089599758386612,
+            0.08191999793052673,
+            0.0798719972372055,
+            0.0798719972372055,
+            0.08089599758386612
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1211257262621075e-05,
+          "median_ms": 0.08191999793052673,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08908800035715103,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08089599758386612,
+            0.08191999793052673
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08140799775719643,
+      "flashinfer_samples_ms": [
+        0.0870399996638298,
+        0.08396799862384796,
+        0.08294399827718735,
+        0.08396799862384796,
+        0.08089599758386612,
+        0.08089599758386612,
+        0.08191999793052673,
+        0.0798719972372055,
+        0.0798719972372055,
+        0.08089599758386612
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.000244140625,
+      "mean_abs_error": 2.1211257262621075e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.7383177360375053,
+        "speedup_min": 0.7383177360375053,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08191999793052673,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7547169655906921,
+            "streamattn_ms": 0.1085439994931221,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08089599758386612,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.7383177360375053,
+            "streamattn_ms": 0.10956799983978271,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08089599758386612,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7383177360375053,
+            "streamattn_ms": 0.10956799983978271,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 3456,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.7429906348225428,
+      "splits": 108,
+      "streamattn_ms": 0.10956799983978271,
+      "streamattn_samples_ms": [
+        0.10956799983978271,
+        0.11161600053310394,
+        0.10956799983978271,
+        0.11059200018644333,
+        0.10956799983978271,
+        0.1085439994931221,
+        0.10956799983978271,
+        0.10956799983978271,
+        0.11059200018644333,
+        0.11059200018644333
+      ],
+      "timestamp_unix": 1787588761.0102017,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 1783296
+    },
+    {
+      "active_producer_ctas": 4096,
+      "backend_variant": "streamattn_paged_sm80_cp_async_exact",
+      "batch": 2,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        8,
+        0
+      ],
+      "device": "NVIDIA A100-SXM4-80GB",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "auto",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.096952812280506e-05,
+          "median_ms": 0.08294399827718735,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.09011200070381165,
+            0.08396799862384796,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08396799862384796,
+            0.08191999793052673,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08191999793052673,
+            0.08191999793052673
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.096952812280506e-05,
+          "median_ms": 0.08294399827718735,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.08601599931716919,
+            0.08499199897050858,
+            0.08499199897050858,
+            0.08294399827718735,
+            0.08191999793052673,
+            0.08294399827718735,
+            0.08294399827718735,
+            0.08089599758386612,
+            0.08396799862384796,
+            0.08294399827718735
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.08294399827718735,
+      "flashinfer_samples_ms": [
+        0.09011200070381165,
+        0.08396799862384796,
+        0.08294399827718735,
+        0.08294399827718735,
+        0.08396799862384796,
+        0.08191999793052673,
+        0.08294399827718735,
+        0.08191999793052673,
+        0.08191999793052673,
+        0.08191999793052673
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.096952812280506e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 0.7941176449607965,
+        "speedup_min": 0.776699020896268,
+        "trial_count": 3,
+        "trials": [
+          {
+            "flashinfer_ms": 0.08396799862384796,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.8039215700261356,
+            "streamattn_ms": 0.10444799810647964,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.08191999793052673,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 0.776699020896268,
+            "streamattn_ms": 0.10547199845314026,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.08294399827718735,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 0.7941176449607965,
+            "streamattn_ms": 0.10444799810647964,
+            "trial": 2
+          }
+        ],
+        "wins": 0
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 4096,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 10,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768,
+        32768
+      ],
+      "speedup_vs_flashinfer": 0.7941176449607965,
+      "splits": 128,
+      "streamattn_ms": 0.10444799810647964,
+      "streamattn_samples_ms": [
+        0.10547199845314026,
+        0.10342399775981903,
+        0.10547199845314026,
+        0.10444799810647964,
+        0.10342399775981903,
+        0.10444799810647964,
+        0.10342399775981903,
+        0.10444799810647964,
+        0.10444799810647964,
+        0.10342399775981903
+      ],
+      "timestamp_unix": 1787588761.0272996,
+      "tokens_per_tile": 64,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 65536,
+      "warmup": 3,
+      "workspace_bytes": 2113536
+    }
+  ],
+  "compute_capability": [
+    8,
+    0
+  ],
+  "device": "NVIDIA A100-SXM4-80GB",
+  "schema": "streamattn.paged_exact_decode_matrix.v2",
+  "shape_family": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 128,
+    "kv_heads": 2,
+    "length_profiles": [
+      "full"
+    ],
+    "page_size": 16,
+    "q_heads": 16
+  },
+  "summary": {
+    "cells": 14,
+    "correct_cells": 14,
+    "flashinfer_wins": 14,
+    "streamattn_wins": 0
+  }
+}

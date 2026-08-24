@@ -6,6 +6,7 @@ import torch
 import stream_attention as stream_attn
 from stream_attention.paged import (
     PAGED_EXACT_NATIVE_BACKEND,
+    PAGED_EXACT_SM80_CP_ASYNC_BACKEND,
     PAGED_EXACT_SM80_GROUPED_BACKEND,
     PAGED_EXACT_SM100_GROUPED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
@@ -34,6 +35,10 @@ from stream_attention.backends.sm90.transposed_gqa_exact_sources import (
     CPP_SOURCE,
     CUDA_SOURCE,
     cuda_source_for_head_dim,
+)
+from stream_attention.backends.sm80.paged_gqa_exact_sources import (
+    CPP_SOURCE as SM80_CPP_SOURCE,
+    CUDA_SOURCE as SM80_CUDA_SOURCE,
 )
 
 
@@ -254,7 +259,15 @@ def test_promoted_paged_sm90_cells_and_source_contract():
         "nhd_fragmented_ragged_exact"
     )
     assert PAGED_EXACT_SM80_GROUPED_BACKEND.endswith("sm80_grouped_exact")
+    assert PAGED_EXACT_SM80_CP_ASYNC_BACKEND.endswith("sm80_cp_async_exact")
     assert PAGED_EXACT_SM100_GROUPED_BACKEND.endswith("sm100_grouped_exact")
+    assert "paged_exact_decode_out" in SM80_CPP_SOURCE
+    assert "SM80_CP_ASYNC_CACHEGLOBAL" in SM80_CUDA_SOURCE
+    assert "SM80_16x8x16_F32BF16BF16F32_TN" in SM80_CUDA_SOURCE
+    assert "SM75_U32x4_LDSM_N" in SM80_CUDA_SOURCE
+    assert "streamattn_group_max" in SM80_CUDA_SOURCE
+    assert "streamattn_sm80_exact_merge_warp_kernel" in SM80_CUDA_SOURCE
+    assert "num_splits <= 512" in SM80_CUDA_SOURCE
 
 
 @pytest.mark.skipif(

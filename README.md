@@ -66,6 +66,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D128, GQA group 8 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.075x` worst paired trial; `1.75x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 8 | NHD/page-16; B1-B8; 16K-64K; full and ragged | `1.058x` worst paired trial; `1.283x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
+| Paged D128, GQA group 8 | A100/NHD/page-16; B1/32K full row | `1.20x-1.26x` in two repeated runs; `0.975x` in one warm-state sweep | Experimental candidate; not auto-routed |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -118,9 +119,12 @@ verifier.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
 - No A100, B200, FP8, or non-Qwen model-family performance claim has been
-  promoted yet. Separate true-GQA grouped A100 and B200 backends are correct
-  but remain experimental: their measured phase diagrams did not beat the
-  fastest correct FlashInfer path. H100 paged exact promotion covers measured
+  promoted yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA
+  exact backend for direct NHD page-16 D128/G8 decode. It is correct and has
+  repeated B1/32K wins, but another independent warm-state sweep reached only
+  `0.975x`; it therefore remains explicit experimental opt-in. The B200 grouped
+  floor is also correct but slower than the fastest correct FlashInfer path.
+  H100 paged exact promotion covers measured
   D64/G8 and D128/G4/G8 HND cells plus D128/G8 NHD cells at 16K/32K/64K.
   Page-16 supports exact variable-length rows; page-64 is D64/G8-only and
   still requires full fixed-length rows.
@@ -405,7 +409,7 @@ not hidden StreamAttn dependencies.
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
-| Experimental hardware | A100/SM80 and B200/SM100 true-GQA grouped backends are correct; neither phase diagram beats FlashInfer yet |
+| Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge; B200's grouped floor is correct but slower than FlashInfer |
 | Not yet promoted | A100, B200, ragged page-64 WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
@@ -414,6 +418,7 @@ not hidden StreamAttn dependencies.
 stream_attention/
   engine.py                 public fixed-buffer decode engine
   decode.py                 native modes, planning, and fail-closed service
+  backends/sm80/            experimental Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
   kernels/                  Triton/CUDA attention kernels
   policies/                 calibrated policy cells and route bundles
@@ -469,8 +474,9 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Replace the measured A100/B200 grouped floors with architecture-native
-   pipelines: SM80 `cp.async`+MMA and SM100 paged TMA+TMEM+async MMA.
+4. Finish the A100 PV shared-to-register transpose so the correct SM80
+   `cp.async`+MMA candidate scales beyond B1, and replace the B200 grouped floor
+   with paged TMA+TMEM+async MMA.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.

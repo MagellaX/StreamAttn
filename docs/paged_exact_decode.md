@@ -293,6 +293,22 @@ substantially, and all `96/96` phase cells were correct, but no cell was
 promoted. The best paired cell reached `0.992x`; the best unpaired median was
 `0.909x`. This is a near-parity research boundary, not a speedup claim.
 
+A separate architecture-native SM80 backend now handles BF16 direct-NHD
+page-16 D128/G8 full rows. It stages four physical pages at a time with
+`cp.async`, shares each K/V tile across all eight query heads in the GQA group,
+uses `m16n8k16` BF16 MMA for QK and PV, maintains online-softmax state, and
+merges FP32 split states exactly. It consumes paged cache tensors directly;
+there is no page gather or NHD-to-HND repack in the timed path.
+
+At B1/32K on A100 80GB SXM4, five repeated cells measured `1.185x-1.206x`
+with `45/45` paired wins, and a separate 15-trial confirmation measured
+`1.262x`. An independent warm-state sweep also produced a `0.975x` result
+because the selected FlashInfer FA2 baseline moved from roughly `0.084 ms` to
+`0.061 ms`, while StreamAttn stayed near `0.065 ms`. B2/B4/B8 lose. Therefore
+this backend remains explicit experimental opt-in and is not part of automatic
+dispatch. Its next scaling problem is the PV shared-to-register transpose, not
+more split-count tuning.
+
 On B200, all `108/108` grouped phase cells were correct, but none beat the
 fastest correct FlashInfer backend. The best paired cell reached `0.667x`.
 Blackwell makes the non-MMA pipeline decisive: the next backend must use paged
@@ -303,6 +319,11 @@ reference for that path.
 Raw artifacts:
 
 - `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_a100.json`
+- `artifacts/gate0/paged_exact_sm80_cp_async_phase_a100.json`
+- `artifacts/gate0/paged_exact_sm80_cp_async_split_sweep_a100.json`
+- `artifacts/gate0/paged_exact_sm80_cp_async_winner_sweep_a100.json`
+- `artifacts/gate0/paged_exact_sm80_cp_async_repro_b1_a100.json`
+- `artifacts/gate0/paged_exact_sm80_cp_async_confirm_b1_a100.json`
 - `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_b200.json`
 
 ## Benchmark
@@ -321,6 +342,23 @@ python benchmarks/profile_paged_exact_decode.py \
   --dtype bf16 \
   --flashinfer-backends auto,fa2,fa3,trtllm-gen \
   --output-json artifacts/paged_exact_b4_32k_d128_g8_h100.json
+~~~
+
+The A100 architecture-native candidate is deliberately explicit:
+
+~~~bash
+python benchmarks/profile_paged_exact_decode.py \
+  --batch 1 \
+  --kv-len 32768 \
+  --q-heads 16 \
+  --kv-heads 2 \
+  --head-dim 128 \
+  --page-size 16 \
+  --layout NHD \
+  --dtype bf16 \
+  --splits 128 \
+  --sm80-cp-async-experimental \
+  --flashinfer-backends auto,fa2
 ~~~
 
 The benchmark randomizes physical page order, checks output parity, reuses both
@@ -358,5 +396,6 @@ D128/G8, NHD, page-16
 
 Other dimensions, page sizes, variable page-64 lengths, and non-Hopper GPUs
 remain on generic or explicitly experimental exact backends until separately
-measured and promoted. A100 and B200 have measured negative phase diagrams;
-successful compilation or correctness alone does not enable their routes.
+measured and promoted. A100 has one variable B1 candidate but no promoted
+phase; B200 has a measured negative phase diagram. Successful compilation or
+correctness alone does not enable either architecture's experimental routes.
