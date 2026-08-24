@@ -597,7 +597,9 @@ class PagedExactDecodePlan:
                             )
                         )
                     ),
-                    tokens_per_tile=int(tokens_per_tile),
+                    # Every promoted SM90 path consumes one 64-token logical
+                    # context tile, including four-fragment page-16 sources.
+                    tokens_per_tile=64,
                     partial_num_warps=int(partial_num_warps),
                     query_group=query.view(
                         int(query.shape[0]), cache.kv_heads, group_size, head_dim

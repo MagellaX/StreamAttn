@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import torch
 
+from .planning import fixed_block_tile_ids
+
 
 DEFAULT_SELECTOR_PROFILES = ("fixed_policy",)
 SELECTOR_PROFILES = frozenset(
@@ -84,24 +86,16 @@ def policy_seed_blocks(
     block_order: str,
     include_middle: bool = True,
 ) -> List[int]:
-    num_blocks = math.ceil(seq_len / block_size)
-    recent_start = num_blocks - recent_blocks
-    blocks: List[int] = []
-    blocks.extend(range(0, sink_blocks))
-    blocks.extend(range(recent_start, num_blocks))
-    if include_middle:
-        if block_order == "sequential":
-            blocks.extend(range(sink_blocks, sink_blocks + middle_seed_blocks))
-        else:
-            blocks.extend(range(recent_start - 1, recent_start - 1 - middle_seed_blocks, -1))
-    seen = set()
-    valid = []
-    for block in blocks:
-        if block < 0 or block >= num_blocks or block in seen:
-            continue
-        seen.add(block)
-        valid.append(int(block))
-    return valid
+    return list(
+        fixed_block_tile_ids(
+            kv_len=seq_len,
+            tile_size=block_size,
+            sink_tiles=sink_blocks,
+            recent_tiles=recent_blocks,
+            middle_tiles=middle_seed_blocks if include_middle else 0,
+            tile_order=block_order,
+        )
+    )
 
 
 def seed_indices(

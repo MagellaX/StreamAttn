@@ -1,3 +1,4 @@
+import inspect
 import math
 from pathlib import Path
 
@@ -273,6 +274,11 @@ def test_promoted_paged_sm90_cells_and_source_contract():
         (4, 65536): 8,
         (8, 32768): 4,
     }
+
+
+def test_sm90_plan_reports_native_64_token_logical_tile():
+    source = inspect.getsource(PagedExactDecodePlan.build)
+    assert "tokens_per_tile=64" in source
 
 
 def test_sm100_tgv_source_contract():

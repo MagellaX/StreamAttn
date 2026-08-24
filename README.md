@@ -47,6 +47,38 @@ That produces three decode modes:
 StreamAttn is therefore not just another sparse mask. The engine owns the
 kernel, policy artifact, fixed-buffer plan, route decision, and exact fallback.
 
+### One engine, multiple tile schedules
+
+The engine is organized around the attention work, not around one model or one
+kernel. Every `StreamAttnEngine` plan now lowers through three explicit layers:
+
+```text
+AttentionProblem
+  semantic guarantee, Q/KV geometry, dtype, mask, cache kind
+
+AttentionTilePlan
+  logical KV source + the tiles that are legal to execute
+
+AttentionBackendPlan
+  architecture-specific kernel, splits, and workspace
+```
+
+This gives exact and reduced-work attention one semantic contract:
+
+```text
+exact contiguous  -> all logical tiles, contiguous mapping
+exact paged       -> all logical tiles, page-table mapping
+validated fixed   -> calibrated logical tile subset
+adaptive          -> runtime-selected logical tile subset (research)
+sliding window    -> bounded logical tile range (planned)
+```
+
+The current runtime executes contiguous selected schedules and contiguous or
+paged exact schedules. Selected paged execution is not promoted yet. The value
+of the shared planner is that future adaptive, compressed, prefill, and device
+backends do not need a second semantic API or a second online-softmax model.
+See [the universal tile planner](docs/universal_attention_tile_planner.md).
+
 ## What Is Proven Today
 
 ### Exact native decode
@@ -473,8 +505,9 @@ The project has completed the first proof: StreamAttn-owned exact kernels can
 beat a strong exact decode baseline on guarded H100 cells, and a calibrated
 reduced-work route can speed up complete model decode. The next milestones are:
 
-1. Stabilize the engine surface around `stream_attn.decode(...)`, then add
-   first-class `prefill(...)` and `train(...)` entry points.
+1. Complete the shared tile-runtime lowering beneath the new
+   `AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan` contract,
+   then add first-class `prefill(...)` and `train(...)` entry points.
 2. Replace offline verification schedules with a selective live runtime
    verifier.
 3. Add a second model family to test whether policy discovery generalizes

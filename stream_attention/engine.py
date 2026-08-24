@@ -32,6 +32,15 @@ from .paged import (
     PagedExactDecodeRunner,
     PagedKVCache,
 )
+from .planning import (
+    ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    ATTENTION_GUARANTEE_EXACT,
+    AttentionBackendPlan,
+    AttentionProblem,
+    AttentionTilePlan,
+    device_architecture,
+    fixed_block_tile_ids,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +56,9 @@ class StreamAttnEnginePlan:
     key_cache: Union[torch.Tensor, PagedKVCache]
     value_cache: Optional[torch.Tensor]
     service: StreamAttnSeedOnlyDecodeService
+    attention_problem: AttentionProblem
+    tile_plan: AttentionTilePlan
+    backend_plan: AttentionBackendPlan
     direct_runner: Optional[
         Union[
             StreamAttnSeedOnlyDirectRunner,
@@ -58,6 +70,20 @@ class StreamAttnEnginePlan:
     @property
     def uses_fixed_buffers(self) -> bool:
         return self.direct_runner is not None
+
+    def summary(self) -> dict[str, object]:
+        """Return the semantic schedule and physical backend decision."""
+
+        return {
+            "mode": self.mode,
+            "backend": self.backend,
+            "reason": self.reason,
+            "model_id": self.model_id,
+            "layer_id": self.layer_id,
+            "uses_fixed_buffers": self.uses_fixed_buffers,
+            "tile_plan": self.tile_plan.as_dict(),
+            "backend_plan": self.backend_plan.as_dict(),
+        }
 
     def run(self, *, return_info: bool = True):
         """Execute without replanning or policy parsing."""
@@ -133,6 +159,38 @@ class StreamAttnEngine:
             )
         except ValueError:
             pass
+        native_plan = (
+            getattr(direct_runner, "_sm90_plan", None)
+            if direct_runner is not None
+            else None
+        )
+        problem = AttentionProblem.from_contiguous(
+            query,
+            key_cache,
+            value_cache,
+            guarantee=ATTENTION_GUARANTEE_EXACT,
+            cache_layout="HND" if native_plan is not None else "NHD",
+        )
+        tile_plan = AttentionTilePlan.exact(
+            problem,
+            logical_tile_size=64,
+            reason=reason,
+        )
+        backend_variant = STREAMATTN_EXACT_NATIVE_BACKEND
+        splits = 1
+        workspace_bytes = 0
+        if direct_runner is not None:
+            backend_variant = str(direct_runner.backend_variant)
+            if native_plan is not None:
+                splits = int(native_plan.num_splits)
+                workspace_bytes = int(native_plan.workspace_bytes)
+        backend_plan = AttentionBackendPlan(
+            backend=backend_variant,
+            reason=reason,
+            architecture=device_architecture(query.device),
+            splits=splits,
+            workspace_bytes=workspace_bytes,
+        )
         return StreamAttnEnginePlan(
             mode=mode,
             backend=STREAMATTN_EXACT_NATIVE_BACKEND,
@@ -143,6 +201,9 @@ class StreamAttnEngine:
             key_cache=key_cache,
             value_cache=value_cache,
             service=self.service,
+            attention_problem=problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
             direct_runner=direct_runner,
         )
 
@@ -193,6 +254,23 @@ class StreamAttnEngine:
             },
         )
         runner = PagedExactDecodeRunner(plan=paged_plan, info=info)
+        problem = AttentionProblem.from_paged(
+            query,
+            cache,
+            guarantee=ATTENTION_GUARANTEE_EXACT,
+        )
+        tile_plan = AttentionTilePlan.exact(
+            problem,
+            logical_tile_size=paged_plan.tokens_per_tile,
+            reason=reason,
+        )
+        backend_plan = AttentionBackendPlan(
+            backend=backend,
+            reason=reason,
+            architecture=device_architecture(query.device),
+            splits=int(paged_plan.splits),
+            workspace_bytes=int(paged_plan.workspace_bytes),
+        )
         return StreamAttnEnginePlan(
             mode=mode,
             backend=backend,
@@ -203,6 +281,9 @@ class StreamAttnEngine:
             key_cache=cache,
             value_cache=None,
             service=self.service,
+            attention_problem=problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
             direct_runner=runner,
         )
 
@@ -265,6 +346,34 @@ class StreamAttnEngine:
                 key_cache=key_cache,
                 value_cache=value_cache,
             )
+        policy = runner.policy
+        problem = AttentionProblem.from_contiguous(
+            query,
+            key_cache,
+            value_cache,
+            guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+            cache_layout="NHD",
+        )
+        selected_blocks = fixed_block_tile_ids(
+            kv_len=problem.max_kv_len,
+            tile_size=int(policy.block_size),
+            sink_tiles=int(policy.sink_blocks),
+            recent_tiles=int(policy.recent_blocks),
+            middle_tiles=int(policy.middle_seed_blocks),
+            tile_order=str(policy.block_order),
+        )
+        tile_plan = AttentionTilePlan.selected(
+            problem,
+            logical_tile_size=int(policy.block_size),
+            tile_ids_per_row=(selected_blocks,) * problem.batch_size,
+            policy_id=str(policy.policy_id),
+            reason="verified_policy_match",
+        )
+        backend_plan = AttentionBackendPlan(
+            backend="gate0_seed_only_triton",
+            reason="verified_policy_match",
+            architecture=device_architecture(query.device),
+        )
         return StreamAttnEnginePlan(
             mode=normalized_mode,
             backend=STREAMATTN_MODE_SEED_ONLY_NATIVE,
@@ -275,6 +384,9 @@ class StreamAttnEngine:
             key_cache=key_cache,
             value_cache=value_cache,
             service=self.service,
+            attention_problem=problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
             direct_runner=runner,
         )
 
