@@ -73,11 +73,15 @@ adaptive          -> runtime-selected logical tile subset (research)
 sliding window    -> bounded logical tile range (planned)
 ```
 
-The current runtime executes contiguous selected schedules and contiguous or
-paged exact schedules. Selected paged execution is not promoted yet. The value
-of the shared planner is that future adaptive, compressed, prefill, and device
-backends do not need a second semantic API or a second online-softmax model.
-See [the universal tile planner](docs/universal_attention_tile_planner.md).
+The runtime executes contiguous selected schedules and contiguous or paged
+exact schedules. Selected paged work now compiles into a device CSR schedule
+and page-native `PackedRoute64` metadata without copying K/V. The H100
+selected-paged WGMMA executor is the remaining promotion boundary; no speedup
+is claimed for that path yet. The shared planner means future adaptive,
+compressed, prefill, and device backends do not need a second semantic API or
+a second online-softmax model. See [the universal tile
+planner](docs/universal_attention_tile_planner.md) and [the selected paged
+route ABI](docs/selected_paged_route_abi.md).
 
 ## What Is Proven Today
 
@@ -505,20 +509,25 @@ The project has completed the first proof: StreamAttn-owned exact kernels can
 beat a strong exact decode baseline on guarded H100 cells, and a calibrated
 reduced-work route can speed up complete model decode. The next milestones are:
 
-1. Complete the shared tile-runtime lowering beneath the new
-   `AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan` contract,
-   then add first-class `prefill(...)` and `train(...)` entry points.
+1. Execute the new device CSR -> `PackedRoute64` selected-paged ABI in the
+   H100 transposed WGMMA backend, then gate static versus compact-ragged
+   scheduling with measured route variance.
 2. Replace offline verification schedules with a selective live runtime
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Expand the native B200 TMA+TMEM+`tcgen05` phase beyond the promoted
+4. Add first-class `prefill(...)` and `train(...)` entry points through the
+   same `AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`
+   contract.
+5. Lower the selected-route ABI into the B200 TMA+TMEM+`tcgen05` backend and
+   expand it beyond the promoted
    page-16 NHD D128/G8 full-row cells, and finish the A100 PV
    shared-to-register transpose so the SM80 candidate scales beyond B1.
-5. Improve B1/B2 economics with a single-kernel cooperative seed path.
-6. Promote query-aware dynamic selection only where it beats exact fallback
+6. Improve B1/B2 economics with a single-kernel cooperative selected path.
+7. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.
-7. Evaluate FP8/FP4 seed caches under the same distribution-level gates.
+8. Evaluate FP8/FP4 selected-cache paths under the same distribution-level
+   gates.
 
 The long-term API target is:
 

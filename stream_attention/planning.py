@@ -14,7 +14,7 @@ the same plan contract. They differ in schedule, not in attention algebra.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Sequence
 
 import torch
@@ -36,6 +36,18 @@ ATTENTION_CACHE_KINDS = frozenset({ATTENTION_CACHE_CONTIGUOUS, ATTENTION_CACHE_P
 ATTENTION_SCHEDULE_ALL = "all"
 ATTENTION_SCHEDULE_SELECTED = "selected"
 ATTENTION_SCHEDULE_KINDS = frozenset({ATTENTION_SCHEDULE_ALL, ATTENTION_SCHEDULE_SELECTED})
+
+ATTENTION_ROUTE_GRANULARITY_BATCH = "batch"
+ATTENTION_ROUTE_GRANULARITY_KV_GROUP = "kv_group"
+ATTENTION_ROUTE_GRANULARITY_Q_HEAD = "q_head"
+ATTENTION_ROUTE_GRANULARITIES = frozenset(
+    {
+        ATTENTION_ROUTE_GRANULARITY_BATCH,
+        ATTENTION_ROUTE_GRANULARITY_KV_GROUP,
+        ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+    }
+)
+ATTENTION_ROUTE_ABI_VERSION = 1
 
 
 def _dtype_name(dtype: torch.dtype) -> str:
@@ -300,19 +312,235 @@ class AttentionTileSource:
 
 
 @dataclass(frozen=True)
+class AttentionRouteCSR:
+    """Immutable device ABI for an irregular selected-atom schedule.
+
+    ``row_ptr`` and ``atom_ids`` describe logical cache atoms. They never
+    contain K/V values or physical cache addresses. The backend lowering owns
+    translation from logical atoms to physical pages.
+
+    Route rows are explicitly scoped to a batch item, a ``(batch, KV-head)``
+    group, or a ``(batch, Q-head)`` pair. Optional per-atom head masks are
+    useful when a KV-group selector already emits a subset of the group's Q
+    heads; Q-head schedules encode that ownership in the row index instead.
+    """
+
+    row_ptr: torch.Tensor
+    atom_ids: torch.Tensor
+    granularity: str
+    atom_size: int
+    schedule_epoch: int = 0
+    abi_version: int = ATTENTION_ROUTE_ABI_VERSION
+    active_head_masks: Optional[torch.Tensor] = None
+
+    def __post_init__(self) -> None:
+        if self.granularity not in ATTENTION_ROUTE_GRANULARITIES:
+            raise ValueError(f"unsupported route granularity: {self.granularity}")
+        if self.atom_size <= 0:
+            raise ValueError("route atom_size must be positive")
+        if self.schedule_epoch < 0:
+            raise ValueError("schedule_epoch must be non-negative")
+        if self.abi_version != ATTENTION_ROUTE_ABI_VERSION:
+            raise ValueError(
+                f"unsupported route ABI version: {self.abi_version}"
+            )
+        for name, tensor in (("row_ptr", self.row_ptr), ("atom_ids", self.atom_ids)):
+            if tensor.dtype != torch.int32 or tensor.dim() != 1:
+                raise ValueError(f"{name} must be a one-dimensional int32 tensor")
+            if not tensor.is_contiguous():
+                raise ValueError(f"{name} must be contiguous")
+        if self.row_ptr.device != self.atom_ids.device:
+            raise ValueError("route CSR tensors must share a device")
+        if self.row_ptr.numel() == 0:
+            raise ValueError("row_ptr must contain at least one offset")
+        offsets = self.row_ptr.detach().to(device="cpu", dtype=torch.int64)
+        if int(offsets[0]) != 0:
+            raise ValueError("row_ptr must start at zero")
+        if bool(torch.any(offsets[1:] < offsets[:-1])):
+            raise ValueError("row_ptr must be monotonic non-decreasing")
+        if int(offsets[-1]) != int(self.atom_ids.numel()):
+            raise ValueError("row_ptr[-1] must equal atom_ids length")
+        if self.atom_ids.numel() and bool(torch.any(self.atom_ids < 0).item()):
+            raise ValueError("atom_ids must be non-negative")
+        if self.active_head_masks is not None:
+            masks = self.active_head_masks
+            if masks.dtype != torch.int32 or masks.dim() != 1:
+                raise ValueError(
+                    "active_head_masks must be a one-dimensional int32 tensor"
+                )
+            if masks.device != self.atom_ids.device or not masks.is_contiguous():
+                raise ValueError(
+                    "active_head_masks must be contiguous and share the CSR device"
+                )
+            if masks.shape != self.atom_ids.shape:
+                raise ValueError("active_head_masks must align with atom_ids")
+            if masks.numel() and bool(torch.any(masks == 0).item()):
+                raise ValueError("active_head_masks must select at least one head")
+            if self.granularity == ATTENTION_ROUTE_GRANULARITY_Q_HEAD:
+                raise ValueError(
+                    "q_head route rows encode head ownership and must not carry masks"
+                )
+
+    @property
+    def device(self) -> torch.device:
+        return self.atom_ids.device
+
+    @property
+    def row_count(self) -> int:
+        return int(self.row_ptr.numel()) - 1
+
+    @property
+    def nnz(self) -> int:
+        return int(self.atom_ids.numel())
+
+    @classmethod
+    def from_rows(
+        cls,
+        rows: Sequence[Sequence[int]],
+        *,
+        granularity: str,
+        atom_size: int,
+        device: torch.device | str = "cpu",
+        schedule_epoch: int = 0,
+        active_head_masks_per_row: Optional[Sequence[Sequence[int]]] = None,
+    ) -> "AttentionRouteCSR":
+        """Compile canonical host rows into the device CSR contract."""
+
+        flat_atoms: list[int] = []
+        flat_masks: list[int] = []
+        offsets = [0]
+        if (
+            active_head_masks_per_row is not None
+            and len(active_head_masks_per_row) != len(rows)
+        ):
+            raise ValueError("active head-mask rows must align with route rows")
+        for row_idx, row in enumerate(rows):
+            canonical = tuple(sorted(set(int(atom) for atom in row)))
+            if any(atom < 0 for atom in canonical):
+                raise ValueError("atom IDs must be non-negative")
+            flat_atoms.extend(canonical)
+            if active_head_masks_per_row is not None:
+                source_masks = tuple(
+                    int(mask) for mask in active_head_masks_per_row[row_idx]
+                )
+                if len(source_masks) != len(row):
+                    raise ValueError(
+                        "each active head-mask row must align with its atom row"
+                    )
+                mask_by_atom: dict[int, int] = {}
+                for atom, mask in zip(row, source_masks, strict=True):
+                    atom_id = int(atom)
+                    mask_by_atom[atom_id] = mask_by_atom.get(atom_id, 0) | int(mask)
+                for atom in canonical:
+                    mask = mask_by_atom[atom]
+                    if mask <= 0 or mask > 0xFFFFFFFF:
+                        raise ValueError("active head masks must be unsigned 32-bit values")
+                    flat_masks.append(mask if mask < (1 << 31) else mask - (1 << 32))
+            offsets.append(len(flat_atoms))
+        resolved_device = torch.device(device)
+        masks_tensor = None
+        if active_head_masks_per_row is not None:
+            masks_tensor = torch.tensor(
+                flat_masks,
+                dtype=torch.int32,
+                device=resolved_device,
+            )
+        return cls(
+            row_ptr=torch.tensor(offsets, dtype=torch.int32, device=resolved_device),
+            atom_ids=torch.tensor(flat_atoms, dtype=torch.int32, device=resolved_device),
+            granularity=granularity,
+            atom_size=int(atom_size),
+            schedule_epoch=int(schedule_epoch),
+            active_head_masks=masks_tensor,
+        )
+
+    def expected_row_count(self, problem: AttentionProblem) -> int:
+        if self.granularity == ATTENTION_ROUTE_GRANULARITY_BATCH:
+            return problem.batch_size
+        if self.granularity == ATTENTION_ROUTE_GRANULARITY_KV_GROUP:
+            return problem.batch_size * problem.kv_heads
+        return problem.batch_size * problem.q_heads
+
+    def validate_for(self, problem: AttentionProblem) -> None:
+        """Validate row ownership and ragged logical bounds for a problem."""
+
+        if self.row_count != self.expected_row_count(problem):
+            raise ValueError(
+                "route CSR row count does not match its declared granularity"
+            )
+        if str(self.device) != problem.device:
+            raise ValueError("route CSR and attention problem must share a device")
+        offsets = self.row_ptr.detach().to(device="cpu", dtype=torch.int64).tolist()
+        atoms = self.atom_ids.detach().to(device="cpu", dtype=torch.int64).tolist()
+        row_divisor = {
+            ATTENTION_ROUTE_GRANULARITY_BATCH: 1,
+            ATTENTION_ROUTE_GRANULARITY_KV_GROUP: problem.kv_heads,
+            ATTENTION_ROUTE_GRANULARITY_Q_HEAD: problem.q_heads,
+        }[self.granularity]
+        for row_idx, (begin, end) in enumerate(
+            zip(offsets[:-1], offsets[1:], strict=True)
+        ):
+            row_atoms = atoms[begin:end]
+            if row_atoms != sorted(set(row_atoms)):
+                raise ValueError("route CSR rows must contain sorted unique atom IDs")
+            batch_idx = row_idx // row_divisor
+            atom_count = math.ceil(problem.kv_lengths[batch_idx] / self.atom_size)
+            if any(atom >= atom_count for atom in row_atoms):
+                raise ValueError("route atom ID is outside the logical cache extent")
+
+    def rows(self) -> tuple[tuple[int, ...], ...]:
+        """Materialize host rows for diagnostics and plan-time compilation."""
+
+        offsets = self.row_ptr.detach().to(device="cpu", dtype=torch.int64).tolist()
+        atoms = self.atom_ids.detach().to(device="cpu", dtype=torch.int64).tolist()
+        return tuple(
+            tuple(atoms[begin:end])
+            for begin, end in zip(offsets[:-1], offsets[1:], strict=True)
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "abi_version": self.abi_version,
+            "granularity": self.granularity,
+            "atom_size": self.atom_size,
+            "schedule_epoch": self.schedule_epoch,
+            "row_count": self.row_count,
+            "nnz": self.nnz,
+            "device": str(self.device),
+            "has_active_head_masks": self.active_head_masks is not None,
+        }
+
+
+@dataclass(frozen=True)
 class AttentionTileSchedule:
     """Logical tile IDs required for each batch row."""
 
     kind: str
     selected_tile_ids: Optional[tuple[tuple[int, ...], ...]] = None
+    route_granularity: str = ATTENTION_ROUTE_GRANULARITY_BATCH
+    schedule_epoch: int = 0
+    abi_version: int = ATTENTION_ROUTE_ABI_VERSION
+    device_routes: Optional[AttentionRouteCSR] = None
 
     def __post_init__(self) -> None:
         if self.kind not in ATTENTION_SCHEDULE_KINDS:
             raise ValueError(f"unsupported tile schedule kind: {self.kind}")
-        if self.kind == ATTENTION_SCHEDULE_ALL and self.selected_tile_ids is not None:
-            raise ValueError("all-tile schedule must not materialize selected IDs")
-        if self.kind == ATTENTION_SCHEDULE_SELECTED and self.selected_tile_ids is None:
-            raise ValueError("selected schedule requires tile IDs")
+        if self.route_granularity not in ATTENTION_ROUTE_GRANULARITIES:
+            raise ValueError(f"unsupported route granularity: {self.route_granularity}")
+        if self.schedule_epoch < 0:
+            raise ValueError("schedule_epoch must be non-negative")
+        if self.abi_version != ATTENTION_ROUTE_ABI_VERSION:
+            raise ValueError(f"unsupported route ABI version: {self.abi_version}")
+        if self.kind == ATTENTION_SCHEDULE_ALL:
+            if self.selected_tile_ids is not None or self.device_routes is not None:
+                raise ValueError("all-tile schedule must not materialize selected routes")
+        elif self.selected_tile_ids is None and self.device_routes is None:
+            raise ValueError("selected schedule requires tile IDs or device routes")
+        if self.device_routes is not None:
+            if self.device_routes.granularity != self.route_granularity:
+                raise ValueError("device route granularity must match the schedule")
+            if self.device_routes.schedule_epoch != self.schedule_epoch:
+                raise ValueError("device route epoch must match the schedule")
 
 
 @dataclass(frozen=True)
@@ -327,17 +555,47 @@ class AttentionTilePlan:
 
     def __post_init__(self) -> None:
         selected = self.schedule.selected_tile_ids
-        if selected is None:
-            return
-        if len(selected) != self.problem.batch_size:
-            raise ValueError("selected tile schedule must contain one row per batch item")
-        for row_ids, tile_count in zip(selected, self.source.logical_tile_counts):
-            if tuple(sorted(set(row_ids))) != row_ids:
-                raise ValueError("selected tile IDs must be sorted and unique")
-            if any(tile < 0 or tile >= tile_count for tile in row_ids):
-                raise ValueError("selected tile ID is outside the logical cache extent")
-        if self.problem.guarantee == ATTENTION_GUARANTEE_EXACT:
+        if (
+            self.schedule.kind == ATTENTION_SCHEDULE_SELECTED
+            and self.problem.guarantee == ATTENTION_GUARANTEE_EXACT
+        ):
             raise ValueError("exact attention requires an all-tile schedule")
+        if selected is not None:
+            expected_rows = self._expected_schedule_rows()
+            if len(selected) != expected_rows:
+                raise ValueError(
+                    "selected tile schedule row count does not match its granularity"
+                )
+            for row_idx, row_ids in enumerate(selected):
+                batch_idx = self._schedule_row_batch(row_idx)
+                tile_count = self.source.logical_tile_counts[batch_idx]
+                if tuple(sorted(set(row_ids))) != row_ids:
+                    raise ValueError("selected tile IDs must be sorted and unique")
+                if any(tile < 0 or tile >= tile_count for tile in row_ids):
+                    raise ValueError("selected tile ID is outside the logical cache extent")
+        if self.schedule.device_routes is not None:
+            routes = self.schedule.device_routes
+            if routes.atom_size != self.source.logical_tile_size:
+                raise ValueError("device route atom size must match the logical tile size")
+            routes.validate_for(self.problem)
+            if selected is not None and routes.rows() != selected:
+                raise ValueError("device route CSR does not match selected host rows")
+
+    def _expected_schedule_rows(self) -> int:
+        granularity = self.schedule.route_granularity
+        if granularity == ATTENTION_ROUTE_GRANULARITY_BATCH:
+            return self.problem.batch_size
+        if granularity == ATTENTION_ROUTE_GRANULARITY_KV_GROUP:
+            return self.problem.batch_size * self.problem.kv_heads
+        return self.problem.batch_size * self.problem.q_heads
+
+    def _schedule_row_batch(self, row_idx: int) -> int:
+        divisor = {
+            ATTENTION_ROUTE_GRANULARITY_BATCH: 1,
+            ATTENTION_ROUTE_GRANULARITY_KV_GROUP: self.problem.kv_heads,
+            ATTENTION_ROUTE_GRANULARITY_Q_HEAD: self.problem.q_heads,
+        }[self.schedule.route_granularity]
+        return row_idx // divisor
 
     @classmethod
     def exact(
@@ -369,6 +627,9 @@ class AttentionTilePlan:
         tile_ids_per_row: Sequence[Sequence[int]],
         policy_id: Optional[str],
         reason: str,
+        route_granularity: str = ATTENTION_ROUTE_GRANULARITY_BATCH,
+        schedule_epoch: int = 0,
+        device_routes: Optional[AttentionRouteCSR] = None,
     ) -> "AttentionTilePlan":
         if problem.guarantee != ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED:
             raise ValueError("selected tile plan requires distribution-verified guarantee")
@@ -383,20 +644,89 @@ class AttentionTilePlan:
             schedule=AttentionTileSchedule(
                 kind=ATTENTION_SCHEDULE_SELECTED,
                 selected_tile_ids=selected,
+                route_granularity=route_granularity,
+                schedule_epoch=int(schedule_epoch),
+                device_routes=device_routes,
             ),
             policy_id=policy_id,
             selection_reason=reason,
         )
 
+    @classmethod
+    def selected_device(
+        cls,
+        problem: AttentionProblem,
+        *,
+        logical_tile_size: int,
+        device_routes: AttentionRouteCSR,
+        policy_id: Optional[str],
+        reason: str,
+    ) -> "AttentionTilePlan":
+        """Build a selected plan from a device-produced CSR schedule only."""
+
+        if problem.guarantee != ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED:
+            raise ValueError("selected tile plan requires distribution-verified guarantee")
+        source = AttentionTileSource.from_problem(
+            problem,
+            logical_tile_size=logical_tile_size,
+        )
+        return cls(
+            problem=problem,
+            source=source,
+            schedule=AttentionTileSchedule(
+                kind=ATTENTION_SCHEDULE_SELECTED,
+                route_granularity=device_routes.granularity,
+                schedule_epoch=device_routes.schedule_epoch,
+                device_routes=device_routes,
+            ),
+            policy_id=policy_id,
+            selection_reason=reason,
+        )
+
+    def with_device_routes(
+        self,
+        *,
+        device: torch.device | str,
+    ) -> "AttentionTilePlan":
+        """Compile selected host rows into the immutable device CSR ABI."""
+
+        if self.schedule.kind != ATTENTION_SCHEDULE_SELECTED:
+            raise ValueError("only selected schedules can compile device routes")
+        if self.schedule.selected_tile_ids is None:
+            raise ValueError("selected host rows are unavailable for CSR compilation")
+        routes = AttentionRouteCSR.from_rows(
+            self.schedule.selected_tile_ids,
+            granularity=self.schedule.route_granularity,
+            atom_size=self.source.logical_tile_size,
+            device=device,
+            schedule_epoch=self.schedule.schedule_epoch,
+        )
+        routes.validate_for(self.problem)
+        return replace(
+            self,
+            schedule=replace(self.schedule, device_routes=routes),
+        )
+
     @property
     def scheduled_tile_counts(self) -> tuple[int, ...]:
-        if self.schedule.selected_tile_ids is None:
+        if self.schedule.kind == ATTENTION_SCHEDULE_ALL:
             return self.source.logical_tile_counts
-        return tuple(len(row) for row in self.schedule.selected_tile_ids)
+        if self.schedule.selected_tile_ids is not None:
+            return tuple(len(row) for row in self.schedule.selected_tile_ids)
+        assert self.schedule.device_routes is not None
+        offsets = self.schedule.device_routes.row_ptr.detach().to(
+            device="cpu", dtype=torch.int64
+        )
+        return tuple(int(value) for value in (offsets[1:] - offsets[:-1]).tolist())
 
     @property
     def tile_coverage(self) -> float:
-        total = sum(self.source.logical_tile_counts)
+        if self.schedule.kind == ATTENTION_SCHEDULE_ALL:
+            return 1.0
+        total = sum(
+            self.source.logical_tile_counts[self._schedule_row_batch(row_idx)]
+            for row_idx in range(self._expected_schedule_rows())
+        )
         return 0.0 if total == 0 else sum(self.scheduled_tile_counts) / total
 
     def as_dict(self) -> dict[str, object]:
@@ -411,6 +741,14 @@ class AttentionTilePlan:
                 ),
                 "scheduled_tile_counts": list(self.scheduled_tile_counts),
                 "tile_coverage": self.tile_coverage,
+                "route_granularity": self.schedule.route_granularity,
+                "schedule_epoch": self.schedule.schedule_epoch,
+                "abi_version": self.schedule.abi_version,
+                "device_routes": (
+                    None
+                    if self.schedule.device_routes is None
+                    else self.schedule.device_routes.as_dict()
+                ),
             },
             "policy_id": self.policy_id,
             "selection_reason": self.selection_reason,
