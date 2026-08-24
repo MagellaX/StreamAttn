@@ -2,4 +2,4 @@ include LICENSE
 include README.md
 include pyproject.toml
 include requirements.txt
-recursive-include stream_attention *.py *.json
+recursive-include stream_attention *.py *.json *.cuh

@@ -1,0 +1,216 @@
+{
+  "backend": "gpu_remote",
+  "cells": [
+    {
+      "active_producer_ctas": 256,
+      "backend_variant": "streamattn_paged_sm100_tgv_exact",
+      "batch": 1,
+      "batch_capacity_utilization": 1.0,
+      "compute_capability": [
+        10,
+        0
+      ],
+      "device": "NVIDIA B200",
+      "dtype": "bf16",
+      "flashinfer": {
+        "cubin_version": "0.6.17",
+        "jit_cache_version": null,
+        "reference_max_abs_error": null,
+        "reference_mean_abs_error": null,
+        "requested_backend": "fa2",
+        "resolved_backend": "fa2",
+        "selection": "fastest_correct_initial_median",
+        "status": "correct",
+        "version": "0.6.17"
+      },
+      "flashinfer_candidates": [
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0616440451703966e-05,
+          "median_ms": 0.04081599973142147,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "fa2",
+          "resolved_backend": "fa2",
+          "samples_ms": [
+            0.047200001776218414,
+            0.0650240033864975,
+            0.044319998472929,
+            0.04195199906826019,
+            0.04163200035691261,
+            0.041600000113248825,
+            0.040031999349594116,
+            0.038975998759269714,
+            0.03999999910593033,
+            0.038656000047922134,
+            0.03827200084924698,
+            0.0387520007789135
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        },
+        {
+          "cubin_version": "0.6.17",
+          "jit_cache_version": null,
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.723850436974317e-05,
+          "median_ms": 0.05113600008189678,
+          "reference_max_abs_error": null,
+          "reference_mean_abs_error": null,
+          "requested_backend": "trtllm-gen",
+          "resolved_backend": "trtllm-gen",
+          "samples_ms": [
+            0.06998399645090103,
+            0.0721919983625412,
+            0.06419199705123901,
+            0.06332799792289734,
+            0.05027199909090996,
+            0.051263999193906784,
+            0.05100800096988678,
+            0.05011200159788132,
+            0.050464000552892685,
+            0.054976001381874084,
+            0.05097600072622299,
+            0.05023999884724617
+          ],
+          "status": "correct",
+          "version": "0.6.17"
+        }
+      ],
+      "flashinfer_ms": 0.04081599973142147,
+      "flashinfer_samples_ms": [
+        0.047200001776218414,
+        0.0650240033864975,
+        0.044319998472929,
+        0.04195199906826019,
+        0.04163200035691261,
+        0.041600000113248825,
+        0.040031999349594116,
+        0.038975998759269714,
+        0.03999999910593033,
+        0.038656000047922134,
+        0.03827200084924698,
+        0.0387520007789135
+      ],
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "kv_len": 32768,
+      "layout": "NHD",
+      "length_profile": "full",
+      "max_abs_error": 0.0001220703125,
+      "mean_abs_error": 2.0616440451703966e-05,
+      "page_size": 16,
+      "pages_per_request": 2048,
+      "paired": {
+        "speedup_median": 1.7514452029104841,
+        "speedup_min": 1.5702702951435223,
+        "trial_count": 5,
+        "trials": [
+          {
+            "flashinfer_ms": 0.04012800008058548,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.761235938292359,
+            "streamattn_ms": 0.022784000262618065,
+            "trial": 0
+          },
+          {
+            "flashinfer_ms": 0.03718400001525879,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 1.5702702951435223,
+            "streamattn_ms": 0.023679999634623528,
+            "trial": 1
+          },
+          {
+            "flashinfer_ms": 0.03993599861860275,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 1.6639999279777216,
+            "streamattn_ms": 0.024000000208616257,
+            "trial": 2
+          },
+          {
+            "flashinfer_ms": 0.038784001022577286,
+            "order": "flashinfer_first",
+            "speedup_vs_flashinfer": 1.7514452029104841,
+            "streamattn_ms": 0.022143999114632607,
+            "trial": 3
+          },
+          {
+            "flashinfer_ms": 0.04755200073122978,
+            "order": "streamattn_first",
+            "speedup_vs_flashinfer": 2.092957799363438,
+            "streamattn_ms": 0.02271999977529049,
+            "trial": 4
+          }
+        ],
+        "wins": 5
+      },
+      "partial_num_warps": 4,
+      "physical_page_order": "randomized",
+      "physical_pages_per_compute_tile": null,
+      "producer_ctas": 256,
+      "q_heads": 16,
+      "reference": {
+        "available": false,
+        "flashinfer_max_abs_error": null,
+        "flashinfer_mean_abs_error": null,
+        "max_sequence_length": 32768,
+        "streamattn_max_abs_error": null,
+        "streamattn_mean_abs_error": null
+      },
+      "repeats": 12,
+      "schema": "streamattn.paged_exact_decode_profile.v2",
+      "sequence_lengths": [
+        32768
+      ],
+      "speedup_vs_flashinfer": 1.6905235534277292,
+      "splits": 16,
+      "streamattn_ms": 0.024143999442458153,
+      "streamattn_samples_ms": [
+        0.025599999353289604,
+        0.02643200010061264,
+        0.024447999894618988,
+        0.022943999618291855,
+        0.02412799932062626,
+        0.0226879995316267,
+        0.024159999564290047,
+        0.024639999493956566,
+        0.023264000192284584,
+        0.022431999444961548,
+        0.024191999807953835,
+        0.02252800017595291
+      ],
+      "timestamp_unix": 1787592905.4726148,
+      "tokens_per_tile": 128,
+      "torch_version": "2.7.1+cu128",
+      "total_sequence_tokens": 32768,
+      "warmup": 5,
+      "workspace_bytes": 8448
+    }
+  ],
+  "compute_capability": [
+    10,
+    0
+  ],
+  "device": "NVIDIA B200",
+  "schema": "streamattn.paged_exact_decode_matrix.v2",
+  "shape_family": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 128,
+    "kv_heads": 2,
+    "length_profiles": [
+      "full"
+    ],
+    "page_size": 16,
+    "q_heads": 16
+  },
+  "summary": {
+    "cells": 1,
+    "correct_cells": 1,
+    "flashinfer_wins": 0,
+    "streamattn_wins": 1
+  }
+}

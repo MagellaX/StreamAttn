@@ -287,6 +287,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         ),
         sm80_grouped_experimental=getattr(args, "sm80_grouped_experimental", False),
         sm100_grouped_experimental=getattr(args, "sm100_grouped_experimental", False),
+        sm100_tgv_experimental=getattr(args, "sm100_tgv_experimental", False),
         sm90_fragmented_experimental=args.sm90_fragmented_experimental,
         sm90_fragmented_ragged_experimental=(args.sm90_fragmented_ragged_experimental),
     )
@@ -553,6 +554,7 @@ def main() -> None:
     parser.add_argument("--sm80-cp-async-experimental", action="store_true")
     parser.add_argument("--sm80-grouped-experimental", action="store_true")
     parser.add_argument("--sm100-grouped-experimental", action="store_true")
+    parser.add_argument("--sm100-tgv-experimental", action="store_true")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--paired-trials", type=int, default=9)

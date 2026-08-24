@@ -309,12 +309,29 @@ this backend remains explicit experimental opt-in and is not part of automatic
 dispatch. Its next scaling problem is the PV shared-to-register transpose, not
 more split-count tuning.
 
-On B200, all `108/108` grouped phase cells were correct, but none beat the
-fastest correct FlashInfer backend. The best paired cell reached `0.667x`.
-Blackwell makes the non-MMA pipeline decisive: the next backend must use paged
-TMA issue, TMEM, fully asynchronous MMA, and overlapped softmax/epilogue rather
-than more split-count tuning. NVIDIA CUTLASS example 93 is the implementation
-reference for that path.
+On B200, the generic grouped Triton floor was correct in `108/108` cells but
+reached only `0.667x` at best. StreamAttn now has a separate Blackwell-native
+backend adapted from NVIDIA CUTLASS example 93. It consumes separate NHD K/V
+pages directly and uses paged TMA issue, TMEM, `tcgen05` MMA, cluster reduction,
+online softmax, and exact split-state merge. No page gather, KV combine, or
+NHD-to-HND repack occurs in the timed path.
+
+An independent B200 confirmation covered B1/B2/B4/B8 at 32K and 64K with 15
+alternating-order paired trials per cell. Six cells passed promotion:
+
+| B | N | Splits | StreamAttn ms | FlashInfer ms | Paired median | Paired minimum |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 32K | 16 | 0.02110 | 0.02877 | 1.320x | 1.276x |
+| 2 | 32K | 16 | 0.02128 | 0.03066 | 1.443x | 1.388x |
+| 2 | 64K | 16 | 0.03325 | 0.04539 | 1.369x | 1.337x |
+| 4 | 32K | 8 | 0.03366 | 0.04509 | 1.377x | 1.349x |
+| 4 | 64K | 8 | 0.05597 | 0.06464 | 1.165x | 1.125x |
+| 8 | 32K | 4 | 0.05570 | 0.06373 | 1.155x | 1.122x |
+
+Each promoted cell won `15/15` paired trials and had maximum BF16
+cross-backend error at or below `2.44e-4`. B1/64K (`0.982x` paired median) and
+B8/64K (`1.006x` median but `0.989x` minimum) remain on fallback. Promotion is
+therefore per cell, not extrapolated across Blackwell.
 
 Raw artifacts:
 
@@ -325,6 +342,9 @@ Raw artifacts:
 - `artifacts/gate0/paged_exact_sm80_cp_async_repro_b1_a100.json`
 - `artifacts/gate0/paged_exact_sm80_cp_async_confirm_b1_a100.json`
 - `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_b200.json`
+- `artifacts/gate0/paged_exact_sm100_tgv_arch_phase_b200.json`
+- `artifacts/gate0/paged_exact_sm100_tgv_confirmation_b200.json`
+- `artifacts/gate0/paged_exact_sm100_tgv_auto_route_b200.json`
 
 ## Benchmark
 
@@ -384,7 +404,7 @@ no page-to-contiguous copy occurs in the timed path
 workspace and output buffers are reused
 ~~~
 
-The promoted matrix is H100, BF16:
+The promoted H100 matrix is BF16:
 
 ~~~text
 B = 1, 2, 4, 8
@@ -394,8 +414,8 @@ D128/G4 and D128/G8, HND, page-16
 D128/G8, NHD, page-16
 ~~~
 
-Other dimensions, page sizes, variable page-64 lengths, and non-Hopper GPUs
-remain on generic or explicitly experimental exact backends until separately
-measured and promoted. A100 has one variable B1 candidate but no promoted
-phase; B200 has a measured negative phase diagram. Successful compilation or
-correctness alone does not enable either architecture's experimental routes.
+The B200 promoted matrix is BF16 direct-NHD page-16 D128/G8 with full rows at
+`(B,N) = (1,32K), (2,32K), (2,64K), (4,32K), (4,64K), (8,32K)`. Other
+dimensions, page sizes, ragged rows, and B200 cells remain on generic exact
+fallback. A100 has one variable B1 candidate but no promoted phase. Successful
+compilation or correctness alone does not enable an unmeasured route.

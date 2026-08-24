@@ -1,0 +1,133 @@
+{
+  "cells": [
+    {
+      "batch": 1,
+      "command": [
+        "/opt/cutlass/build/examples/93_blackwell_low_latency_gqa/93_blackwell_low_latency_gqa",
+        "--kvL",
+        "32768",
+        "--kvH",
+        "2",
+        "--qH",
+        "16",
+        "--qL",
+        "1",
+        "--BS",
+        "1",
+        "--mode",
+        "1"
+      ],
+      "correctness": "passed",
+      "correctness_executed": false,
+      "kv_len": 32768,
+      "milliseconds": 0.0274531
+    },
+    {
+      "batch": 2,
+      "command": [
+        "/opt/cutlass/build/examples/93_blackwell_low_latency_gqa/93_blackwell_low_latency_gqa",
+        "--kvL",
+        "32768",
+        "--kvH",
+        "2",
+        "--qH",
+        "16",
+        "--qL",
+        "1",
+        "--BS",
+        "2",
+        "--mode",
+        "1"
+      ],
+      "correctness": "passed",
+      "correctness_executed": false,
+      "kv_len": 32768,
+      "milliseconds": 0.0275184
+    },
+    {
+      "batch": 4,
+      "command": [
+        "/opt/cutlass/build/examples/93_blackwell_low_latency_gqa/93_blackwell_low_latency_gqa",
+        "--kvL",
+        "32768",
+        "--kvH",
+        "2",
+        "--qH",
+        "16",
+        "--qL",
+        "1",
+        "--BS",
+        "4",
+        "--mode",
+        "1"
+      ],
+      "correctness": "passed",
+      "correctness_executed": false,
+      "kv_len": 32768,
+      "milliseconds": 0.0278267
+    },
+    {
+      "batch": 8,
+      "command": [
+        "/opt/cutlass/build/examples/93_blackwell_low_latency_gqa/93_blackwell_low_latency_gqa",
+        "--kvL",
+        "32768",
+        "--kvH",
+        "2",
+        "--qH",
+        "16",
+        "--qL",
+        "1",
+        "--BS",
+        "8",
+        "--mode",
+        "1"
+      ],
+      "correctness": "passed",
+      "correctness_executed": false,
+      "kv_len": 32768,
+      "milliseconds": 0.0641816
+    }
+  ],
+  "compute_capability": [
+    10,
+    0
+  ],
+  "correctness": {
+    "batch": 1,
+    "command": [
+      "/opt/cutlass/build/examples/93_blackwell_low_latency_gqa/93_blackwell_low_latency_gqa",
+      "--kvL",
+      "2048",
+      "--kvH",
+      "2",
+      "--qH",
+      "16",
+      "--qL",
+      "1",
+      "--BS",
+      "1",
+      "--mode",
+      "1"
+    ],
+    "correctness": "passed",
+    "correctness_executed": true,
+    "kv_len": 2048,
+    "milliseconds": 0.00431299
+  },
+  "cutlass_commit": "7107b05535f8977f5ecb9d01ee203205b1fd9bc4",
+  "device": "NVIDIA B200",
+  "kind": "external_topology_floor",
+  "schema": "streamattn.sm100_cutlass_paged_gqa_floor.v1",
+  "shape": {
+    "dtype": "bf16",
+    "group_size": 8,
+    "head_dim": 128,
+    "kv_heads": 2,
+    "layout": "NHD-equivalent combined KV",
+    "max_splits": 8,
+    "page_size": 16,
+    "q_heads": 16,
+    "reduction_ctas": 8
+  }
+}

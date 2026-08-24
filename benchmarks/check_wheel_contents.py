@@ -11,6 +11,11 @@ from pathlib import Path
 
 REQUIRED_FILES = {
     "stream_attention/__init__.py",
+    "stream_attention/backends/sm100/csrc/common.cuh",
+    "stream_attention/backends/sm100/csrc/tgv_gqa.cuh",
+    "stream_attention/backends/sm100/csrc/tgv_gqa_paged.cuh",
+    "stream_attention/backends/sm100/paged_gqa_exact.py",
+    "stream_attention/backends/sm100/paged_gqa_exact_sources.py",
     "stream_attention/backends/sm90/transposed_gqa_exact.py",
     "stream_attention/backends/sm90/transposed_gqa_exact_sources.py",
     "stream_attention/kernels/gate0_seed_only_triton.py",

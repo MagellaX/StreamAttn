@@ -67,6 +67,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D128, GQA group 8 | NHD/page-16; B1-B8; 16K-64K; full and ragged | `1.058x` worst paired trial; `1.283x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
 | Paged D128, GQA group 8 | A100/NHD/page-16; B1/32K full row | `1.20x-1.26x` in two repeated runs; `0.975x` in one warm-state sweep | Experimental candidate; not auto-routed |
+| Paged D128, GQA group 8 | B200/NHD/page-16; six B1-B8, 32K/64K full-row cells | `1.144x-1.441x` initial confirmation; `1.122x` worst paired trial | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
 hardware-friendly matrix dimension:
@@ -84,6 +85,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
 - [Paged D64/D128 H100 phase diagram](docs/paged_exact_decode.md)
 - [Paged exact SM80/SM90/SM100 architecture phase](docs/paged_exact_architecture_phase_20260824.md)
+- [Native B200 exact backend and promotion boundary](docs/paged_exact_sm100_tgv_20260824.md)
 
 ### Model-aware reduced-work decode
 
@@ -118,13 +120,15 @@ verifier.
 - StreamAttn is not universally faster than FlashInfer on every exact shape.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
-- No A100, B200, FP8, or non-Qwen model-family performance claim has been
-  promoted yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA
+- No A100, FP8, or non-Qwen model-family performance claim has been promoted
+  yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA
   exact backend for direct NHD page-16 D128/G8 decode. It is correct and has
   repeated B1/32K wins, but another independent warm-state sweep reached only
-  `0.975x`; it therefore remains explicit experimental opt-in. The B200 grouped
-  floor is also correct but slower than the fastest correct FlashInfer path.
-  H100 paged exact promotion covers measured
+  `0.975x`; it therefore remains explicit experimental opt-in.
+- B200 promotion is narrow: BF16, direct NHD page-16, D128/G8, full fixed rows,
+  and six measured B/N cells only. B1/64K and B8/64K did not clear the paired
+  gate and remain on exact fallback. This is not a universal Blackwell claim.
+- H100 paged exact promotion covers measured
   D64/G8 and D128/G4/G8 HND cells plus D128/G8 NHD cells at 16K/32K/64K.
   Page-16 supports exact variable-length rows; page-64 is D64/G8-only and
   still requires full fixed-length rows.
@@ -403,14 +407,14 @@ not hidden StreamAttn dependencies.
 | Python | 3.10+ |
 | PyTorch | 2.1+ |
 | CPU | Correctness and SDPA fallback |
-| Native GPU evidence | NVIDIA H100 / SM90 |
+| Native GPU evidence | NVIDIA H100 / SM90 and B200 / SM100; A100 / SM80 experimental |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
-| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 HND/page-16 D64/G8 and D128/G4/G8 plus NHD/page-16 D128/G8; page-64 full D64/G8 cells |
+| Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
 | Distributed research | Ring and Star attention prototypes |
-| Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge; B200's grouped floor is correct but slower than FlashInfer |
-| Not yet promoted | A100, B200, ragged page-64 WGMMA, FP8 seed cache, second model family |
+| Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge |
+| Not yet promoted | A100, other B200 shapes/ragged rows, ragged page-64 WGMMA, FP8 seed cache, second model family |
 
 ## Repository Guide
 
@@ -420,6 +424,7 @@ stream_attention/
   decode.py                 native modes, planning, and fail-closed service
   backends/sm80/            experimental Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
+  backends/sm100/           promoted Blackwell exact backend and headers
   kernels/                  Triton/CUDA attention kernels
   policies/                 calibrated policy cells and route bundles
   core/                     general forward/backward attention modules
@@ -474,9 +479,9 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Finish the A100 PV shared-to-register transpose so the correct SM80
-   `cp.async`+MMA candidate scales beyond B1, and replace the B200 grouped floor
-   with paged TMA+TMEM+async MMA.
+4. Expand the native B200 TMA+TMEM+`tcgen05` phase beyond the promoted
+   page-16 NHD D128/G8 full-row cells, and finish the A100 PV
+   shared-to-register transpose so the SM80 candidate scales beyond B1.
 5. Improve B1/B2 economics with a single-kernel cooperative seed path.
 6. Promote query-aware dynamic selection only where it beats exact fallback
    after selector overhead.

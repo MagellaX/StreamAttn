@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 import pytest
 import torch
@@ -9,6 +10,8 @@ from stream_attention.paged import (
     PAGED_EXACT_SM80_CP_ASYNC_BACKEND,
     PAGED_EXACT_SM80_GROUPED_BACKEND,
     PAGED_EXACT_SM100_GROUPED_BACKEND,
+    PAGED_EXACT_SM100_TGV_BACKEND,
+    PROMOTED_PAGED_EXACT_SM100_TGV_SPLITS,
     PAGED_EXACT_SM90_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
@@ -261,6 +264,46 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert PAGED_EXACT_SM80_GROUPED_BACKEND.endswith("sm80_grouped_exact")
     assert PAGED_EXACT_SM80_CP_ASYNC_BACKEND.endswith("sm80_cp_async_exact")
     assert PAGED_EXACT_SM100_GROUPED_BACKEND.endswith("sm100_grouped_exact")
+    assert PAGED_EXACT_SM100_TGV_BACKEND.endswith("sm100_tgv_exact")
+    assert PROMOTED_PAGED_EXACT_SM100_TGV_SPLITS == {
+        (1, 32768): 16,
+        (2, 32768): 16,
+        (2, 65536): 16,
+        (4, 32768): 8,
+        (4, 65536): 8,
+        (8, 32768): 4,
+    }
+
+
+def test_sm100_tgv_source_contract():
+    from stream_attention.backends.sm100.paged_gqa_exact import _cutlass_candidates
+    from stream_attention.backends.sm100.paged_gqa_exact_sources import (
+        CPP_SOURCE as SM100_CPP_SOURCE,
+        CUDA_SOURCE as SM100_CUDA_SOURCE,
+    )
+
+    assert "gqa_paged_separate_host" in SM100_CUDA_SOURCE
+    assert "[B,2,8,128]" in SM100_CUDA_SOURCE
+    assert "max_pages+64" in SM100_CUDA_SOURCE
+    assert "num_splits == 16" in SM100_CUDA_SOURCE
+    assert "paged_exact_decode_out" in SM100_CPP_SOURCE
+    assert any(
+        str(path).replace("\\", "/") == "/opt/cutlass"
+        for path in _cutlass_candidates()
+    )
+    header = (
+        Path(__file__).parents[1]
+        / "stream_attention/backends/sm100/csrc/tgv_gqa_paged.cuh"
+    ).read_text(encoding="utf-8")
+    assert "gqa_paged_separate_host" in header
+    assert "TypeQKV* device_ptr_K" in header
+    assert "TypeQKV* device_ptr_V" in header
+    assert "Tensor mK_nhd = make_tensor" in header
+    assert "Tensor mV_nhd = make_tensor" in header
+    assert "no K/V data is moved" in header
+
+
+def test_sm80_cp_async_source_contract():
     assert "paged_exact_decode_out" in SM80_CPP_SOURCE
     assert "SM80_CP_ASYNC_CACHEGLOBAL" in SM80_CUDA_SOURCE
     assert "SM80_16x8x16_F32BF16BF16F32_TN" in SM80_CUDA_SOURCE

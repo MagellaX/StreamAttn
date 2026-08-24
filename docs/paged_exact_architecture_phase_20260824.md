@@ -6,6 +6,8 @@ This phase answers two portability questions for exact paged decode:
    repacking it to HND?
 2. Does the same true-GQA grouped computation become competitive on A100 and
    B200 without architecture-specific pipelines?
+3. When it does not, can architecture-native Ampere and Blackwell pipelines
+   recover an exact-kernel advantage without changing the paged cache layout?
 
 The measured shape is BF16, D128, 16 query heads, 2 KV heads, GQA group 8,
 page size 16, with full and severe ragged rows where noted. FlashInfer's
@@ -18,7 +20,7 @@ fastest correct requested backend is selected per run.
 | H100 80GB | Direct NHD SM90 WGMMA | 24/24 auto cells | 24/24 | 1.283x median cell; 1.058x worst paired trial | Promoted for measured cells |
 | A100 80GB PCIe | SM80 grouped Triton floor | 96/96 | 0/96 | 0.992x best paired cell | Experimental; near parity |
 | A100 80GB SXM4 | Native SM80 `cp.async` + MMA | B1/B2/B4/B8 at 32K | Variable | B1 repeated `1.20x-1.26x`; one sweep `0.975x` | Correct candidate; not promoted |
-| B200 | SM100 grouped Triton floor | 108/108 | 0/108 | 0.667x best paired cell | Experimental; pipeline redesign required |
+| B200 | Native SM100 TMA+TMEM+`tcgen05` | 8/8 independent confirmation cells | 6/8 | 1.122x worst paired trial among promoted cells; 1.443x best paired median | Six full-row NHD cells promoted |
 
 The H100 gate includes B1/B2/B4/B8, 16K/32K/64K capacity, and full plus
 severe ragged profiles. It won all 216 alternating-order paired trials with a
@@ -101,11 +103,20 @@ rejected both normal and transposed `ldmatrix` atoms for the tested physical V
 layouts. A production B4+ backend needs a hand-authored transposed load map or
 a producer layout designed around `ldmatrix.trans`.
 
-On B200, grouped algebra alone is much farther from the baseline. Faster MMA
+On B200, grouped algebra alone was much farther from the baseline. Faster MMA
 makes page issue, synchronization, exponentiation, rescaling, and epilogue
-costs proportionally larger. The next SM100 backend must be a Blackwell-native
-pipeline using paged TMA issue, tensor memory, fully asynchronous MMA, and
-overlapped softmax/epilogue. Split-count tuning cannot repair that mismatch.
+costs proportionally larger. That negative result motivated a separate native
+SM100 pipeline adapted from NVIDIA CUTLASS example 93. The backend issues paged
+NHD K/V through TMA, stores accumulators in TMEM, uses asynchronous `tcgen05`
+MMA and cluster reduction, and preserves online-softmax split merging.
+
+The architecture phase passed all 12 B1/B2/B4/B8 by 16K/32K/64K cells. A
+second run independently confirmed the 32K/64K boundary with 15 paired trials
+per cell. Six cells won all `90/90` paired trials collectively and now route
+automatically with calibrated split counts: C16 for B1/32K and B2/32K/64K, C8
+for B4/32K/64K, and C4 for B8/32K. B1/64K and B8/64K remain fallbacks. The
+backend reads separate page-16 NHD K/V directly; there is no combined-KV copy
+or layout repack in the timed path.
 
 ## Dispatch Policy
 
@@ -119,8 +130,11 @@ SM80 grouped backend:
 SM80 cp.async + MMA backend:
     explicit experimental opt-in only; full NHD page-16 D128/G8 rows
 
-SM100 grouped backend:
-    explicit experimental opt-in only
+SM100 native TGV backend:
+    automatic only for the six confirmed full-row NHD D128/G8 cells
+
+SM100 grouped Triton backend and all other SM100 cells:
+    explicit experimental opt-in or generic exact fallback
 
 all unsupported or unpromoted cells:
     generic exact backend
@@ -142,3 +156,5 @@ no-repack verification pass for that exact architecture and shape cell.
 - `artifacts/gate0/paged_exact_sm80_cp_async_repro_b1_a100.json`
 - `artifacts/gate0/paged_exact_sm80_cp_async_confirm_b1_a100.json`
 - `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_b200.json`
+- `artifacts/gate0/paged_exact_sm100_tgv_arch_phase_b200.json`
+- `artifacts/gate0/paged_exact_sm100_tgv_confirmation_b200.json`

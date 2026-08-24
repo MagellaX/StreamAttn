@@ -67,7 +67,7 @@ include = ["stream_attention*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-stream_attention = ["*.yaml", "*.json", "policies/*.json"]
+stream_attention = ["*.yaml", "*.json", "policies/*.json", "backends/sm100/csrc/*.cuh"]
 "stream_attention.policies" = ["*.json"]
 
 [tool.stream_attention]

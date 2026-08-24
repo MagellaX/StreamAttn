@@ -28,6 +28,15 @@ image = (
         "git fetch --depth=1 origin 39e616041ae6fb1243a0f6ac891e72d576b640e5 && "
         "git checkout 39e616041ae6fb1243a0f6ac891e72d576b640e5"
     )
+    .run_commands(
+        "git clone --filter=blob:none --no-checkout "
+        "https://github.com/NVIDIA/cutlass.git /opt/cutlass && "
+        "cd /opt/cutlass && "
+        "git sparse-checkout init --cone && "
+        "git sparse-checkout set include && "
+        "git fetch --depth=1 origin 7107b05535f8977f5ecb9d01ee203205b1fd9bc4 && "
+        "git checkout 7107b05535f8977f5ecb9d01ee203205b1fd9bc4"
+    )
     .add_local_dir("benchmarks", remote_path="/root/StreamAttn/benchmarks", copy=True)
     .add_local_dir(
         "stream_attention", remote_path="/root/StreamAttn/stream_attention", copy=True
@@ -41,6 +50,16 @@ def _parse_ints(value: str) -> list[int]:
     return [int(item.strip()) for item in value.split(",") if item.strip()]
 
 
+def _parse_batch_splits(value: str) -> dict[int, int]:
+    result: dict[int, int] = {}
+    for item in value.split(","):
+        if not item.strip():
+            continue
+        batch, splits = item.split(":", 1)
+        result[int(batch.strip())] = int(splits.strip())
+    return result
+
+
 def _profile_gpu(
     *,
     batches: str,
@@ -52,11 +71,13 @@ def _profile_gpu(
     layout: str,
     dtype: str,
     split_counts: str,
+    batch_splits: str,
     token_tiles: str,
     partial_num_warps: int,
     sm80_cp_async_experimental: bool,
     sm80_grouped_experimental: bool,
     sm100_grouped_experimental: bool,
+    sm100_tgv_experimental: bool,
     sm90_fragmented_experimental: bool,
     sm90_fragmented_ragged_experimental: bool,
     length_profiles: str,
@@ -82,12 +103,16 @@ def _profile_gpu(
     split_values: list[int | None] = (
         [None] if split_counts.strip().lower() == "auto" else _parse_ints(split_counts)
     )
+    batch_split_map = _parse_batch_splits(batch_splits)
     for batch in _parse_ints(batches):
+        batch_split_values = (
+            [batch_split_map[batch]] if batch in batch_split_map else split_values
+        )
         for kv_len in _parse_ints(kv_lens):
             for length_profile in (
                 item.strip() for item in length_profiles.split(",") if item.strip()
             ):
-                for splits in split_values:
+                for splits in batch_split_values:
                     for tokens_per_tile in _parse_ints(token_tiles):
                         args = argparse.Namespace(
                             batch=batch,
@@ -104,6 +129,7 @@ def _profile_gpu(
                             sm80_cp_async_experimental=sm80_cp_async_experimental,
                             sm80_grouped_experimental=sm80_grouped_experimental,
                             sm100_grouped_experimental=sm100_grouped_experimental,
+                            sm100_tgv_experimental=sm100_tgv_experimental,
                             sm90_fragmented_experimental=(sm90_fragmented_experimental),
                             sm90_fragmented_ragged_experimental=(
                                 sm90_fragmented_ragged_experimental
@@ -195,11 +221,13 @@ def main(
     layout: str = "NHD",
     dtype: str = "bf16",
     split_counts: str = "4",
+    batch_splits: str = "",
     token_tiles: str = "128",
     partial_num_warps: int = 4,
     sm80_cp_async_experimental: bool = False,
     sm80_grouped_experimental: bool = False,
     sm100_grouped_experimental: bool = False,
+    sm100_tgv_experimental: bool = False,
     sm90_fragmented_experimental: bool = False,
     sm90_fragmented_ragged_experimental: bool = False,
     length_profiles: str = "full",
@@ -233,11 +261,13 @@ def main(
             "layout": layout,
             "dtype": dtype,
             "split_counts": split_counts,
+            "batch_splits": batch_splits,
             "token_tiles": token_tiles,
             "partial_num_warps": partial_num_warps,
             "sm80_cp_async_experimental": sm80_cp_async_experimental,
             "sm80_grouped_experimental": sm80_grouped_experimental,
             "sm100_grouped_experimental": sm100_grouped_experimental,
+            "sm100_tgv_experimental": sm100_tgv_experimental,
             "sm90_fragmented_experimental": sm90_fragmented_experimental,
             "sm90_fragmented_ragged_experimental": (
                 sm90_fragmented_ragged_experimental
