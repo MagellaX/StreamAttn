@@ -456,6 +456,7 @@ class StreamAttnEngine:
         recent_atoms: int = 1,
         support_width: int = 4,
         support_method: str = "centroid_extremes",
+        refine_candidates: int = 0,
         policy_id: str = "query-selected-runtime-research",
         output: Optional[torch.Tensor] = None,
     ) -> StreamAttnEnginePlan:
@@ -474,6 +475,7 @@ class StreamAttnEngine:
             recent_atoms=recent_atoms,
             support_width=support_width,
             support_method=support_method,
+            refine_candidates=refine_candidates,
             output=output,
         )
         problem = AttentionProblem.from_paged(
@@ -494,7 +496,11 @@ class StreamAttnEngine:
             route_granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
         )
         backend = paged_plan.backend
-        reason = "distribution_verified_query_selected_paged_research"
+        reason = (
+            "distribution_verified_query_refined_paged_research"
+            if refine_candidates
+            else "distribution_verified_query_selected_paged_research"
+        )
         info = StreamAttnServingInfo(
             backend_used=backend,
             policy_id=policy_id,
@@ -519,10 +525,13 @@ class StreamAttnEngine:
                 "selected_atoms_per_q_head": selected_atoms,
                 "support_width": support_width,
                 "support_method": support_method,
+                "refine_candidates": refine_candidates,
                 "support_metadata_bytes": paged_plan.support_metadata_bytes,
                 "selector_workspace_bytes": paged_plan.selector_workspace_bytes,
                 "route_preparation": (
-                    "gpu_query_score_topk_membership_compaction_no_host_readback"
+                    "gpu_support_topk_exact_candidate_refine_membership_compaction_no_host_readback"
+                    if refine_candidates
+                    else "gpu_query_score_topk_membership_compaction_no_host_readback"
                 ),
                 "safety_scope": "caller_distribution_verified",
             },

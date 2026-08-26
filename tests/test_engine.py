@@ -294,6 +294,7 @@ def test_engine_query_selected_plan_exposes_research_safety_scope(monkeypatch):
         cache,
         selected_atoms=2,
         support_width=4,
+        refine_candidates=32,
     )
     output, info = plan.run()
 
@@ -301,6 +302,8 @@ def test_engine_query_selected_plan_exposes_research_safety_scope(monkeypatch):
     assert plan.backend == "fake_sm90_query_selected"
     assert plan.backend_plan.workspace_bytes == 4608
     assert info.stats["support_width"] == 4
+    assert info.stats["refine_candidates"] == 32
+    assert "exact_candidate_refine" in info.stats["route_preparation"]
     assert info.stats["safety_scope"] == "caller_distribution_verified"
 
 

@@ -50,37 +50,50 @@ def profile_h100(kwargs: dict[str, object]) -> dict[str, object]:
     batches = [int(value) for value in _items(str(kwargs["batches"]))]
     widths = [int(value) for value in _items(str(kwargs["support_widths"]))]
     methods = _items(str(kwargs["support_methods"]))
+    refinements = [
+        int(value) for value in _items(str(kwargs["refine_candidates_list"]))
+    ]
     base = {
         key: value
         for key, value in kwargs.items()
-        if key not in {"batches", "support_widths", "support_methods"}
+        if key
+        not in {
+            "batches",
+            "support_widths",
+            "support_methods",
+            "refine_candidates_list",
+        }
     }
     cells: list[dict[str, object]] = []
     for batch in batches:
         for width in widths:
             for method in methods:
-                args = argparse.Namespace(
-                    batch=batch,
-                    support_width=width,
-                    support_method=method,
-                    **base,
-                )
-                print(
-                    f"[query-selected] B={batch} N={args.kv_len} "
-                    f"S={args.selected_tokens} P={width} method={method}",
-                    flush=True,
-                )
-                row = profile(args)
-                cells.append(row)
-                print(
-                    f"[query-selected] selector={row['selector_ms']:.5f} ms "
-                    f"total={row['complete_selector_and_attention_ms']:.5f} ms "
-                    f"flashinfer={row['flashinfer_ms']:.5f} ms "
-                    f"speedup={row['speedup_vs_flashinfer']:.3f}x "
-                    f"paired_min={row['paired']['speedup_min']:.3f}x "
-                    f"oracle_recall={row['oracle_middle_block_recall']:.3f}",
-                    flush=True,
-                )
+                for refinement in refinements:
+                    args = argparse.Namespace(
+                        batch=batch,
+                        support_width=width,
+                        support_method=method,
+                        refine_candidates=refinement,
+                        **base,
+                    )
+                    print(
+                        f"[query-selected] B={batch} N={args.kv_len} "
+                        f"S={args.selected_tokens} P={width} method={method} "
+                        f"refine={refinement}",
+                        flush=True,
+                    )
+                    row = profile(args)
+                    cells.append(row)
+                    print(
+                        f"[query-selected] selector={row['selector_ms']:.5f} ms "
+                        f"total={row['complete_selector_and_attention_ms']:.5f} ms "
+                        f"flashinfer={row['flashinfer_ms']:.5f} ms "
+                        f"speedup={row['speedup_vs_flashinfer']:.3f}x "
+                        f"paired_min={row['paired']['speedup_min']:.3f}x "
+                        f"oracle_recall={row['oracle_middle_block_recall']:.3f} "
+                        f"candidate_recall={row['oracle_candidate_recall']}",
+                        flush=True,
+                    )
     return {
         "schema": "streamattn.paged_query_selected_decode_matrix.v1",
         "device": cells[0]["device"] if cells else "unknown",
@@ -104,6 +117,7 @@ def main(
     batches: str = "1,4,8",
     support_widths: str = "1,2,4",
     support_methods: str = "centroid_extremes,centroid_top_norm",
+    refine_candidates_list: str = "0",
     kv_len: int = 32768,
     selected_tokens: int = 384,
     sink_atoms: int = 1,
@@ -130,6 +144,7 @@ def main(
             "batches": batches,
             "support_widths": support_widths,
             "support_methods": support_methods,
+            "refine_candidates_list": refine_candidates_list,
             "kv_len": kv_len,
             "selected_tokens": selected_tokens,
             "sink_atoms": sink_atoms,

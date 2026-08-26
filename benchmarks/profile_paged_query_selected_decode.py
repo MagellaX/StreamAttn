@@ -77,6 +77,36 @@ def _oracle_middle_recall(
     return float(statistics.mean(recalls))
 
 
+def _oracle_candidate_recall(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    candidates: torch.Tensor | None,
+    *,
+    final_middle_atoms: int,
+    sink_atoms: int,
+    recent_atoms: int,
+) -> float | None:
+    if candidates is None:
+        return None
+    keys = _logical_keys(cache)
+    rows = candidates.view(cache.batch_size, int(query.shape[2]), -1)
+    recalls: list[float] = []
+    for batch in range(cache.batch_size):
+        valid_atoms = int(cache.sequence_lengths[batch].item()) // 64
+        for head in range(int(query.shape[2])):
+            kv_head = head // (int(query.shape[2]) // cache.kv_heads)
+            scores = torch.mv(
+                keys[batch, kv_head].float().reshape(-1, cache.head_dim),
+                query[batch, 0, head].float(),
+            ).view(valid_atoms, 64).max(dim=1).values
+            scores[:sink_atoms] = -float("inf")
+            scores[valid_atoms - recent_atoms :] = -float("inf")
+            oracle = set(scores.topk(final_middle_atoms).indices.cpu().tolist())
+            chosen = set(rows[batch, head].cpu().tolist())
+            recalls.append(len(oracle & chosen) / final_middle_atoms)
+    return float(statistics.mean(recalls))
+
+
 def profile(args: argparse.Namespace) -> dict[str, Any]:
     if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (9, 0):
         raise RuntimeError("query-selected profiling requires H100/SM90")
@@ -146,6 +176,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         recent_atoms=args.recent_atoms,
         support_width=args.support_width,
         support_method=args.support_method,
+        refine_candidates=args.refine_candidates,
         support_keys=support_keys,
     )
 
@@ -285,6 +316,14 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         sink_atoms=args.sink_atoms,
         recent_atoms=args.recent_atoms,
     )
+    candidate_oracle_recall = _oracle_candidate_recall(
+        query,
+        cache,
+        plan.candidate_ids,
+        final_middle_atoms=plan.middle_atoms,
+        sink_atoms=args.sink_atoms,
+        recent_atoms=args.recent_atoms,
+    )
 
     return {
         "schema": "streamattn.paged_query_selected_decode_profile.v1",
@@ -300,7 +339,12 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "page_size": args.page_size,
         "support_width": args.support_width,
         "support_method": args.support_method,
+        "refine_candidates": args.refine_candidates,
         "support_scan_ratio_vs_token_qk": args.support_width / 64.0,
+        "exact_refine_token_ratio_vs_full_qk": (
+            args.refine_candidates * 64 / args.kv_len
+        ),
+        "oracle_candidate_recall": candidate_oracle_recall,
         "oracle_middle_block_recall": oracle_recall,
         "changed_route_entries_after_query_mutation": changed_route_entries,
         "max_abs_error_vs_selected_reference": max_error,
@@ -341,6 +385,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sink-atoms", type=int, default=1)
     parser.add_argument("--recent-atoms", type=int, default=1)
     parser.add_argument("--support-width", type=int, choices=(1, 2, 4, 8), default=2)
+    parser.add_argument(
+        "--refine-candidates", type=int, choices=(0, 8, 16, 32, 64), default=0
+    )
     parser.add_argument(
         "--support-method",
         choices=("centroid_extremes", "centroid_top_norm"),

@@ -135,7 +135,74 @@ B4: P4 / S384 research candidate
 B8: P8 / S384 research candidate when the stronger sketch is needed
 ```
 
-## Safety Boundary and Next Research
+## Two-Stage Exact Candidate Refinement
+
+The runtime now implements the proposed no-sync refinement path:
+
+```text
+P4 support scan
+  -> top-C middle candidates per Q head
+  -> exact block-max QK over the C x 64 candidate tokens
+  -> final four middle atoms
+  -> existing membership compiler and selected WGMMA executor
+```
+
+The implementation preallocates FP32 support/candidate score workspaces and
+int32 candidate IDs. It performs no host readback and reads candidate keys
+directly from page-16 NHD or HND storage. The selected attention result remains
+exact over the final route.
+
+For P4 and C32, the token-equivalent selector work is:
+
+```text
+support scan: P / 64 = 4 / 64 = 6.25%
+exact refine: C * 64 / N = 32 * 64 / 32768 = 6.25%
+```
+
+The arithmetic work is about 12.5% of a full token QK scan, but the support
+scan, candidate extraction, exact refinement, and final top-k are separate GPU
+stages. Launch and synchronization structure therefore matters as much as dot
+count at this scale.
+
+Phase results, with nine paired block-timed trials per cell:
+
+| B | Refine C | Selector ms | Paired median | Paired minimum | Wins | Synthetic oracle recall |
+|---:|---:|---:|---:|---:|---:|---:|
+| 8 | 0 | 0.05330 | 1.838x | 1.528x | 9/9 | 20.5% |
+| 8 | 8 | 0.09990 | 1.055x | 0.966x | 8/9 | 21.5% |
+| 8 | 16 | 0.09950 | 1.061x | 0.971x | 8/9 | 22.1% |
+| 8 | 32 | 0.10243 | 1.060x | 0.985x | 8/9 | 25.0% |
+| 16 | 0 | 0.05459 | 3.175x | 2.856x | 9/9 | 17.8% |
+| 16 | 8 | 0.10066 | 1.976x | 1.810x | 9/9 | 18.5% |
+| 16 | 16 | 0.10170 | 1.997x | 1.783x | 9/9 | 19.2% |
+| 16 | 32 | 0.12005 | 1.619x | 1.544x | 9/9 | 22.1% |
+
+An independent B8 C32 confirmation used 15 paired trials with 50 calls per
+timing interval. It won 15/15 with `1.056x` median and `1.029x` minimum. This
+confirms a real narrow B8 edge, but the earlier `0.985x` trial keeps the cell
+experimental rather than promoted. B16 has a clear systems margin.
+
+B4 was not rerun after this boundary was established. The refined selector
+alone costs `0.097-0.102 ms`, already above the prior B4 FlashInfer exact
+baseline near `0.075 ms`; adding route compilation and attention cannot make
+that complete path positive. B4 therefore remains on proxy-only selection or
+exact fallback until the refinement stages are fused.
+
+Candidate width has little effect on selector latency from C8 through C32 at
+B8. The dominant added cost is the extra stage/launch structure, not the
+number of candidate tokens alone. A future refinement kernel should therefore
+fuse exact candidate scoring with final selection or with the selected
+attention producer instead of merely reducing C.
+
+All eight phase cells matched the independently lowered selected-token
+reference with maximum absolute error no larger than `0.00390625`. Synthetic
+Gaussian recall is intentionally reported only as a kernel diagnostic. Real
+Qwen captures previously showed the P4/refine-32 proxy close to block-max on
+coverage, while even the stronger full block-max oracle still failed the
+fragile-bucket model safety gate. No new model replay was run because this
+systems implementation cannot overcome that known policy upper bound.
+
+## Safety Boundary
 
 The selected WGMMA kernel is exact over the chosen atoms. The selector is not
 exact full-context attention. Existing Qwen stress analysis found that an
@@ -143,22 +210,18 @@ offline P4 extreme-support proxy with exact refinement over 32 candidates came
 close to the block-QK oracle on coverage, but late-layer value/composition risk
 still prevented adversarial promotion.
 
-The next high-signal selector experiment is therefore not a larger fixed
-sketch. It is a runtime two-stage path:
-
-```text
-P4 support scan -> top-32 candidate atoms -> exact block-max refinement
--> final four middle atoms -> existing no-sync executor
-```
-
-That scans about 6.25% of tokens during exact refinement in addition to the
-6.25% P4 support scan. It should only be integrated if the complete B8 path
-remains positive and real-model replay shows a material safety gain. Unknown or
-failed request tiers remain on exact native attention.
+The two-stage systems path is now implemented and measured. It is useful at
+B16 and sits on a narrow B8 boundary, but selector quality remains a policy
+constraint. Unknown or failed request tiers remain on exact native attention.
+The next meaningful selector optimization is stage fusion; the next meaningful
+policy intervention is stronger than block-max selection, such as exact late
+layers, a live verifier, or trained model adaptation.
 
 ## Artifacts
 
 - `artifacts/h100/paged_query_selected_phase_20260826.json`
 - `artifacts/h100/paged_query_selected_p8_20260826.json`
 - `artifacts/h100/paged_query_selected_smoke_20260826.json`
+- `artifacts/h100/paged_query_refined_phase_20260826.json`
+- `artifacts/h100/paged_query_refined_b8_confirmation_20260826.json`
 - `docs/qwen25_3b_dynamic_selector_findings.md`

@@ -17,6 +17,7 @@ from stream_attention.paged import (
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_QUERY_REFINED_SM90_BACKEND,
     PAGED_QUERY_SELECTED_SM90_BACKEND,
     PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND,
     PAGED_SELECTED_SM90_STATIC_BACKEND,
@@ -161,7 +162,9 @@ def test_paged_support_keys_follow_logical_page_order_and_ragged_length(layout):
 
 def test_query_selected_public_contract_and_unsorted_route_lowering_source():
     assert PAGED_QUERY_SELECTED_SM90_BACKEND.endswith("query_selected_qhead")
+    assert PAGED_QUERY_REFINED_SM90_BACKEND.endswith("query_refined_qhead")
     assert stream_attn.PagedQuerySelectedDecodePlan is PagedQuerySelectedDecodePlan
+    assert stream_attn.PAGED_QUERY_REFINED_SM90_BACKEND == PAGED_QUERY_REFINED_SM90_BACKEND
     assert "kRoutePrepareDuplicateAtom" in CUDA_SOURCE
     assert "kRoutePrepareUnsorted" not in CUDA_SOURCE
     assert "prior & head_bit" in CUDA_SOURCE

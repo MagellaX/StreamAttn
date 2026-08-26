@@ -182,6 +182,23 @@ rather than one global selector. Top-norm support keys were measured and
 rejected: they did not improve recall and were slower. See the [query-selected
 H100 phase](docs/paged_query_selected_h100_phase_20260826.md).
 
+The runtime also supports a two-stage selector:
+
+```text
+P4 support scan -> top-32 candidates -> exact 64-token block-max QK
+-> final four middle atoms -> selected WGMMA attention
+```
+
+This path scans compact P4 metadata over 32K and exactly refines only 2,048
+candidate tokens per Q head. At B8, an independent 15-trial confirmation won
+`15/15` paired trials against FlashInfer exact (`1.056x` median, `1.029x`
+worst), but the preceding phase won only `8/9` (`0.985x` worst). It therefore
+remains a narrow experimental boundary. At B16, refine-8/16/32 all won `9/9`;
+refine-32 reached `1.619x` paired median and `1.544x` worst. All eight phase
+cells matched the selected-token reference. Exact refinement improves the
+ranking inside the proxy candidate set; it does not make the selected route
+equivalent to full-context exact attention.
+
 These query-selected results are systems evidence, not a model-safety
 promotion. Attention is exact over the selected atoms, but arbitrary runtime
 selection can change model outputs. Existing real-Qwen analysis shows that

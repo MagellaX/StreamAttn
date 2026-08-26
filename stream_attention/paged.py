@@ -46,6 +46,9 @@ PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND = (
 PAGED_QUERY_SELECTED_SM90_BACKEND = (
     "streamattn_paged_sm90_wgmma_query_selected_qhead"
 )
+PAGED_QUERY_REFINED_SM90_BACKEND = (
+    "streamattn_paged_sm90_wgmma_query_refined_qhead"
+)
 
 PROMOTED_PAGED_EXACT_SPLITS = {
     (1, 16384): 64,
@@ -1462,6 +1465,9 @@ class PagedQuerySelectedDecodePlan:
     sink_atoms: int
     recent_atoms: int
     middle_atoms: int
+    candidate_ids: Optional[torch.Tensor] = None
+    candidate_scores: Optional[torch.Tensor] = None
+    refine_candidates: int = 0
     backend: str = PAGED_QUERY_SELECTED_SM90_BACKEND
 
     @classmethod
@@ -1475,6 +1481,7 @@ class PagedQuerySelectedDecodePlan:
         recent_atoms: int = 1,
         support_width: int = 2,
         support_method: str = "centroid_extremes",
+        refine_candidates: int = 0,
         support_keys: Optional[torch.Tensor] = None,
         output: Optional[torch.Tensor] = None,
         validate_metadata: bool = True,
@@ -1491,6 +1498,21 @@ class PagedQuerySelectedDecodePlan:
         )
         if int(live_atoms.min().item()) < selected_atoms:
             raise ValueError("selected atom count exceeds the shortest live sequence")
+        if refine_candidates:
+            if refine_candidates not in {8, 16, 32, 64}:
+                raise ValueError(
+                    "refine_candidates must be 0, 8, 16, 32, or 64"
+                )
+            if refine_candidates < middle_atoms:
+                raise ValueError(
+                    "refine_candidates must cover the final middle atom count"
+                )
+            if int(live_atoms.min().item()) < (
+                sink_atoms + recent_atoms + refine_candidates
+            ):
+                raise ValueError(
+                    "refine candidate count exceeds the shortest middle region"
+                )
         if support_keys is None:
             support_keys = build_paged_support_keys(
                 cache,
@@ -1535,6 +1557,22 @@ class PagedQuerySelectedDecodePlan:
             device=query.device,
             dtype=torch.float32,
         )
+        candidate_ids = None
+        candidate_scores = None
+        backend = PAGED_QUERY_SELECTED_SM90_BACKEND
+        if refine_candidates:
+            candidate_ids = torch.empty(
+                cache.batch_size * int(query.shape[2]),
+                int(refine_candidates),
+                device=query.device,
+                dtype=torch.int32,
+            )
+            candidate_scores = torch.empty(
+                candidate_ids.shape,
+                device=query.device,
+                dtype=torch.float32,
+            )
+            backend = PAGED_QUERY_REFINED_SM90_BACKEND
         return cls(
             query=query,
             cache=cache,
@@ -1545,6 +1583,10 @@ class PagedQuerySelectedDecodePlan:
             sink_atoms=int(sink_atoms),
             recent_atoms=int(recent_atoms),
             middle_atoms=middle_atoms,
+            candidate_ids=candidate_ids,
+            candidate_scores=candidate_scores,
+            refine_candidates=int(refine_candidates),
+            backend=backend,
         )
 
     @property
@@ -1553,7 +1595,11 @@ class PagedQuerySelectedDecodePlan:
 
     @property
     def selector_workspace_bytes(self) -> int:
-        return self.scores.numel() * self.scores.element_size()
+        total = self.scores.numel() * self.scores.element_size()
+        for tensor in (self.candidate_ids, self.candidate_scores):
+            if tensor is not None:
+                total += tensor.numel() * tensor.element_size()
+        return total
 
     @property
     def support_metadata_bytes(self) -> int:
@@ -1563,9 +1609,30 @@ class PagedQuerySelectedDecodePlan:
         """Write score-ranked unique route atoms without a host synchronization."""
 
         from .kernels.paged_support_selector_triton import (
+            paged_support_refined_select_triton,
             paged_support_select_triton,
         )
 
+        if self.refine_candidates:
+            if self.candidate_ids is None or self.candidate_scores is None:
+                raise RuntimeError("refined selector workspaces were not allocated")
+            paged_support_refined_select_triton(
+                self.query,
+                self.support_keys,
+                self.cache.key,
+                self.cache.page_table,
+                self.cache.sequence_lengths,
+                self.routes.atom_ids,
+                layout=self.cache.normalized_layout,
+                sink_atoms=self.sink_atoms,
+                recent_atoms=self.recent_atoms,
+                middle_atoms=self.middle_atoms,
+                candidate_atoms=self.refine_candidates,
+                scores=self.scores,
+                candidate_ids=self.candidate_ids,
+                candidate_scores=self.candidate_scores,
+            )
+            return
         paged_support_select_triton(
             self.query,
             self.support_keys,
@@ -1632,6 +1699,7 @@ def stream_attn_paged_query_selected_decode(
     recent_atoms: int = 1,
     support_width: int = 2,
     support_method: str = "centroid_extremes",
+    refine_candidates: int = 0,
     output: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Plan and execute one query-aware selected H100 paged decode call."""
@@ -1644,6 +1712,7 @@ def stream_attn_paged_query_selected_decode(
         recent_atoms=recent_atoms,
         support_width=support_width,
         support_method=support_method,
+        refine_candidates=refine_candidates,
         output=output,
     ).run()
 
