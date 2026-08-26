@@ -118,8 +118,8 @@ next engine work is:
    persistent queue only if measured task variance pays for it.
 2. Add segment/run producers for structured sink/middle/recent and sliding
    schedules while retaining CSR as the irregular device ABI.
-3. Add a GPU route-preparation kernel for query-selected schedules so dynamic
-   selection has no CPU synchronization.
+3. Connect query-aware GPU selectors to the completed no-sync Q-head CSR route
+   compiler and include selector cost in the dispatch phase diagram.
 4. Add a live verifier that can replace selected row/layer work with exact
    tile schedules.
 5. Reuse the same contract for chunked prefill and mixed prefill/decode.

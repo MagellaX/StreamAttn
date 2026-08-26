@@ -19,10 +19,15 @@ from stream_attention.planning import (
     ATTENTION_GUARANTEE_EXACT,
     ATTENTION_SCHEDULE_ALL,
     ATTENTION_SCHEDULE_SELECTED,
+    ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
     AttentionProblem,
     AttentionTilePlan,
 )
-from stream_attention.paged import PagedKVCache, PagedSelectedDecodePlan
+from stream_attention.paged import (
+    PagedDynamicSelectedDecodePlan,
+    PagedKVCache,
+    PagedSelectedDecodePlan,
+)
 
 
 def _tensors():
@@ -199,6 +204,60 @@ def test_engine_binds_selected_paged_tile_plan_to_native_runner(monkeypatch):
     assert info.policy_id == "engine-selected-paged-test"
     assert info.stats["route_count"] == 1
     assert info.stats["max_routes_per_row"] == 1
+
+
+def test_engine_binds_mutable_qhead_routes_to_dynamic_native_runner(monkeypatch):
+    query = torch.randn(1, 1, 8, 8)
+    cache = PagedKVCache(
+        key=torch.randn(8, 16, 1, 8),
+        value=torch.randn(8, 16, 1, 8),
+        page_table=torch.arange(8, dtype=torch.int32).view(1, 8),
+        sequence_lengths=torch.tensor([128], dtype=torch.int32),
+        layout="NHD",
+    )
+    problem = AttentionProblem.from_paged(
+        query,
+        cache,
+        guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    )
+    tile_plan = AttentionTilePlan.selected(
+        problem,
+        logical_tile_size=64,
+        tile_ids_per_row=tuple((head & 1,) for head in range(8)),
+        policy_id="engine-dynamic-selected-test",
+        reason="gpu_query_selector",
+        route_granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+        schedule_epoch=3,
+    ).with_device_routes(device="cpu")
+
+    def fake_build(_query, _cache, routes, **_kwargs):
+        return SimpleNamespace(
+            backend="fake_sm90_dynamic_selected",
+            routes=routes,
+            max_routes_per_group=8,
+            producer_ctas=8,
+            metadata_bytes=1024,
+            workspace_bytes=4096,
+            run=lambda: query,
+        )
+
+    monkeypatch.setattr(
+        PagedDynamicSelectedDecodePlan,
+        "build",
+        staticmethod(fake_build),
+    )
+    engine = StreamAttnEngine(policy=_policy(*_tensors()[:2]))
+    plan = engine.plan_dynamic_selected_paged(query, cache, tile_plan)
+    output, info = plan.run()
+
+    assert output is query
+    assert plan.tile_plan is tile_plan
+    assert plan.backend == "fake_sm90_dynamic_selected"
+    assert info.policy_id == "engine-dynamic-selected-test"
+    assert info.stats["route_preparation"] == (
+        "gpu_bounded_membership_warp_compaction_no_host_readback"
+    )
+    assert info.stats["max_routes_per_group"] == 8
 
 
 @pytest.mark.skipif(

@@ -17,6 +17,7 @@ from stream_attention.paged import (
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND,
     PAGED_SELECTED_SM90_STATIC_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
     PROMOTED_PAGED_EXACT_PAGE16_D128_G4_RAGGED_SPLITS,
@@ -32,6 +33,7 @@ from stream_attention.paged import (
     PROMOTED_PAGED_EXACT_PAGE16_RAGGED_SHAPES,
     PROMOTED_PAGED_EXACT_PAGE16_SHAPES,
     PagedExactDecodePlan,
+    PagedDynamicSelectedDecodePlan,
     PagedSelectedDecodePlan,
     PagedKVCache,
     choose_paged_exact_splits,
@@ -41,6 +43,7 @@ from stream_attention.paged import (
 from stream_attention.planning import (
     ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
     ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+    AttentionRouteCSR,
     AttentionProblem,
     AttentionTilePlan,
 )
@@ -256,6 +259,9 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert "paged_fragmented_nhd_ragged_exact_decode_out" in CPP_SOURCE
     assert "paged_selected_fragmented_exact_decode_out" in CPP_SOURCE
     assert "paged_selected_fragmented_nhd_exact_decode_out" in CPP_SOURCE
+    assert "prepare_qhead_paged_routes64_out" in CPP_SOURCE
+    assert "paged_dynamic_qhead_fragmented_exact_decode_out" in CPP_SOURCE
+    assert "paged_dynamic_qhead_fragmented_nhd_exact_decode_out" in CPP_SOURCE
     assert "streamattn_exact_tile_ptr<kPagedPageSize>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<64>" in CUDA_SOURCE
     assert "streamattn_transposed_wgmma_exact_partial_kernel<16>" in CUDA_SOURCE
@@ -266,6 +272,11 @@ def test_promoted_paged_sm90_cells_and_source_contract():
     assert "kSelectedPaged" in CUDA_SOURCE
     assert "route_active_head_masks" in CUDA_SOURCE
     assert "route_token_valid_masks" in CUDA_SOURCE
+    assert "streamattn_prepare_qhead_paged_routes64_kernel" in CUDA_SOURCE
+    assert "extern __shared__ unsigned int atom_head_masks[]" in CUDA_SOURCE
+    assert "__ballot_sync(0xffffffffu, head_mask != 0)" in CUDA_SOURCE
+    assert "kSelectedRowLocal" in CUDA_SOURCE
+    assert "streamattn_transposed_wgmma_selected_row_local_merge_warp_kernel" in CUDA_SOURCE
     assert "make_stride(token_stride, _1{})" in CUDA_SOURCE
     assert "16, kVariableLength, true" in CUDA_SOURCE
     assert "static constexpr int kHeadDim = 128;" in cuda_source_for_head_dim(128)
@@ -433,6 +444,71 @@ def test_h100_selected_paged_wgmma_matches_per_head_reference():
     assert plan.backend == PAGED_SELECTED_SM90_STATIC_BACKEND
     assert plan.producer_ctas == routes.row_count * plan.max_routes_per_row
     assert plan.workspace_bytes > 0
+
+
+@pytest.mark.skipif(
+    not _has_h100_and_cutlass(),
+    reason="requires H100 and CUTLASS/CUTE headers",
+)
+def test_h100_dynamic_qhead_routes_mutate_without_replanning():
+    query, cache, _rows = _make_selected_page16_inputs(
+        device="cuda",
+        dtype=torch.bfloat16,
+        dim=64,
+    )
+    q_head_rows = tuple((head & 1,) for head in range(int(query.shape[2])))
+    problem = AttentionProblem.from_paged(
+        query,
+        cache,
+        guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+    )
+    tile_plan = AttentionTilePlan.selected(
+        problem,
+        logical_tile_size=64,
+        tile_ids_per_row=q_head_rows,
+        policy_id="dynamic-qhead-test",
+        reason="mutable_qhead_routes",
+        route_granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+        schedule_epoch=9,
+    ).with_device_routes(device=query.device)
+    routes = tile_plan.schedule.device_routes
+    assert isinstance(routes, AttentionRouteCSR)
+
+    static_routes = prepare_paged_routes64(tile_plan, cache)
+    expected = paged_selected_reference(
+        query,
+        cache,
+        static_routes,
+        schedule_epoch=9,
+    ).clone()
+    dynamic_plan = PagedDynamicSelectedDecodePlan.build(query, cache, routes)
+    output = dynamic_plan.run()
+    torch.cuda.synchronize()
+    dynamic_plan.check_route_errors()
+
+    torch.testing.assert_close(output.float(), expected.float(), atol=1e-2, rtol=1e-2)
+    assert dynamic_plan.backend == PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND
+    assert dynamic_plan.metadata["route_counts"].tolist() == [2]
+    output_ptr = output.data_ptr()
+    first = output.clone()
+
+    routes.atom_ids.copy_(1 - routes.atom_ids)
+    refreshed = prepare_paged_routes64(tile_plan, cache)
+    expected_mutated = paged_selected_reference(
+        query,
+        cache,
+        refreshed,
+        schedule_epoch=9,
+    ).clone()
+    mutated = dynamic_plan.run()
+    torch.cuda.synchronize()
+    dynamic_plan.check_route_errors()
+
+    assert mutated.data_ptr() == output_ptr
+    assert not torch.equal(first, mutated)
+    torch.testing.assert_close(
+        mutated.float(), expected_mutated.float(), atol=1e-2, rtol=1e-2
+    )
 
 
 def test_sm100_tgv_source_contract():

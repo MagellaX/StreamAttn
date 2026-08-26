@@ -162,7 +162,14 @@ selected tokens <= 16K -> static selected executor won measured B1/B4/B8 cells
 selected tokens == 32K -> exact split scheduler wins at B4/B8
 ```
 
-The first general lowering takes roughly 2-5 ms after framework warmup. It is
-therefore suitable for a reused fixed schedule, not a per-token query-dynamic
-route. Dynamic selection requires a dedicated GPU preparation kernel before
-promotion. See [the complete evidence](paged_selected_h100_phase_20260825.md).
+The generic Torch lowering takes milliseconds after framework warmup and is
+therefore limited to reused fixed schedules. The dynamic H100 path now lowers
+mutable GPU Q-head CSR atoms directly: a bounded shared-memory atom/head map,
+warp-prefix compaction, live page resolution, selected WGMMA execution, and
+route-count-aware merge remain on one CUDA stream without host readback.
+
+At 32K D128/G8, its preparation measured `0.01098-0.01362 ms`, and all 18
+tested B1/B4/B8 x S384/S2048 x overlap cells were correct and won paired
+per-call comparisons against FlashInfer exact. Conservative amortized timing
+keeps three low-batch S2048 corners on exact fallback. See the [dynamic route
+compiler phase](paged_dynamic_selected_h100_phase_20260826.md).

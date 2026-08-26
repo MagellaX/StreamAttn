@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 import torch
 
+from .planning import ATTENTION_ROUTE_GRANULARITY_Q_HEAD, AttentionRouteCSR
 from .selected_routes import PackedPagedRoute64
 
 
@@ -39,6 +40,9 @@ PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND = (
     "streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact"
 )
 PAGED_SELECTED_SM90_STATIC_BACKEND = "streamattn_paged_sm90_wgmma_selected_static"
+PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND = (
+    "streamattn_paged_sm90_wgmma_selected_dynamic_qhead"
+)
 
 PROMOTED_PAGED_EXACT_SPLITS = {
     (1, 16384): 64,
@@ -1130,6 +1134,245 @@ class PagedSelectedDecodePlan:
         return self.output
 
 
+@dataclass
+class PagedDynamicSelectedDecodePlan:
+    """No-sync H100 path from mutable Q-head CSR atoms to selected decode.
+
+    CSR row offsets are fixed at plan time. ``atom_ids`` may be overwritten by
+    a GPU selector before every run. A bounded shared-memory membership map and
+    warp-prefix compaction form each GQA-group union; physical-page resolution,
+    attention, and merge then execute on the current CUDA stream without a host
+    route-count readback.
+    """
+
+    query: torch.Tensor
+    cache: PagedKVCache
+    routes: AttentionRouteCSR
+    output: torch.Tensor
+    max_routes_per_group: int
+    metadata: dict[str, torch.Tensor]
+    workspace: dict[str, torch.Tensor]
+    query_group: torch.Tensor
+    output_group: torch.Tensor
+    prepare_launch: Any
+    launch: Any
+    row_ptr_version: int
+    backend: str = PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND
+
+    @classmethod
+    def build(
+        cls,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        routes: AttentionRouteCSR,
+        *,
+        output: Optional[torch.Tensor] = None,
+        validate_metadata: bool = True,
+    ) -> "PagedDynamicSelectedDecodePlan":
+        cache.validate(query, validate_metadata=validate_metadata)
+        if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
+            raise ValueError("dynamic selected paged decode requires H100/SM90")
+        if query.dtype != torch.bfloat16:
+            raise ValueError("dynamic selected paged decode currently requires BF16")
+        if cache.page_size != 16 or cache.normalized_layout not in {"NHD", "HND"}:
+            raise ValueError("dynamic selected paged decode requires NHD/HND page-16 KV")
+        if not cache.key.is_contiguous() or not cache.value.is_contiguous():
+            raise ValueError("dynamic selected paged K/V pages must be contiguous")
+        if routes.granularity != ATTENTION_ROUTE_GRANULARITY_Q_HEAD:
+            raise ValueError("dynamic selected lowering requires Q-head route rows")
+        if routes.atom_size != 64:
+            raise ValueError("dynamic selected lowering requires 64-token route atoms")
+        logical_atoms = int(cache.page_table.size(1)) * cache.page_size // 64
+        if logical_atoms > 12_288:
+            raise ValueError(
+                "dynamic selected lowering currently supports at most 12,288 "
+                "logical route atoms per row"
+            )
+        if routes.device != query.device:
+            raise ValueError("dynamic routes and attention buffers must share a device")
+
+        batch = int(query.shape[0])
+        q_heads = int(query.shape[2])
+        head_dim = int(query.shape[3])
+        group_size = q_heads // cache.kv_heads
+        if group_size not in {4, 8} or head_dim not in {64, 128}:
+            raise ValueError("dynamic selected WGMMA supports G4/G8 and D64/D128")
+        if routes.row_count != batch * q_heads:
+            raise ValueError("dynamic Q-head CSR must contain B*Hq rows")
+        if routes.active_head_masks is not None:
+            raise ValueError("Q-head CSR encodes ownership and cannot carry head masks")
+
+        row_ptr = routes.row_ptr.detach().to(device="cpu", dtype=torch.int64)
+        row_counts = row_ptr[1:] - row_ptr[:-1]
+        if row_counts.numel() != batch * q_heads or bool(torch.any(row_counts <= 0)):
+            raise ValueError("every dynamic Q-head route row must remain non-empty")
+        host_atoms = routes.atom_ids.detach().to(device="cpu", dtype=torch.int64).tolist()
+        host_offsets = row_ptr.tolist()
+        live_lengths = cache.sequence_lengths.detach().to(
+            device="cpu", dtype=torch.int64
+        ).tolist()
+        for row, (begin, end) in enumerate(
+            zip(host_offsets[:-1], host_offsets[1:], strict=True)
+        ):
+            atoms = host_atoms[begin:end]
+            if atoms != sorted(set(atoms)):
+                raise ValueError("dynamic route rows must initially be sorted and unique")
+            max_atom = math.ceil(int(live_lengths[row // q_heads]) / 64)
+            if any(atom < 0 or atom >= max_atom for atom in atoms):
+                raise ValueError("dynamic route atom is outside the live KV extent")
+        group_capacity = row_counts.view(batch, cache.kv_heads, group_size).sum(dim=2)
+        max_routes = int(group_capacity.max().item())
+        if max_routes <= 0 or max_routes > 512:
+            raise ValueError("dynamic route capacity must be in [1,512]")
+
+        if output is None:
+            output = torch.empty_like(query)
+        if output.shape != query.shape or output.dtype != query.dtype:
+            raise ValueError("output must match query shape and dtype")
+        if output.device != query.device or not output.is_contiguous():
+            raise ValueError("output must be contiguous and share the query device")
+
+        groups = batch * cache.kv_heads
+        atom_shape = (groups, max_routes, 4)
+        route_shape = (groups, max_routes)
+        metadata = {
+            "route_counts": torch.empty(groups, device=query.device, dtype=torch.int32),
+            "logical_atom_origins": torch.empty(
+                atom_shape, device=query.device, dtype=torch.int32
+            ),
+            "physical_page_ids": torch.empty(
+                atom_shape, device=query.device, dtype=torch.int32
+            ),
+            "atom_valid_masks": torch.empty(
+                route_shape, device=query.device, dtype=torch.int32
+            ),
+            "active_head_masks": torch.empty(
+                atom_shape, device=query.device, dtype=torch.int32
+            ),
+            "token_valid_masks": torch.empty(
+                atom_shape, device=query.device, dtype=torch.int32
+            ),
+            "route_flags": torch.empty(
+                route_shape, device=query.device, dtype=torch.int32
+            ),
+            "route_errors": torch.empty(groups, device=query.device, dtype=torch.int32),
+        }
+        workspace = {
+            "partial_o": torch.empty(
+                groups,
+                max_routes,
+                8,
+                head_dim,
+                device=query.device,
+                dtype=torch.float32,
+            ),
+            "partial_lse": torch.empty(
+                groups,
+                max_routes,
+                8,
+                device=query.device,
+                dtype=torch.float32,
+            ),
+        }
+        from .backends.sm90.transposed_gqa_exact import (
+            compile_transposed_gqa_exact_extension,
+        )
+
+        extension = compile_transposed_gqa_exact_extension(head_dim=head_dim)
+        launch = (
+            extension.paged_dynamic_qhead_fragmented_nhd_exact_decode_out
+            if cache.normalized_layout == "NHD"
+            else extension.paged_dynamic_qhead_fragmented_exact_decode_out
+        )
+        return cls(
+            query=query,
+            cache=cache,
+            routes=routes,
+            output=output,
+            max_routes_per_group=max_routes,
+            metadata=metadata,
+            workspace=workspace,
+            query_group=query.view(batch, cache.kv_heads, group_size, head_dim),
+            output_group=output.view(groups, group_size, head_dim),
+            prepare_launch=extension.prepare_qhead_paged_routes64_out,
+            launch=launch,
+            row_ptr_version=int(routes.row_ptr._version),
+        )
+
+    @property
+    def metadata_bytes(self) -> int:
+        return sum(t.numel() * t.element_size() for t in self.metadata.values())
+
+    @property
+    def workspace_bytes(self) -> int:
+        return sum(t.numel() * t.element_size() for t in self.workspace.values())
+
+    @property
+    def producer_ctas(self) -> int:
+        return int(self.metadata["route_counts"].numel()) * self.max_routes_per_group
+
+    def _validate_fixed_structure(self) -> None:
+        if int(self.routes.row_ptr._version) != self.row_ptr_version:
+            raise RuntimeError("dynamic route row offsets changed after planning")
+
+    def prepare(self) -> None:
+        """Prepare row-local route metadata without synchronizing to the host."""
+
+        self._validate_fixed_structure()
+        self.prepare_launch(
+            self.routes.row_ptr,
+            self.routes.atom_ids,
+            self.cache.page_table,
+            self.cache.sequence_lengths,
+            self.metadata["route_counts"],
+            self.metadata["logical_atom_origins"],
+            self.metadata["physical_page_ids"],
+            self.metadata["atom_valid_masks"],
+            self.metadata["active_head_masks"],
+            self.metadata["token_valid_masks"],
+            self.metadata["route_flags"],
+            self.metadata["route_errors"],
+            int(self.query.shape[2]),
+            self.cache.kv_heads,
+            self.cache.num_pages,
+            self.max_routes_per_group,
+        )
+
+    def check_route_errors(self) -> None:
+        """Synchronize diagnostics and reject malformed live selector output."""
+
+        errors = self.metadata["route_errors"].detach().to(device="cpu")
+        if bool(torch.any(errors != 0)):
+            raise RuntimeError(f"dynamic route preparation failed: {errors.tolist()}")
+
+    def run(self) -> torch.Tensor:
+        """Prepare and execute the current Q-head selections in one host call."""
+
+        self._validate_fixed_structure()
+        self.launch(
+            self.query_group,
+            self.cache.key,
+            self.cache.value,
+            self.cache.page_table,
+            self.cache.sequence_lengths,
+            self.routes.row_ptr,
+            self.routes.atom_ids,
+            self.metadata["route_counts"],
+            self.metadata["logical_atom_origins"],
+            self.metadata["physical_page_ids"],
+            self.metadata["atom_valid_masks"],
+            self.metadata["active_head_masks"],
+            self.metadata["token_valid_masks"],
+            self.metadata["route_flags"],
+            self.metadata["route_errors"],
+            self.workspace["partial_o"],
+            self.workspace["partial_lse"],
+            self.output_group,
+            self.max_routes_per_group,
+        )
+        return self.output
+
+
 def stream_attn_paged_selected_decode(
     query: torch.Tensor,
     cache: PagedKVCache,
@@ -1149,11 +1392,42 @@ def stream_attn_paged_selected_decode(
     ).run()
 
 
+def stream_attn_paged_dynamic_selected_decode(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    routes: AttentionRouteCSR,
+    *,
+    output: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Plan and run the H100 no-sync dynamic Q-head selected path."""
+
+    return PagedDynamicSelectedDecodePlan.build(
+        query,
+        cache,
+        routes,
+        output=output,
+    ).run()
+
+
 @dataclass
 class PagedSelectedDecodeRunner:
     """Engine-compatible selected paged runner with serving telemetry."""
 
     plan: PagedSelectedDecodePlan
+    info: Any
+
+    def run(self) -> torch.Tensor:
+        return self.plan.run()
+
+    def run_with_info(self):
+        return self.run(), self.info
+
+
+@dataclass
+class PagedDynamicSelectedDecodeRunner:
+    """Engine-compatible runner for mutable GPU Q-head route atoms."""
+
+    plan: PagedDynamicSelectedDecodePlan
     info: Any
 
     def run(self) -> torch.Tensor:

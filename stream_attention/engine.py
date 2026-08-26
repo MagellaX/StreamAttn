@@ -28,6 +28,8 @@ from .decode import (
 )
 from .paged import (
     PAGED_EXACT_NATIVE_BACKEND,
+    PagedDynamicSelectedDecodePlan,
+    PagedDynamicSelectedDecodeRunner,
     PagedExactDecodePlan,
     PagedExactDecodeRunner,
     PagedKVCache,
@@ -67,6 +69,7 @@ class StreamAttnEnginePlan:
             StreamAttnSeedOnlyDirectRunner,
             StreamAttnExactNativeDirectRunner,
             PagedExactDecodeRunner,
+            PagedDynamicSelectedDecodeRunner,
             PagedSelectedDecodeRunner,
         ]
     ] = None
@@ -346,6 +349,82 @@ class StreamAttnEngine:
             reason=reason,
             architecture=device_architecture(query.device),
             splits=paged_plan.max_routes_per_row,
+            workspace_bytes=paged_plan.workspace_bytes,
+        )
+        return StreamAttnEnginePlan(
+            mode=STREAMATTN_MODE_VERIFIED_AUTO,
+            backend=backend,
+            reason=reason,
+            model_id=None,
+            layer_id=None,
+            query=query,
+            key_cache=cache,
+            value_cache=None,
+            service=self.service,
+            attention_problem=tile_plan.problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
+            direct_runner=runner,
+        )
+
+    def plan_dynamic_selected_paged(
+        self,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        tile_plan: AttentionTilePlan,
+        *,
+        output: Optional[torch.Tensor] = None,
+    ) -> StreamAttnEnginePlan:
+        """Bind mutable GPU Q-head route atoms to the no-sync H100 executor."""
+
+        routes = tile_plan.schedule.device_routes
+        if routes is None:
+            raise ValueError("dynamic selected paging requires device route CSR")
+        paged_plan = PagedDynamicSelectedDecodePlan.build(
+            query,
+            cache,
+            routes,
+            output=output,
+        )
+        backend = paged_plan.backend
+        reason = "distribution_verified_dynamic_qhead_paged"
+        info = StreamAttnServingInfo(
+            backend_used=backend,
+            policy_id=tile_plan.policy_id,
+            fallback_reason=None,
+            batch_size=int(query.shape[0]),
+            kv_len=max(tile_plan.problem.kv_lengths),
+            layer_id=None,
+            model_id=None,
+            dtype=str(query.dtype).removeprefix("torch."),
+            device=str(query.device),
+            plan_backend=backend,
+            plan_reason=reason,
+            seed_only_enabled=False,
+            safety_policy_matched=True,
+            runtime_counters={
+                "backend_counts": {backend: 1},
+                "fallback_reasons": {},
+            },
+            stats={
+                "layout": cache.normalized_layout,
+                "page_size": cache.page_size,
+                "source_route_nnz": routes.nnz,
+                "max_routes_per_group": paged_plan.max_routes_per_group,
+                "producer_ctas": paged_plan.producer_ctas,
+                "metadata_bytes": paged_plan.metadata_bytes,
+                "workspace_bytes": paged_plan.workspace_bytes,
+                "route_preparation": (
+                    "gpu_bounded_membership_warp_compaction_no_host_readback"
+                ),
+            },
+        )
+        runner = PagedDynamicSelectedDecodeRunner(plan=paged_plan, info=info)
+        backend_plan = AttentionBackendPlan(
+            backend=backend,
+            reason=reason,
+            architecture=device_architecture(query.device),
+            splits=paged_plan.max_routes_per_group,
             workspace_bytes=paged_plan.workspace_bytes,
         )
         return StreamAttnEnginePlan(

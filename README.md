@@ -145,11 +145,25 @@ NHD/page-16, BF16, D128/G8, 32K:
 All 15 phase cells matched an independent FP32 selected-token reference. A
 Q-head-private 384-token schedule with only `0.545` GQA union efficiency also
 won all `27/27` paired trials (`2.44x`, `5.21x`, and `8.20x` at B1/B4/B8).
-These are kernel/runtime results for a precomputed selected schedule. They do
-not certify that an arbitrary selection preserves model outputs, and the
-current general route lowering is plan-time work rather than a per-token
-dynamic selector. See the [H100 selected-paged phase
-diagram](docs/paged_selected_h100_phase_20260825.md).
+These are kernel/runtime results for a precomputed selected schedule.
+
+StreamAttn also has a no-sync dynamic route compiler for mutable GPU Q-head
+CSR atoms. It builds a bounded on-chip atom/head membership map, compacts the
+GQA union with warp ballots, resolves live page IDs, and launches the selected
+WGMMA executor without a host route-count readback. At the same 32K D128/G8
+shape, route preparation fell from `1.532-3.003 ms` in the generic Torch
+lowering to `0.01098-0.01362 ms` on GPU.
+
+Including dynamic preparation and execution, all 18 B1/B4/B8 x S384/S2048 x
+shared/alternating/disjoint cells were correct and won paired per-call trials
+against FlashInfer exact (`1.112x-5.276x`). A 400-call amortized measurement
+won 15/18 cells; every S384 cell won, while three low-batch S2048 corners remain
+exact-fallback territory. See the [dynamic H100 route-compiler
+phase](docs/paged_dynamic_selected_h100_phase_20260826.md).
+
+Neither selected result certifies that an arbitrary selection preserves model
+outputs. Dynamic numbers include route lowering, page resolution, attention,
+and merge, but exclude the selector that generates CSR atom IDs.
 
 ### Model-aware reduced-work decode
 
