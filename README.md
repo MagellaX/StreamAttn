@@ -207,6 +207,24 @@ need exact fallback or a stronger verifier. The measured cache is fixed at
 32K; a growing production cache must finalize/update the support metadata when
 each new 64-token atom closes.
 
+### Adaptive output-sufficiency research
+
+StreamAttn now has a reference frontier for a harder question: can selected
+exact blocks plus a compact tail estimator preserve the post-`o_proj` output
+without scanning the omitted KV tail? It merges exact online-softmax block
+states with moment estimates or sampled control-variate corrections and keeps
+physical routes shared within each true-GQA KV group.
+
+Initial H100 captures are deliberately negative-to-mixed. Output-aware block
+selection improves hard drop, and moment completion helps Mistral L24, but the
+same estimator hurts Mistral L0 and Qwen L14/L26. Positive feature summaries
+barely improve Qwen L26, fixed learned residual banks overfit, and stochastic
+ratio correction remains unstable even with an oracle residual priority. No
+adaptive completion mode is promoted from this evidence. The next gate is
+whether the omitted post-projection residual is low-rank and predictable from
+cheap live-query features; see the [adaptive output-sufficiency
+frontier](docs/adaptive_output_sufficiency_frontier_20260827.md).
+
 ### Model-aware reduced-work decode
 
 For calibrated Qwen-family cells, the seed-only backend reads a small set of
