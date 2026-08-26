@@ -26,6 +26,7 @@ from stream_attention.planning import (
 from stream_attention.paged import (
     PagedDynamicSelectedDecodePlan,
     PagedKVCache,
+    PagedQuerySelectedDecodePlan,
     PagedSelectedDecodePlan,
 )
 
@@ -258,6 +259,49 @@ def test_engine_binds_mutable_qhead_routes_to_dynamic_native_runner(monkeypatch)
         "gpu_bounded_membership_warp_compaction_no_host_readback"
     )
     assert info.stats["max_routes_per_group"] == 8
+
+
+def test_engine_query_selected_plan_exposes_research_safety_scope(monkeypatch):
+    query = torch.randn(1, 1, 8, 8)
+    cache = PagedKVCache(
+        key=torch.randn(8, 16, 1, 8),
+        value=torch.randn(8, 16, 1, 8),
+        page_table=torch.arange(8, dtype=torch.int32).view(1, 8),
+        sequence_lengths=torch.tensor([128], dtype=torch.int32),
+        layout="NHD",
+    )
+
+    def fake_build(_query, _cache, **_kwargs):
+        return SimpleNamespace(
+            backend="fake_sm90_query_selected",
+            support_metadata_bytes=2048,
+            selector_workspace_bytes=512,
+            selected_plan=SimpleNamespace(
+                workspace_bytes=4096,
+                max_routes_per_group=48,
+            ),
+            run=lambda: query,
+        )
+
+    monkeypatch.setattr(
+        PagedQuerySelectedDecodePlan,
+        "build",
+        staticmethod(fake_build),
+    )
+    engine = StreamAttnEngine(policy=_policy(*_tensors()[:2]))
+    plan = engine.plan_query_selected_paged(
+        query,
+        cache,
+        selected_atoms=2,
+        support_width=4,
+    )
+    output, info = plan.run()
+
+    assert output is query
+    assert plan.backend == "fake_sm90_query_selected"
+    assert plan.backend_plan.workspace_bytes == 4608
+    assert info.stats["support_width"] == 4
+    assert info.stats["safety_scope"] == "caller_distribution_verified"
 
 
 @pytest.mark.skipif(

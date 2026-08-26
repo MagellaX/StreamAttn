@@ -36,13 +36,14 @@ StreamAttn also asks:
 What is the cheapest native attention route that is valid for this request?
 ```
 
-That produces three decode modes:
+That produces three serving modes plus an explicit adaptive research route:
 
 | Mode | Work performed | Semantics | Current use |
 |---|---|---|---|
 | `exact_native` | All KV tokens | Exact attention, within numerical tolerance | Default and fail-closed route |
 | `seed_only_native` | A small sink/middle/recent seed set | Approximate; only for a packaged, validated policy cell | Explicit opt-in and calibrated serving |
 | `verified_auto` | Seed-only when policy invariants match, otherwise exact | Policy-verified, fail-closed routing | Default planning mode; live generic verification is still research |
+| query-selected paged | Sink/recent atoms plus query-ranked middle atoms | Exact online softmax over a runtime-selected subset | Explicit `StreamAttnEngine.plan_query_selected_paged(...)` research route |
 
 StreamAttn is therefore not just another sparse mask. The engine owns the
 kernel, policy artifact, fixed-buffer plan, route decision, and exact fallback.
@@ -161,9 +162,33 @@ won 15/18 cells; every S384 cell won, while three low-batch S2048 corners remain
 exact-fallback territory. See the [dynamic H100 route-compiler
 phase](docs/paged_dynamic_selected_h100_phase_20260826.md).
 
-Neither selected result certifies that an arbitrary selection preserves model
-outputs. Dynamic numbers include route lowering, page resolution, attention,
-and merge, but exclude the selector that generates CSR atom IDs.
+The next phase connects a real GPU query selector directly to that mutable CSR.
+Persistent per-64-token support keys are scored against the live query; a
+fixed-width top-k kernel emits score-ranked Q-head atoms; the membership
+compiler canonicalizes their GQA union without a sort or host readback. The
+complete measurement includes selection, route lowering, page resolution,
+attention, and merge:
+
+| Support sketch | B1 | B4 | B8 | Selection-quality signal |
+|---|---:|---:|---:|---|
+| P1/P2/P4 centroid + extremes, S384 | `0.55x-0.57x` | `1.12x-1.14x` | `1.69x-1.70x` | P4 synthetic block-max recall: `15%-21%` |
+| P8 centroid + extremes, S384 | not promoted | `0.997x` | `1.535x` | synthetic block-max recall: `33%-36%` |
+
+All 13 measured cells matched the independently lowered selected-token
+reference. Every P1/P2/P4 B4/B8 cell won the seven paired block-timed trials;
+B1 lost because the roughly `0.05 ms` selector floor dominates. P8 buys more
+oracle recall but consumes the B4 margin, so adaptive sketch width is required
+rather than one global selector. Top-norm support keys were measured and
+rejected: they did not improve recall and were slower. See the [query-selected
+H100 phase](docs/paged_query_selected_h100_phase_20260826.md).
+
+These query-selected results are systems evidence, not a model-safety
+promotion. Attention is exact over the selected atoms, but arbitrary runtime
+selection can change model outputs. Existing real-Qwen analysis shows that
+support sketches improve coverage while adversarial late-layer routes still
+need exact fallback or a stronger verifier. The measured cache is fixed at
+32K; a growing production cache must finalize/update the support metadata when
+each new 64-token atom closes.
 
 ### Model-aware reduced-work decode
 

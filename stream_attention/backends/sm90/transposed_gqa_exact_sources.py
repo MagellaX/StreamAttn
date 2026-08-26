@@ -2836,7 +2836,7 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cu
 
 enum StreamAttnRoutePrepareError : int {
   kRoutePrepareInvalidAtom = 1 << 0,
-  kRoutePrepareUnsorted = 1 << 1,
+  kRoutePrepareDuplicateAtom = 1 << 1,
   kRoutePrepareInvalidPage = 1 << 2,
   kRoutePrepareOverflow = 1 << 3,
   kRoutePrepareEmptyHead = 1 << 4,
@@ -2911,15 +2911,15 @@ void streamattn_prepare_qhead_paged_routes64_kernel(
            source >= source_row_ptr[first_q_row + head + 1]) {
       ++head;
     }
-    const int row_begin = source_row_ptr[first_q_row + head];
     const int atom = source_atom_ids[source];
-    if (source > row_begin && source_atom_ids[source - 1] >= atom) {
-      atomicOr(&shared_error, kRoutePrepareUnsorted);
-    }
     if (atom < 0 || atom >= valid_atoms) {
       atomicOr(&shared_error, kRoutePrepareInvalidAtom);
     } else {
-      atomicOr(&atom_head_masks[atom], 1u << head);
+      const unsigned int head_bit = 1u << head;
+      const unsigned int prior = atomicOr(&atom_head_masks[atom], head_bit);
+      if ((prior & head_bit) != 0) {
+        atomicOr(&shared_error, kRoutePrepareDuplicateAtom);
+      }
     }
   }
   __syncthreads();

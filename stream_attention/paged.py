@@ -43,6 +43,9 @@ PAGED_SELECTED_SM90_STATIC_BACKEND = "streamattn_paged_sm90_wgmma_selected_stati
 PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND = (
     "streamattn_paged_sm90_wgmma_selected_dynamic_qhead"
 )
+PAGED_QUERY_SELECTED_SM90_BACKEND = (
+    "streamattn_paged_sm90_wgmma_query_selected_qhead"
+)
 
 PROMOTED_PAGED_EXACT_SPLITS = {
     (1, 16384): 64,
@@ -306,6 +309,73 @@ class PagedKVCache:
                 raise ValueError(
                     "active page_table entries must reference physical pages"
                 )
+
+
+def build_paged_support_keys(
+    cache: PagedKVCache,
+    *,
+    support_width: int = 2,
+    method: str = "centroid_extremes",
+) -> torch.Tensor:
+    """Build compact per-64-token key metadata in logical page order.
+
+    The first support vector is the valid-token centroid. Additional vectors
+    are real keys selected by distance from the centroid (or key norm). This
+    metadata is built during planning/prefill; decode-time selection scans only
+    ``support_width`` vectors per logical atom instead of all 64 keys.
+    """
+
+    if cache.key.dim() != 4 or cache.page_table.dim() != 2:
+        raise ValueError("paged support metadata requires rank-4 K and rank-2 table")
+    if cache.page_size != 16 or cache.max_pages_per_request % 4:
+        raise ValueError("paged support metadata requires page-16 and 64-token atoms")
+    if cache.normalized_layout not in {"NHD", "HND"}:
+        raise ValueError("paged support metadata requires NHD or HND cache layout")
+    if cache.page_table.device != cache.key.device:
+        raise ValueError("page table and K pages must share a device")
+    if support_width not in {1, 2, 4, 8}:
+        raise ValueError("support_width must be 1, 2, 4, or 8")
+    if method not in {"centroid_extremes", "centroid_top_norm"}:
+        raise ValueError("unsupported support-key construction method")
+
+    safe_pages = cache.page_table.clamp_min(0).to(dtype=torch.long)
+    gathered = cache.key[safe_pages]
+    if cache.normalized_layout == "NHD":
+        # [B,logical_page,token,Hkv,D] -> [B,Hkv,logical_page,token,D]
+        gathered = gathered.permute(0, 3, 1, 2, 4)
+    else:
+        # [B,logical_page,Hkv,token,D] -> [B,Hkv,logical_page,token,D]
+        gathered = gathered.permute(0, 2, 1, 3, 4)
+
+    batch = cache.batch_size
+    num_atoms = cache.max_sequence_length // 64
+    keys = gathered.reshape(batch, cache.kv_heads, num_atoms, 64, cache.head_dim)
+    logical_tokens = torch.arange(
+        cache.max_sequence_length,
+        device=cache.key.device,
+        dtype=torch.int64,
+    ).view(1, num_atoms, 64)
+    valid = logical_tokens < cache.sequence_lengths.to(torch.int64).view(batch, 1, 1)
+    keys_f32 = keys.float() * valid[:, None, :, :, None]
+    counts = valid.sum(dim=-1).clamp_min(1).to(torch.float32)
+    centroid = keys_f32.sum(dim=3) / counts[:, None, :, None]
+    if support_width == 1:
+        return centroid[:, :, :, None, :].to(cache.key.dtype).contiguous()
+
+    if method == "centroid_top_norm":
+        priority = keys_f32.square().sum(dim=-1)
+    else:
+        priority = (keys_f32 - centroid[:, :, :, None, :]).square().sum(dim=-1)
+    priority = priority.masked_fill(~valid[:, None, :, :], -float("inf"))
+    indices = priority.topk(support_width - 1, dim=-1).indices
+    extreme = torch.gather(
+        keys_f32,
+        dim=3,
+        index=indices[..., None].expand(-1, -1, -1, -1, cache.head_dim),
+    )
+    return torch.cat((centroid[:, :, :, None, :], extreme), dim=3).to(
+        cache.key.dtype
+    ).contiguous()
 
 
 def choose_paged_exact_splits(
@@ -1215,8 +1285,8 @@ class PagedDynamicSelectedDecodePlan:
             zip(host_offsets[:-1], host_offsets[1:], strict=True)
         ):
             atoms = host_atoms[begin:end]
-            if atoms != sorted(set(atoms)):
-                raise ValueError("dynamic route rows must initially be sorted and unique")
+            if len(atoms) != len(set(atoms)):
+                raise ValueError("dynamic route rows must initially contain unique atoms")
             max_atom = math.ceil(int(live_lengths[row // q_heads]) / 64)
             if any(atom < 0 or atom >= max_atom for atom in atoms):
                 raise ValueError("dynamic route atom is outside the live KV extent")
@@ -1373,6 +1443,150 @@ class PagedDynamicSelectedDecodePlan:
         return self.output
 
 
+@dataclass
+class PagedQuerySelectedDecodePlan:
+    """Query-aware selector composed with the no-sync selected WGMMA path.
+
+    Per-atom support keys are persistent prefill metadata. Every ``run`` scores
+    those summaries with the live query, writes fixed-width Q-head CSR rows,
+    lowers their union, and executes exact online-softmax attention over the
+    selected atoms on the current CUDA stream.
+    """
+
+    query: torch.Tensor
+    cache: PagedKVCache
+    support_keys: torch.Tensor
+    routes: AttentionRouteCSR
+    selected_plan: PagedDynamicSelectedDecodePlan
+    scores: torch.Tensor
+    sink_atoms: int
+    recent_atoms: int
+    middle_atoms: int
+    backend: str = PAGED_QUERY_SELECTED_SM90_BACKEND
+
+    @classmethod
+    def build(
+        cls,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        *,
+        selected_atoms: int = 6,
+        sink_atoms: int = 1,
+        recent_atoms: int = 1,
+        support_width: int = 2,
+        support_method: str = "centroid_extremes",
+        support_keys: Optional[torch.Tensor] = None,
+        output: Optional[torch.Tensor] = None,
+        validate_metadata: bool = True,
+    ) -> "PagedQuerySelectedDecodePlan":
+        cache.validate(query, validate_metadata=validate_metadata)
+        middle_atoms = int(selected_atoms) - int(sink_atoms) - int(recent_atoms)
+        if min(selected_atoms, sink_atoms, recent_atoms, middle_atoms) <= 0:
+            raise ValueError(
+                "selected atoms must leave positive sink, recent, and middle sets"
+            )
+        live_atoms = (
+            (cache.sequence_lengths.detach().to(device="cpu", dtype=torch.int64) + 63)
+            // 64
+        )
+        if int(live_atoms.min().item()) < selected_atoms:
+            raise ValueError("selected atom count exceeds the shortest live sequence")
+        if support_keys is None:
+            support_keys = build_paged_support_keys(
+                cache,
+                support_width=support_width,
+                method=support_method,
+            )
+        expected_atoms = cache.max_sequence_length // 64
+        expected_shape = (
+            cache.batch_size,
+            cache.kv_heads,
+            expected_atoms,
+            support_width,
+            cache.head_dim,
+        )
+        if tuple(support_keys.shape) != expected_shape:
+            raise ValueError(f"support_keys must have shape {expected_shape}")
+        if support_keys.device != query.device or support_keys.dtype != query.dtype:
+            raise ValueError("support keys must share query device and dtype")
+        if not support_keys.is_contiguous():
+            raise ValueError("support keys must be contiguous")
+
+        rows = tuple(
+            tuple(range(selected_atoms))
+            for _ in range(cache.batch_size * int(query.shape[2]))
+        )
+        routes = AttentionRouteCSR.from_rows(
+            rows,
+            granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+            atom_size=64,
+            device=query.device,
+        )
+        selected_plan = PagedDynamicSelectedDecodePlan.build(
+            query,
+            cache,
+            routes,
+            output=output,
+            validate_metadata=False,
+        )
+        scores = torch.empty(
+            cache.batch_size * int(query.shape[2]),
+            expected_atoms,
+            device=query.device,
+            dtype=torch.float32,
+        )
+        return cls(
+            query=query,
+            cache=cache,
+            support_keys=support_keys,
+            routes=routes,
+            selected_plan=selected_plan,
+            scores=scores,
+            sink_atoms=int(sink_atoms),
+            recent_atoms=int(recent_atoms),
+            middle_atoms=middle_atoms,
+        )
+
+    @property
+    def output(self) -> torch.Tensor:
+        return self.selected_plan.output
+
+    @property
+    def selector_workspace_bytes(self) -> int:
+        return self.scores.numel() * self.scores.element_size()
+
+    @property
+    def support_metadata_bytes(self) -> int:
+        return self.support_keys.numel() * self.support_keys.element_size()
+
+    def select(self) -> None:
+        """Write score-ranked unique route atoms without a host synchronization."""
+
+        from .kernels.paged_support_selector_triton import (
+            paged_support_select_triton,
+        )
+
+        paged_support_select_triton(
+            self.query,
+            self.support_keys,
+            self.cache.sequence_lengths,
+            self.routes.atom_ids,
+            sink_atoms=self.sink_atoms,
+            recent_atoms=self.recent_atoms,
+            middle_atoms=self.middle_atoms,
+            scores=self.scores,
+        )
+
+    def check_route_errors(self) -> None:
+        self.selected_plan.check_route_errors()
+
+    def run(self) -> torch.Tensor:
+        """Select, lower, and execute attention in one no-sync decode path."""
+
+        self.select()
+        return self.selected_plan.run()
+
+
 def stream_attn_paged_selected_decode(
     query: torch.Tensor,
     cache: PagedKVCache,
@@ -1409,6 +1623,31 @@ def stream_attn_paged_dynamic_selected_decode(
     ).run()
 
 
+def stream_attn_paged_query_selected_decode(
+    query: torch.Tensor,
+    cache: PagedKVCache,
+    *,
+    selected_atoms: int = 6,
+    sink_atoms: int = 1,
+    recent_atoms: int = 1,
+    support_width: int = 2,
+    support_method: str = "centroid_extremes",
+    output: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Plan and execute one query-aware selected H100 paged decode call."""
+
+    return PagedQuerySelectedDecodePlan.build(
+        query,
+        cache,
+        selected_atoms=selected_atoms,
+        sink_atoms=sink_atoms,
+        recent_atoms=recent_atoms,
+        support_width=support_width,
+        support_method=support_method,
+        output=output,
+    ).run()
+
+
 @dataclass
 class PagedSelectedDecodeRunner:
     """Engine-compatible selected paged runner with serving telemetry."""
@@ -1428,6 +1667,20 @@ class PagedDynamicSelectedDecodeRunner:
     """Engine-compatible runner for mutable GPU Q-head route atoms."""
 
     plan: PagedDynamicSelectedDecodePlan
+    info: Any
+
+    def run(self) -> torch.Tensor:
+        return self.plan.run()
+
+    def run_with_info(self):
+        return self.run(), self.info
+
+
+@dataclass
+class PagedQuerySelectedDecodeRunner:
+    """Engine-compatible query-selected paged runner with telemetry."""
+
+    plan: PagedQuerySelectedDecodePlan
     info: Any
 
     def run(self) -> torch.Tensor:

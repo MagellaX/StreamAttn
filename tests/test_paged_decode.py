@@ -17,6 +17,7 @@ from stream_attention.paged import (
     PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_BACKEND,
     PAGED_EXACT_SM90_NHD_FRAGMENTED_RAGGED_BACKEND,
+    PAGED_QUERY_SELECTED_SM90_BACKEND,
     PAGED_SELECTED_SM90_DYNAMIC_QHEAD_BACKEND,
     PAGED_SELECTED_SM90_STATIC_BACKEND,
     PROMOTED_PAGED_EXACT_SPLITS,
@@ -34,8 +35,10 @@ from stream_attention.paged import (
     PROMOTED_PAGED_EXACT_PAGE16_SHAPES,
     PagedExactDecodePlan,
     PagedDynamicSelectedDecodePlan,
+    PagedQuerySelectedDecodePlan,
     PagedSelectedDecodePlan,
     PagedKVCache,
+    build_paged_support_keys,
     choose_paged_exact_splits,
     paged_exact_reference,
     paged_selected_reference,
@@ -121,6 +124,47 @@ def _dense_expected(query: torch.Tensor, cache: PagedKVCache) -> torch.Tensor:
                 scores.softmax(dim=0)[:, None] * values[:, kv_head].float()
             ).sum(dim=0)
     return output
+
+
+@pytest.mark.parametrize("layout", ["NHD", "HND"])
+def test_paged_support_keys_follow_logical_page_order_and_ragged_length(layout):
+    torch.manual_seed(101)
+    key_nhd = torch.randn(8, 16, 1, 4)
+    key = (
+        key_nhd
+        if layout == "NHD"
+        else key_nhd.permute(0, 2, 1, 3).contiguous()
+    )
+    cache = PagedKVCache(
+        key=key,
+        value=torch.zeros_like(key),
+        page_table=torch.tensor(
+            [[3, 0, 7, 2, 1, 6, 4, 5]], dtype=torch.int32
+        ),
+        sequence_lengths=torch.tensor([70], dtype=torch.int32),
+        layout=layout,
+    )
+    logical = torch.cat(
+        [key_nhd[physical, :, 0] for physical in cache.page_table[0].tolist()],
+        dim=0,
+    )
+
+    centroid = build_paged_support_keys(cache, support_width=1)
+    supports = build_paged_support_keys(cache, support_width=4)
+
+    assert centroid.shape == (1, 1, 2, 1, 4)
+    assert supports.shape == (1, 1, 2, 4, 4)
+    torch.testing.assert_close(centroid[0, 0, 0, 0], logical[:64].mean(dim=0))
+    torch.testing.assert_close(centroid[0, 0, 1, 0], logical[64:70].mean(dim=0))
+    torch.testing.assert_close(supports[..., 0, :], centroid[..., 0, :])
+
+
+def test_query_selected_public_contract_and_unsorted_route_lowering_source():
+    assert PAGED_QUERY_SELECTED_SM90_BACKEND.endswith("query_selected_qhead")
+    assert stream_attn.PagedQuerySelectedDecodePlan is PagedQuerySelectedDecodePlan
+    assert "kRoutePrepareDuplicateAtom" in CUDA_SOURCE
+    assert "kRoutePrepareUnsorted" not in CUDA_SOURCE
+    assert "prior & head_bit" in CUDA_SOURCE
 
 
 @pytest.mark.parametrize("layout", ["NHD", "HND"])

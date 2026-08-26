@@ -27,18 +27,20 @@ from .decode import (
     normalize_stream_attn_mode,
 )
 from .paged import (
-    PAGED_EXACT_NATIVE_BACKEND,
     PagedDynamicSelectedDecodePlan,
     PagedDynamicSelectedDecodeRunner,
     PagedExactDecodePlan,
     PagedExactDecodeRunner,
     PagedKVCache,
+    PagedQuerySelectedDecodePlan,
+    PagedQuerySelectedDecodeRunner,
     PagedSelectedDecodePlan,
     PagedSelectedDecodeRunner,
 )
 from .planning import (
     ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
     ATTENTION_GUARANTEE_EXACT,
+    ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
     AttentionBackendPlan,
     AttentionProblem,
     AttentionTilePlan,
@@ -70,6 +72,7 @@ class StreamAttnEnginePlan:
             StreamAttnExactNativeDirectRunner,
             PagedExactDecodeRunner,
             PagedDynamicSelectedDecodeRunner,
+            PagedQuerySelectedDecodeRunner,
             PagedSelectedDecodeRunner,
         ]
     ] = None
@@ -438,6 +441,115 @@ class StreamAttnEngine:
             value_cache=None,
             service=self.service,
             attention_problem=tile_plan.problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
+            direct_runner=runner,
+        )
+
+    def plan_query_selected_paged(
+        self,
+        query: torch.Tensor,
+        cache: PagedKVCache,
+        *,
+        selected_atoms: int = 6,
+        sink_atoms: int = 1,
+        recent_atoms: int = 1,
+        support_width: int = 4,
+        support_method: str = "centroid_extremes",
+        policy_id: str = "query-selected-runtime-research",
+        output: Optional[torch.Tensor] = None,
+    ) -> StreamAttnEnginePlan:
+        """Bind query-aware GPU selection to paged WGMMA selected decode.
+
+        This is an explicit distribution-verified research entry point. The
+        caller remains responsible for proving that its selector policy is
+        admissible for the request distribution.
+        """
+
+        paged_plan = PagedQuerySelectedDecodePlan.build(
+            query,
+            cache,
+            selected_atoms=selected_atoms,
+            sink_atoms=sink_atoms,
+            recent_atoms=recent_atoms,
+            support_width=support_width,
+            support_method=support_method,
+            output=output,
+        )
+        problem = AttentionProblem.from_paged(
+            query,
+            cache,
+            guarantee=ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+        )
+        rows = tuple(
+            tuple(range(selected_atoms))
+            for _ in range(cache.batch_size * int(query.shape[2]))
+        )
+        tile_plan = AttentionTilePlan.selected(
+            problem,
+            logical_tile_size=64,
+            tile_ids_per_row=rows,
+            policy_id=policy_id,
+            reason="query_aware_support_function_proxy",
+            route_granularity=ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+        )
+        backend = paged_plan.backend
+        reason = "distribution_verified_query_selected_paged_research"
+        info = StreamAttnServingInfo(
+            backend_used=backend,
+            policy_id=policy_id,
+            fallback_reason=None,
+            batch_size=int(query.shape[0]),
+            kv_len=max(problem.kv_lengths),
+            layer_id=None,
+            model_id=None,
+            dtype=str(query.dtype).removeprefix("torch."),
+            device=str(query.device),
+            plan_backend=backend,
+            plan_reason=reason,
+            seed_only_enabled=False,
+            safety_policy_matched=True,
+            runtime_counters={
+                "backend_counts": {backend: 1},
+                "fallback_reasons": {},
+            },
+            stats={
+                "layout": cache.normalized_layout,
+                "page_size": cache.page_size,
+                "selected_atoms_per_q_head": selected_atoms,
+                "support_width": support_width,
+                "support_method": support_method,
+                "support_metadata_bytes": paged_plan.support_metadata_bytes,
+                "selector_workspace_bytes": paged_plan.selector_workspace_bytes,
+                "route_preparation": (
+                    "gpu_query_score_topk_membership_compaction_no_host_readback"
+                ),
+                "safety_scope": "caller_distribution_verified",
+            },
+        )
+        runner = PagedQuerySelectedDecodeRunner(plan=paged_plan, info=info)
+        workspace_bytes = (
+            paged_plan.selector_workspace_bytes
+            + paged_plan.selected_plan.workspace_bytes
+        )
+        backend_plan = AttentionBackendPlan(
+            backend=backend,
+            reason=reason,
+            architecture=device_architecture(query.device),
+            splits=paged_plan.selected_plan.max_routes_per_group,
+            workspace_bytes=workspace_bytes,
+        )
+        return StreamAttnEnginePlan(
+            mode=STREAMATTN_MODE_VERIFIED_AUTO,
+            backend=backend,
+            reason=reason,
+            model_id=None,
+            layer_id=None,
+            query=query,
+            key_cache=cache,
+            value_cache=None,
+            service=self.service,
+            attention_problem=problem,
             tile_plan=tile_plan,
             backend_plan=backend_plan,
             direct_runner=runner,
