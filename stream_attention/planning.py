@@ -33,6 +33,17 @@ ATTENTION_CACHE_CONTIGUOUS = "contiguous"
 ATTENTION_CACHE_PAGED = "paged"
 ATTENTION_CACHE_KINDS = frozenset({ATTENTION_CACHE_CONTIGUOUS, ATTENTION_CACHE_PAGED})
 
+ATTENTION_PHASE_DECODE = "decode"
+ATTENTION_PHASE_PREFILL = "prefill"
+ATTENTION_PHASE_TRAIN = "train"
+ATTENTION_PHASES = frozenset(
+    {
+        ATTENTION_PHASE_DECODE,
+        ATTENTION_PHASE_PREFILL,
+        ATTENTION_PHASE_TRAIN,
+    }
+)
+
 ATTENTION_SCHEDULE_ALL = "all"
 ATTENTION_SCHEDULE_SELECTED = "selected"
 ATTENTION_SCHEDULE_KINDS = frozenset({ATTENTION_SCHEDULE_ALL, ATTENTION_SCHEDULE_SELECTED})
@@ -117,8 +128,10 @@ class AttentionProblem:
     page_size: Optional[int] = None
 
     def __post_init__(self) -> None:
-        if self.phase != "decode":
-            raise ValueError("AttentionProblem currently supports decode phase only")
+        if self.phase not in ATTENTION_PHASES:
+            raise ValueError(f"unsupported attention phase: {self.phase}")
+        if self.phase == ATTENTION_PHASE_DECODE and self.query_len != 1:
+            raise ValueError("decode attention requires query_len == 1")
         if self.guarantee not in ATTENTION_GUARANTEES:
             raise ValueError(f"unsupported attention guarantee: {self.guarantee}")
         if self.cache_kind not in ATTENTION_CACHE_KINDS:
@@ -215,7 +228,7 @@ class AttentionProblem:
         batch = int(query.shape[0])
         kv_len = int(key_cache.shape[sequence_axis])
         return cls(
-            phase="decode",
+            phase=ATTENTION_PHASE_DECODE,
             guarantee=guarantee,
             mask=mask,
             batch_size=batch,
@@ -231,6 +244,56 @@ class AttentionProblem:
         )
 
     @classmethod
+    def from_qkv(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        *,
+        phase: str,
+        guarantee: str = ATTENTION_GUARANTEE_EXACT,
+        mask: str = "causal",
+    ) -> "AttentionProblem":
+        """Describe contiguous BHSD forward or training attention.
+
+        This constructor records semantics only. Backend-specific limits, such
+        as whether grouped-query prefill is implemented, are checked while
+        lowering the problem to an execution plan.
+        """
+
+        if phase not in {ATTENTION_PHASE_PREFILL, ATTENTION_PHASE_TRAIN}:
+            raise ValueError("from_qkv phase must be prefill or train")
+        if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+            raise ValueError("forward Q/K/V must use rank-4 [B, S, H, D] tensors")
+        if key.shape != value.shape:
+            raise ValueError("key and value shapes must match")
+        if query.shape[0] != key.shape[0] or query.shape[3] != key.shape[3]:
+            raise ValueError("query and key/value batch sizes and head dimensions must match")
+        if query.shape[2] % key.shape[2]:
+            raise ValueError("query heads must be a multiple of KV heads")
+        if query.dtype != key.dtype or query.dtype != value.dtype:
+            raise ValueError("query, key, and value dtypes must match")
+        if query.device != key.device or query.device != value.device:
+            raise ValueError("query, key, and value devices must match")
+        batch = int(query.shape[0])
+        kv_len = int(key.shape[1])
+        return cls(
+            phase=phase,
+            guarantee=guarantee,
+            mask=mask,
+            batch_size=batch,
+            query_len=int(query.shape[1]),
+            q_heads=int(query.shape[2]),
+            kv_heads=int(key.shape[2]),
+            head_dim=int(query.shape[3]),
+            dtype=_dtype_name(query.dtype),
+            device=str(query.device),
+            kv_lengths=(kv_len,) * batch,
+            cache_kind=ATTENTION_CACHE_CONTIGUOUS,
+            cache_layout="NHD",
+        )
+
+    @classmethod
     def from_paged(
         cls,
         query: torch.Tensor,
@@ -243,7 +306,7 @@ class AttentionProblem:
             raise ValueError("paged decode query must be [batch, 1, heads, dim]")
         lengths = tuple(int(length) for length in cache.sequence_lengths.detach().cpu().tolist())
         return cls(
-            phase="decode",
+            phase=ATTENTION_PHASE_DECODE,
             guarantee=guarantee,
             mask=mask,
             batch_size=int(query.shape[0]),

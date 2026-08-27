@@ -188,9 +188,16 @@ if TRITON_AVAILABLE:
             # Hopper uses WGMMA tensor cores; Ampere uses mma.sync
             qk = tl.dot(q, tl.trans(k)) * scale
 
+            # Padded columns carry zero K/V loads but must not contribute to
+            # the softmax denominator on a partial final KV tile.
+            valid_cols = (start_n + offs_n) < N
+            qk = tl.where(valid_cols[None, :], qk, float("-inf"))
+
             # Causal mask
             if IS_CAUSAL:
-                causal_mask = offs_m[:, None] >= (start_n + offs_n)[None, :]
+                causal_mask = (offs_m[:, None] + q_start) >= (
+                    start_n + offs_n
+                )[None, :]
                 qk = tl.where(causal_mask, qk, float("-inf"))
 
             masked = tl.full([TILE_M, TILE_N], 0, dtype=tl.int1)
@@ -267,9 +274,8 @@ if TRITON_AVAILABLE:
         tl.store(lse_ptrs, lse, mask=lse_mask)
 
 
-    @triton.autotune(configs=_CONFIGS, key=["M", "N", "D"])
     @triton.jit
-    def fused_online_attention_bwd_kernel(
+    def fused_online_attention_bwd_nodrop_kernel(
         Q,
         K,
         V,
@@ -277,6 +283,7 @@ if TRITON_AVAILABLE:
         dK,
         dV,
         GO,
+        O,
         Lse,
         Mask,
         AlibiSlopesIn,
@@ -309,6 +316,10 @@ if TRITON_AVAILABLE:
         stride_goh,
         stride_gom,
         stride_gok,
+        stride_ob,
+        stride_oh,
+        stride_om,
+        stride_ok,
         stride_lb,
         stride_lh,
         stride_lm,
@@ -359,13 +370,21 @@ if TRITON_AVAILABLE:
             + off_h * stride_goh
             + (offs_m[:, None] * stride_gom + offs_k[None, :] * stride_gok)
         )
+        o_ptrs = (
+            O
+            + off_b * stride_ob
+            + off_h * stride_oh
+            + (offs_m[:, None] * stride_om + offs_k[None, :] * stride_ok)
+        )
         lse_ptrs = Lse + off_b * stride_lb + off_h * stride_lh + offs_m * stride_lm
 
         q = tl.load(q_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float32)
         go = tl.load(go_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float32)
-        lse = tl.load(lse_ptrs, mask=row_mask, other=float("-inf"))
-        valid_row = lse > float("-inf")
-        lse = tl.where(valid_row, lse, 0.0)
+        out = tl.load(o_ptrs, mask=row_mask[:, None] & k_mask[None, :], other=0.0).to(tl.float32)
+        loaded_lse = tl.load(lse_ptrs, mask=row_mask, other=float("-inf"))
+        valid_row = loaded_lse > float("-inf")
+        safe_lse = tl.where(valid_row, loaded_lse, 0.0)
+        softmax_delta = tl.sum(go * out, axis=1)
 
         dq_acc = tl.zeros([TILE_M, D], dtype=tl.float32)
 
@@ -400,7 +419,7 @@ if TRITON_AVAILABLE:
             logits = tl.dot(q, tl.trans(k_tile)) * scale
 
             if IS_CAUSAL:
-                causal_mask = offs_m[:, None] >= col_idx[None, :]
+                causal_mask = (offs_m[:, None] + q_start) >= col_idx[None, :]
                 logits = tl.where(causal_mask, logits, float("-inf"))
 
             masked = tl.full([TILE_M, TILE_N], 0, dtype=tl.int1)
@@ -422,7 +441,7 @@ if TRITON_AVAILABLE:
                 k_pos = col_idx[None, :].to(tl.float32)
                 logits = logits + slope * (k_pos - q_pos)
 
-            lse_tile = lse[:, None]
+            lse_tile = safe_lse[:, None]
             probs = tl.exp(logits - lse_tile)
             valid = row_mask[:, None] & col_mask[None, :] & valid_row[:, None]
             probs = probs * valid.to(probs.dtype)
@@ -437,8 +456,7 @@ if TRITON_AVAILABLE:
             tl.atomic_add(dV_ptrs, dv_tile, mask=kv_mask)
 
             dP = tl.dot(go, tl.trans(v_tile))
-            row_sum = tl.sum(dP * probs, axis=1)
-            dS = (dP - row_sum[:, None]) * probs
+            dS = (dP - softmax_delta[:, None]) * probs
 
             dq_acc += tl.dot(dS, k_tile) * scale
 
@@ -468,9 +486,11 @@ if TRITON_AVAILABLE:
             mask=row_mask[:, None] & k_mask[None, :],
         )
 
-
+    # Legacy experimental dropout backward. The public training API does not
+    # dispatch this kernel because its row-global softmax reduction has not
+    # been implemented; dropout training falls back to exact PyTorch SDPA.
     @triton.jit
-    def fused_online_attention_bwd_kernel(
+    def fused_online_attention_bwd_dropout_kernel(
         Q, K, V,
         GradOut,
         Lse,
@@ -526,13 +546,17 @@ if TRITON_AVAILABLE:
         go_ptrs = GradOut + off_b * stride_gob + off_h * stride_goh + (
             offs_m[:, None] * stride_gom + offs_k[None, :] * stride_gok
         )
-        go = tl.load(go_ptrs, mask=q_mask, other=0.0).to(tl.float32)
+        grad_out = tl.load(go_ptrs, mask=q_mask, other=0.0).to(tl.float32)
 
         lse_ptrs = Lse + off_b * stride_lsb + off_h * stride_lsh + offs_m * stride_lsm
-        lse = tl.load(lse_ptrs, mask=offs_m < M, other=float('-inf')).to(tl.float32)
-        row_mask = lse > float("-inf")
-        lse = tl.where(row_mask, lse, 0.0)
-        go = go * row_mask[:, None]
+        loaded_lse = tl.load(
+            lse_ptrs,
+            mask=offs_m < M,
+            other=float("-inf"),
+        ).to(tl.float32)
+        row_mask = loaded_lse > float("-inf")
+        safe_lse = tl.where(row_mask, loaded_lse, 0.0)
+        masked_grad_out = grad_out * row_mask[:, None]
 
         dq = tl.zeros([TILE_M, D], dtype=tl.float32)
         grad_alibi_acc = tl.zeros([], dtype=tl.float32)
@@ -574,7 +598,7 @@ if TRITON_AVAILABLE:
                 causal_mask = offs_m[:, None] >= (start_n + offs_n)[None, :]
                 qk = tl.where(causal_mask, qk, float('-inf'))
 
-            exp_term = qk - lse[:, None]
+            exp_term = qk - safe_lse[:, None]
             p = tl.exp(exp_term)
             p = p * row_mask[:, None]
             col_mask = (start_n + offs_n) < N
@@ -592,7 +616,7 @@ if TRITON_AVAILABLE:
                 keep = tl.rand(rng_seed, rng_offsets) > dropout_p
                 p = p * keep.to(p.dtype) * dropout_scale
 
-            dV_tile = tl.dot(tl.trans(p), go)
+            dV_tile = tl.dot(tl.trans(p), masked_grad_out)
             dv_mask = col_mask[:, None] & (offs_k[None, :] < D)
             grad_v_ptrs = GradV + off_b * stride_gvb + off_h * stride_gvh + (
                 (start_n + offs_n)[:, None] * stride_gvn + offs_k[None, :] * stride_gvk
@@ -603,7 +627,7 @@ if TRITON_AVAILABLE:
                 mask=dv_mask,
             )
 
-            dP = tl.dot(go, tl.trans(v))
+            dP = tl.dot(masked_grad_out, tl.trans(v))
             attn_dot = tl.sum(dP * p, axis=1)
             dS = (dP - attn_dot[:, None]) * p
 
@@ -663,6 +687,7 @@ class FusedOnlineAttention(nn.Module):
         k: torch.Tensor,
         v: torch.Tensor,
         go: torch.Tensor,
+        output: torch.Tensor,
         lse: torch.Tensor,
         attention_mask: Optional[torch.Tensor],
         alibi_used: bool,
@@ -676,8 +701,8 @@ class FusedOnlineAttention(nn.Module):
             # Multi-host/GPU path still relies on Python fallback.
             return False
         # Dropout is disabled in autograd path (enforced in forward).
-        batch_size, num_heads, seq_len_q, _ = q.shape
-        seq_len_k = k.shape[2]
+        batch_size, seq_len_q, num_heads, _ = q.shape
+        seq_len_k = k.shape[1]
         if attention_mask is not None:
             try:
                 self._prepare_triton_mask(
@@ -700,6 +725,7 @@ class FusedOnlineAttention(nn.Module):
         k: torch.Tensor,
         v: torch.Tensor,
         go: torch.Tensor,
+        output: torch.Tensor,
         lse: torch.Tensor,
         attention_mask: Optional[torch.Tensor],
         alibi_slopes: Optional[torch.Tensor],
@@ -707,13 +733,14 @@ class FusedOnlineAttention(nn.Module):
         q_start: int,
         causal: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-        batch_size, num_heads, seq_len_q, head_dim = q.shape
-        seq_len_k = k.shape[2]
+        batch_size, seq_len_q, num_heads, head_dim = q.shape
+        seq_len_k = k.shape[1]
 
         q = q.contiguous()
         k = k.contiguous()
         v = v.contiguous()
         go = go.contiguous()
+        output = output.contiguous()
         lse = lse.contiguous()
 
         dQ = torch.zeros_like(q, dtype=torch.float32)
@@ -751,7 +778,7 @@ class FusedOnlineAttention(nn.Module):
             num_heads,
         )
 
-        fused_online_attention_bwd_kernel[grid](
+        fused_online_attention_bwd_nodrop_kernel[grid](
             q,
             k,
             v,
@@ -759,38 +786,43 @@ class FusedOnlineAttention(nn.Module):
             dK,
             dV,
             go,
+            output,
             lse,
             mask_ptr,
             alibi_in,
             grad_alibi,
             q.stride(0),
-            q.stride(1),
             q.stride(2),
+            q.stride(1),
             q.stride(3),
             k.stride(0),
-            k.stride(1),
             k.stride(2),
+            k.stride(1),
             k.stride(3),
             v.stride(0),
-            v.stride(1),
             v.stride(2),
+            v.stride(1),
             v.stride(3),
             dQ.stride(0),
-            dQ.stride(1),
             dQ.stride(2),
+            dQ.stride(1),
             dQ.stride(3),
             dK.stride(0),
-            dK.stride(1),
             dK.stride(2),
+            dK.stride(1),
             dK.stride(3),
             dV.stride(0),
-            dV.stride(1),
             dV.stride(2),
+            dV.stride(1),
             dV.stride(3),
             go.stride(0),
-            go.stride(1),
             go.stride(2),
+            go.stride(1),
             go.stride(3),
+            output.stride(0),
+            output.stride(2),
+            output.stride(1),
+            output.stride(3),
             lse.stride(0),
             lse.stride(1),
             lse.stride(2),
@@ -855,6 +887,7 @@ class FusedOnlineAttention(nn.Module):
         self.deterministic = False
         self._det_seed: Optional[int] = None
         self._det_offset: int = 0
+        self.last_backend_used = "uninitialized"
         if self.device.type == "cuda":
             cap = torch.cuda.get_device_capability(self.device)
             self.sm = cap[0] * 10 + cap[1]
@@ -968,9 +1001,11 @@ class FusedOnlineAttention(nn.Module):
                     full_seq_len_q,
                     start_idx,
                 )
+                self.last_backend_used = "triton_online_softmax_autograd"
                 return output
 
         if use_triton:
+            self.last_backend_used = "triton_online_softmax"
             return self._forward_triton(
                 query,
                 key,
@@ -987,6 +1022,7 @@ class FusedOnlineAttention(nn.Module):
             )
         else:
             # Fallback to PyTorch SDPA
+            self.last_backend_used = "torch_sdpa"
             q = query.permute(0, 2, 1, 3).reshape(
                 batch_size * self.num_heads, seq_len_q, self.head_dim
             )
@@ -1472,13 +1508,13 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
         else:
             alibi_tensor = query.new_empty(0, device=query.device)
 
-        ctx.save_for_backward(query, key, value, lse, alibi_tensor)
+        ctx.save_for_backward(query, key, value, output, lse, alibi_tensor)
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
         module: FusedOnlineAttention = ctx.module
-        query, key, value, lse, alibi_tensor = ctx.saved_tensors
+        query, key, value, output, lse, alibi_tensor = ctx.saved_tensors
         metadata = getattr(ctx, "_metadata", None)
         dropout_p = float(ctx.dropout_p)
 
@@ -1500,126 +1536,30 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
         grad_query = grad_key = grad_value = grad_alibi = None
 
         if use_triton:
-            has_mask = metadata["has_mask"]
-            mask_tensor = metadata["mask"] if has_mask else query
-            if has_mask:
-                mask_tensor = mask_tensor.contiguous()
-                stride_mb, stride_mh, stride_mm, stride_mn = mask_tensor.stride()
-            else:
-                stride_mb = stride_mh = stride_mm = stride_mn = 0
-
-            has_dropout = metadata["has_dropout"]
-            dropout_scale = float(metadata["dropout_scale"]) if has_dropout else 1.0
-            rng_seed = int(metadata["rng_seed"]) if has_dropout else 0
-            rng_offset = int(metadata["rng_offset"]) if has_dropout else 0
-
-            has_alibi = metadata["has_alibi"]
-            accum_alibi = has_alibi and ctx.needs_input_grad[7]
-            if has_alibi:
-                alibi_float = alibi_tensor.to(torch.float32).contiguous()
-            else:
-                alibi_float = query
-
-            grad_alibi_buffer = (
-                torch.zeros(module.num_heads, device=query.device, dtype=torch.float32)
-                if accum_alibi
-                else torch.empty(1, device=query.device, dtype=torch.float32)
-            )
-
-            query_ = query.contiguous()
-            key_ = key.contiguous()
-            value_ = value.contiguous()
-            lse_ = lse.contiguous()
-
-            grad_query = torch.empty_like(query_)
-            grad_key = torch.zeros_like(key_)
-            grad_value = torch.zeros_like(value_)
-
-            seq_len_q = query_.shape[1]
-            seq_len_k = key_.shape[1]
-
-            grid = (
-                triton.cdiv(seq_len_q, module.tile_size_q),
-                query_.shape[0],
-                module.num_heads,
-            )
-
-            fused_online_attention_bwd_kernel[grid](
-                query_,
-                key_,
-                value_,
+            has_mask = bool(metadata["has_mask"])
+            has_alibi = bool(metadata["has_alibi"])
+            grad_query, grad_key, grad_value, grad_alibi = module._backward_triton(
+                query,
+                key,
+                value,
                 grad_output,
-                lse_,
-                mask_tensor,
-                grad_query,
-                grad_key,
-                grad_value,
-                grad_alibi_buffer,
-                query_.stride(0),
-                query_.stride(2),
-                query_.stride(1),
-                query_.stride(3),
-                key_.stride(0),
-                key_.stride(2),
-                key_.stride(1),
-                key_.stride(3),
-                value_.stride(0),
-                value_.stride(2),
-                value_.stride(1),
-                value_.stride(3),
-                grad_output.stride(0),
-                grad_output.stride(2),
-                grad_output.stride(1),
-                grad_output.stride(3),
-                lse_.stride(0),
-                lse_.stride(1),
-                lse_.stride(2),
-                stride_mb,
-                stride_mh,
-                stride_mm,
-                stride_mn,
-                grad_query.stride(0),
-                grad_query.stride(2),
-                grad_query.stride(1),
-                grad_query.stride(3),
-                grad_key.stride(0),
-                grad_key.stride(2),
-                grad_key.stride(1),
-                grad_key.stride(3),
-                grad_value.stride(0),
-                grad_value.stride(2),
-                grad_value.stride(1),
-                grad_value.stride(3),
-                float(metadata["dropout_p"]) if has_dropout else 0.0,
-                dropout_scale,
-                rng_seed,
-                rng_offset,
-                alibi_float,
+                output,
+                lse,
+                metadata["mask"] if has_mask else None,
+                alibi_tensor if has_alibi else None,
                 int(metadata["full_seq_len_q"]),
-                seq_len_k,
                 int(metadata["q_start"]),
-                H=module.num_heads,
-                M=seq_len_q,
-                N=seq_len_k,
-                D=module.head_dim,
-                TILE_M=module.tile_size_q,
-                TILE_N=module.tile_size_k,
-                scale=module.scale,
-                IS_CAUSAL=ctx.causal,
-                HAS_MASK=has_mask,
-                HAS_DROPOUT=has_dropout,
-                HAS_ALIBI=has_alibi,
-                ACCUM_ALIBI=accum_alibi,
+                bool(ctx.causal),
             )
-
-            if accum_alibi:
-                grad_alibi = grad_alibi_buffer.to(alibi_tensor.dtype)
-            else:
-                grad_alibi = None
         else:
             bsz, seq_len_q, _, _ = query.shape
             nh = module.num_heads
             hd = module.head_dim
+            attention_mask = (
+                metadata["mask"]
+                if metadata is not None and bool(metadata.get("has_mask", False))
+                else None
+            )
 
             q_ref = query.permute(0, 2, 1, 3).reshape(bsz * nh, seq_len_q, hd).detach()
             k_ref = key.permute(0, 2, 1, 3).reshape(bsz * nh, seq_len_k, hd).detach()
@@ -1650,15 +1590,33 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
 
             slopes_ref = None
             if alibi_tensor.numel() > 0:
-                slopes_ref = alibi_tensor.detach().to(q_ref.dtype)
-                slopes_ref.requires_grad = ctx.needs_input_grad[7]
-                pos_q = torch.arange(seq_len_q, device=q_ref.device, dtype=q_ref.dtype)
-                pos_k = torch.arange(seq_len_k, device=q_ref.device, dtype=q_ref.dtype)
-                delta = pos_k.unsqueeze(0) - pos_q.unsqueeze(1)
-                bias_h = slopes_ref.view(nh, 1, 1) * delta
-                bias_bh = bias_h.unsqueeze(0).expand(bsz, nh, seq_len_q, seq_len_k)
-                bias_bh = bias_bh.reshape(bsz * nh, seq_len_q, seq_len_k)
-                add_mask = bias_bh if add_mask is None else add_mask + bias_bh
+                with torch.enable_grad():
+                    slopes_ref = alibi_tensor.detach().to(q_ref.dtype)
+                    slopes_ref.requires_grad = ctx.needs_input_grad[7]
+                    pos_q = torch.arange(
+                        seq_len_q,
+                        device=q_ref.device,
+                        dtype=q_ref.dtype,
+                    )
+                    pos_k = torch.arange(
+                        seq_len_k,
+                        device=q_ref.device,
+                        dtype=q_ref.dtype,
+                    )
+                    delta = pos_k.unsqueeze(0) - pos_q.unsqueeze(1)
+                    bias_h = slopes_ref.view(nh, 1, 1) * delta
+                    bias_bh = bias_h.unsqueeze(0).expand(
+                        bsz,
+                        nh,
+                        seq_len_q,
+                        seq_len_k,
+                    )
+                    bias_bh = bias_bh.reshape(
+                        bsz * nh,
+                        seq_len_q,
+                        seq_len_k,
+                    )
+                    add_mask = bias_bh if add_mask is None else add_mask + bias_bh
 
             is_causal = bool(ctx.causal)
             if add_mask is not None and ctx.causal:
@@ -1693,7 +1651,7 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
             if slopes_ref is not None and ctx.needs_input_grad[7]:
                 inputs.append(slopes_ref)
 
-            with sdpa_ctx:
+            with torch.enable_grad(), sdpa_ctx:
                 y = F.scaled_dot_product_attention(
                     q_ref,
                     k_ref,
@@ -1704,9 +1662,24 @@ class FusedOnlineAttentionFunction(torch.autograd.Function):
                 )
             grads = torch.autograd.grad(y, inputs, go, allow_unused=False)
 
-            grad_q = grads[0].reshape(bsz, nh, seq_len_q, hd).permute(0, 2, 1, 3).contiguous()
-            grad_k = grads[1].reshape(bsz, nh, seq_len_k, hd).permute(0, 2, 1, 3).contiguous()
-            grad_v = grads[2].reshape(bsz, nh, seq_len_k, hd).permute(0, 2, 1, 3).contiguous()
+            grad_query = (
+                grads[0]
+                .reshape(bsz, nh, seq_len_q, hd)
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
+            grad_key = (
+                grads[1]
+                .reshape(bsz, nh, seq_len_k, hd)
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
+            grad_value = (
+                grads[2]
+                .reshape(bsz, nh, seq_len_k, hd)
+                .permute(0, 2, 1, 3)
+                .contiguous()
+            )
             if slopes_ref is not None and ctx.needs_input_grad[7]:
                 grad_alibi = grads[-1]
             else:

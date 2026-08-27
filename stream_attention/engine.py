@@ -37,7 +37,10 @@ from .paged import (
     PagedSelectedDecodePlan,
     PagedSelectedDecodeRunner,
 )
+from .functional import StreamAttnAttentionPlan, plan_functional_attention
 from .planning import (
+    ATTENTION_PHASE_PREFILL,
+    ATTENTION_PHASE_TRAIN,
     ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
     ATTENTION_GUARANTEE_EXACT,
     ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
@@ -118,7 +121,7 @@ class StreamAttnEnginePlan:
 
 
 class StreamAttnEngine:
-    """Plan and run StreamAttn native decode modes.
+    """Plan and run StreamAttn decode, prefill, and training attention.
 
     ``verified_auto`` means policy-verified, fail-closed routing. Runtime canary
     verification remains a model-adapter concern until a generic device-side
@@ -136,16 +139,25 @@ class StreamAttnEngine:
         model_id: Optional[str] = None,
         layer_id: Optional[int] = None,
     ) -> None:
-        self.service = StreamAttnSeedOnlyDecodeService(
-            policy=policy,
-            policy_name=policy_name,
-            decode_policy=decode_policy,
-            dense_fallback=dense_fallback,
-            dense_fallback_backend=dense_fallback_backend,
-            model_id=model_id,
-            layer_id=layer_id,
-            use_planned_direct_seed_only_path=True,
-        )
+        self._service: Optional[StreamAttnSeedOnlyDecodeService] = None
+        self._service_kwargs = {
+            "policy": policy,
+            "policy_name": policy_name,
+            "decode_policy": decode_policy,
+            "dense_fallback": dense_fallback,
+            "dense_fallback_backend": dense_fallback_backend,
+            "model_id": model_id,
+            "layer_id": layer_id,
+            "use_planned_direct_seed_only_path": True,
+        }
+
+    @property
+    def service(self) -> StreamAttnSeedOnlyDecodeService:
+        """Create decode-only policy state on first decode use."""
+
+        if self._service is None:
+            self._service = StreamAttnSeedOnlyDecodeService(**self._service_kwargs)
+        return self._service
 
     def _exact_plan(
         self,
@@ -689,6 +701,68 @@ class StreamAttnEngine:
             layer_id=layer_id,
         ).run(return_info=return_info)
 
+    def plan_prefill(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        **kwargs,
+    ) -> StreamAttnAttentionPlan:
+        """Plan exact all-tile prefill through the shared semantic planner."""
+
+        return plan_functional_attention(
+            query,
+            key,
+            value,
+            phase=ATTENTION_PHASE_PREFILL,
+            **kwargs,
+        )
+
+    def prefill(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        *,
+        return_info: bool = False,
+        **kwargs,
+    ):
+        return self.plan_prefill(query, key, value, **kwargs).run(
+            return_info=return_info
+        )
+
+    def plan_train(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        **kwargs,
+    ) -> StreamAttnAttentionPlan:
+        """Plan differentiable exact attention through the shared planner."""
+
+        return plan_functional_attention(
+            query,
+            key,
+            value,
+            phase=ATTENTION_PHASE_TRAIN,
+            **kwargs,
+        )
+
+    def train(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        *,
+        return_info: bool = False,
+        **kwargs,
+    ):
+        """Execute differentiable attention; this does not run an optimizer."""
+
+        return self.plan_train(query, key, value, **kwargs).run(
+            return_info=return_info
+        )
+
 
 def stream_attn_decode(
     query: torch.Tensor,
@@ -709,4 +783,46 @@ def stream_attn_decode(
         value_cache,
         mode=mode,
         return_info=return_info,
+    )
+
+
+def stream_attn_prefill(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    *,
+    engine: Optional[StreamAttnEngine] = None,
+    return_info: bool = False,
+    **kwargs,
+):
+    """Run exact prefill with streaming online softmax when supported."""
+
+    runtime = engine or StreamAttnEngine()
+    return runtime.prefill(
+        query,
+        key,
+        value,
+        return_info=return_info,
+        **kwargs,
+    )
+
+
+def stream_attn_train(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    *,
+    engine: Optional[StreamAttnEngine] = None,
+    return_info: bool = False,
+    **kwargs,
+):
+    """Run differentiable exact attention; this does not run an optimizer."""
+
+    runtime = engine or StreamAttnEngine()
+    return runtime.train(
+        query,
+        key,
+        value,
+        return_info=return_info,
+        **kwargs,
     )

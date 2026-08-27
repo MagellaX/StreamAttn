@@ -78,9 +78,10 @@ The runtime executes contiguous selected schedules and contiguous or paged
 exact schedules. Selected paged work compiles into a device CSR schedule and
 page-native `PackedRoute64` metadata without copying K/V. H100 now executes
 those records directly with the same transposed WGMMA and online-softmax
-mainloop used by exact paged decode. The shared planner means future adaptive,
-compressed, prefill, and device backends do not need a second semantic API or
-a second online-softmax model. See [the universal tile
+mainloop used by exact paged decode. The same planner now describes exact
+decode, prefill, and differentiable training calls. Future adaptive,
+compressed, and device backends therefore do not need a second semantic API
+or a second online-softmax model. See [the universal tile
 planner](docs/universal_attention_tile_planner.md) and [the selected paged
 route ABI](docs/selected_paged_route_abi.md).
 
@@ -425,30 +426,42 @@ bucket, GQA shape, device, and policy constraints match. Otherwise it executes
 exact attention. `seed_only_native` is the strict explicit mode and raises when
 the requested seed route cannot be planned.
 
-### General forward and training module
+### Prefill and training attention
 
-`StreamAttention` provides the fused online-softmax forward/backward path for
-standard transformer experimentation:
+The public engine surface covers all three attention phases. Prefill and
+training use exact all-tile schedules and the fused online-softmax
+forward/backward when the native Triton path supports the call. Unsupported
+devices or features use PyTorch SDPA without changing the public tensor layout:
 
 ```python
 import torch
-from stream_attention import StreamAttention, StreamAttentionConfig
-
-config = StreamAttentionConfig(num_heads=8, head_dim=64)
-attention = StreamAttention(config).cuda()
+import stream_attention as stream_attn
 
 q = torch.randn(2, 1024, 8, 64, device="cuda", dtype=torch.float16,
                 requires_grad=True)
 k = torch.randn_like(q)
 v = torch.randn_like(q)
 
-output = attention(q, k, v, causal=True)
+prefill_output, prefill_info = stream_attn.prefill(
+    q.detach(), k.detach(), v.detach(), causal=True, return_info=True
+)
+output = stream_attn.train(q, k, v, causal=True)
 output.square().mean().backward()
 ```
 
-The Triton path supports boolean/additive masks, dropout, deterministic Philox
-seeding, ALiBi, and a streaming backward pass. Unsupported environments fall
-back to PyTorch SDPA.
+Both calls use `[batch, sequence, heads, head_dim]` tensors and lower through
+`AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`. The current
+native prefill/training kernel supports equal Q/KV head counts. GQA prefill is
+rejected explicitly rather than silently duplicating KV heads; native GQA
+lowering is the next expansion of this surface.
+
+The underlying Triton path supports boolean/additive masks, deterministic
+Philox dropout, ALiBi, and a streaming backward pass. Training calls with a
+feature combination that is not natively lowered use the exact SDPA fallback.
+`stream_attn.train(...)` computes differentiable attention; optimizer and model
+training-loop ownership remain with the caller. The initial H100 correctness
+gate and backward derivation are recorded in [unified prefill and training
+attention](docs/functional_attention_api_20260828.md).
 
 ## Decode Request Lifecycle
 
@@ -556,7 +569,7 @@ not hidden StreamAttn dependencies.
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
 | Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
-| Forward/backward | Triton online-softmax path with masks, dropout, ALiBi, and autograd |
+| Prefill/forward/backward | Public exact MHA `prefill(...)` and `train(...)` plans; Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
 | Distributed research | Ring and Star attention prototypes |
 | Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge |
 | Not yet promoted | A100, other B200 shapes/ragged rows, ragged page-64 WGMMA, FP8 seed cache, second model family |
@@ -565,7 +578,8 @@ not hidden StreamAttn dependencies.
 
 ```text
 stream_attention/
-  engine.py                 public fixed-buffer decode engine
+  engine.py                 public decode, prefill, and training engine
+  functional.py             planned exact prefill/training execution
   decode.py                 native modes, planning, and fail-closed service
   backends/sm80/            experimental Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
@@ -625,9 +639,9 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Add first-class `prefill(...)` and `train(...)` entry points through the
-   same `AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`
-   contract.
+4. Expand the first-class exact `prefill(...)` and `train(...)` planner path
+   from MHA to native GQA, then build architecture-specific prefill/training
+   phase diagrams.
 5. Lower the now-executed selected-route ABI into the B200
    TMA+TMEM+`tcgen05` backend and
    expand it beyond the promoted
@@ -639,7 +653,7 @@ reduced-work route can speed up complete model decode. The next milestones are:
 8. Evaluate FP8/FP4 selected-cache paths under the same distribution-level
    gates.
 
-The long-term API target is:
+The public engine API is now:
 
 ```python
 stream_attn.decode(...)
@@ -648,6 +662,8 @@ stream_attn.train(...)
 ```
 
 with native exact, seed-only, adaptive, and verified routes behind one engine.
+Decode has the broadest optimized backend portfolio today; prefill and training
+currently expose exact MHA execution while their native GQA portfolio is built.
 
 ## License
 

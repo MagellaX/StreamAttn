@@ -101,7 +101,10 @@ from .engine import (
     StreamAttnEngine,
     StreamAttnEnginePlan,
     stream_attn_decode,
+    stream_attn_prefill,
+    stream_attn_train,
 )
+from .functional import StreamAttnAttentionInfo, StreamAttnAttentionPlan
 from .planning import (
     ATTENTION_CACHE_CONTIGUOUS,
     ATTENTION_CACHE_PAGED,
@@ -111,6 +114,9 @@ from .planning import (
     ATTENTION_ROUTE_GRANULARITY_BATCH,
     ATTENTION_ROUTE_GRANULARITY_KV_GROUP,
     ATTENTION_ROUTE_GRANULARITY_Q_HEAD,
+    ATTENTION_PHASE_DECODE,
+    ATTENTION_PHASE_PREFILL,
+    ATTENTION_PHASE_TRAIN,
     ATTENTION_SCHEDULE_ALL,
     ATTENTION_SCHEDULE_SELECTED,
     AttentionBackendPlan,
@@ -169,6 +175,8 @@ from .paged import (
 
 # ``import stream_attention as stream_attn; stream_attn.decode(...)``
 decode = stream_attn_decode
+prefill = stream_attn_prefill
+train = stream_attn_train
 from .seed_autotune import (
     SeedKernelAutotuneResult,
     SeedKernelCandidate,
@@ -267,6 +275,8 @@ __all__ = [
     "stream_attn_seed_only_decode",
     "StreamAttnEngine",
     "StreamAttnEnginePlan",
+    "StreamAttnAttentionInfo",
+    "StreamAttnAttentionPlan",
     "AttentionProblem",
     "AttentionRouteCSR",
     "AttentionTileSource",
@@ -275,6 +285,9 @@ __all__ = [
     "AttentionBackendPlan",
     "ATTENTION_GUARANTEE_EXACT",
     "ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED",
+    "ATTENTION_PHASE_DECODE",
+    "ATTENTION_PHASE_PREFILL",
+    "ATTENTION_PHASE_TRAIN",
     "ATTENTION_CACHE_CONTIGUOUS",
     "ATTENTION_CACHE_PAGED",
     "ATTENTION_ROUTE_ABI_VERSION",
@@ -327,6 +340,10 @@ __all__ = [
     "stream_attn_paged_selected_decode",
     "stream_attn_decode",
     "decode",
+    "stream_attn_prefill",
+    "prefill",
+    "stream_attn_train",
+    "train",
     "SeedKernelAutotuneResult",
     "SeedKernelCandidate",
     "SeedKernelShape",
