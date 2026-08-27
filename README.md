@@ -215,15 +215,18 @@ without scanning the omitted KV tail? It merges exact online-softmax block
 states with moment estimates or sampled control-variate corrections and keeps
 physical routes shared within each true-GQA KV group.
 
-Initial H100 captures are deliberately negative-to-mixed. Output-aware block
-selection improves hard drop, and moment completion helps Mistral L24, but the
-same estimator hurts Mistral L0 and Qwen L14/L26. Positive feature summaries
-barely improve Qwen L26, fixed learned residual banks overfit, and stochastic
-ratio correction remains unstable even with an oracle residual priority. No
-adaptive completion mode is promoted from this evidence. The next gate is
-whether the omitted post-projection residual is low-rank and predictable from
-cheap live-query features; see the [adaptive output-sufficiency
-frontier](docs/adaptive_output_sufficiency_frontier_20260827.md).
+Initial H100 captures were deliberately negative-to-mixed. Output-aware block
+selection improves hard drop, while moment completion, fixed residual banks,
+and stochastic ratio correction do not generalize reliably. The follow-up
+predictability gate now uses the exact factorization
+`o = o_A + sigmoid(log(Z_U/Z_A)) * (o_U - o_A)`. Omitted normalization mass is
+highly predictable, but the vector-valued innovation is not reliably
+low-rank across prompts. Qwen L14/L26/L27 failed promotion. Mistral L0 retained
+a `30.23%` mean unseen-prompt error reduction, but its worst p95 row regressed
+by `12.6%`, so it remains an exact-canary candidate rather than a runtime mode.
+No adaptive completion backend is promoted. See the [frontier
+study](docs/adaptive_output_sufficiency_frontier_20260827.md) and the
+[conditional predictability gate](docs/adaptive_residual_predictability_20260827.md).
 
 ### Model-aware reduced-work decode
 
