@@ -1,6 +1,9 @@
 import torch
 
 from stream_attention.residual_predictability import (
+    binary_roc_auc,
+    calibrate_canary_threshold,
+    canary_gate_report,
     canonical_correlations,
     correction_report,
     fit_ridge,
@@ -26,6 +29,24 @@ def test_online_softmax_innovation_merge_matches_weighted_outputs() -> None:
         selected_mass[..., None] * selected + omitted_mass[..., None] * omitted
     ) / (selected_mass + omitted_mass)[..., None]
     torch.testing.assert_close(merged, reference)
+
+
+def test_canary_threshold_rejects_calibration_failures_monotonically() -> None:
+    scores = torch.tensor([-2.0, -1.0, 0.5, 1.5, 3.0])
+    ratios = torch.tensor([0.4, 0.8, 0.7, 1.1, 1.3])
+    calibration = calibrate_canary_threshold(scores, ratios)
+    assert calibration["threshold"] == 1.5
+    assert calibration["accepted_rows"] == 3
+    assert calibration["accepted_unsafe_rows"] == 0
+    report = canary_gate_report(scores, ratios, threshold=calibration["threshold"])
+    assert abs(float(report["coverage"]) - 0.6) < 1.0e-6
+    assert report["accepted_unsafe_rows"] == 0
+
+
+def test_binary_roc_auc_handles_ties() -> None:
+    scores = torch.tensor([0.0, 1.0, 1.0, 2.0])
+    unsafe = torch.tensor([False, False, True, True])
+    assert binary_roc_auc(scores, unsafe) == 0.875
 
 
 def test_signed_hash_projection_is_deterministic() -> None:

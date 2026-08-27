@@ -154,6 +154,94 @@ def correction_report(predicted: torch.Tensor, target: torch.Tensor) -> dict[str
     }
 
 
+def calibrate_canary_threshold(
+    risk_scores: torch.Tensor,
+    error_ratios: torch.Tensor,
+    *,
+    unsafe_limit: float = 1.0,
+) -> dict[str, float | int]:
+    """Choose the largest monotone acceptance region with no known unsafe row.
+
+    Lower scores must indicate lower risk. Rows are accepted only when their
+    score is strictly below the least-risky calibration failure. Exact error
+    labels are required for offline calibration, never for applying the gate.
+    """
+
+    scores = risk_scores.float().flatten()
+    ratios = error_ratios.float().flatten()
+    if scores.shape != ratios.shape or scores.numel() == 0:
+        raise ValueError("risk_scores and error_ratios must be non-empty and aligned")
+    if not bool(torch.isfinite(scores).all() and torch.isfinite(ratios).all()):
+        raise ValueError("risk_scores and error_ratios must be finite")
+    unsafe = ratios > unsafe_limit
+    if bool(unsafe.any()):
+        threshold = float(scores[unsafe].min().item())
+        accepted = scores < threshold
+    else:
+        threshold = float("inf")
+        accepted = torch.ones_like(unsafe)
+    accepted_unsafe = accepted & unsafe
+    return {
+        "threshold": threshold,
+        "unsafe_limit": float(unsafe_limit),
+        "calibration_rows": int(scores.numel()),
+        "calibration_unsafe_rows": int(unsafe.sum().item()),
+        "accepted_rows": int(accepted.sum().item()),
+        "accepted_unsafe_rows": int(accepted_unsafe.sum().item()),
+        "coverage": float(accepted.float().mean().item()),
+    }
+
+
+def canary_gate_report(
+    risk_scores: torch.Tensor,
+    error_ratios: torch.Tensor,
+    *,
+    threshold: float,
+    unsafe_limit: float = 1.0,
+) -> dict[str, float | int | None]:
+    scores = risk_scores.float().flatten()
+    ratios = error_ratios.float().flatten()
+    if scores.shape != ratios.shape or scores.numel() == 0:
+        raise ValueError("risk_scores and error_ratios must be non-empty and aligned")
+    accepted = scores < threshold
+    accepted_ratios = ratios[accepted]
+    accepted_unsafe = accepted_ratios > unsafe_limit
+    return {
+        "rows": int(scores.numel()),
+        "accepted_rows": int(accepted.sum().item()),
+        "accepted_unsafe_rows": int(accepted_unsafe.sum().item()),
+        "coverage": float(accepted.float().mean().item()),
+        "mean_accepted_error_ratio": (
+            float(accepted_ratios.mean().item()) if accepted_ratios.numel() else None
+        ),
+        "worst_accepted_error_ratio": (
+            float(accepted_ratios.max().item()) if accepted_ratios.numel() else None
+        ),
+        "mean_accepted_error_reduction": (
+            float((1.0 - accepted_ratios.mean()).item())
+            if accepted_ratios.numel()
+            else None
+        ),
+    }
+
+
+def binary_roc_auc(risk_scores: torch.Tensor, unsafe: torch.Tensor) -> float | None:
+    """Compute pairwise ROC AUC without an external statistics dependency."""
+
+    scores = risk_scores.float().flatten()
+    labels = unsafe.bool().flatten()
+    if scores.shape != labels.shape or scores.numel() == 0:
+        raise ValueError("risk_scores and unsafe must be non-empty and aligned")
+    positive = scores[labels]
+    negative = scores[~labels]
+    if positive.numel() == 0 or negative.numel() == 0:
+        return None
+    comparisons = positive[:, None] - negative[None, :]
+    return float(
+        ((comparisons > 0).float().mean() + 0.5 * (comparisons == 0).float().mean()).item()
+    )
+
+
 def _energy_rank(singular_values: torch.Tensor, fraction: float) -> int:
     if not 0 < fraction <= 1:
         raise ValueError("energy fractions must lie in (0, 1]")

@@ -37,6 +37,9 @@ from stream_attention.adaptive_frontier import (  # noqa: E402
     merge_block_attention_states,
 )
 from stream_attention.residual_predictability import (  # noqa: E402
+    binary_roc_auc,
+    calibrate_canary_threshold,
+    canary_gate_report,
     canonical_correlations,
     correction_report,
     fit_ridge,
@@ -330,6 +333,291 @@ def _state_prediction_report(
     }
 
 
+def _state_candidate(
+    group: dict[str, Any],
+    *,
+    feature_name: str,
+    train: torch.Tensor,
+    test: torch.Tensor,
+    ridge: float,
+) -> dict[str, torch.Tensor]:
+    feature = group["features"][feature_name]
+    x_train = feature.index_select(0, train)
+    x_test = feature.index_select(0, test)
+    rho_model = fit_ridge(x_train, group["rho"].index_select(0, train), ridge=ridge)
+    innovation_model = fit_ridge(
+        x_train, group["innovation"].index_select(0, train), ridge=ridge
+    )
+    rho = predict_ridge(rho_model, x_test)
+    innovation = predict_ridge(innovation_model, x_test).reshape(
+        -1, group["q_heads"], group["head_dim"]
+    )
+    selected = group["selected_output"].index_select(0, test)
+    output = merge_selected_with_omitted_innovation(selected, rho, innovation)
+    projected = F.linear(output.flatten(1), group["o_proj_weight"].float())
+    standardized = (x_test - rho_model.feature_mean) / rho_model.feature_scale
+    return {
+        "rho": rho,
+        "innovation": innovation,
+        "output": output,
+        "projected": projected,
+        "feature_z_rms": standardized.square().mean(dim=-1).sqrt(),
+        "feature_z_max": standardized.abs().amax(dim=-1),
+    }
+
+
+_CANARY_FEATURES = (
+    "primary_feature_z_rms",
+    "primary_feature_z_max",
+    "secondary_feature_z_rms",
+    "secondary_feature_z_max",
+    "primary_alpha_mean",
+    "primary_alpha_std",
+    "primary_alpha_min",
+    "primary_alpha_max",
+    "rho_disagreement_rms",
+    "innovation_norm_ratio",
+    "innovation_disagreement_ratio",
+    "correction_norm_ratio",
+    "secondary_correction_norm_ratio",
+    "projected_disagreement_ratio",
+    "correction_cosine",
+)
+
+
+def _canary_runtime_features(
+    group: dict[str, Any],
+    *,
+    test: torch.Tensor,
+    primary: dict[str, torch.Tensor],
+    secondary: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    selected_output = group["selected_output"].index_select(0, test).float()
+    selected_projected = group["selected_projected"].index_select(0, test).float()
+    output_norm = torch.linalg.vector_norm(selected_output.flatten(1), dim=-1).clamp_min(1.0e-6)
+    projected_norm = torch.linalg.vector_norm(selected_projected, dim=-1).clamp_min(1.0e-6)
+    primary_correction = primary["projected"] - selected_projected
+    secondary_correction = secondary["projected"] - selected_projected
+    primary_correction_norm = torch.linalg.vector_norm(primary_correction, dim=-1)
+    secondary_correction_norm = torch.linalg.vector_norm(secondary_correction, dim=-1)
+    correction_cosine = (
+        (primary_correction * secondary_correction).sum(dim=-1)
+        / (primary_correction_norm * secondary_correction_norm).clamp_min(1.0e-6)
+    )
+    alpha = torch.sigmoid(primary["rho"])
+    columns = (
+        torch.log1p(primary["feature_z_rms"]),
+        torch.log1p(primary["feature_z_max"]),
+        torch.log1p(secondary["feature_z_rms"]),
+        torch.log1p(secondary["feature_z_max"]),
+        alpha.mean(dim=-1),
+        alpha.std(dim=-1, unbiased=False),
+        alpha.amin(dim=-1),
+        alpha.amax(dim=-1),
+        (primary["rho"] - secondary["rho"]).square().mean(dim=-1).sqrt(),
+        torch.log1p(
+            torch.linalg.vector_norm(primary["innovation"].flatten(1), dim=-1) / output_norm
+        ),
+        torch.log1p(
+            torch.linalg.vector_norm(
+                (primary["innovation"] - secondary["innovation"]).flatten(1), dim=-1
+            )
+            / output_norm
+        ),
+        torch.log1p(primary_correction_norm / projected_norm),
+        torch.log1p(secondary_correction_norm / projected_norm),
+        torch.log1p(
+            torch.linalg.vector_norm(primary["projected"] - secondary["projected"], dim=-1)
+            / projected_norm
+        ),
+        correction_cosine,
+    )
+    return torch.stack(columns, dim=-1)
+
+
+def _candidate_error_ratio(
+    group: dict[str, Any], *, test: torch.Tensor, projected: torch.Tensor
+) -> torch.Tensor:
+    full = group["full_projected"].index_select(0, test).float()
+    selected = group["selected_projected"].index_select(0, test).float()
+    baseline = torch.linalg.vector_norm(full - selected, dim=-1).clamp_min(1.0e-12)
+    return torch.linalg.vector_norm(full - projected.float(), dim=-1) / baseline
+
+
+def _canary_observations(
+    group: dict[str, Any],
+    *,
+    train: torch.Tensor,
+    test: torch.Tensor,
+    ridge: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    primary = _state_candidate(
+        group, feature_name="f3_temporal", train=train, test=test, ridge=ridge
+    )
+    secondary = _state_candidate(
+        group, feature_name="f1_selected_state", train=train, test=test, ridge=ridge
+    )
+    diagnostics = _canary_runtime_features(
+        group, test=test, primary=primary, secondary=secondary
+    )
+    ratios = _candidate_error_ratio(group, test=test, projected=primary["projected"])
+    return diagnostics, ratios
+
+
+def _nested_canary_report(group: dict[str, Any], *, ridge: float) -> dict[str, Any]:
+    metadata = group["metadata"]
+    outer_folds = _folds(metadata).get("unseen_prompt", [])
+    if len(outer_folds) < 3:
+        return {"decision": "insufficient_prompt_folds", "folds": []}
+
+    fold_reports = []
+    all_scores = []
+    all_ratios = []
+    strict_masks = []
+    margin_masks = []
+    for outer_name, outer_train, outer_test in outer_folds:
+        inner_prompts: dict[str, list[int]] = {}
+        for row in outer_train.tolist():
+            inner_prompts.setdefault(str(metadata[row]["prompt_id"]), []).append(row)
+        if len(inner_prompts) < 2:
+            continue
+
+        calibration_diagnostics = []
+        calibration_ratios = []
+        calibration_prompt_ids = []
+        outer_train_set = set(outer_train.tolist())
+        for prompt_id, held_rows in sorted(inner_prompts.items()):
+            inner_test = _indices(held_rows)
+            inner_train = _indices(sorted(outer_train_set - set(held_rows)))
+            diagnostics, ratios = _canary_observations(
+                group, train=inner_train, test=inner_test, ridge=ridge
+            )
+            calibration_diagnostics.append(diagnostics)
+            calibration_ratios.append(ratios)
+            calibration_prompt_ids.extend([prompt_id] * len(held_rows))
+        calibration_x = torch.cat(calibration_diagnostics, dim=0)
+        calibration_ratio = torch.cat(calibration_ratios, dim=0)
+
+        calibration_risk_oof = torch.empty_like(calibration_ratio)
+        for prompt_id in sorted(inner_prompts):
+            held = torch.tensor(
+                [item == prompt_id for item in calibration_prompt_ids], dtype=torch.bool
+            )
+            risk_model = fit_ridge(
+                calibration_x[~held],
+                calibration_ratio[~held].log().unsqueeze(-1),
+                ridge=ridge,
+            )
+            calibration_risk_oof[held] = predict_ridge(
+                risk_model, calibration_x[held]
+            ).squeeze(-1)
+
+        final_risk_model = fit_ridge(
+            calibration_x,
+            calibration_ratio.log().unsqueeze(-1),
+            ridge=ridge,
+        )
+        test_x, test_ratio = _canary_observations(
+            group, train=outer_train, test=outer_test, ridge=ridge
+        )
+        test_score = predict_ridge(final_risk_model, test_x).squeeze(-1)
+        strict_calibration = calibrate_canary_threshold(
+            calibration_risk_oof, calibration_ratio, unsafe_limit=1.0
+        )
+        margin_calibration = calibrate_canary_threshold(
+            calibration_risk_oof, calibration_ratio, unsafe_limit=0.95
+        )
+        strict = canary_gate_report(
+            test_score,
+            test_ratio,
+            threshold=float(strict_calibration["threshold"]),
+            unsafe_limit=1.0,
+        )
+        margin = canary_gate_report(
+            test_score,
+            test_ratio,
+            threshold=float(margin_calibration["threshold"]),
+            unsafe_limit=1.0,
+        )
+        fold_reports.append(
+            {
+                "fold": outer_name,
+                "test_rows": int(outer_test.numel()),
+                "candidate_mean_error_ratio": float(test_ratio.mean().item()),
+                "candidate_worst_error_ratio": float(test_ratio.max().item()),
+                "candidate_regressing_rows": int((test_ratio > 1.0).sum().item()),
+                "calibration_risk_auc": binary_roc_auc(
+                    calibration_risk_oof, calibration_ratio > 1.0
+                ),
+                "test_risk_auc": binary_roc_auc(test_score, test_ratio > 1.0),
+                "strict_calibration": strict_calibration,
+                "margin_calibration": margin_calibration,
+                "strict_gate": strict,
+                "margin_gate": margin,
+            }
+        )
+        all_scores.append(test_score)
+        all_ratios.append(test_ratio)
+        strict_masks.append(test_score < float(strict_calibration["threshold"]))
+        margin_masks.append(test_score < float(margin_calibration["threshold"]))
+
+    ratios = torch.cat(all_ratios)
+    scores = torch.cat(all_scores)
+
+    def aggregate(masks: list[torch.Tensor]) -> dict[str, Any]:
+        accepted = torch.cat(masks)
+        accepted_ratios = ratios[accepted]
+        return {
+            "rows": int(ratios.numel()),
+            "accepted_rows": int(accepted.sum().item()),
+            "accepted_unsafe_rows": int((accepted_ratios > 1.0).sum().item()),
+            "coverage": float(accepted.float().mean().item()),
+            "mean_accepted_error_ratio": (
+                float(accepted_ratios.mean().item()) if accepted_ratios.numel() else None
+            ),
+            "worst_accepted_error_ratio": (
+                float(accepted_ratios.max().item()) if accepted_ratios.numel() else None
+            ),
+        }
+
+    strict = aggregate(strict_masks)
+    margin = aggregate(margin_masks)
+    calibration_failures_present = all(
+        int(fold["strict_calibration"]["calibration_unsafe_rows"]) > 0
+        for fold in fold_reports
+    )
+    promotable = (
+        calibration_failures_present
+        and int(strict["accepted_unsafe_rows"]) == 0
+        and float(strict["coverage"]) >= 0.25
+    )
+    return {
+        "decision": (
+            "continue_runtime_cost_gate" if promotable else "stop_exact_canary_predictor"
+        ),
+        "feature_contract": (
+            "risk score uses only F1/F3 feature distance, predicted omitted mass, "
+            "predicted innovation, correction magnitude, and predictor disagreement"
+        ),
+        "risk_feature_names": list(_CANARY_FEATURES),
+        "calibration_contract": (
+            "outer leave-one-prompt-out with inner prompt-held-out state predictions and "
+            "prompt-held-out risk calibration"
+        ),
+        "candidate": {
+            "rows": int(ratios.numel()),
+            "mean_error_ratio": float(ratios.mean().item()),
+            "worst_error_ratio": float(ratios.max().item()),
+            "regressing_rows": int((ratios > 1.0).sum().item()),
+            "oracle_safe_coverage": float((ratios <= 1.0).float().mean().item()),
+            "risk_auc": binary_roc_auc(scores, ratios > 1.0),
+        },
+        "strict_gate": strict,
+        "margin_gate": margin,
+        "folds": fold_reports,
+    }
+
+
 def _analyze_fold(
     group: dict[str, Any],
     *,
@@ -441,6 +729,7 @@ def _analyze_group(
     ridge: float,
     ranks: list[int],
     decision_rank: int,
+    canary: bool,
 ) -> dict[str, Any]:
     metadata: list[dict[str, Any]] = []
     features: dict[str, list[torch.Tensor]] = {}
@@ -530,7 +819,7 @@ def _analyze_group(
                 decision = "temporal_canary_only_candidate"
             else:
                 decision = "stop_training_free_predictor_for_this_cell"
-    return {
+    result = {
         "samples": len(metadata),
         "prompts": len({row["prompt_id"] for row in metadata}),
         "buckets": sorted({row["bucket"] for row in metadata}),
@@ -540,6 +829,9 @@ def _analyze_group(
         "decision": decision,
         "best_state_feature_on_unseen_prompt": best_feature,
     }
+    if canary:
+        result["exact_canary"] = _nested_canary_report(group, ridge=ridge)
+    return result
 
 
 def _synthetic_prompts(
@@ -585,6 +877,7 @@ def main() -> None:
     parser.add_argument("--dtype", choices=["fp16", "bf16", "fp32"], default="fp16")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--synthetic", action="store_true")
+    parser.add_argument("--canary", action="store_true")
     parser.add_argument("--output-json", default="")
     args = parser.parse_args()
     layers = set(_parse_ints(args.layers, allow_zero=True))
@@ -677,7 +970,11 @@ def main() -> None:
     reports = []
     for (layer, budget), captures in sorted(groups.items()):
         report = _analyze_group(
-            captures, ridge=args.ridge, ranks=ranks, decision_rank=args.decision_rank
+            captures,
+            ridge=args.ridge,
+            ranks=ranks,
+            decision_rank=args.decision_rank,
+            canary=args.canary,
         )
         reports.append(
             {

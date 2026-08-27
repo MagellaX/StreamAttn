@@ -75,6 +75,8 @@ def profile_h100(**kwargs) -> dict[str, Any]:
         "--output-json",
         "/tmp/adaptive_residual_predictability.json",
     ]
+    if kwargs["canary"]:
+        command.append("--canary")
     print(f"[residual-predictability] model={kwargs['model']} layers={kwargs['layers']}", flush=True)
     subprocess.run(command, cwd="/root/StreamAttn", env=env, check=True)
     hf_cache.commit()
@@ -98,6 +100,7 @@ def main(
     hash_width: int = 32,
     ridge: float = 1.0,
     dtype: str = "fp16",
+    canary: bool = False,
     output_json: str = "artifacts/adaptive/qwen25_3b_32k_residual_predictability_h100.json",
 ):
     result = profile_h100.remote(
@@ -114,6 +117,7 @@ def main(
         hash_width=hash_width,
         ridge=ridge,
         dtype=dtype,
+        canary=canary,
     )
     path = Path(output_json)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +129,7 @@ def main(
             "decision": row["decision"],
             "best_state_feature": row["best_state_feature_on_unseen_prompt"],
             "unseen_prompt": row["split_summary"].get("unseen_prompt"),
+            "exact_canary": row.get("exact_canary"),
         }
         for row in result["reports"]
     ]
@@ -133,4 +138,3 @@ def main(
 
 if __name__ == "__main__":
     main()
-

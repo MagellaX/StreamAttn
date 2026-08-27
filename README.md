@@ -223,8 +223,12 @@ predictability gate now uses the exact factorization
 highly predictable, but the vector-valued innovation is not reliably
 low-rank across prompts. Qwen L14/L26/L27 failed promotion. Mistral L0 retained
 a `30.23%` mean unseen-prompt error reduction, but its worst p95 row regressed
-by `12.6%`, so it remains an exact-canary candidate rather than a runtime mode.
-No adaptive completion backend is promoted. See the [frontier
+by `12.6%`. A nested exact-canary follow-up ranked those failures from only
+runtime-observable features: it accepted `18/64` unseen-prompt rows
+(`28.125%`), accepted zero regressions, and achieved `0.942` risk AUC. The
+worst accepted row still improved over hard drop (`0.975x` error). This is a
+semantic canary pass, not a backend promotion: selection still uses the exact
+QK oracle and predictor/summary maintenance cost is not yet positive. See the [frontier
 study](docs/adaptive_output_sufficiency_frontier_20260827.md) and the
 [conditional predictability gate](docs/adaptive_residual_predictability_20260827.md).
 

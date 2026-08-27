@@ -70,9 +70,57 @@ result: local temporal smoothness is not cross-prompt sufficiency.
 Mistral layer 0 is a real model-family-specific signal. `F3` reduced the mean
 unseen-prompt hard-drop error by `30.23%`, and every fold improved in aggregate.
 It still regressed on tail rows: the worst fold's p95 row error ratio was
-`1.126`. That violates the monotonic safety requirement and prevents runtime
-promotion. It justifies one bounded exact-canary study with an uncertainty
-gate, not a general adaptive mode.
+`1.126`. That violates the monotonic safety requirement and prevents direct
+runtime promotion.
+
+## Exact-canary follow-up
+
+The Mistral-L0 cell was tested with a nested uncertainty gate. The state
+predictor uses `F3`; a cheaper `F1` predictor provides disagreement features.
+The risk vector contains only runtime-observable quantities: feature distance,
+predicted omitted mass, predicted innovation magnitude, correction magnitude,
+and `F1`/`F3` disagreement. Exact errors label offline calibration rows only.
+
+The evaluation is deliberately nested:
+
+1. An outer prompt is held out for the final test.
+2. State predictions for calibration rows are generated while holding out each
+   inner prompt.
+3. Risk predictions for threshold calibration are also prompt-held-out.
+4. The final state and risk models are evaluated on the unseen outer prompt.
+
+This avoids fitting either the correction or its confidence score to the test
+prompt.
+
+| metric | result |
+|---|---:|
+| Candidate rows | 64 |
+| Candidate regressions | 5 |
+| Candidate mean error ratio vs hard drop | 0.6804 |
+| Candidate worst error ratio | 1.1827 |
+| Runtime-observable risk AUC | 0.9424 |
+| Strict-gate accepted rows | 18 / 64 (28.125%) |
+| Strict-gate accepted regressions | 0 |
+| Strict-gate mean accepted error ratio | 0.7301 |
+| Strict-gate worst accepted error ratio | 0.9750 |
+| Five-percent-margin coverage | 6 / 64 (9.375%) |
+| Five-percent-margin accepted regressions | 0 |
+
+Strict accepted coverage by held-out prompt was uneven:
+
+```text
+chat_instruction:  0 / 16
+code:             12 / 16
+json_tool:         1 / 16
+needle_rag:        5 / 16
+```
+
+This is a semantic canary pass, not a backend promotion. It proves that the
+Mistral-L0 failures are strongly rankable without consulting exact attention
+at inference time. It does not yet prove net speed: `F3` consumes persistent
+block-moment summaries, two state predictors are evaluated, and the selected
+blocks still come from the favorable exact-QK oracle rather than the deployed
+support-summary selector.
 
 ## The mathematical boundary
 
@@ -104,13 +152,16 @@ predictor is therefore not supported by this evidence.
    cross-prompt gate and Mistral L24 is effectively neutral.
 2. Keep exact online-softmax attention as the engine invariant. No heuristic
    completion mode is promoted.
-3. Permit one narrow Mistral-L0 exact-canary follow-up: test whether a cheap
-   uncertainty score can reject every regressing row while retaining useful
-   coverage. Stop if the canary requires omitted-tail reads or exact labels on
-   normal decode steps.
-4. Do not spend CUDA effort on adaptive completion before that semantic gate.
-   The main engine work remains native exact attention and independently
-   validated reduced-work routes.
+3. The narrow Mistral-L0 canary passes the first semantic gate: it retains
+   `28.125%` coverage while rejecting all observed regressions. Advance only
+   this cell to deployed-selector and runtime-cost measurement.
+4. Promotion requires the same zero-regression result with support-summary
+   selection and positive end-to-end latency after summary maintenance,
+   dual-predictor evaluation, and gating. Failure at either boundary freezes
+   adaptive completion.
+5. The main engine work remains native exact attention and independently
+   validated reduced-work routes. This branch does not replace exact streaming
+   online softmax.
 
 ## Reproduction
 
@@ -126,6 +177,7 @@ Raw local artifacts:
 ```text
 artifacts/adaptive/qwen25_3b_32k_k4_residual_predictability_h100.json
 artifacts/adaptive/mistral7b_32k_k4_residual_predictability_h100.json
+artifacts/adaptive/mistral7b_32k_k4_residual_canary_h100.json
 ```
 
 The artifacts are evidence inputs, not packaged policy files.
