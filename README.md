@@ -439,8 +439,9 @@ import stream_attention as stream_attn
 
 q = torch.randn(2, 1024, 8, 64, device="cuda", dtype=torch.float16,
                 requires_grad=True)
-k = torch.randn_like(q)
-v = torch.randn_like(q)
+k = torch.randn(2, 1024, 2, 64, device="cuda", dtype=torch.float16,
+                requires_grad=True)
+v = torch.randn_like(k)
 
 prefill_output, prefill_info = stream_attn.prefill(
     q.detach(), k.detach(), v.detach(), causal=True, return_info=True
@@ -450,18 +451,24 @@ output.square().mean().backward()
 ```
 
 Both calls use `[batch, sequence, heads, head_dim]` tensors and lower through
-`AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`. The current
-native prefill/training kernel supports equal Q/KV head counts. GQA prefill is
-rejected explicitly rather than silently duplicating KV heads; native GQA
-lowering is the next expansion of this surface.
+`AttentionProblem -> AttentionTilePlan -> AttentionBackendPlan`. The native
+CUDA path accepts compact GQA K/V tensors: each query head maps to its KV head
+inside the forward and backward kernels, so native execution does not
+materialize repeated KV heads. CPU and unsupported-shape fallback explicitly
+report `torch_sdpa_gqa_expanded` when they must expand GQA for SDPA.
 
 The underlying Triton path supports boolean/additive masks, deterministic
 Philox dropout, ALiBi, and a streaming backward pass. Training calls with a
 feature combination that is not natively lowered use the exact SDPA fallback.
 `stream_attn.train(...)` computes differentiable attention; optimizer and model
-training-loop ownership remain with the caller. The initial H100 correctness
-gate and backward derivation are recorded in [unified prefill and training
-attention](docs/functional_attention_api_20260828.md).
+training-loop ownership remain with the caller. H100/B200 correctness,
+backward derivation, and the first performance phase diagram are recorded in
+[unified prefill and training
+attention](docs/functional_attention_api_20260828.md). The compact lowering is
+a correctness/generalization milestone, not yet a promoted performance path:
+its Q-head-owned programs reload shared K/V for every GQA query head and its
+backward atomically merges those contributions. FlashAttention-class SDPA is
+still faster across the measured prefill/training cells.
 
 ## Decode Request Lifecycle
 
@@ -569,7 +576,7 @@ not hidden StreamAttn dependencies.
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
 | Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
-| Prefill/forward/backward | Public exact MHA `prefill(...)` and `train(...)` plans; Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
+| Prefill/forward/backward | Public exact MHA/GQA `prefill(...)` and `train(...)` plans; compact native GQA K/V; Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
 | Distributed research | Ring and Star attention prototypes |
 | Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge |
 | Not yet promoted | A100, other B200 shapes/ragged rows, ragged page-64 WGMMA, FP8 seed cache, second model family |
@@ -639,9 +646,11 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Expand the first-class exact `prefill(...)` and `train(...)` planner path
-   from MHA to native GQA, then build architecture-specific prefill/training
-   phase diagrams.
+4. Replace the first compact GQA prefill/training lowering with a KV-group-owned
+   forward schedule that reuses each K/V tile across grouped query heads, then
+   split backward into dQ work and grouped dK/dV reductions without global
+   atomic contention. Specialize the schedules for H100 WGMMA and B200
+   `tcgen05`/TMEM before considering performance promotion.
 5. Lower the now-executed selected-route ABI into the B200
    TMA+TMEM+`tcgen05` backend and
    expand it beyond the promoted
@@ -662,8 +671,9 @@ stream_attn.train(...)
 ```
 
 with native exact, seed-only, adaptive, and verified routes behind one engine.
-Decode has the broadest optimized backend portfolio today; prefill and training
-currently expose exact MHA execution while their native GQA portfolio is built.
+Decode has the broadest optimized backend portfolio today. Prefill and training
+now execute exact native MHA and compact GQA, while the grouped-KV
+architecture-specific performance backends are built.
 
 ## License
 

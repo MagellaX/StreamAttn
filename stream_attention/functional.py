@@ -111,11 +111,6 @@ def _validate_functional_qkv(
         and value.is_floating_point()
     ):
         raise ValueError("query, key, and value must be floating-point tensors")
-    if int(query.shape[2]) != int(key.shape[2]):
-        raise ValueError(
-            "native prefill/train currently requires equal Q and KV head counts; "
-            "GQA prefill lowering is not implemented"
-        )
 
 
 def _planned_backend(
@@ -149,7 +144,12 @@ def _planned_backend(
     if use_triton and requires_grad and dropout_p != 0.0:
         use_triton = False
     if not use_triton:
-        return "torch_sdpa", "unsupported_native_shape_or_training_feature"
+        fallback = (
+            "torch_sdpa_gqa_expanded"
+            if module.group_size > 1
+            else "torch_sdpa"
+        )
+        return fallback, "unsupported_native_shape_or_training_feature"
     if requires_grad:
         return "triton_online_softmax_autograd", "native_streaming_forward_backward"
     return "triton_online_softmax", "native_streaming_forward"
@@ -208,6 +208,7 @@ def plan_functional_attention(
     )
     module = FusedOnlineAttention(
         num_heads=problem.q_heads,
+        num_kv_heads=problem.kv_heads,
         head_dim=problem.head_dim,
         tile_size_q=tile_size_q,
         tile_size_k=tile_size_k,

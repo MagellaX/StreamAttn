@@ -17,6 +17,10 @@ def _sdpa_reference(q, k, v, *, causal):
     qh = q.transpose(1, 2)
     kh = k.transpose(1, 2)
     vh = v.transpose(1, 2)
+    if qh.shape[1] != kh.shape[1]:
+        group_size = qh.shape[1] // kh.shape[1]
+        kh = kh.repeat_interleave(group_size, dim=1)
+        vh = vh.repeat_interleave(group_size, dim=1)
     return F.scaled_dot_product_attention(
         qh,
         kh,
@@ -71,6 +75,43 @@ def test_public_prefill_matches_sdpa_and_reports_shared_plan():
     assert info.tile_plan.tile_coverage == 1.0
 
 
+def test_public_prefill_supports_exact_gqa_without_changing_the_contract():
+    torch.manual_seed(9)
+    q = torch.randn(2, 9, 8, 16)
+    k = torch.randn(2, 9, 2, 16)
+    v = torch.randn_like(k)
+
+    output, info = stream_attn.prefill(q, k, v, return_info=True)
+    expected = _sdpa_reference(q, k, v, causal=True)
+
+    torch.testing.assert_close(output, expected, rtol=1e-5, atol=1e-5)
+    assert info.attention_problem.group_size == 4
+    assert info.backend_used == "torch_sdpa_gqa_expanded"
+
+
+def test_public_train_supports_exact_gqa_gradients_on_fallback():
+    torch.manual_seed(10)
+    q = torch.randn(1, 7, 8, 16, requires_grad=True)
+    k = torch.randn(1, 7, 2, 16, requires_grad=True)
+    v = torch.randn_like(k, requires_grad=True)
+    grad = torch.randn_like(q)
+
+    output, info = stream_attn.train(q, k, v, return_info=True)
+    output.backward(grad)
+
+    qr = q.detach().clone().requires_grad_(True)
+    kr = k.detach().clone().requires_grad_(True)
+    vr = v.detach().clone().requires_grad_(True)
+    expected = _sdpa_reference(qr, kr, vr, causal=True)
+    expected.backward(grad)
+
+    torch.testing.assert_close(output, expected, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(q.grad, qr.grad, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(k.grad, kr.grad, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(v.grad, vr.grad, rtol=1e-5, atol=1e-5)
+    assert info.backend_used == "torch_sdpa_gqa_expanded"
+
+
 def test_public_train_matches_sdpa_forward_and_gradients():
     torch.manual_seed(11)
     q = torch.randn(1, 8, 2, 8, requires_grad=True)
@@ -113,12 +154,12 @@ def test_engine_plans_prefill_and_train_through_same_contract():
     assert engine._service is None
 
 
-def test_functional_api_rejects_unlowered_gqa_and_inference_dropout():
+def test_functional_api_rejects_invalid_gqa_and_inference_dropout():
     q = torch.randn(1, 5, 4, 8)
-    k = torch.randn(1, 5, 2, 8)
+    k = torch.randn(1, 5, 3, 8)
     v = torch.randn_like(k)
 
-    with pytest.raises(ValueError, match="GQA prefill lowering is not implemented"):
+    with pytest.raises(ValueError, match="multiple of KV heads"):
         stream_attn.prefill(q, k, v)
 
     k_mha = torch.randn_like(q)
@@ -145,6 +186,49 @@ def test_native_prefill_and_train_match_sdpa_on_cuda(dtype, atol):
     q = torch.randn(shape, device="cuda", dtype=dtype)
     k = torch.randn_like(q)
     v = torch.randn_like(q)
+
+    with torch.no_grad():
+        output, prefill_info = stream_attn.prefill(q, k, v, return_info=True)
+        expected = _sdpa_reference(q, k, v, causal=True)
+    torch.testing.assert_close(output, expected, rtol=atol, atol=atol)
+    assert prefill_info.backend_used == "triton_online_softmax"
+
+    qt = q.detach().clone().requires_grad_(True)
+    kt = k.detach().clone().requires_grad_(True)
+    vt = v.detach().clone().requires_grad_(True)
+    train_output, train_info = stream_attn.train(qt, kt, vt, return_info=True)
+    grad = torch.randn_like(train_output)
+    train_output.backward(grad)
+
+    qr = q.detach().clone().requires_grad_(True)
+    kr = k.detach().clone().requires_grad_(True)
+    vr = v.detach().clone().requires_grad_(True)
+    reference = _sdpa_reference(qr, kr, vr, causal=True)
+    reference.backward(grad)
+
+    torch.testing.assert_close(train_output, reference, rtol=atol, atol=atol)
+    torch.testing.assert_close(qt.grad, qr.grad, rtol=atol, atol=atol)
+    torch.testing.assert_close(kt.grad, kr.grad, rtol=atol, atol=atol)
+    torch.testing.assert_close(vt.grad, vr.grad, rtol=atol, atol=atol)
+    assert train_info.backend_used == "triton_online_softmax_autograd"
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not TRITON_AVAILABLE,
+    reason="CUDA and Triton are required for the native GQA gate",
+)
+@pytest.mark.parametrize(
+    ("dtype", "atol"),
+    ((torch.float32, 1e-2), (torch.bfloat16, 3e-2)),
+)
+@pytest.mark.parametrize("head_dim", (64, 128))
+def test_native_gqa_prefill_and_train_match_sdpa_on_cuda(dtype, atol, head_dim):
+    torch.manual_seed(23)
+    q_shape = (1, 128, 8, head_dim)
+    kv_shape = (1, 128, 2, head_dim)
+    q = torch.randn(q_shape, device="cuda", dtype=dtype)
+    k = torch.randn(kv_shape, device="cuda", dtype=dtype)
+    v = torch.randn_like(k)
 
     with torch.no_grad():
         output, prefill_info = stream_attn.prefill(q, k, v, return_info=True)

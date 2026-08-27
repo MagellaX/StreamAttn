@@ -42,30 +42,6 @@ logger = logging.getLogger(__name__)
 
 if TRITON_AVAILABLE:
 
-    _sm = (
-        torch.cuda.get_device_capability()[0] * 10
-        + torch.cuda.get_device_capability()[1]
-        if torch.cuda.is_available()
-        else 0
-    )
-
-    _SM90_CONFIGS = [
-        triton.Config({"TILE_M": 128, "TILE_N": 128}, num_warps=8, num_stages=3),
-        triton.Config({"TILE_M": 256, "TILE_N": 128}, num_warps=8, num_stages=4),
-    ]
-    _SM80_CONFIGS = [
-        triton.Config({"TILE_M": 128, "TILE_N": 64}, num_warps=4, num_stages=3),
-        triton.Config({"TILE_M": 128, "TILE_N": 128}, num_warps=8, num_stages=3),
-    ]
-    _FALLBACK_CONFIGS = [
-        triton.Config({"TILE_M": 64, "TILE_N": 64}, num_warps=4, num_stages=2),
-        triton.Config({"TILE_M": 128, "TILE_N": 64}, num_warps=4, num_stages=2),
-    ]
-    _CONFIGS = (
-        _SM90_CONFIGS if _sm >= 90 else _SM80_CONFIGS if _sm >= 80 else _FALLBACK_CONFIGS
-    )
-
-    @triton.autotune(configs=_CONFIGS, key=["M", "N", "D"])
     @triton.jit
     def fused_online_attention_kernel(
         Q,
@@ -106,6 +82,7 @@ if TRITON_AVAILABLE:
         global_N,
         q_start,
         H: tl.constexpr,  # num heads
+        GROUP_SIZE: tl.constexpr,
         M: tl.constexpr,  # seq_len_q
         N: tl.constexpr,  # seq_len_k
         D: tl.constexpr,  # head_dim
@@ -130,6 +107,7 @@ if TRITON_AVAILABLE:
         start_m = tl.program_id(0)
         off_b = tl.program_id(1) 
         off_h = tl.program_id(2)
+        off_kvh = off_h // GROUP_SIZE
 
         # Offsets
         offs_m = start_m * TILE_M + tl.arange(0, TILE_M)
@@ -164,13 +142,13 @@ if TRITON_AVAILABLE:
             k_ptrs = (
                 K
                 + off_b * stride_kb
-                + off_h * stride_kh
+                + off_kvh * stride_kh
                 + ((start_n + offs_n)[:, None] * stride_kn + offs_k[None, :] * stride_kk)
             )
             v_ptrs = (
                 V
                 + off_b * stride_vb
-                + off_h * stride_vh
+                + off_kvh * stride_vh
                 + ((start_n + offs_n)[:, None] * stride_vn + offs_k[None, :] * stride_vk)
             )
             kv_mask = ((start_n + offs_n)[:, None] < N) & (offs_k[None, :] < D)
@@ -334,6 +312,7 @@ if TRITON_AVAILABLE:
         global_N,
         q_start,
         H: tl.constexpr,
+        GROUP_SIZE: tl.constexpr,
         M: tl.constexpr,
         N: tl.constexpr,
         D: tl.constexpr,
@@ -350,6 +329,7 @@ if TRITON_AVAILABLE:
         start_m = tl.program_id(0)
         off_b = tl.program_id(1)
         off_h = tl.program_id(2)
+        off_kvh = off_h // GROUP_SIZE
 
         offs_m = start_m * TILE_M + tl.arange(0, TILE_M)
         offs_n = tl.arange(0, TILE_N)
@@ -396,13 +376,13 @@ if TRITON_AVAILABLE:
             k_ptrs = (
                 K
                 + off_b * stride_kb
-                + off_h * stride_kh
+                + off_kvh * stride_kh
                 + (col_idx[:, None] * stride_kn + offs_k[None, :] * stride_kk)
             )
             v_ptrs = (
                 V
                 + off_b * stride_vb
-                + off_h * stride_vh
+                + off_kvh * stride_vh
                 + (col_idx[:, None] * stride_vn + offs_k[None, :] * stride_vk)
             )
             kv_mask = col_mask[:, None] & k_mask[None, :]
@@ -450,7 +430,7 @@ if TRITON_AVAILABLE:
             dV_ptrs = (
                 dV
                 + off_b * stride_dvb
-                + off_h * stride_dvh
+                + off_kvh * stride_dvh
                 + (col_idx[:, None] * stride_dvn + offs_k[None, :] * stride_dvk)
             )
             tl.atomic_add(dV_ptrs, dv_tile, mask=kv_mask)
@@ -464,7 +444,7 @@ if TRITON_AVAILABLE:
             dK_ptrs = (
                 dK
                 + off_b * stride_dkb
-                + off_h * stride_dkh
+                + off_kvh * stride_dkh
                 + (col_idx[:, None] * stride_dkn + offs_k[None, :] * stride_dkk)
             )
             tl.atomic_add(dK_ptrs, dK_tile, mask=kv_mask)
@@ -772,8 +752,18 @@ class FusedOnlineAttention(nn.Module):
             grad_alibi = torch.empty(0, device=q.device, dtype=torch.float32)
             stride_as = stride_ag = 0
 
+        if head_dim >= 128:
+            backward_tile_m = min(self.tile_size_q, 32)
+            backward_tile_n = min(self.tile_size_k, 32)
+        else:
+            backward_tile_m = (
+                min(self.tile_size_q, 64)
+                if self.sm >= 100
+                else self.tile_size_q
+            )
+            backward_tile_n = self.tile_size_k
         grid = (
-            triton.cdiv(seq_len_q, self.tile_size_q),
+            triton.cdiv(seq_len_q, backward_tile_m),
             batch_size,
             num_heads,
         )
@@ -837,11 +827,12 @@ class FusedOnlineAttention(nn.Module):
             seq_len_k,
             q_start,
             H=num_heads,
+            GROUP_SIZE=self.group_size,
             M=seq_len_q,
             N=seq_len_k,
             D=head_dim,
-            TILE_M=self.tile_size_q,
-            TILE_N=self.tile_size_k,
+            TILE_M=backward_tile_m,
+            TILE_N=backward_tile_n,
             IS_CAUSAL=causal,
             HAS_MASK=mask_tensor is not None,
             HAS_ALIBI=has_alibi,
@@ -866,6 +857,7 @@ class FusedOnlineAttention(nn.Module):
         self,
         num_heads: int,
         head_dim: int,
+        num_kv_heads: Optional[int] = None,
         tile_size_q: int = 128,
         tile_size_k: int = 64,
         dropout: float = 0.0,
@@ -875,6 +867,10 @@ class FusedOnlineAttention(nn.Module):
     ):
         super().__init__()
         self.num_heads = num_heads
+        self.num_kv_heads = num_heads if num_kv_heads is None else num_kv_heads
+        if self.num_heads % self.num_kv_heads:
+            raise ValueError("num_heads must be a multiple of num_kv_heads")
+        self.group_size = self.num_heads // self.num_kv_heads
         self.head_dim = head_dim
         self.tile_size_q = tile_size_q
         self.tile_size_k = tile_size_k
@@ -897,7 +893,7 @@ class FusedOnlineAttention(nn.Module):
         self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         self.rank = dist.get_rank() if dist.is_initialized() else 0
         logger.info(
-            f"FusedOnlineAttention initialized: heads={num_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, sm={self.sm}, triton={TRITON_AVAILABLE}"
+            f"FusedOnlineAttention initialized: q_heads={num_heads}, kv_heads={self.num_kv_heads}, dim={head_dim}, tile_q={tile_size_q}, tile_k={tile_size_k}, world_size={self.world_size}, sm={self.sm}, triton={TRITON_AVAILABLE}"
         )
 
     def set_deterministic(self, enabled: bool, seed: Optional[int] = None):
@@ -926,8 +922,15 @@ class FusedOnlineAttention(nn.Module):
     ) -> torch.Tensor:
         batch_size, seq_len_q, num_heads_q, head_dim_q = query.shape
         _, seq_len_k, num_heads_k, head_dim_k = key.shape
-        assert num_heads_q == num_heads_k == self.num_heads
-        assert head_dim_q == head_dim_k == self.head_dim
+        if key.shape != value.shape:
+            raise ValueError("key and value shapes must match")
+        if num_heads_q != self.num_heads or num_heads_k != self.num_kv_heads:
+            raise ValueError(
+                "Q/KV head counts do not match the configured "
+                f"{self.num_heads}/{self.num_kv_heads} heads"
+            )
+        if head_dim_q != head_dim_k or head_dim_q != self.head_dim:
+            raise ValueError("Q/K/V head dimensions do not match the configured head_dim")
 
         if alibi_slopes is not None:
             if not isinstance(alibi_slopes, torch.Tensor):
@@ -1022,14 +1025,23 @@ class FusedOnlineAttention(nn.Module):
             )
         else:
             # Fallback to PyTorch SDPA
-            self.last_backend_used = "torch_sdpa"
+            self.last_backend_used = (
+                "torch_sdpa_gqa_expanded"
+                if self.group_size > 1
+                else "torch_sdpa"
+            )
             q = query.permute(0, 2, 1, 3).reshape(
                 batch_size * self.num_heads, seq_len_q, self.head_dim
             )
-            k = key.permute(0, 2, 1, 3).reshape(
+            k_heads = key.permute(0, 2, 1, 3)
+            v_heads = value.permute(0, 2, 1, 3)
+            if self.group_size > 1:
+                k_heads = k_heads.repeat_interleave(self.group_size, dim=1)
+                v_heads = v_heads.repeat_interleave(self.group_size, dim=1)
+            k = k_heads.reshape(
                 batch_size * self.num_heads, seq_len_k, self.head_dim
             )
-            v = value.permute(0, 2, 1, 3).reshape(
+            v = v_heads.reshape(
                 batch_size * self.num_heads, seq_len_k, self.head_dim
             )
 
@@ -1216,8 +1228,18 @@ class FusedOnlineAttention(nn.Module):
             device=query.device,
         )
 
-        grid = lambda meta: (
-            triton.cdiv(seq_len_q, meta["TILE_M"]),
+        if self.head_dim >= 128:
+            forward_tile_m = min(
+                self.tile_size_q,
+                32 if self.sm >= 100 else 64,
+            )
+        elif self.sm >= 100:
+            forward_tile_m = min(self.tile_size_q, 64)
+        else:
+            forward_tile_m = self.tile_size_q
+        forward_tile_n = min(self.tile_size_k, 64)
+        grid = (
+            triton.cdiv(seq_len_q, forward_tile_m),
             batch_size,
             self.num_heads,
         )
@@ -1311,9 +1333,12 @@ class FusedOnlineAttention(nn.Module):
             seq_len_k,
             q_start,
             H=self.num_heads,
+            GROUP_SIZE=self.group_size,
             M=seq_len_q,
             N=seq_len_k,
             D=self.head_dim,
+            TILE_M=forward_tile_m,
+            TILE_N=forward_tile_n,
             scale=self.scale,
             IS_CAUSAL=causal,
             HAS_MASK=has_mask,
@@ -1374,8 +1399,13 @@ class FusedOnlineAttention(nn.Module):
         bsz, sq, _, _ = query.shape
         sk = key.shape[1]
         q = query.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sq, self.head_dim)
-        k = key.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sk, self.head_dim)
-        v = value.permute(0, 2, 1, 3).reshape(bsz * self.num_heads, sk, self.head_dim)
+        k_heads = key.permute(0, 2, 1, 3)
+        v_heads = value.permute(0, 2, 1, 3)
+        if self.group_size > 1:
+            k_heads = k_heads.repeat_interleave(self.group_size, dim=1)
+            v_heads = v_heads.repeat_interleave(self.group_size, dim=1)
+        k = k_heads.reshape(bsz * self.num_heads, sk, self.head_dim)
+        v = v_heads.reshape(bsz * self.num_heads, sk, self.head_dim)
 
         add_mask = None
         if attention_mask is not None:
@@ -1438,8 +1468,15 @@ class FusedOnlineAttention(nn.Module):
         nh = self.num_heads
         hd = self.head_dim
         q = torch.randn(batch_size, seq_len, nh, hd, device=device, dtype=dtype)
-        k = torch.randn_like(q)
-        v = torch.randn_like(q)
+        k = torch.randn(
+            batch_size,
+            seq_len,
+            self.num_kv_heads,
+            hd,
+            device=device,
+            dtype=dtype,
+        )
+        v = torch.randn_like(k)
         for _ in range(warmup):
             _ = self.forward(q, k, v, causal=True)
         if device.type == "cuda":
