@@ -54,6 +54,17 @@ def test_effective_kv_reuse_exposes_non_reusing_schedules():
         )
 
 
+def test_grouped_prefill_source_truncates_causal_stream():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).parents[1]
+        / "stream_attention/kernels/grouped_gqa_prefill_triton.py"
+    ).read_text(encoding="utf-8")
+    assert "end_n = tl.minimum(N, (pid_m + 1) * TILE_M + q_start)" in source
+    assert "for start_n in range(0, end_n, TILE_N)" in source
+
+
 @pytest.mark.skipif(
     not torch.cuda.is_available() or not TRITON_AVAILABLE,
     reason="CUDA and Triton are required for grouped GQA prefill",
@@ -89,3 +100,28 @@ def test_grouped_gqa_prefill_matches_exact_sdpa(
         rtol=max(atol, 5e-2),
         atol=max(atol, 5e-2),
     )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or not TRITON_AVAILABLE,
+    reason="CUDA and Triton are required for grouped GQA prefill",
+)
+def test_grouped_gqa_prefill_reuses_output_buffers():
+    torch.manual_seed(37)
+    q = torch.randn(1, 64, 8, 64, device="cuda", dtype=torch.float16)
+    k = torch.randn(1, 64, 2, 64, device="cuda", dtype=torch.float16)
+    v = torch.randn_like(k)
+    output = torch.empty_like(q)
+    lse = torch.empty((1, 8, 64), device=q.device, dtype=torch.float32)
+    returned_output, returned_lse = grouped_gqa_prefill(
+        q,
+        k,
+        v,
+        heads_per_program=2,
+        tile_m=32,
+        return_lse=True,
+        output=output,
+        lse=lse,
+    )
+    assert returned_output.data_ptr() == output.data_ptr()
+    assert returned_lse.data_ptr() == lse.data_ptr()

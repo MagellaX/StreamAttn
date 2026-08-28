@@ -763,7 +763,7 @@ class PagedExactDecodePlan:
                 sm80_cp_async_experimental
                 and torch.cuda.get_device_capability(query.device) == (8, 0)
                 and query.dtype == torch.bfloat16
-                and cache.normalized_layout == "NHD"
+                and cache.normalized_layout in {"HND", "NHD"}
                 and cache.page_size == 16
                 and page16_shape == (16, 2, 8, 128)
                 and full_lengths
@@ -1015,6 +1015,7 @@ class PagedExactDecodePlan:
                     self.workspace["partial_lse"],
                     self.output_group,
                     self.splits,
+                    self.cache.normalized_layout == "HND",
                 )
             elif self.backend in {
                 PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,

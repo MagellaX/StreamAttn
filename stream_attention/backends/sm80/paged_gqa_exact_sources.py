@@ -12,7 +12,8 @@ void streamattn_sm80_paged_gqa_exact_decode_out_cuda(
     torch::Tensor partial_o,
     torch::Tensor partial_lse,
     torch::Tensor output,
-    int64_t num_splits);
+    int64_t num_splits,
+    bool hnd_layout);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("paged_exact_decode_out",
@@ -103,8 +104,8 @@ __forceinline__ __device__ Accum streamattn_group_sum(Accum value) {
   return value;
 }
 
-template <class SmemTensor>
-__forceinline__ __device__ void streamattn_cp_async_nhd_tile(
+template <bool kHnd, class SmemTensor>
+__forceinline__ __device__ void streamattn_cp_async_tile(
     const Element* base,
     const int* page_table,
     int batch,
@@ -123,13 +124,21 @@ __forceinline__ __device__ void streamattn_cp_async_nhd_tile(
     const int logical_token = tile * kBlockM + row;
     const int logical_page = logical_token / 16;
     const int token_in_page = logical_token - logical_page * 16;
-    const int physical_page = page_table[batch * max_pages + logical_page];
-    const Element* source = base +
-        ((static_cast<int64_t>(physical_page) * 16 + token_in_page) *
-             kv_heads +
-         kv_head) *
-            kHeadDim +
-        dim;
+    // A warp covers two rows per vector iteration, and both rows are always in
+    // the same 16-token page. Broadcast one metadata load instead of issuing
+    // 32 identical page-table loads.
+    int physical_page = 0;
+    if ((threadIdx.x & 31) == 0) {
+      physical_page = page_table[batch * max_pages + logical_page];
+    }
+    physical_page = __shfl_sync(0xffffffffu, physical_page, 0);
+    const int64_t token_offset = kHnd
+        ? ((static_cast<int64_t>(physical_page) * kv_heads + kv_head) * 16 +
+           token_in_page)
+        : ((static_cast<int64_t>(physical_page) * 16 + token_in_page) *
+               kv_heads +
+           kv_head);
+    const Element* source = base + token_offset * kHeadDim + dim;
     auto const& source_vector =
         *reinterpret_cast<cute::uint128_t const*>(source);
     auto& destination_vector = *reinterpret_cast<cute::uint128_t*>(
@@ -152,6 +161,7 @@ __forceinline__ __device__ void streamattn_copy_q(
   }
 }
 
+template <bool kHnd>
 __global__ __launch_bounds__(kThreads)
 void streamattn_sm80_paged_gqa_partial_kernel(
     const Element* __restrict__ q_group,
@@ -206,7 +216,7 @@ void streamattn_sm80_paged_gqa_partial_kernel(
   const Element* q_ptr = q_group +
       static_cast<int64_t>(group) * kBlockN * kHeadDim;
   streamattn_copy_q(q_ptr, sQ);
-  streamattn_cp_async_nhd_tile(
+  streamattn_cp_async_tile<kHnd>(
       k_pages, page_table, batch, kv_head, kv_heads, max_pages, tile_begin,
       sK(_, _, 0));
   cute::cp_async_fence();
@@ -250,7 +260,7 @@ void streamattn_sm80_paged_gqa_partial_kernel(
     const int next_tile = tile + 1;
     const int write_pipe = read_pipe ^ 1;
     if (next_tile < tile_end) {
-      streamattn_cp_async_nhd_tile(
+      streamattn_cp_async_tile<kHnd>(
           k_pages, page_table, batch, kv_head, kv_heads, max_pages, next_tile,
           sK(_, _, write_pipe));
       cute::cp_async_fence();
@@ -268,7 +278,7 @@ void streamattn_sm80_paged_gqa_partial_kernel(
       gemm(tiled_mma_qk, tXrK(_, _, k_block), tXrQ(_, _, k_block), tCrS);
     }
 
-    streamattn_cp_async_nhd_tile(
+    streamattn_cp_async_tile<kHnd>(
         v_pages, page_table, batch, kv_head, kv_heads, max_pages, tile, sV);
     cute::cp_async_fence();
 
@@ -493,7 +503,8 @@ void streamattn_sm80_paged_gqa_exact_decode_out_cuda(
     torch::Tensor partial_o,
     torch::Tensor partial_lse,
     torch::Tensor output,
-    int64_t num_splits) {
+    int64_t num_splits,
+    bool hnd_layout) {
   TORCH_CHECK(q_group.is_cuda() && k_pages.is_cuda() && v_pages.is_cuda() &&
                   page_table.is_cuda() && sequence_lengths.is_cuda() &&
                   partial_o.is_cuda() && partial_lse.is_cuda() &&
@@ -519,10 +530,17 @@ void streamattn_sm80_paged_gqa_exact_decode_out_cuda(
                   q_group.size(3) == kHeadDim,
               "q_group must have shape [B,Hkv,8,128]");
   TORCH_CHECK(k_pages.sizes() == v_pages.sizes() && k_pages.dim() == 4 &&
-                  k_pages.size(1) == 16 &&
-                  k_pages.size(2) == q_group.size(1) &&
                   k_pages.size(3) == kHeadDim,
-              "NHD pages must have shape [pages,16,Hkv,128]");
+              "K/V pages must be rank-4 D128 tensors with matching shapes");
+  if (hnd_layout) {
+    TORCH_CHECK(k_pages.size(1) == q_group.size(1) &&
+                    k_pages.size(2) == 16,
+                "HND pages must have shape [pages,Hkv,16,128]");
+  } else {
+    TORCH_CHECK(k_pages.size(1) == 16 &&
+                    k_pages.size(2) == q_group.size(1),
+                "NHD pages must have shape [pages,16,Hkv,128]");
+  }
   TORCH_CHECK(page_table.dim() == 2 &&
                   page_table.size(0) == q_group.size(0),
               "page_table must have shape [B,max_pages]");
@@ -549,7 +567,9 @@ void streamattn_sm80_paged_gqa_exact_decode_out_cuda(
               "output shape mismatch");
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  auto partial_kernel = streamattn_sm80_paged_gqa_partial_kernel;
+  auto partial_kernel = hnd_layout
+      ? streamattn_sm80_paged_gqa_partial_kernel<true>
+      : streamattn_sm80_paged_gqa_partial_kernel<false>;
   C10_CUDA_CHECK(cudaFuncSetAttribute(
       partial_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
       sizeof(SharedStorage)));

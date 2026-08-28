@@ -45,6 +45,44 @@ def _environment(architecture: str) -> EnvironmentFingerprint:
     )
 
 
+def test_environment_compatibility_ignores_physical_gpu_uuid():
+    first = _environment("sm80")
+    second = EnvironmentFingerprint(
+        **{**first.as_dict(), "device_uuid": "GPU-second-worker"}
+    )
+
+    assert first.fingerprint_id != second.fingerprint_id
+    assert first.compatibility_id == second.compatibility_id
+    assert first.compatible_with(second)
+
+
+def test_environment_compatibility_allows_unqueried_optional_library():
+    first = _environment("sm80")
+    second = EnvironmentFingerprint(
+        **{
+            **first.as_dict(),
+            "device_uuid": "GPU-second-worker",
+            "library_versions": {"cudnn": "9.14"},
+        }
+    )
+
+    assert first.compatibility_id == second.compatibility_id
+    assert first.compatible_with(second)
+
+
+def test_environment_compatibility_rejects_conflicting_recorded_library():
+    first = _environment("sm80")
+    second = EnvironmentFingerprint(
+        **{
+            **first.as_dict(),
+            "device_uuid": "GPU-second-worker",
+            "library_versions": {"cudnn": "9.15"},
+        }
+    )
+
+    assert not first.compatible_with(second)
+
+
 def _timing(latency_ms: float, *, allocations: int = 0) -> TimingEvidence:
     return TimingEvidence(
         cold_ms=latency_ms * 1.2,
@@ -167,6 +205,23 @@ def test_fastest_baseline_uses_resolved_correct_backend_and_ignores_invalid_spee
     assert winner.resolved_backend == f"resolved_{cell.baseline_candidates[1]}"
 
 
+def test_allocating_baseline_is_routable_when_no_fixed_buffer_candidate_exists():
+    cell = load_universal_exact_manifest().cells[0]
+    allocating = _external(
+        cell,
+        cell.baseline_candidates[0],
+        0.5,
+        suffix="alloc-only",
+        allocations=1,
+    )
+
+    winner = resolve_fastest_correct_baseline(cell, [allocating])
+
+    assert winner is allocating
+    assert winner.is_routable
+    assert not winner.is_usable
+
+
 def test_equal_latency_baselines_resolve_deterministically_by_evidence_id():
     cell = load_universal_exact_manifest().cells[0]
     rows = [
@@ -242,6 +297,48 @@ def test_phase_database_retains_losses_and_quantifies_explicit_routing_regret():
     assert entry.speedup_vs_baseline == pytest.approx(1.0 / 1.2)
     assert cell.cell_id in database.acceptance["negative_cells"]
     assert slower.evidence_id in entry.evidence_ids
+
+
+def test_explicit_selection_can_pin_a_conservative_external_fallback():
+    manifest = load_universal_exact_manifest()
+    evidence = _complete_evidence()
+    cell = next(cell for cell in manifest.cells if cell.architecture == "sm80")
+    baseline = next(
+        row
+        for row in evidence
+        if row.cell_id == cell.cell_id
+        and row.provider == "external"
+        and row.is_routable
+    )
+
+    database = compile_phase_database(
+        manifest,
+        evidence,
+        architecture="sm80",
+        source_commit="e" * 40,
+        selected_evidence_ids={cell.cell_id: baseline.evidence_id},
+    )
+    entry = database.entry_for(cell.cell_id)
+
+    assert entry.status is PhaseEntryStatus.EXTERNAL_FALLBACK
+    assert entry.selected_evidence_id == baseline.evidence_id
+    assert entry.selected_family_id is None
+    assert entry.kernel_key is None
+
+
+def test_explicit_selection_rejects_non_routable_evidence():
+    manifest = load_universal_exact_manifest()
+    evidence = _complete_evidence()
+    cell = next(cell for cell in manifest.cells if cell.architecture == "sm80")
+
+    with pytest.raises(ValueError, match="is not routable"):
+        compile_phase_database(
+            manifest,
+            evidence,
+            architecture="sm80",
+            source_commit="f" * 40,
+            selected_evidence_ids={cell.cell_id: "missing-evidence"},
+        )
 
 
 def test_default_route_falls_back_when_fastest_native_loses():
@@ -343,7 +440,7 @@ def test_complete_phase_database_round_trips_without_dropping_negative_evidence(
     }
 
 
-def test_phase_database_rejects_mixed_environment_fingerprints():
+def test_phase_database_rejects_incompatible_environments():
     manifest = load_universal_exact_manifest()
     evidence = _complete_evidence()
     row_index = next(
@@ -356,7 +453,7 @@ def test_phase_database_rejects_mixed_environment_fingerprints():
         environment=replace(evidence[row_index].environment, driver_version="other"),
     )
 
-    with pytest.raises(ValueError, match="mix environment fingerprints"):
+    with pytest.raises(ValueError, match="mix incompatible environments"):
         compile_phase_database(
             manifest,
             evidence,

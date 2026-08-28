@@ -89,7 +89,13 @@ if TRITON_AVAILABLE:
         acc_num = tl.zeros([GROUPED_ROWS, D], tl.float32)
         has_valid = tl.zeros([GROUPED_ROWS], tl.int1)
 
-        for start_n in range(0, N, TILE_N):
+        end_n = N
+        if IS_CAUSAL:
+            # A query tile cannot consume keys beyond its latest absolute row.
+            # Truncating the stream here removes upper-triangular K/V loads and
+            # QK/PV work while leaving the online-softmax recurrence unchanged.
+            end_n = tl.minimum(N, (pid_m + 1) * TILE_M + q_start)
+        for start_n in range(0, end_n, TILE_N):
             cols = start_n + offs_n
             kv_mask = (cols[:, None] < N) & (offs_d[None, :] < D)
             k_ptrs = (
@@ -181,6 +187,8 @@ def grouped_gqa_prefill(
     return_lse: bool = False,
     num_warps: int | None = None,
     num_stages: int = 2,
+    output: torch.Tensor | None = None,
+    lse: torch.Tensor | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Run the experimental grouped-KV exact forward kernel.
 
@@ -232,12 +240,29 @@ def grouped_gqa_prefill(
     value = value.contiguous()
     batch, query_len = int(query.shape[0]), int(query.shape[1])
     kv_len = int(key.shape[1])
-    output = torch.empty_like(query)
-    lse = torch.empty(
-        (batch, q_heads, query_len),
-        device=query.device,
-        dtype=torch.float32,
-    )
+    if output is None:
+        output = torch.empty_like(query)
+    elif (
+        output.shape != query.shape
+        or output.dtype != query.dtype
+        or output.device != query.device
+        or not output.is_contiguous()
+    ):
+        raise ValueError("output must be contiguous and match query shape/dtype/device")
+    expected_lse_shape = (batch, q_heads, query_len)
+    if lse is None:
+        lse = torch.empty(
+            expected_lse_shape,
+            device=query.device,
+            dtype=torch.float32,
+        )
+    elif (
+        tuple(lse.shape) != expected_lse_shape
+        or lse.dtype != torch.float32
+        or lse.device != query.device
+        or not lse.is_contiguous()
+    ):
+        raise ValueError("lse must be contiguous FP32 [batch,q_heads,query_len]")
     groups_per_kv = group_size // heads_per_program
     grid = (
         triton.cdiv(query_len, tile_m),

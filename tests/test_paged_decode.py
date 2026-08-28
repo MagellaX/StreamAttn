@@ -589,6 +589,9 @@ def test_sm100_tgv_source_contract():
 def test_sm80_cp_async_source_contract():
     assert "paged_exact_decode_out" in SM80_CPP_SOURCE
     assert "SM80_CP_ASYNC_CACHEGLOBAL" in SM80_CUDA_SOURCE
+    assert "streamattn_cp_async_tile<kHnd>" in SM80_CUDA_SOURCE
+    assert "32 identical page-table loads" in SM80_CUDA_SOURCE
+    assert "HND pages must have shape [pages,Hkv,16,128]" in SM80_CUDA_SOURCE
     assert "SM80_16x8x16_F32BF16BF16F32_TN" in SM80_CUDA_SOURCE
     assert "SM75_U32x4_LDSM_N" in SM80_CUDA_SOURCE
     assert "streamattn_group_max" in SM80_CUDA_SOURCE

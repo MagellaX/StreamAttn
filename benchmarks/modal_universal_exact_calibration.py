@@ -1,4 +1,4 @@
-"""Run first universal-exact calibration campaigns on H100 and B200."""
+"""Run universal-exact calibration campaigns on A100, H100, and B200."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ image = (
     .env(
         {
             "STREAMATTN_CUTLASS_ROOT": "/opt/cutlass",
+            "STREAMATTN_SM80_BUILD_DIR": "/tmp/streamattn-sm80-build",
             "STREAMATTN_SM100_CUTLASS_ROOT": "/opt/cutlass",
             "STREAMATTN_SM100_BUILD_DIR": "/tmp/streamattn-sm100-build",
         }
@@ -39,6 +40,110 @@ image = (
 )
 
 app = modal.App("streamattn-universal-exact-calibration")
+
+
+@app.function(image=image, gpu="A100-80GB", timeout=60 * 60)
+def calibrate_sm80_decode(
+    warmup: int,
+    repeats: int,
+    paired_trials: int,
+    paired_repeats: int,
+) -> list[dict[str, object]]:
+    import os
+    import sys
+
+    os.chdir("/root/StreamAttn")
+    sys.path.insert(0, "/root/StreamAttn")
+    from benchmarks.profile_universal_exact_calibration import (
+        profile_sm80_decode_surface,
+    )
+
+    return [
+        row.as_dict()
+        for row in profile_sm80_decode_surface(
+            warmup=warmup,
+            repeats=repeats,
+            paired_trials=paired_trials,
+            paired_repeats=paired_repeats,
+        )
+    ]
+
+
+@app.function(image=image, gpu="A100-80GB", timeout=60 * 60)
+def calibrate_sm80_prefill(
+    warmup: int,
+    repeats: int,
+    paired_repeats: int,
+) -> list[dict[str, object]]:
+    import os
+    import sys
+
+    os.chdir("/root/StreamAttn")
+    sys.path.insert(0, "/root/StreamAttn")
+    from benchmarks.profile_universal_exact_calibration import (
+        profile_sm80_prefill_surface,
+    )
+
+    return [
+        row.as_dict()
+        for row in profile_sm80_prefill_surface(
+            warmup=warmup,
+            repeats=repeats,
+            paired_repeats=paired_repeats,
+        )
+    ]
+
+
+@app.function(image=image, gpu="A100-80GB", timeout=60 * 60)
+def calibrate_sm80_training(
+    warmup: int,
+    repeats: int,
+    iterations: int,
+    skip_native: bool,
+) -> list[dict[str, object]]:
+    import os
+    import sys
+
+    os.chdir("/root/StreamAttn")
+    sys.path.insert(0, "/root/StreamAttn")
+    from benchmarks.profile_universal_exact_calibration import (
+        _profile_sm80_training,
+    )
+
+    return [
+        row.as_dict()
+        for row in _profile_sm80_training(
+            warmup=warmup,
+            repeats=repeats,
+            iterations=iterations,
+            skip_native=skip_native,
+        )
+    ]
+
+
+@app.function(image=image, gpu="A100-80GB", timeout=60 * 60)
+def calibrate_sm80_training_dropout(
+    warmup: int,
+    repeats: int,
+    iterations: int,
+) -> list[dict[str, object]]:
+    import os
+    import sys
+
+    os.chdir("/root/StreamAttn")
+    sys.path.insert(0, "/root/StreamAttn")
+    from benchmarks.profile_universal_exact_calibration import (
+        _profile_sm80_training_dropout,
+    )
+
+    return [
+        row.as_dict()
+        for row in _profile_sm80_training_dropout(
+            warmup=warmup,
+            repeats=repeats,
+            iterations=iterations,
+        )
+    ]
 
 
 @app.function(image=image, gpu="H100!", timeout=60 * 60)
@@ -101,10 +206,78 @@ def main(
     paired_repeats: int = 10,
 ) -> None:
     normalized = architecture.strip().lower()
-    if normalized not in {"sm90", "sm100", "both"}:
-        raise ValueError("architecture must be sm90, sm100, or both")
+    choices = {
+        "sm80",
+        "sm80-decode",
+        "sm80-prefill",
+        "sm80-training",
+        "sm80-training-external",
+        "sm80-dropout",
+        "sm90",
+        "sm100",
+        "both",
+        "all",
+    }
+    if normalized not in choices:
+        raise ValueError(f"architecture must be one of {sorted(choices)}")
+    output = Path(output_json)
+    output.parent.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, object]] = []
-    if normalized in {"sm90", "both"}:
+
+    def persist() -> None:
+        output.write_text(
+            json.dumps(
+                {"schema_version": 1, "evidence": rows},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    if normalized in {"sm80", "sm80-decode", "all"}:
+        rows.extend(
+            calibrate_sm80_decode.remote(
+                warmup,
+                repeats,
+                paired_trials,
+                paired_repeats,
+            )
+        )
+        persist()
+    if normalized in {"sm80", "sm80-prefill", "all"}:
+        rows.extend(calibrate_sm80_prefill.remote(warmup, repeats, paired_repeats))
+        persist()
+    if normalized in {
+        "sm80",
+        "sm80-training",
+        "sm80-training-external",
+        "sm80-dropout",
+        "all",
+    }:
+        training_warmup = max(3, min(warmup, 5))
+        training_iterations = max(3, min(paired_repeats, 5))
+        training_repeats = max(5, min(repeats, 9))
+    if normalized in {"sm80", "sm80-dropout", "all"}:
+        rows.extend(
+            calibrate_sm80_training_dropout.remote(
+                training_warmup,
+                training_repeats,
+                training_iterations,
+            )
+        )
+        persist()
+    if normalized in {"sm80", "sm80-training", "sm80-training-external", "all"}:
+        rows.extend(
+            calibrate_sm80_training.remote(
+                training_warmup,
+                training_repeats,
+                training_iterations,
+                normalized == "sm80-training-external",
+            )
+        )
+        persist()
+    if normalized in {"sm90", "both", "all"}:
         rows.extend(
             calibrate_sm90.remote(
                 warmup,
@@ -113,14 +286,11 @@ def main(
                 paired_repeats,
             )
         )
-    if normalized in {"sm100", "both"}:
+        persist()
+    if normalized in {"sm100", "both", "all"}:
         rows.extend(calibrate_sm100.remote(warmup, iterations, repeats))
-    output = Path(output_json)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": 1, "evidence": rows}
-    output.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+        persist()
+    persist()
     print(
         json.dumps(
             {

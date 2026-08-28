@@ -15,6 +15,12 @@ _EXTENSIONS: dict[tuple[str, str], Any] = {}
 _EXTENSION_LOCK = threading.Lock()
 
 
+def sm80_paged_gqa_source_id() -> str:
+    """Return the immutable CUDA/C++ source identity used in evidence keys."""
+
+    return hashlib.sha1((CPP_SOURCE + CUDA_SOURCE).encode("utf-8")).hexdigest()[:12]
+
+
 def _cutlass_candidates(explicit: Optional[Path] = None) -> list[Path]:
     candidates: list[Path] = []
     if explicit is not None:
@@ -50,7 +56,7 @@ def compile_sm80_paged_gqa_extension(
     build_dir: Optional[Path] = None,
     verbose: bool = False,
 ):
-    """Compile and cache the SM80 page-16 NHD D128/G8 extension."""
+    """Compile and cache the SM80 page-16 HND/NHD D128/G8 extension."""
 
     from torch.utils.cpp_extension import load_inline
 
@@ -67,7 +73,7 @@ def compile_sm80_paged_gqa_extension(
             return cached
 
         source_id = hashlib.sha1(
-            (CPP_SOURCE + CUDA_SOURCE + key[0]).encode("utf-8")
+            (sm80_paged_gqa_source_id() + key[0]).encode("utf-8")
         ).hexdigest()[:12]
         kwargs: dict[str, Any] = {}
         if build_dir is not None:

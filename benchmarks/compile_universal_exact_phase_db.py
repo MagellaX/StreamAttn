@@ -31,6 +31,45 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _preserved_database_entries(
+    output_dir: Path, replacing: set[str]
+) -> dict[str, dict[str, object]]:
+    index_path = output_dir / "index.json"
+    payload = (
+        json.loads(index_path.read_text(encoding="utf-8"))
+        if index_path.is_file()
+        else {"databases": []}
+    )
+    preserved: dict[str, dict[str, object]] = {}
+    for raw in payload.get("databases", []):
+        row = dict(raw)
+        architecture = str(row["architecture"])
+        if architecture in replacing:
+            continue
+        database_path = output_dir / str(row["path"])
+        if not database_path.is_file():
+            continue
+        database = json.loads(database_path.read_text(encoding="utf-8"))
+        row["source_commit"] = str(database["source_commit"])
+        row["sha256"] = _sha256(database_path)
+        preserved[architecture] = row
+    for database_path in sorted(output_dir.glob("sm*.json")):
+        database = json.loads(database_path.read_text(encoding="utf-8"))
+        architecture = str(database.get("architecture", ""))
+        if not architecture or architecture in replacing or architecture in preserved:
+            continue
+        preserved[architecture] = {
+            "architecture": architecture,
+            "path": database_path.name,
+            "sha256": _sha256(database_path),
+            "source_commit": str(database["source_commit"]),
+            "acceptance": dict(database["acceptance"]),
+            "entry_count": len(database["entries"]),
+            "evidence_count": len(database["evidence"]),
+        }
+    return preserved
+
+
 def main() -> None:
     from stream_attention.exact_compiler import load_universal_exact_manifest
     from stream_attention.phase_database import (
@@ -68,7 +107,9 @@ def main() -> None:
     commit = _source_commit(args.source_commit)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    databases = []
+    database_by_architecture = _preserved_database_entries(
+        args.output_dir, set(args.architectures)
+    )
     for architecture in args.architectures:
         database = compile_phase_database(
             manifest,
@@ -79,16 +120,21 @@ def main() -> None:
         )
         path = args.output_dir / f"{architecture}.json"
         database.write_json(path)
-        databases.append(
-            {
-                "architecture": architecture,
-                "path": path.name,
-                "sha256": _sha256(path),
-                "acceptance": dict(database.acceptance),
-                "entry_count": len(database.entries),
-                "evidence_count": len(database.evidence),
-            }
-        )
+        database_by_architecture[architecture] = {
+            "architecture": architecture,
+            "path": path.name,
+            "sha256": _sha256(path),
+            "source_commit": database.source_commit,
+            "acceptance": dict(database.acceptance),
+            "entry_count": len(database.entries),
+            "evidence_count": len(database.evidence),
+        }
+
+    databases = [
+        database_by_architecture[architecture]
+        for architecture in ("sm80", "sm90", "sm100")
+        if architecture in database_by_architecture
+    ]
 
     index = {
         "schema_version": 1,

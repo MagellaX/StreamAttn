@@ -61,6 +61,7 @@ def test_measured_evidence_marks_allocating_external_path_unusable():
 
     assert evidence.status is MeasurementStatus.MEASURED
     assert evidence.correctness is not None and evidence.correctness.passed
+    assert evidence.is_routable
     assert not evidence.is_usable
 
 

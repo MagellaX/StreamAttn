@@ -86,6 +86,43 @@ class EnvironmentFingerprint:
         digest = hashlib.sha256(_canonical_json(self.as_dict()).encode()).hexdigest()
         return digest[:20]
 
+    @property
+    def compatibility_id(self) -> str:
+        payload = self.as_dict()
+        payload.pop("device_uuid")
+        # Optional baseline libraries may be unqueried by phase-specific workers.
+        # Pairwise compatibility below still rejects any conflicting recorded value.
+        payload.pop("library_versions")
+        digest = hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
+        return digest[:20]
+
+    def compatible_with(self, other: "EnvironmentFingerprint") -> bool:
+        if (
+            self.architecture,
+            self.device_name,
+            self.driver_version,
+            self.cuda_version,
+            self.torch_version,
+        ) != (
+            other.architecture,
+            other.device_name,
+            other.driver_version,
+            other.cuda_version,
+            other.torch_version,
+        ):
+            return False
+
+        def mappings_agree(
+            first: Mapping[str, str], second: Mapping[str, str]
+        ) -> bool:
+            return all(
+                first[name] == second[name] for name in first.keys() & second.keys()
+            )
+
+        return mappings_agree(
+            self.library_versions, other.library_versions
+        ) and mappings_agree(self.compiler_versions, other.compiler_versions)
+
     def as_dict(self) -> dict[str, object]:
         return {
             "architecture": self.architecture,
@@ -261,11 +298,18 @@ class BackendEvidence:
             raise ValueError("external evidence cannot be marked native")
 
     @property
-    def is_usable(self) -> bool:
+    def is_routable(self) -> bool:
         return bool(
             self.status is MeasurementStatus.MEASURED
             and self.correctness is not None
             and self.correctness.passed
+            and self.timing is not None
+        )
+
+    @property
+    def is_usable(self) -> bool:
+        return bool(
+            self.is_routable
             and self.timing is not None
             and self.timing.timed_allocation_count == 0
         )
@@ -281,6 +325,7 @@ class BackendEvidence:
             "native": self.native,
             "environment": self.environment.as_dict(),
             "environment_id": self.environment.fingerprint_id,
+            "environment_compatibility_id": self.environment.compatibility_id,
             "family_id": self.family_id,
             "kernel_key": self.kernel_key,
             "workspace_bytes": self.workspace_bytes,
@@ -338,14 +383,15 @@ def resolve_fastest_correct_baseline(
     """Return the fastest usable eligible external baseline for one cell."""
 
     eligible = set(cell.baseline_candidates)
-    candidates = [
+    routable = [
         row
         for row in evidence
         if row.cell_id == cell.cell_id
         and row.provider == "external"
         and row.requested_backend in eligible
-        and row.is_usable
+        and row.is_routable
     ]
+    candidates = [row for row in routable if row.is_usable] or routable
     if not candidates:
         return None
     return min(candidates, key=lambda row: (row.timing.p50_ms, row.evidence_id))  # type: ignore[union-attr]
@@ -355,14 +401,15 @@ def resolve_fastest_streamattn_candidate(
     cell: ExactWorkloadCell,
     evidence: Iterable[BackendEvidence],
 ) -> Optional[BackendEvidence]:
-    candidates = [
+    routable = [
         row
         for row in evidence
         if row.cell_id == cell.cell_id
         and row.provider == "streamattn"
         and row.native
-        and row.is_usable
+        and row.is_routable
     ]
+    candidates = [row for row in routable if row.is_usable] or routable
     if not candidates:
         return None
     return min(candidates, key=lambda row: (row.timing.p50_ms, row.evidence_id))  # type: ignore[union-attr]
@@ -548,10 +595,10 @@ class PhaseDatabase:
         if any(row.cell_id not in entry_id_set for row in self.evidence):
             raise ValueError("phase database evidence references an absent cell")
         if any(
-            row.environment.fingerprint_id != self.environment.fingerprint_id
+            not row.environment.compatible_with(self.environment)
             for row in self.evidence
         ):
-            raise ValueError("phase database evidence mixes environment fingerprints")
+            raise ValueError("phase database evidence mixes incompatible environments")
         for entry in self.entries:
             if not set(entry.evidence_ids) <= evidence_id_set:
                 raise ValueError("phase entry references missing evidence")
@@ -569,6 +616,7 @@ class PhaseDatabase:
             "source_commit": self.source_commit,
             "environment": self.environment.as_dict(),
             "environment_id": self.environment.fingerprint_id,
+            "environment_compatibility_id": self.environment.compatibility_id,
             "acceptance": dict(self.acceptance),
             "entries": [entry.as_dict() for entry in self.entries],
             "evidence": [row.as_dict() for row in self.evidence],
@@ -630,37 +678,44 @@ def _entry_for_cell(
     telemetry_complete = not missing_baselines
     baseline = resolve_fastest_correct_baseline(cell, rows)
     native_oracle = resolve_fastest_streamattn_candidate(cell, rows)
-    selected_native = native_oracle
     requested_selection = selected_evidence_ids.get(cell.cell_id)
+    requested_row: Optional[BackendEvidence] = None
     if requested_selection is not None:
-        selected_native = next(
+        requested_row = next(
             (
                 row
                 for row in rows
                 if row.evidence_id == requested_selection
-                and row.provider == "streamattn"
-                and row.native
-                and row.is_usable
+                and row.is_routable
             ),
             None,
         )
+        if requested_row is None:
+            raise ValueError(
+                f"explicit selection for {cell.cell_id} is not routable: "
+                f"{requested_selection}"
+            )
 
     native_families = matching_kernel_families(cell, families, native_only=True)
-    selected = selected_native
+    selected = requested_row if requested_row is not None else native_oracle
     if not telemetry_complete:
         status = PhaseEntryStatus.INCOMPLETE_BASELINES
     elif baseline is None:
         status = PhaseEntryStatus.NO_CORRECT_BASELINE
-    elif requested_selection is not None and selected_native is not None:
-        status = PhaseEntryStatus.NATIVE
+    elif requested_row is not None:
+        status = (
+            PhaseEntryStatus.NATIVE
+            if requested_row.provider == "streamattn" and requested_row.native
+            else PhaseEntryStatus.EXTERNAL_FALLBACK
+        )
     elif (
-        selected_native is not None
-        and selected_native.timing is not None
+        native_oracle is not None
+        and native_oracle.timing is not None
         and baseline.timing is not None
-        and selected_native.timing.p50_ms <= baseline.timing.p50_ms
+        and native_oracle.timing.p50_ms <= baseline.timing.p50_ms
     ):
         status = PhaseEntryStatus.NATIVE
-    elif selected_native is not None:
+    elif native_oracle is not None:
         status = PhaseEntryStatus.EXTERNAL_FALLBACK
         selected = baseline
     elif not native_families:
@@ -750,10 +805,9 @@ def compile_phase_database(
         raise ValueError(f"evidence references unknown manifest cells: {unknown}")
     if not rows:
         raise ValueError(f"no evidence supplied for architecture {architecture}")
-    environment_ids = {row.environment.fingerprint_id for row in rows}
-    if len(environment_ids) != 1:
-        raise ValueError("one phase database cannot mix environment fingerprints")
     environment = rows[0].environment
+    if any(not row.environment.compatible_with(environment) for row in rows[1:]):
+        raise ValueError("one phase database cannot mix incompatible environments")
     if environment.architecture != architecture:
         raise ValueError("evidence environment architecture does not match database")
     evidence_ids = [row.evidence_id for row in rows]
