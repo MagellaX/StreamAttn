@@ -8,6 +8,9 @@
 - [Universal Exact Phase Compiler v1](universal_exact_phase_compiler_v1.md):
   the frozen valid workload surface, guarantee taxonomy, physical schedule IR,
   resource legality model, and current kernel-family registry.
+- [Universal Exact Phase Database v1](universal_exact_phase_database_v1.md):
+  strict backend evidence, fastest-correct baseline resolution, routing regret,
+  negative-cell retention, and reproducible architecture phase tables.
 
 ## Parameters Explained
 

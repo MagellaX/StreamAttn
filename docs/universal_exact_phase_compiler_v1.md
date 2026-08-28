@@ -21,8 +21,9 @@ valid workload manifest
   -> allocation-free runtime plan
 ```
 
-This commit implements the first four contracts through static legality. It
-does not yet benchmark the full manifest or create a phase database.
+The repository implements the first four contracts through static legality and
+the strict evidence-to-phase-database compiler. It does not yet benchmark the
+full manifest on all three architectures.
 
 ## Guarantee Invariant
 
@@ -160,5 +161,7 @@ exact correctness
 no external fallback in the core matrix
 ```
 
-The next implementation is the baseline resolver and measured phase database,
-calibrated first with existing SM90 exact decode and SM100 exact prefill.
+The baseline resolver and phase-database schema are implemented in
+`stream_attention/phase_database.py`. The next implementation stage is real GPU
+calibration, beginning with existing SM90 exact decode and SM100 exact prefill
+before filling the SM80 surface.

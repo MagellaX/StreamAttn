@@ -546,6 +546,36 @@ python benchmarks/inspect_universal_exact_manifest.py
 See [Universal Exact Phase Compiler v1](docs/universal_exact_phase_compiler_v1.md)
 for the invariants and next compiler stages.
 
+The next compiler layer is also available. GPU profilers write immutable
+`BackendEvidence` records containing the requested and resolved backend,
+environment fingerprint, correctness result, timing distribution, confidence,
+workspace, supported range, and timed-allocation count. The phase compiler then:
+
+```text
+requires an explicit outcome for every eligible baseline
+chooses the fastest correct, allocation-free resolved baseline
+chooses the fastest correct native StreamAttn candidate
+retains failed, unsupported, slower, and losing measurements
+computes per-cell routing regret and architecture acceptance
+writes SHA-indexed phase_db/sm80.json, sm90.json, and sm100.json
+```
+
+A baseline that was never attempted makes the cell unresolved; it cannot be
+silently omitted. Current deterministic-dropout training gaps are emitted as
+`external_fallback`, while an unmeasured native family is emitted as
+`native_unmeasured`. Compile strict evidence with:
+
+```bash
+python benchmarks/compile_universal_exact_phase_db.py \
+  artifacts/exact/evidence.json \
+  --output-dir phase_db
+```
+
+See [Exact Phase Database v1](docs/universal_exact_phase_database_v1.md) for the
+evidence schema and acceptance semantics. The repository does not yet claim the
+30-cell performance target; real SM80/SM90/SM100 calibration evidence is the
+next stage.
+
 ## Decode Request Lifecycle
 
 The native engine deliberately separates model-specific work from attention:
@@ -627,6 +657,7 @@ python benchmarks/profile_paged_exact_decode.py --help
 python benchmarks/profile_seed_only_route_bundle_decode.py --help
 python benchmarks/profile_seed_kernel_mode_autotune.py --help
 python benchmarks/inspect_universal_exact_manifest.py
+python benchmarks/compile_universal_exact_phase_db.py --help
 ```
 
 A publishable performance result should record:
@@ -665,6 +696,7 @@ stream_attention/
   engine.py                 public decode, prefill, and training engine
   functional.py             planned exact prefill/training execution
   exact_compiler.py         workload, schedule, and resource compiler IR
+  phase_database.py         strict evidence resolution and phase-table compiler
   decode.py                 native modes, planning, and fail-closed service
   backends/sm80/            experimental Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
@@ -689,6 +721,7 @@ the README. Start with:
 - [D128 pipeline ablation](docs/sm90_d128_pipeline_ablation_20260819.md)
 - [Paged exact decode](docs/paged_exact_decode.md)
 - [Universal Exact Phase Compiler v1](docs/universal_exact_phase_compiler_v1.md)
+- [Exact Phase Database v1](docs/universal_exact_phase_database_v1.md)
 - [Literature and backend decision ledger](docs/streamattn_literature_decision_ledger.md)
 
 ## Contributing
@@ -718,9 +751,9 @@ The project has proved that StreamAttn-owned exact kernels can beat strong
 baselines on guarded Hopper and Blackwell cells. The next objective is broad,
 reproducible exact coverage rather than another isolated promotion:
 
-1. Build the baseline resolver and phase database from the frozen universal
-   manifest. Record requested and resolved baselines, versions, workspace,
-   correctness, paired timings, confidence, and every losing cell.
+1. Calibrate the strict phase-database evidence on SM80, SM90, and SM100. Run
+   every eligible baseline, preserve its resolved backend, and retain every
+   unsupported, failed, and losing cell.
 2. Connect compiled `ptxas`/occupancy reports to the SM80/SM90/SM100 resource
    legality models, then add analytical roofline pruning and active exploration
    near uncertain phase boundaries.
