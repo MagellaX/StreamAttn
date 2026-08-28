@@ -1,5 +1,11 @@
 # Technical Documentation
 
+## Current Backend Evidence
+
+- [Blackwell native exact GQA prefill](sm100_gqa_prefill_20260828.md): direct
+  BF16 BSHD causal prefill on B200 for the measured `Hq=16`, `Hkv=2`, `D=128`
+  cells, including the promotion boundary and Flash SDPA comparison protocol.
+
 ## Parameters Explained
 
 The following parameters are crucial for understanding and configuring the system:

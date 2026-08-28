@@ -477,6 +477,26 @@ FP32 online-softmax states. It improves the first native forward by up to
 still `0.89x` of Flash SDPA. It is therefore not auto-routed. See the
 [grouped-GQA prefill floor](docs/grouped_gqa_prefill_floor_20260828.md).
 
+For Blackwell, a separate architecture-native exact forward now owns a narrow
+profitable phase. It keeps compact GQA K/V in BSHD layout, uses TMA,
+`tcgen05` MMA, TMEM accumulators, streaming online softmax, query-tile causal
+truncation, and row masking on the diagonal tile. Against forced PyTorch Flash
+SDPA on B200, the promoted BF16 `Hq16/Hkv2/D128` cells measured:
+
+| Batch / sequence | StreamAttn | Flash SDPA | Paired speedup |
+|---|---:|---:|---:|
+| B1 / S64 | `0.00619 ms` | `0.01020 ms` | `1.65x` |
+| B1 / S128 | `0.00619 ms` | `0.01072 ms` | `1.73x` |
+| B1 / S256 | `0.01127 ms` | `0.01384 ms` | `1.22x` |
+| B1 / S384 | `0.01642 ms` | `0.01853 ms` | `1.13x` |
+| B2 / S64 | `0.00618 ms` | `0.01037 ms` | `1.68x` |
+
+The engine auto-routes only those exact measured cells. B1/S512 (`0.94x`),
+B2/S128 (`0.98x`), B2/S256 (`1.001x`), larger batches, other head shapes,
+training, and feature-rich calls remain on the existing exact fallback. See
+[native SM100 GQA prefill](docs/sm100_gqa_prefill_20260828.md) for the resource
+derivation and measurement protocol.
+
 ## Decode Request Lifecycle
 
 The native engine deliberately separates model-specific work from attention:
@@ -583,10 +603,10 @@ not hidden StreamAttn dependencies.
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
 | Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
-| Prefill/forward/backward | Public exact MHA/GQA `prefill(...)` and `train(...)` plans; compact native GQA K/V; Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
+| Prefill/forward/backward | Public exact MHA/GQA `prefill(...)` and `train(...)` plans; promoted B200 BF16 `Hq16/Hkv2/D128` causal prefill cells; compact Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
 | Distributed research | Ring and Star attention prototypes |
 | Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge |
-| Not yet promoted | A100, other B200 shapes/ragged rows, ragged page-64 WGMMA, FP8 seed cache, second model family |
+| Not yet promoted | H100 WGMMA prefill, A100, other B200 prefill/decode shapes, ragged page-64 WGMMA, FP8 selected cache, second model family |
 
 ## Repository Guide
 
@@ -653,11 +673,12 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Lower the validated KV-group-owned prefill floor into architecture-native
-   tensor-core pipelines. The generic Triton floor remains below Flash SDPA;
-   the next implementation must use H100 WGMMA and B200 `tcgen05`/TMEM before
-   performance promotion. Only after forward parity should backward split into
-   dQ work and grouped dK/dV reductions without global atomic contention.
+4. Expand architecture-native prefill beyond the promoted B200
+   `Hq16/Hkv2/D128` cells. H100 still needs a separate multi-query-row WGMMA
+   forward kernel; reusing the decode-shaped `m64n8` partial/merge path would
+   multiply CTAs by query length. Only after forward parity should backward
+   split into dQ work and grouped dK/dV reductions without global atomic
+   contention.
 5. Lower the now-executed selected-route ABI into the B200
    TMA+TMEM+`tcgen05` backend and
    expand it beyond the promoted

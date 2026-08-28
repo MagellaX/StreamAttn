@@ -897,7 +897,8 @@ template <
   class TiledBMM2,
   int CTA_qHLocal, int CTA_qL, int CTA_kvL, int CTA_dH,
   int NumReductionCTA,
-  bool NoSink>
+  bool NoSink,
+  bool Causal = false>
 CUTLASS_DEVICE void
 EPILOG_warp(
   SharedStorage& shared_storage,
@@ -1337,6 +1338,19 @@ EPILOG_warp(
       if (!row_valid) {
         fill(tDrS, -cutlass::platform::numeric_limits<TypeAcc>::infinity());
       }
+      if constexpr (Causal) {
+        // The flattened MMA N dimension is compact q-head first, then query
+        // position.  Apply a distinct causal bound to every online-softmax
+        // row; a single sequence-length predicate is only correct for decode.
+        CUTE_UNROLL
+        for (int i = 0; i < tDrS.size(); i++) {
+          int q_local = i / CTA_qHLocal;
+          int q_position = work_tile_info.qL_idx * CTA_qL + q_local;
+          if (kv_seq_len > q_position) {
+            tDrS[i] = -cutlass::platform::numeric_limits<TypeAcc>::infinity();
+          }
+        }
+      }
       // scale it by softmax_scale_log2, s = s * softmax_scale_log2 = s * softmax_scale * log2(e)
       // here we leverage the fact that expf(s) = exp2f(s * log2(e)), and doing the exp2f path generates less instructions than expf (and presumably slightly less accurate)
       // so we fuse the log2(e) with the softmax scale, hence all later expf (e.g. alpha/beta) should be replaced by exp2f
@@ -1671,7 +1685,8 @@ template <
   int CTA_qHLocal, int CTA_qL, int CTA_kvL, int CTA_dH,
   int BMM1_DMA_Stage, int BMM2_DMA_Stage,
   int MaxSplits, int NumReductionCTA,
-  bool NoSink>
+  bool NoSink,
+  bool Causal = false>
 __maxnreg__(128)
 __global__ void
 gqa_device(
@@ -1802,6 +1817,11 @@ gqa_device(
   //   - Tiles to process: ceil(36 / 16) = 3 tiles
   int workload_seq_len = seq_len;
   int seq_len_skip_offset = 0;  // Number of sequence positions to skip (tile-aligned)
+  if constexpr (Causal) {
+    int qL_idx = blockIdx.y / num_qHLocal;
+    int causal_query_end = (qL_idx + 1) * CTA_qL;
+    workload_seq_len = cute::min(workload_seq_len, causal_query_end);
+  }
   if (sliding_window_size > 0 && sliding_window_size < seq_len) {
     int unaligned_skip = seq_len - sliding_window_size;
     seq_len_skip_offset = (unaligned_skip / CTA_kvL) * CTA_kvL;  // Align to tile boundary
@@ -1839,7 +1859,7 @@ gqa_device(
     // epilog tid is from 128 to 255, need to offset by -128 when getting the per thread slice
     int tid = threadIdx.x - 128;
     // warp_idx - 4 because epilog warp group starts from warp 4
-    EPILOG_warp<SharedStorage, WorkTileInfo, decltype(mK), decltype(mO), decltype(mSink), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH, NumReductionCTA, NoSink>(shared_storage, work_tile_info, mK, mO, mSink, seq_len, tiled_bmm1, tiled_bmm2, softmax_scale_log2, sliding_window_size, epilog_barrier, NumSplits, tid, warp_idx - 4, rank);
+    EPILOG_warp<SharedStorage, WorkTileInfo, decltype(mK), decltype(mO), decltype(mSink), TiledBMM1, TiledBMM2, CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH, NumReductionCTA, NoSink, Causal>(shared_storage, work_tile_info, mK, mO, mSink, seq_len, tiled_bmm1, tiled_bmm2, softmax_scale_log2, sliding_window_size, epilog_barrier, NumSplits, tid, warp_idx - 4, rank);
   }
 
   __syncthreads();
@@ -1856,7 +1876,8 @@ template<
   class TypeQKV, class TypeO, class TypeAcc,
   int CTA_qHLocal, int CTA_qL, int CTA_kvL, int CTA_dH,
   int BMM1_DMA_Stage, int BMM2_DMA_Stage,
-  int MaxSplits, int NumReductionCTA>
+  int MaxSplits, int NumReductionCTA,
+  bool Causal = false>
 void gqa_host(
   TypeQKV* device_ptr_K,
   TypeQKV* device_ptr_Q,
@@ -2102,7 +2123,7 @@ void gqa_host(
                   CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH,
                   BMM1_DMA_Stage, BMM2_DMA_Stage,
                   MaxSplits, NumReductionCTA,
-                  false>;
+                  false, Causal>;
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeMaxDynamicSharedMemorySize, smemBytes));
     // portable max cluster size is 8, but sm100a supports 16, need explicit opt in
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
@@ -2122,7 +2143,7 @@ void gqa_host(
                   CTA_qHLocal, CTA_qL, CTA_kvL, CTA_dH,
                   BMM1_DMA_Stage, BMM2_DMA_Stage,
                   MaxSplits, NumReductionCTA,
-                  true>;
+                  true, Causal>;
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeMaxDynamicSharedMemorySize, smemBytes));
     // portable max cluster size is 8, but sm100a supports 16, need explicit opt in
     gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));

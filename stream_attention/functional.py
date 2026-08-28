@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 
@@ -58,7 +58,8 @@ class StreamAttnAttentionPlan:
     dropout_p: float
     alibi_slopes: Optional[torch.Tensor]
     deterministic: bool
-    module: FusedOnlineAttention
+    module: Optional[FusedOnlineAttention]
+    native_plan: Optional[Any]
     attention_problem: AttentionProblem
     tile_plan: AttentionTilePlan
     backend_plan: AttentionBackendPlan
@@ -74,21 +75,28 @@ class StreamAttnAttentionPlan:
         }
 
     def run(self, *, return_info: bool = False):
-        output = self.module(
-            self.query,
-            self.key,
-            self.value,
-            causal=self.causal,
-            attention_mask=self.attention_mask,
-            dropout_p=self.dropout_p,
-            alibi_slopes=self.alibi_slopes,
-            deterministic=self.deterministic,
-        )
+        if self.native_plan is not None:
+            output = self.native_plan.run()
+            backend_used = self.backend_plan.backend
+        else:
+            if self.module is None:  # pragma: no cover - construction invariant
+                raise RuntimeError("functional attention plan has no executable backend")
+            output = self.module(
+                self.query,
+                self.key,
+                self.value,
+                causal=self.causal,
+                attention_mask=self.attention_mask,
+                dropout_p=self.dropout_p,
+                alibi_slopes=self.alibi_slopes,
+                deterministic=self.deterministic,
+            )
+            backend_used = self.module.last_backend_used
         if not return_info:
             return output
         return output, StreamAttnAttentionInfo(
             phase=self.phase,
-            backend_used=self.module.last_backend_used,
+            backend_used=backend_used,
             causal=self.causal,
             dropout_p=self.dropout_p,
             deterministic=self.deterministic,
@@ -206,6 +214,56 @@ def plan_functional_attention(
         logical_tile_size=tile_size_k,
         reason=f"{phase}_exact_all_tiles",
     )
+    requires_grad = bool(
+        torch.is_grad_enabled()
+        and (query.requires_grad or key.requires_grad or value.requires_grad)
+    )
+    native_plan = None
+    if (
+        phase == ATTENTION_PHASE_PREFILL
+        and causal
+        and attention_mask is None
+        and alibi_slopes is None
+        and scale is None
+        and not requires_grad
+    ):
+        try:
+            from .backends.sm100.gqa_prefill import (
+                Sm100GqaPrefillPlan,
+                is_promoted_sm100_gqa_prefill,
+            )
+
+            if is_promoted_sm100_gqa_prefill(query, key, value):
+                native_plan = Sm100GqaPrefillPlan.build(
+                    query,
+                    key,
+                    value,
+                    tile="h8_q2",
+                )
+        except (ImportError, OSError, RuntimeError, ValueError):
+            native_plan = None
+    if native_plan is not None:
+        backend_plan = AttentionBackendPlan(
+            backend="sm100_tgv_gqa_causal_prefill",
+            reason="promoted_exact_b200_prefill_cell",
+            architecture=device_architecture(query.device),
+        )
+        return StreamAttnAttentionPlan(
+            phase=phase,
+            query=query,
+            key=key,
+            value=value,
+            causal=causal,
+            attention_mask=attention_mask,
+            dropout_p=dropout_p,
+            alibi_slopes=alibi_slopes,
+            deterministic=deterministic,
+            module=None,
+            native_plan=native_plan,
+            attention_problem=problem,
+            tile_plan=tile_plan,
+            backend_plan=backend_plan,
+        )
     module = FusedOnlineAttention(
         num_heads=problem.q_heads,
         num_kv_heads=problem.kv_heads,
@@ -243,6 +301,7 @@ def plan_functional_attention(
         alibi_slopes=alibi_slopes,
         deterministic=deterministic,
         module=module,
+        native_plan=None,
         attention_problem=problem,
         tile_plan=tile_plan,
         backend_plan=backend_plan,
