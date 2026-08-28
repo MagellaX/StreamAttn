@@ -1,0 +1,725 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 3.2551441192626953,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_exact_native",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_exact_native:s32:t512:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_exact_native",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.14860799908638,
+        "confidence": 0.95,
+        "p10_ms": 0.13857920467853546,
+        "p50_ms": 0.14207999408245087,
+        "p90_ms": 0.14968319833278654,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.87927338962335e-05
+      },
+      "workspace_bytes": 266240
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 3.2551441192626953,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.044256001710891724,
+        "confidence": 0.95,
+        "p10_ms": 0.039609599858522415,
+        "p50_ms": 0.040672000497579575,
+        "p90_ms": 0.04846080094575882,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.1721062462261513e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 20.446256637573242,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:streamattn:streamattn_paged_exact_native",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_exact_native:s2:t512:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_exact_native",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_64k_g4_d128_nhd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 3.4264960289001465,
+        "confidence": 0.95,
+        "p10_ms": 3.4281408309936525,
+        "p50_ms": 3.4507839679718018,
+        "p90_ms": 3.477529525756836,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.00036173888608623706
+      },
+      "workspace_bytes": 266240
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 20.446256637573242,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_64k_g4_d128_nhd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.9183679819107056,
+        "confidence": 0.95,
+        "p10_ms": 0.7243391752243042,
+        "p50_ms": 0.7303680181503296,
+        "p90_ms": 0.7783936142921448,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.0024787439666522776
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": {
+        "checked_cases": 8192,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 18.645713806152344,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:streamattn:streamattn_paged_exact_native",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_exact_native:s8:t512:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_exact_native",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b4_tail32k_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.40483200550079346,
+        "confidence": 0.95,
+        "p10_ms": 0.39476479887962346,
+        "p50_ms": 0.3965759873390198,
+        "p90_ms": 0.4009792029857635,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.1790054521117415e-05
+      },
+      "workspace_bytes": 266240
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": {
+        "checked_cases": 8192,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 18.645713806152344,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b4_tail32k_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.07795199751853943,
+        "confidence": 0.95,
+        "p10_ms": 0.06840959936380386,
+        "p50_ms": 0.06963200122117996,
+        "p90_ms": 0.07440000027418137,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 8.107867345425766e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 7.234513759613037,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:streamattn:streamattn_paged_exact_native",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_exact_native:s2:t512:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_exact_native",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_tail64k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.9783999919891357,
+        "confidence": 0.95,
+        "p10_ms": 2.918598461151123,
+        "p50_ms": 2.9783999919891357,
+        "p90_ms": 3.029657554626465,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.0017928774828568647
+      },
+      "workspace_bytes": 266240
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 7.234513759613037,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_tail64k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.4652799963951111,
+        "confidence": 0.95,
+        "p10_ms": 0.4602944076061249,
+        "p50_ms": 0.46217599511146545,
+        "p90_ms": 0.4663167953491211,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 7.703708763607943e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-0546b7ca-c344-02af-ae94-ada70e8c8c9c",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e8b81a7dab167ca3ac29",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1
+}

@@ -57,16 +57,17 @@ For each manifest cell the compiler:
 2. ignores measurements that failed correctness or allocated in the timed loop;
 3. selects the lowest-p50 valid external measurement, preserving both requested
    and resolved backend names;
-4. selects the lowest-p50 valid native StreamAttn candidate unless an explicit
-   routing choice is being evaluated;
-5. computes speedup against the fastest correct baseline;
-6. computes routing regret against the fastest valid StreamAttn candidate;
-7. retains every input record, including failed candidates and negative cells.
+4. selects the lowest-p50 valid native StreamAttn candidate only when it is no
+   slower than the external baseline; otherwise the default route is an
+   explicit external fallback;
+5. preserves an explicit native selection when evaluating routing regret;
+6. computes speedup against the fastest correct baseline;
+7. computes routing regret against the fastest valid native-or-external route;
+8. retains every input record, including failed candidates and negative cells.
 
 If a registered native family exists but no valid native measurement is
-available, the status is `native_unmeasured`. External fallback is allowed only
-when the family registry declares that no native family covers the cell, as is
-currently true for deterministic dropout backward.
+available, the status is `native_unmeasured`. A measured native loss becomes an
+`external_fallback`, while its losing native evidence remains in the database.
 
 ## Outputs
 
@@ -75,6 +76,7 @@ Run:
 ```bash
 python benchmarks/compile_universal_exact_phase_db.py \
   path/to/evidence.json \
+  --architectures sm90 sm100 \
   --output-dir phase_db \
   --source-commit <git-sha>
 ```
@@ -116,8 +118,10 @@ the artifact because they define the next kernel and routing work.
 
 ## Current Boundary
 
-The schema, resolver, compiler, CLI, and round-trip tests are implemented. The
-committed 30-cell manifest has not yet been calibrated across real A100, H100,
-and B200 processes using this schema. Until those evidence artifacts exist,
-StreamAttn has a universal compiler contract rather than a universal overall
-performance result.
+The first partial real-GPU calibration now exists. Four H100 cells compile to
+three native routes and one external fallback; four B200 cells compile to
+external fallbacks against stronger graph-captured baselines. The remaining
+SM80/SM90/SM100 cells are explicitly unresolved. See [the calibration
+report](universal_exact_calibration_20260828.md). StreamAttn therefore has a
+working universal compiler and partial measured phase databases, not a
+universal overall performance result.

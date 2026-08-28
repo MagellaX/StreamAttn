@@ -22,6 +22,15 @@ B2: S64
 
 Every other shape or feature continues through the existing exact planner.
 
+> **Calibration update (2026-08-28):** this promotion used an eager PyTorch
+> Flash-SDPA baseline. The universal phase compiler now also tests
+> allocation-free CUDA-graph replay. On its B1/S256, B1/S384, B1/S512, and
+> B2/S128 manifest cells, native TGV reached `0.636x-0.987x` of the fastest
+> correct graph baseline, so the strict compiled route falls back externally.
+> The kernel remains exact; the older table is evidence about eager API
+> overhead rather than universal Blackwell superiority. See [the strict
+> calibration](universal_exact_calibration_20260828.md).
+
 ## Architecture
 
 The backend extends the native SM100 TGV GQA pipeline rather than wrapping an

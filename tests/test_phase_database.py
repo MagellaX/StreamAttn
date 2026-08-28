@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -243,6 +244,44 @@ def test_phase_database_retains_losses_and_quantifies_explicit_routing_regret():
     assert slower.evidence_id in entry.evidence_ids
 
 
+def test_default_route_falls_back_when_fastest_native_loses():
+    manifest = load_universal_exact_manifest()
+    evidence = _complete_evidence()
+    cell = next(
+        cell
+        for cell in manifest.cells
+        if cell.architecture == "sm90"
+        and matching_kernel_families(
+            cell, registered_exact_kernel_families(), native_only=True
+        )
+    )
+    evidence = [
+        row
+        for row in evidence
+        if not (row.cell_id == cell.cell_id and row.provider == "streamattn")
+    ]
+    family = matching_kernel_families(
+        cell, registered_exact_kernel_families(), native_only=True
+    )[0]
+    losing_native = _streamattn(cell, family.family_id, 1.2, suffix="losing")
+    evidence.append(losing_native)
+
+    database = compile_phase_database(
+        manifest,
+        evidence,
+        architecture="sm90",
+        source_commit="2" * 40,
+    )
+    entry = database.entry_for(cell.cell_id)
+
+    assert entry.status is PhaseEntryStatus.EXTERNAL_FALLBACK
+    assert entry.selected_evidence_id == entry.baseline_evidence_id
+    assert entry.speedup_vs_baseline == 1.0
+    assert entry.routing_regret == 0.0
+    assert cell.cell_id in database.acceptance["negative_cells"]
+    assert losing_native.evidence_id in entry.evidence_ids
+
+
 def test_native_capability_gap_is_an_explicit_external_fallback():
     manifest = load_universal_exact_manifest()
     database = compile_phase_database(
@@ -376,3 +415,37 @@ def test_phase_database_cli_emits_all_architectures_and_integrity_index(tmp_path
         database = load_phase_database(output_dir / f"{architecture}.json")
         assert database.architecture == architecture
         assert database.acceptance["compiler_v1_pass"] is True
+
+
+def test_phase_database_cli_can_compile_a_partial_architecture_campaign(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    evidence_path = tmp_path / "evidence.json"
+    output_dir = tmp_path / "phase_db"
+    write_backend_evidence(_complete_evidence(), evidence_path)
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "benchmarks" / "compile_universal_exact_phase_db.py"),
+            str(evidence_path),
+            "--architectures",
+            "sm90",
+            "sm100",
+            "--output-dir",
+            str(output_dir),
+            "--source-commit",
+            "1" * 40,
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert {path.name for path in output_dir.iterdir()} == {
+        "index.json",
+        "sm90.json",
+        "sm100.json",
+    }
+    index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
+    assert [row["architecture"] for row in index["databases"]] == ["sm90", "sm100"]

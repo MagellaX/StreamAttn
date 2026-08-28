@@ -16,11 +16,11 @@ The common foundation is single-pass streaming attention with online softmax:
 K/V tiles are consumed once, numerically stable running statistics are updated
 on the fly, and the full attention matrix is never materialized.
 
-> **Project status:** research engine with guarded H100 routes. StreamAttn has
-> apples-to-apples exact decode wins over FlashInfer on promoted shapes and a
-> measured model-level Qwen decode win on a validated request tier. It is not a
-> universal replacement for FlashInfer, FlashAttention, or a full serving
-> runtime yet.
+> **Project status:** research engine with measured H100 native routes and a
+> partial universal phase database. StreamAttn has apples-to-apples exact decode
+> wins over FlashInfer on promoted shapes and a measured model-level Qwen decode
+> win on a validated request tier. It is not yet a universal replacement for
+> FlashInfer, FlashAttention, or a full serving runtime.
 
 ## Why StreamAttn Exists
 
@@ -477,11 +477,11 @@ FP32 online-softmax states. It improves the first native forward by up to
 still `0.89x` of Flash SDPA. It is therefore not auto-routed. See the
 [grouped-GQA prefill floor](docs/grouped_gqa_prefill_floor_20260828.md).
 
-For Blackwell, a separate architecture-native exact forward now owns a narrow
-profitable phase. It keeps compact GQA K/V in BSHD layout, uses TMA,
+For Blackwell, a separate architecture-native exact forward keeps compact GQA
+K/V in BSHD layout and uses TMA,
 `tcgen05` MMA, TMEM accumulators, streaming online softmax, query-tile causal
-truncation, and row masking on the diagonal tile. Against forced PyTorch Flash
-SDPA on B200, the promoted BF16 `Hq16/Hkv2/D128` cells measured:
+truncation, and row masking on the diagonal tile. The original eager-only
+comparison against forced PyTorch Flash SDPA measured:
 
 | Batch / sequence | StreamAttn | Flash SDPA | Paired speedup |
 |---|---:|---:|---:|
@@ -491,11 +491,15 @@ SDPA on B200, the promoted BF16 `Hq16/Hkv2/D128` cells measured:
 | B1 / S384 | `0.01642 ms` | `0.01853 ms` | `1.13x` |
 | B2 / S64 | `0.00618 ms` | `0.01037 ms` | `1.68x` |
 
-The engine auto-routes only those exact measured cells. B1/S512 (`0.94x`),
-B2/S128 (`0.98x`), B2/S256 (`1.001x`), larger batches, other head shapes,
-training, and feature-rich calls remain on the existing exact fallback. See
-[native SM100 GQA prefill](docs/sm100_gqa_prefill_20260828.md) for the resource
-derivation and measurement protocol.
+That comparison includes the allocation/framework cost of eager SDPA. The new
+strict phase-compiler calibration also tests allocation-free fixed-address CUDA
+graph replay. On the four manifest cells B1/S256, B1/S384, B1/S512, and B2/S128,
+the fastest TGV tile reached `0.902x`, `0.869x`, `0.636x`, and `0.987x` of the
+fastest correct graph baseline. The compiler therefore keeps all four on an
+external exact fallback and retains the native losses as optimization targets.
+See [native SM100 GQA prefill](docs/sm100_gqa_prefill_20260828.md) for the
+kernel derivation and [the strict calibration](docs/universal_exact_calibration_20260828.md)
+for the stronger baseline result.
 
 ## Universal Exact Phase Compiler
 
@@ -554,9 +558,10 @@ workspace, supported range, and timed-allocation count. The phase compiler then:
 ```text
 requires an explicit outcome for every eligible baseline
 chooses the fastest correct, allocation-free resolved baseline
-chooses the fastest correct native StreamAttn candidate
+chooses native only when the fastest correct native candidate beats the baseline
+otherwise emits an explicit external fallback and retains the native loss
 retains failed, unsupported, slower, and losing measurements
-computes per-cell routing regret and architecture acceptance
+computes regret against the fastest valid native-or-external route
 writes SHA-indexed phase_db/sm80.json, sm90.json, and sm100.json
 ```
 
@@ -572,9 +577,11 @@ python benchmarks/compile_universal_exact_phase_db.py \
 ```
 
 See [Exact Phase Database v1](docs/universal_exact_phase_database_v1.md) for the
-evidence schema and acceptance semantics. The repository does not yet claim the
-30-cell performance target; real SM80/SM90/SM100 calibration evidence is the
-next stage.
+evidence schema and acceptance semantics. The first partial calibration is now
+compiled: four SM90 cells resolve to three native routes and one fallback; four
+SM100 cells resolve to external fallbacks against graph-captured baselines. The
+remaining cells stay visibly unresolved, so the repository still does not claim
+the 30-cell performance target. See [the H100/B200 calibration report](docs/universal_exact_calibration_20260828.md).
 
 ## Decode Request Lifecycle
 

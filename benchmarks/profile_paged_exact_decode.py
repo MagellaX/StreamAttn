@@ -258,13 +258,31 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         .view(args.batch, pages_per_request)
         .clone()
     )
-    sequence_lengths = _profile_sequence_lengths(
-        args.length_profile,
-        batch=args.batch,
-        kv_len=args.kv_len,
-        page_size=args.page_size,
-        device=device,
-    )
+    explicit_lengths = getattr(args, "sequence_lengths", None)
+    if explicit_lengths:
+        if isinstance(explicit_lengths, str):
+            explicit_lengths = [
+                int(value.strip())
+                for value in explicit_lengths.split(",")
+                if value.strip()
+            ]
+        if len(explicit_lengths) != args.batch:
+            raise ValueError("sequence_lengths must contain one value per batch row")
+        if any(int(value) <= 0 or int(value) > args.kv_len for value in explicit_lengths):
+            raise ValueError("sequence_lengths must be in [1, kv_len]")
+        sequence_lengths = torch.tensor(
+            explicit_lengths,
+            device=device,
+            dtype=torch.int32,
+        )
+    else:
+        sequence_lengths = _profile_sequence_lengths(
+            args.length_profile,
+            batch=args.batch,
+            kv_len=args.kv_len,
+            page_size=args.page_size,
+            device=device,
+        )
     lengths_cpu = sequence_lengths.detach().to("cpu", torch.int64).tolist()
     for row, length in enumerate(lengths_cpu):
         active_pages = (int(length) + args.page_size - 1) // args.page_size
@@ -330,6 +348,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             candidate_max_error = float(
                 (stream_output.float() - candidate_output.float()).abs().max().item()
             )
+            candidate_relative_error = (
+                (stream_output.float() - candidate_output.float()).abs()
+                / candidate_output.float().abs().clamp_min(1.0e-6)
+            )
+            candidate_max_relative_error = float(
+                candidate_relative_error.max().item()
+            )
             candidate_mean_error = float(
                 (stream_output.float() - candidate_output.float()).abs().mean().item()
             )
@@ -360,6 +385,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 **candidate_info,
                 "status": "correct" if correct else "mismatch",
                 "max_abs_error": candidate_max_error,
+                "max_relative_error": candidate_max_relative_error,
                 "mean_abs_error": candidate_mean_error,
                 "reference_max_abs_error": candidate_reference_max_error,
                 "reference_mean_abs_error": candidate_reference_mean_error,
@@ -413,6 +439,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     }
     flashinfer_info["selection"] = "fastest_correct_initial_median"
     max_abs_error = float(selected_flashinfer["max_abs_error"])
+    max_relative_error = float(selected_flashinfer["max_relative_error"])
     mean_abs_error = float(selected_flashinfer["mean_abs_error"])
     flashinfer_samples = list(selected_flashinfer["samples_ms"])
     flashinfer_ms = float(statistics.median(flashinfer_samples))
@@ -495,6 +522,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "flashinfer_ms": flashinfer_ms,
         "speedup_vs_flashinfer": flashinfer_ms / stream_ms,
         "max_abs_error": max_abs_error,
+        "max_relative_error": max_relative_error,
         "mean_abs_error": mean_abs_error,
         "reference": {
             "available": reference_output is not None,
@@ -561,6 +589,10 @@ def main() -> None:
     parser.add_argument("--paired-repeats", type=int, default=10)
     parser.add_argument("--atol", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument(
+        "--sequence-lengths",
+        help="optional comma-separated logical KV lengths, one per batch row",
+    )
     parser.add_argument("--output-json", type=Path)
     args = parser.parse_args()
 

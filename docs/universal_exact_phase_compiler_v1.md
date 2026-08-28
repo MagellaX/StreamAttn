@@ -22,8 +22,8 @@ valid workload manifest
 ```
 
 The repository implements the first four contracts through static legality and
-the strict evidence-to-phase-database compiler. It does not yet benchmark the
-full manifest on all three architectures.
+the strict evidence-to-phase-database compiler. The first H100/B200 cells have
+now been calibrated; the full manifest is still incomplete.
 
 ## Guarantee Invariant
 
@@ -162,6 +162,9 @@ no external fallback in the core matrix
 ```
 
 The baseline resolver and phase-database schema are implemented in
-`stream_attention/phase_database.py`. The next implementation stage is real GPU
-calibration, beginning with existing SM90 exact decode and SM100 exact prefill
-before filling the SM80 surface.
+`stream_attention/phase_database.py`. The first calibration covers four SM90
+exact-decode and four SM100 exact-prefill cells. It retains one H100 native loss
+and four B200 native losses against graph-captured baselines, routing each loss
+externally. See [the calibration report](universal_exact_calibration_20260828.md).
+The next stage fills SM80 and the remaining phase/feature cells while optimizing
+the measured negative boundaries.

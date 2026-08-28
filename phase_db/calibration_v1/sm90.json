@@ -1,0 +1,1497 @@
+{
+  "acceptance": {
+    "compiler_v1_pass": false,
+    "native_coverage": 0.2727272727272727,
+    "negative_cells": [
+      "sm90_decode_b8_tail64k_g4_d128"
+    ],
+    "negative_cells_retained": true,
+    "p90_routing_regret": 0.0,
+    "resolved_coverage": 0.36363636363636365,
+    "semantic_coverage": 1.0,
+    "telemetry_coverage": 0.36363636363636365,
+    "zero_timed_loop_allocations": true
+  },
+  "architecture": "sm90",
+  "entries": [
+    {
+      "baseline_evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+      "baseline_latency_ms": 0.04134399816393852,
+      "baseline_requested_backend": "flashinfer",
+      "baseline_resolved_backend": "fa2",
+      "baseline_telemetry_complete": true,
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness_passed": true,
+      "evidence_ids": [
+        "sm90_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported",
+        "sm90_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+        "sm90_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported",
+        "sm90_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_sm90_wgmma_fragmented_exact"
+      ],
+      "kernel_key": "streamattn_paged_sm90_wgmma_fragmented_exact:s128:t64:w4",
+      "missing_baselines": [],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashinfer",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 1,
+        "cache_kind": "paged",
+        "cache_layout": "HND",
+        "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 8,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 2,
+        "kv_lengths": [
+          32768
+        ],
+        "mask_kind": "none",
+        "page_size": 16,
+        "phase": "decode",
+        "q_heads": 16,
+        "query_len": 1,
+        "surface": "real",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.0,
+          "stratified": 1.0,
+          "trace": 0.16
+        }
+      },
+      "routing_regret": 0.0,
+      "selected_confidence": 0.95,
+      "selected_evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_sm90_wgmma_fragmented_exact",
+      "selected_family_id": "sm90_transposed_gqa_exact_decode",
+      "selected_latency_ms": 0.022816000506281853,
+      "speedup_vs_baseline": 1.812061590398169,
+      "status": "native",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "baseline_evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:flashinfer:fa2",
+      "baseline_latency_ms": 0.7354559898376465,
+      "baseline_requested_backend": "flashinfer",
+      "baseline_resolved_backend": "fa2",
+      "baseline_telemetry_complete": true,
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness_passed": true,
+      "evidence_ids": [
+        "sm90_decode_b8_64k_g4_d128_nhd:external:cudnn_sdpa:direct-paged-unsupported",
+        "sm90_decode_b8_64k_g4_d128_nhd:external:flashinfer:fa2",
+        "sm90_decode_b8_64k_g4_d128_nhd:external:pytorch_sdpa:direct-paged-unsupported",
+        "sm90_decode_b8_64k_g4_d128_nhd:streamattn:streamattn_paged_sm90_wgmma_nhd_fragmented_exact"
+      ],
+      "kernel_key": "streamattn_paged_sm90_wgmma_nhd_fragmented_exact:s4:t64:w4",
+      "missing_baselines": [],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashinfer",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 8,
+        "cache_kind": "paged",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536
+        ],
+        "mask_kind": "none",
+        "page_size": 16,
+        "phase": "decode",
+        "q_heads": 32,
+        "query_len": 1,
+        "surface": "real",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.0,
+          "stratified": 1.0,
+          "trace": 0.13
+        }
+      },
+      "routing_regret": 0.0,
+      "selected_confidence": 0.95,
+      "selected_evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:streamattn:streamattn_paged_sm90_wgmma_nhd_fragmented_exact",
+      "selected_family_id": "sm90_transposed_gqa_exact_decode",
+      "selected_latency_ms": 0.7009599804878235,
+      "speedup_vs_baseline": 1.0492125232681841,
+      "status": "native",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_64k_g4_d128_nhd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_prefill_b1_4k_g4_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa",
+        "flashinfer_prefill"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa",
+          "flashinfer_prefill"
+        ],
+        "batch_size": 1,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_prefill_b1_4k_g4_d128",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          4096
+        ],
+        "mask_kind": "causal",
+        "page_size": null,
+        "phase": "prefill",
+        "q_heads": 32,
+        "query_len": 4096,
+        "surface": "real",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.0,
+          "stratified": 1.0,
+          "trace": 0.1
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_train_b2_2k_g4_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 2,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_train_b2_2k_g4_d128",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          2048,
+          2048
+        ],
+        "mask_kind": "causal",
+        "page_size": null,
+        "phase": "train",
+        "q_heads": 32,
+        "query_len": 2048,
+        "surface": "real",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.0,
+          "stratified": 1.0,
+          "trace": 0.05
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:flashinfer:fa2",
+      "baseline_latency_ms": 0.07177600264549255,
+      "baseline_requested_backend": "flashinfer",
+      "baseline_resolved_backend": "fa2",
+      "baseline_telemetry_complete": true,
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness_passed": true,
+      "evidence_ids": [
+        "sm90_decode_b4_tail32k_g8_d128:external:cudnn_sdpa:direct-paged-unsupported",
+        "sm90_decode_b4_tail32k_g8_d128:external:flashinfer:fa2",
+        "sm90_decode_b4_tail32k_g8_d128:external:pytorch_sdpa:direct-paged-unsupported",
+        "sm90_decode_b4_tail32k_g8_d128:streamattn:streamattn_paged_sm90_wgmma_fragmented_ragged_exact"
+      ],
+      "kernel_key": "streamattn_paged_sm90_wgmma_fragmented_ragged_exact:s32:t64:w4",
+      "missing_baselines": [],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashinfer",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 4,
+        "cache_kind": "paged",
+        "cache_layout": "HND",
+        "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 8,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 2,
+        "kv_lengths": [
+          32767,
+          32003,
+          24577,
+          16385
+        ],
+        "mask_kind": "none",
+        "page_size": 16,
+        "phase": "decode",
+        "q_heads": 16,
+        "query_len": 1,
+        "surface": "boundary",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 1.0,
+          "stratified": 0.5,
+          "trace": 0.0
+        }
+      },
+      "routing_regret": 0.0,
+      "selected_confidence": 0.95,
+      "selected_evidence_id": "sm90_decode_b4_tail32k_g8_d128:streamattn:streamattn_paged_sm90_wgmma_fragmented_ragged_exact",
+      "selected_family_id": "sm90_transposed_gqa_exact_decode",
+      "selected_latency_ms": 0.054976001381874084,
+      "speedup_vs_baseline": 1.3055879082023876,
+      "status": "native",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b4_tail32k_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "baseline_evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:flashinfer:fa2",
+      "baseline_latency_ms": 0.47046399116516113,
+      "baseline_requested_backend": "flashinfer",
+      "baseline_resolved_backend": "fa2",
+      "baseline_telemetry_complete": true,
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness_passed": true,
+      "evidence_ids": [
+        "sm90_decode_b8_tail64k_g4_d128:external:cudnn_sdpa:direct-paged-unsupported",
+        "sm90_decode_b8_tail64k_g4_d128:external:flashinfer:fa2",
+        "sm90_decode_b8_tail64k_g4_d128:external:pytorch_sdpa:direct-paged-unsupported",
+        "sm90_decode_b8_tail64k_g4_d128:streamattn:streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact"
+      ],
+      "kernel_key": null,
+      "missing_baselines": [],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashinfer",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 8,
+        "cache_kind": "paged",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+        "dtype": "bfloat16",
+        "features": [],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          65535,
+          65023,
+          60001,
+          49153,
+          32769,
+          24577,
+          16385,
+          8193
+        ],
+        "mask_kind": "none",
+        "page_size": 16,
+        "phase": "decode",
+        "q_heads": 32,
+        "query_len": 1,
+        "surface": "boundary",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 1.0,
+          "stratified": 0.5,
+          "trace": 0.0
+        }
+      },
+      "routing_regret": 0.0,
+      "selected_confidence": 0.95,
+      "selected_evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:flashinfer:fa2",
+      "selected_family_id": null,
+      "selected_latency_ms": 0.47046399116516113,
+      "speedup_vs_baseline": 1.0,
+      "status": "external_fallback",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_tail64k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_micro_prefill_m16_n32k_g8_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa",
+        "flashinfer_prefill"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa",
+          "flashinfer_prefill"
+        ],
+        "batch_size": 1,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_micro_prefill_m16_n32k_g8_d128",
+        "dtype": "bfloat16",
+        "features": [
+          "cross_attention"
+        ],
+        "group_size": 8,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 2,
+        "kv_lengths": [
+          32768
+        ],
+        "mask_kind": "none",
+        "page_size": null,
+        "phase": "prefill",
+        "q_heads": 16,
+        "query_len": 16,
+        "surface": "boundary",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 1.0,
+          "stratified": 0.5,
+          "trace": 0.0
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_prefill_tail129_g8_d64",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa",
+        "flashinfer_prefill"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa",
+          "flashinfer_prefill"
+        ],
+        "batch_size": 1,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_prefill_tail129_g8_d64",
+        "dtype": "float16",
+        "features": [],
+        "group_size": 8,
+        "guarantee": "exact",
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_lengths": [
+          129
+        ],
+        "mask_kind": "causal",
+        "page_size": null,
+        "phase": "prefill",
+        "q_heads": 16,
+        "query_len": 129,
+        "surface": "boundary",
+        "tolerance": {
+          "atol": 0.015,
+          "rtol": 0.015
+        },
+        "weights": {
+          "boundary": 1.0,
+          "stratified": 0.5,
+          "trace": 0.0
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_prefill_sliding_g4_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa",
+        "flashinfer_prefill"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa",
+          "flashinfer_prefill"
+        ],
+        "batch_size": 2,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_prefill_sliding_g4_d128",
+        "dtype": "bfloat16",
+        "features": [
+          "window_left_512"
+        ],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          2048,
+          2048
+        ],
+        "mask_kind": "sliding_window",
+        "page_size": null,
+        "phase": "prefill",
+        "q_heads": 32,
+        "query_len": 2048,
+        "surface": "feature",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.5,
+          "stratified": 1.0,
+          "trace": 0.01
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_prefill_alibi_g8_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa",
+        "flashinfer_prefill"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa",
+          "flashinfer_prefill"
+        ],
+        "batch_size": 1,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_prefill_alibi_g8_d128",
+        "dtype": "bfloat16",
+        "features": [
+          "alibi"
+        ],
+        "group_size": 8,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 2,
+        "kv_lengths": [
+          1024
+        ],
+        "mask_kind": "causal",
+        "page_size": null,
+        "phase": "prefill",
+        "q_heads": 16,
+        "query_len": 1024,
+        "surface": "feature",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.5,
+          "stratified": 1.0,
+          "trace": 0.01
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    },
+    {
+      "baseline_evidence_id": null,
+      "baseline_latency_ms": null,
+      "baseline_requested_backend": null,
+      "baseline_resolved_backend": null,
+      "baseline_telemetry_complete": false,
+      "cell_id": "sm90_train_deterministic_g4_d128",
+      "correctness_passed": null,
+      "evidence_ids": [],
+      "kernel_key": null,
+      "missing_baselines": [
+        "flashattention",
+        "cudnn_sdpa",
+        "pytorch_sdpa"
+      ],
+      "problem": {
+        "architecture": "sm90",
+        "baseline_candidates": [
+          "flashattention",
+          "cudnn_sdpa",
+          "pytorch_sdpa"
+        ],
+        "batch_size": 2,
+        "cache_kind": "contiguous",
+        "cache_layout": "NHD",
+        "cell_id": "sm90_train_deterministic_g4_d128",
+        "dtype": "bfloat16",
+        "features": [
+          "deterministic_rng",
+          "dropout",
+          "need_dq_dk_dv",
+          "need_lse"
+        ],
+        "group_size": 4,
+        "guarantee": "exact",
+        "head_dim": 128,
+        "kv_heads": 8,
+        "kv_lengths": [
+          1024,
+          1024
+        ],
+        "mask_kind": "causal",
+        "page_size": null,
+        "phase": "train",
+        "q_heads": 32,
+        "query_len": 1024,
+        "surface": "feature",
+        "tolerance": {
+          "atol": 0.03,
+          "rtol": 0.03
+        },
+        "weights": {
+          "boundary": 0.5,
+          "stratified": 1.0,
+          "trace": 0.01
+        }
+      },
+      "routing_regret": null,
+      "selected_confidence": null,
+      "selected_evidence_id": null,
+      "selected_family_id": null,
+      "selected_latency_ms": null,
+      "speedup_vs_baseline": null,
+      "status": "incomplete_baselines",
+      "supported_range": null,
+      "workspace_bytes": null
+    }
+  ],
+  "environment": {
+    "architecture": "sm90",
+    "compiler_versions": {
+      "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+      "triton": "3.3.1"
+    },
+    "cuda_version": "12.8",
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+    "driver_version": "580.95.05",
+    "library_versions": {
+      "cudnn": "90701",
+      "flashinfer-cubin": "0.6.17",
+      "flashinfer-python": "0.6.17"
+    },
+    "torch_version": "2.7.1+cu128"
+  },
+  "environment_id": "9582a21a4b5465422151",
+  "evidence": [
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 2.431192636489868,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.05152000114321709,
+        "confidence": 0.95,
+        "p10_ms": 0.0406528003513813,
+        "p50_ms": 0.04134399816393852,
+        "p90_ms": 0.04998400136828422,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.9140728464194358e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 2.431192636489868,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_sm90_wgmma_fragmented_exact",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm90_wgmma_fragmented_exact:s128:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm90_wgmma_fragmented_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.029472000896930695,
+        "confidence": 0.95,
+        "p10_ms": 0.022284800186753273,
+        "p50_ms": 0.022816000506281853,
+        "p90_ms": 0.026540800184011455,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.285263290541698e-06
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": {
+        "checked_cases": 8192,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 17.25242805480957,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b4_tail32k_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.0761599987745285,
+        "confidence": 0.95,
+        "p10_ms": 0.07080959975719452,
+        "p50_ms": 0.07177600264549255,
+        "p90_ms": 0.07640960067510605,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.0070760978986294e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b4_tail32k_g8_d128",
+      "correctness": {
+        "checked_cases": 8192,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 17.25242805480957,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b4_tail32k_g8_d128:streamattn:streamattn_paged_sm90_wgmma_fragmented_ragged_exact",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm90_wgmma_fragmented_ragged_exact:s32:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm90_wgmma_fragmented_ragged_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b4_tail32k_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.057312000542879105,
+        "confidence": 0.95,
+        "p10_ms": 0.05392000079154968,
+        "p50_ms": 0.054976001381874084,
+        "p90_ms": 0.057158400863409044,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.6988120307434882e-06
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 38.208438873291016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_64k_g4_d128_nhd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.7376959919929504,
+        "confidence": 0.95,
+        "p10_ms": 0.733132803440094,
+        "p50_ms": 0.7354559898376465,
+        "p90_ms": 0.7400704026222229,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 7.0720618687245306e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_64k_g4_d128_nhd",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 38.208438873291016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_64k_g4_d128_nhd:streamattn:streamattn_paged_sm90_wgmma_nhd_fragmented_exact",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm90_wgmma_nhd_fragmented_exact:s4:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm90_wgmma_nhd_fragmented_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_64k_g4_d128_nhd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.7030720114707947,
+        "confidence": 0.95,
+        "p10_ms": 0.6992576241493225,
+        "p50_ms": 0.7009599804878235,
+        "p90_ms": 0.7046271920204162,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.475048637289092e-06
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 11.717948913574219,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_tail64k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.4708159863948822,
+        "confidence": 0.95,
+        "p10_ms": 0.46853760480880735,
+        "p50_ms": 0.47046399116516113,
+        "p90_ms": 0.4723712027072906,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.8235152984007957e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm90_decode_b8_tail64k_g4_d128",
+      "correctness": {
+        "checked_cases": 32768,
+        "failure_reason": null,
+        "max_abs_error": 0.000244140625,
+        "max_relative_error": 11.717948913574219,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm90",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "device_uuid": "GPU-1be26cc8-ec8a-960b-7f25-bd24ef3360ce",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "9582a21a4b5465422151",
+      "evidence_id": "sm90_decode_b8_tail64k_g4_d128:streamattn:streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact",
+      "family_id": "sm90_transposed_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact:s4:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm90_transposed_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm90_wgmma_nhd_fragmented_ragged_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm90_decode_b8_tail64k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.48403200507164,
+        "confidence": 0.95,
+        "p10_ms": 0.4840448081493378,
+        "p50_ms": 0.48495998978614807,
+        "p90_ms": 0.4886336028575897,
+        "process_count": 1,
+        "sample_count": 15,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.005073878325801e-06
+      },
+      "workspace_bytes": 1056768
+    }
+  ],
+  "manifest_id": "universal_exact_v1_20260828",
+  "schema_version": 1,
+  "source_commit": "8f6f36f8fbe0248f3c7e109c81194cc30e90aa19"
+}

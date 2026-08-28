@@ -44,6 +44,13 @@ def main() -> None:
     parser.add_argument("--selection-json", type=Path)
     parser.add_argument("--output-dir", type=Path, default=Path("phase_db"))
     parser.add_argument("--source-commit")
+    parser.add_argument(
+        "--architectures",
+        nargs="+",
+        choices=("sm80", "sm90", "sm100"),
+        default=("sm80", "sm90", "sm100"),
+        help="compile only the listed architecture databases",
+    )
     args = parser.parse_args()
 
     manifest = load_universal_exact_manifest(args.manifest)
@@ -62,7 +69,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     databases = []
-    for architecture in ("sm80", "sm90", "sm100"):
+    for architecture in args.architectures:
         database = compile_phase_database(
             manifest,
             evidence,

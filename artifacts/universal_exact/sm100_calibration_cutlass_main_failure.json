@@ -1,0 +1,1854 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": null,
+      "detail": "RuntimeError: Error building extension 'streamattn_sm100_gqa_prefill_07682009aa53': [1/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=streamattn_sm100_gqa_prefill_07682009aa53 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\\\"_gcc\\\" -DPYBIND11_STDLIB=\\\"_libstdcpp\\\" -DPYBIND11_BUILD_ABI=\\\"_cxxabi1016\\\" -I/root/StreamAttn/stream_attention/backends/sm100/csrc -I/opt/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -fPIC -std=c++17 -O3 -std=c++17 -c /tmp/streamattn-sm100-build/main.cpp -o main.o \n[2/3] /usr/local/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output cuda.cuda.o.d -DTORCH_EXTENSION_NAME=streamattn_sm100_gqa_prefill_07682009aa53 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\\\"_gcc\\\" -DPYBIND11_STDLIB=\\\"_libstdcpp\\\" -DPYBIND11_BUILD_ABI=\\\"_cxxabi1016\\\" -I/root/StreamAttn/stream_attention/backends/sm100/csrc -I/opt/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_100a,code=sm_100a --compiler-options '-fPIC' -O3 -std=c++17 --use_fast_math --expt-relaxed-constexpr --expt-extended-lambda -DCUTLASS_ENABLE_GDC_FOR_SM100=1 -gencode=arch=compute_100a,code=sm_100a -c /tmp/streamattn-sm100-build/cuda.cu -o cuda.cuda.o \nFAILED: cuda.cuda.o \n/usr/local/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output cuda.cuda.o.d -DTORCH_EXTENSION_NAME=streamattn_sm100_gqa_prefill_07682009aa53 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\\\"_gcc\\\" -DPYBIND11_STDLIB=\\\"_libstdcpp\\\" -DPYBIND11_BUILD_ABI=\\\"_cxxabi1016\\\" -I/root/StreamAttn/stream_attention/backends/sm100/csrc -I/opt/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_100a,code=sm_100a --compiler-options '-fPIC' -O3 -std=c++17 --use_fast_math --expt-relaxed-constexpr --expt-extended-lambda -DCUTLASS_ENABLE_GDC_FOR_SM100=1 -gencode=arch=compute_100a,code=sm_100a -c /tmp/streamattn-sm100-build/cuda.cu -o cuda.cuda.o \n/root/StreamAttn/stream_attention/backends/sm100/csrc/tgv_gqa.cuh(809): error: class \"cute::TMEM::Allocator1Sm\" has no member \"Sm100TmemCapacityColumns\"\n    static_assert((Acc1_col_max + Acc2_col_max) < TmemAllocator::Sm100TmemCapacityColumns / 2, \"Accumulator is too large to fit in half of tmem\");\n                                                                 ^\n\n1 error detected in the compilation of \"/tmp/streamattn-sm100-build/cuda.cu\".\nninja: build stopped: subcommand failed.\n",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:streamattn:h8_q1:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:streamattn:h8_q2:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:streamattn:h8_q4:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": null,
+        "max_abs_error": 0.008418798446655273,
+        "max_relative_error": 314.0533142089844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.043540799617767335,
+        "confidence": 0.95,
+        "p10_ms": 0.039611200094223024,
+        "p50_ms": 0.040575999021530154,
+        "p90_ms": 0.04162336111068726,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.371777429501624e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 2.839522361755371,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:pytorch_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.012535999715328216,
+        "confidence": 0.95,
+        "p10_ms": 0.012236480116844178,
+        "p50_ms": 0.012332800030708312,
+        "p90_ms": 0.01251167982816696,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.3746483123912248e-08
+      },
+      "workspace_bytes": 512
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": null,
+        "max_abs_error": 0.008418798446655273,
+        "max_relative_error": 314.0533142089844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.03499200046062469,
+        "confidence": 0.95,
+        "p10_ms": 0.027444479465484617,
+        "p50_ms": 0.028548800945281984,
+        "p90_ms": 0.03376064002513886,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 7.713628020309116e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 2.839522361755371,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:cudnn_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.01055999994277954,
+        "confidence": 0.95,
+        "p10_ms": 0.010351360142230988,
+        "p50_ms": 0.010395199805498124,
+        "p90_ms": 0.010451200008392334,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.8237545720826506e-09
+      },
+      "workspace_bytes": 1049600
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": null,
+        "max_abs_error": 0.007830142974853516,
+        "max_relative_error": 413.2354431152344,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:flashinfer_prefill:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.029041600227355958,
+        "confidence": 0.95,
+        "p10_ms": 0.022127999961376193,
+        "p50_ms": 0.02356480062007904,
+        "p90_ms": 0.02863456010818482,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 6.751885190671776e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_256_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 2.839522361755371,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_256_g8_d128:external:flashinfer_prefill:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_256_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.012492799758911132,
+        "confidence": 0.95,
+        "p10_ms": 0.012368959933519365,
+        "p50_ms": 0.012398400157690049,
+        "p90_ms": 0.01244543969631195,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.4241774855723809e-09
+      },
+      "workspace_bytes": 1049600
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:streamattn:h8_q1:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:streamattn:h8_q2:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:streamattn:h8_q4:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": null,
+        "max_abs_error": 0.007932901382446289,
+        "max_relative_error": 334.9395446777344,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.04338079988956452,
+        "confidence": 0.95,
+        "p10_ms": 0.04129535913467407,
+        "p50_ms": 0.041739198565483096,
+        "p90_ms": 0.042863679528236394,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 4.813532437984878e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.631643533706665,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:pytorch_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.016627199947834015,
+        "confidence": 0.95,
+        "p10_ms": 0.016504960358142855,
+        "p50_ms": 0.016527999937534333,
+        "p90_ms": 0.016610559523105622,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.712974946963432e-09
+      },
+      "workspace_bytes": 1573888
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": null,
+        "max_abs_error": 0.007932901382446289,
+        "max_relative_error": 334.9395446777344,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.04262239933013916,
+        "confidence": 0.95,
+        "p10_ms": 0.03977855920791626,
+        "p50_ms": 0.040443199872970584,
+        "p90_ms": 0.04189023971557617,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 8.396367066055948e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.631643533706665,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:cudnn_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.014572800695896148,
+        "confidence": 0.95,
+        "p10_ms": 0.014463679492473602,
+        "p50_ms": 0.014519999921321868,
+        "p90_ms": 0.014568959772586824,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.9140107291685836e-09
+      },
+      "workspace_bytes": 1573888
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": null,
+        "max_abs_error": 0.008349418640136719,
+        "max_relative_error": 503.91217041015625,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:flashinfer_prefill:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.031147199869155883,
+        "confidence": 0.95,
+        "p10_ms": 0.03245279908180236,
+        "p50_ms": 0.03386240005493164,
+        "p90_ms": 0.034759680032730104,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.173772525992937e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_384_g8_d128",
+      "correctness": {
+        "checked_cases": 786432,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.631643533706665,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_384_g8_d128:external:flashinfer_prefill:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_384_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.014545600116252898,
+        "confidence": 0.95,
+        "p10_ms": 0.01440863996744156,
+        "p50_ms": 0.014454400539398194,
+        "p90_ms": 0.01450463980436325,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.9668990396897367e-09
+      },
+      "workspace_bytes": 1573888
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:streamattn:h8_q1:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:streamattn:h8_q2:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:streamattn:h8_q4:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": null,
+        "max_abs_error": 0.00975942611694336,
+        "max_relative_error": 176.88514709472656,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.04275520145893097,
+        "confidence": 0.95,
+        "p10_ms": 0.04155104041099548,
+        "p50_ms": 0.042075198888778684,
+        "p90_ms": 0.042520959973335264,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.6080642479623677e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.125,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:pytorch_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.020735999941825865,
+        "confidence": 0.95,
+        "p10_ms": 0.02060960054397583,
+        "p50_ms": 0.020683200657367708,
+        "p90_ms": 0.02070656001567841,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.796592673533436e-09
+      },
+      "workspace_bytes": 2098176
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": null,
+        "max_abs_error": 0.00975942611694336,
+        "max_relative_error": 217.25401306152344,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.04328640103340149,
+        "confidence": 0.95,
+        "p10_ms": 0.03997280061244964,
+        "p50_ms": 0.04062879979610443,
+        "p90_ms": 0.042824319601058966,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.3396450399077532e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.125,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:cudnn_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.014574399590492249,
+        "confidence": 0.95,
+        "p10_ms": 0.014457280337810517,
+        "p50_ms": 0.014502400159835815,
+        "p90_ms": 0.014574399590492249,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.883579971721066e-09
+      },
+      "workspace_bytes": 2098176
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": null,
+        "max_abs_error": 0.008130073547363281,
+        "max_relative_error": 177.72886657714844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:flashinfer_prefill:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.03247039914131165,
+        "confidence": 0.95,
+        "p10_ms": 0.03007968008518219,
+        "p50_ms": 0.03133119940757752,
+        "p90_ms": 0.03205311894416809,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 6.377266484303294e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b1_512_g8_d128",
+      "correctness": {
+        "checked_cases": 1048576,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.125,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b1_512_g8_d128:external:flashinfer_prefill:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b1_512_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.016612799465656282,
+        "confidence": 0.95,
+        "p10_ms": 0.016521280705928804,
+        "p50_ms": 0.016550399363040924,
+        "p90_ms": 0.016588479578495026,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.264483652984057e-09
+      },
+      "workspace_bytes": 2098176
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:streamattn:h8_q1:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:streamattn:h8_q2:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": null,
+      "detail": "ImportError: /tmp/streamattn-sm100-build/streamattn_sm100_gqa_prefill_07682009aa53.so: cannot open shared object file: No such file or directory",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:streamattn:h8_q4:error",
+      "family_id": "sm100_tgv_gqa_causal_prefill",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm100_tgv_gqa_causal_prefill",
+      "resolved_backend": null,
+      "status": "error",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": null,
+        "max_abs_error": 0.008026599884033203,
+        "max_relative_error": 157.8783416748047,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b2_128_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.03805440068244934,
+        "confidence": 0.95,
+        "p10_ms": 0.03642880082130432,
+        "p50_ms": 0.03755840063095093,
+        "p90_ms": 0.03782528042793274,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 3.384314807158771e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.644664764404297,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:pytorch_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b2_128_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.010547199845314026,
+        "confidence": 0.95,
+        "p10_ms": 0.010405119955539704,
+        "p50_ms": 0.010475199669599533,
+        "p90_ms": 0.010522879958152771,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.622442787465956e-09
+      },
+      "workspace_bytes": 1049600
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": null,
+        "max_abs_error": 0.008026599884033203,
+        "max_relative_error": 157.8783416748047,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b2_128_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.03818239867687225,
+        "confidence": 0.95,
+        "p10_ms": 0.03577599942684173,
+        "p50_ms": 0.036980798840522765,
+        "p90_ms": 0.03735552012920379,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 5.401412094178607e-07
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": {
+        "checked_cases": 524288,
+        "failure_reason": "bf16_tolerance_exceeded",
+        "max_abs_error": 3.644664764404297,
+        "max_relative_error": 1.0,
+        "passed": false,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:cudnn_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm100_prefill_b2_128_g8_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.01056319996714592,
+        "confidence": 0.95,
+        "p10_ms": 0.010300160199403762,
+        "p50_ms": 0.01037919968366623,
+        "p90_ms": 0.010431359857320787,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 5.7672621867614694e-09
+      },
+      "workspace_bytes": 1049600
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm100_prefill_b2_128_g8_d128",
+      "correctness": null,
+      "detail": "single-prefill API does not implement batched GQA semantics",
+      "environment": {
+        "architecture": "sm100",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA B200",
+        "device_uuid": "GPU-b0dc2223-b943-8c99-5c41-e6353c2b2d53",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "7086560079bc22e1ac4c",
+      "evidence_id": "sm100_prefill_b2_128_g8_d128:external:flashinfer_prefill:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1
+}

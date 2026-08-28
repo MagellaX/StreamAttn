@@ -629,11 +629,11 @@ def _entry_for_cell(
     )
     telemetry_complete = not missing_baselines
     baseline = resolve_fastest_correct_baseline(cell, rows)
-    oracle = resolve_fastest_streamattn_candidate(cell, rows)
-    selected = oracle
+    native_oracle = resolve_fastest_streamattn_candidate(cell, rows)
+    selected_native = native_oracle
     requested_selection = selected_evidence_ids.get(cell.cell_id)
     if requested_selection is not None:
-        selected = next(
+        selected_native = next(
             (
                 row
                 for row in rows
@@ -646,12 +646,23 @@ def _entry_for_cell(
         )
 
     native_families = matching_kernel_families(cell, families, native_only=True)
+    selected = selected_native
     if not telemetry_complete:
         status = PhaseEntryStatus.INCOMPLETE_BASELINES
     elif baseline is None:
         status = PhaseEntryStatus.NO_CORRECT_BASELINE
-    elif selected is not None:
+    elif requested_selection is not None and selected_native is not None:
         status = PhaseEntryStatus.NATIVE
+    elif (
+        selected_native is not None
+        and selected_native.timing is not None
+        and baseline.timing is not None
+        and selected_native.timing.p50_ms <= baseline.timing.p50_ms
+    ):
+        status = PhaseEntryStatus.NATIVE
+    elif selected_native is not None:
+        status = PhaseEntryStatus.EXTERNAL_FALLBACK
+        selected = baseline
     elif not native_families:
         status = PhaseEntryStatus.EXTERNAL_FALLBACK
         selected = baseline
@@ -667,11 +678,23 @@ def _entry_for_cell(
         if selected_latency is None or baseline_latency is None
         else baseline_latency / selected_latency
     )
-    regret = (
-        None
-        if selected_timing is None or oracle is None or oracle.timing is None
-        else selected_timing.p50_ms / oracle.timing.p50_ms - 1.0
+    usable_oracles = [
+        row
+        for row in (baseline, native_oracle)
+        if row is not None and row.timing is not None
+    ]
+    performance_oracle = min(
+        usable_oracles,
+        key=lambda row: (row.timing.p50_ms, row.evidence_id),  # type: ignore[union-attr]
+        default=None,
     )
+    regret = None
+    if (
+        selected_timing is not None
+        and performance_oracle is not None
+        and performance_oracle.timing is not None
+    ):
+        regret = selected_timing.p50_ms / performance_oracle.timing.p50_ms - 1.0
     return PhaseDatabaseEntry(
         cell_id=cell.cell_id,
         problem=cell.as_dict(),
@@ -756,11 +779,22 @@ def compile_phase_database(
         for row in selected_rows
     )
     p90_regret = _percentile([float(value) for value in regrets], 0.90)
-    negative_cells = [
+    negative_cells = {
         entry.cell_id
         for entry in entries
         if entry.speedup_vs_baseline is not None and entry.speedup_vs_baseline < 1.0
-    ]
+    }
+    for cell in cells:
+        baseline = resolve_fastest_correct_baseline(cell, rows)
+        native = resolve_fastest_streamattn_candidate(cell, rows)
+        if (
+            baseline is not None
+            and baseline.timing is not None
+            and native is not None
+            and native.timing is not None
+            and native.timing.p50_ms > baseline.timing.p50_ms
+        ):
+            negative_cells.add(cell.cell_id)
     acceptance = {
         "semantic_coverage": len(entries) / len(cells),
         "telemetry_coverage": len(telemetry_complete) / len(cells),
@@ -769,7 +803,7 @@ def compile_phase_database(
         / len(cells),
         "p90_routing_regret": p90_regret,
         "zero_timed_loop_allocations": zero_allocation,
-        "negative_cells": negative_cells,
+        "negative_cells": sorted(negative_cells),
         "negative_cells_retained": True,
         "compiler_v1_pass": bool(
             len(entries) == len(cells)
