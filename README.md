@@ -470,6 +470,13 @@ its Q-head-owned programs reload shared K/V for every GQA query head and its
 backward atomically merges those contributions. FlashAttention-class SDPA is
 still faster across the measured prefill/training cells.
 
+An experimental KV-group-owned forward floor now flattens multiple query heads
+into one program's row tile and reuses compact K/V while maintaining independent
+FP32 online-softmax states. It improves the first native forward by up to
+`4.85x` on H100 and `2.72x` on B200, but its best measured paired result is
+still `0.89x` of Flash SDPA. It is therefore not auto-routed. See the
+[grouped-GQA prefill floor](docs/grouped_gqa_prefill_floor_20260828.md).
+
 ## Decode Request Lifecycle
 
 The native engine deliberately separates model-specific work from attention:
@@ -646,11 +653,11 @@ reduced-work route can speed up complete model decode. The next milestones are:
    verifier.
 3. Add a second model family to test whether policy discovery generalizes
    beyond Qwen.
-4. Replace the first compact GQA prefill/training lowering with a KV-group-owned
-   forward schedule that reuses each K/V tile across grouped query heads, then
-   split backward into dQ work and grouped dK/dV reductions without global
-   atomic contention. Specialize the schedules for H100 WGMMA and B200
-   `tcgen05`/TMEM before considering performance promotion.
+4. Lower the validated KV-group-owned prefill floor into architecture-native
+   tensor-core pipelines. The generic Triton floor remains below Flash SDPA;
+   the next implementation must use H100 WGMMA and B200 `tcgen05`/TMEM before
+   performance promotion. Only after forward parity should backward split into
+   dQ work and grouped dK/dV reductions without global atomic contention.
 5. Lower the now-executed selected-route ABI into the B200
    TMA+TMEM+`tcgen05` backend and
    expand it beyond the promoted

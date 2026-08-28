@@ -22,6 +22,7 @@ TRITON_MODULES = (
     "stream_attention.kernels.gate1_inline_projection_fwd_triton",
     "stream_attention.kernels.gate1_inline_projection_splitk_triton",
     "stream_attention.kernels.gate1_mass_fwd_triton",
+    "stream_attention.kernels.grouped_gqa_prefill_triton",
     "stream_attention.kernels.metadata_triton",
     "stream_attention.kernels.metadata_update_triton",
     "stream_attention.kernels.paged_exact_triton",
