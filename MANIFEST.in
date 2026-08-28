@@ -3,3 +3,5 @@ include README.md
 include pyproject.toml
 include requirements.txt
 recursive-include stream_attention *.py *.json *.cuh
+include benchmarks/inspect_universal_exact_manifest.py
+recursive-include benchmarks/manifests *.yaml

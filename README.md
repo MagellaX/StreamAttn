@@ -497,6 +497,55 @@ training, and feature-rich calls remain on the existing exact fallback. See
 [native SM100 GQA prefill](docs/sm100_gqa_prefill_20260828.md) for the resource
 derivation and measurement protocol.
 
+## Universal Exact Phase Compiler
+
+StreamAttn no longer treats isolated promotion dictionaries as the final engine
+architecture. The first universal exact compiler contract is committed in
+[`benchmarks/manifests/universal_exact_v1.yaml`](benchmarks/manifests/universal_exact_v1.yaml).
+It freezes 30 valid cells instead of constructing an artificial Cartesian
+product:
+
+```text
+12 real workload cells
+10 architecture and scheduler boundary cells
+ 8 feature-interaction cells
+
+SM80 + SM90 + SM100
+decode + prefill + training
+FP16 + BF16
+D64 + D128 + D256
+contiguous + paged, NHD + HND
+```
+
+The manifest publishes trace, stratified, and boundary weights; eligible
+baselines; numerical tolerances; and compiler acceptance criteria. The physical
+IR in `stream_attention/exact_compiler.py` records ownership, algebra
+orientation, tile geometry, split strategy, load/MMA engine, accumulator space,
+pipeline, scheduler, cluster, softmax, merge, and epilogue. Runtime `B/M/N`
+remain in `AttentionProblem` so one compiled binary can cover many cells.
+
+Guarantees are deliberately distinct:
+
+```text
+exact                  full-context exact attention
+schedule_exact         exact arithmetic over an explicitly selected schedule
+distribution_verified  approximation validated at model-output level
+```
+
+Eight current implementations are registered as candidate families, including
+the promoted SM90 decode and SM100 prefill kernels, generic native Triton, and
+an explicitly non-native external fallback. The manifest already exposes one
+native gap: deterministic dropout training currently requires that fallback.
+This is compiler infrastructure, not a new overall performance claim. Inspect
+the frozen surface with:
+
+```bash
+python benchmarks/inspect_universal_exact_manifest.py
+```
+
+See [Universal Exact Phase Compiler v1](docs/universal_exact_phase_compiler_v1.md)
+for the invariants and next compiler stages.
+
 ## Decode Request Lifecycle
 
 The native engine deliberately separates model-specific work from attention:
@@ -577,6 +626,7 @@ python benchmarks/profile_transposed_wgmma_exact_qk.py --help
 python benchmarks/profile_paged_exact_decode.py --help
 python benchmarks/profile_seed_only_route_bundle_decode.py --help
 python benchmarks/profile_seed_kernel_mode_autotune.py --help
+python benchmarks/inspect_universal_exact_manifest.py
 ```
 
 A publishable performance result should record:
@@ -614,6 +664,7 @@ not hidden StreamAttn dependencies.
 stream_attention/
   engine.py                 public decode, prefill, and training engine
   functional.py             planned exact prefill/training execution
+  exact_compiler.py         workload, schedule, and resource compiler IR
   decode.py                 native modes, planning, and fail-closed service
   backends/sm80/            experimental Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
@@ -623,7 +674,7 @@ stream_attention/
   core/                     general forward/backward attention modules
   integration/              model integration helpers
 
-benchmarks/                 profilers, policy compilers, and evidence tools
+benchmarks/                 profilers, manifests, compilers, and evidence tools
 docs/                       phase diagrams and research decisions
 examples/                   minimal usage and integration examples
 tests/                      CPU, policy, API, and CUDA-gated tests
@@ -637,6 +688,7 @@ the README. Start with:
 - [Dynamic selector findings](docs/qwen25_3b_dynamic_selector_findings.md)
 - [D128 pipeline ablation](docs/sm90_d128_pipeline_ablation_20260819.md)
 - [Paged exact decode](docs/paged_exact_decode.md)
+- [Universal Exact Phase Compiler v1](docs/universal_exact_phase_compiler_v1.md)
 - [Literature and backend decision ledger](docs/streamattn_literature_decision_ledger.md)
 
 ## Contributing
@@ -662,33 +714,26 @@ python benchmarks/check_wheel_contents.py dist/*.whl
 
 ## Roadmap
 
-The project has completed the first proof: StreamAttn-owned exact kernels can
-beat a strong exact decode baseline on guarded H100 cells, and a calibrated
-reduced-work route can speed up complete model decode. The next milestones are:
+The project has proved that StreamAttn-owned exact kernels can beat strong
+baselines on guarded Hopper and Blackwell cells. The next objective is broad,
+reproducible exact coverage rather than another isolated promotion:
 
-1. Add a GPU `AttentionRouteCSR -> PackedRoute64` preparation kernel for
-   query-dynamic schedules, and gate static versus compact-ragged execution
-   with measured route-count variance.
-2. Replace offline verification schedules with a selective live runtime
-   verifier.
-3. Add a second model family to test whether policy discovery generalizes
-   beyond Qwen.
-4. Expand architecture-native prefill beyond the promoted B200
-   `Hq16/Hkv2/D128` cells. H100 still needs a separate multi-query-row WGMMA
-   forward kernel; reusing the decode-shaped `m64n8` partial/merge path would
-   multiply CTAs by query length. Only after forward parity should backward
-   split into dQ work and grouped dK/dV reductions without global atomic
-   contention.
-5. Lower the now-executed selected-route ABI into the B200
-   TMA+TMEM+`tcgen05` backend and
-   expand it beyond the promoted
-   page-16 NHD D128/G8 full-row cells, and finish the A100 PV
-   shared-to-register transpose so the SM80 candidate scales beyond B1.
-6. Improve B1/B2 economics with a single-kernel cooperative selected path.
-7. Promote query-aware dynamic selection only where it beats exact fallback
-   after selector overhead.
-8. Evaluate FP8/FP4 selected-cache paths under the same distribution-level
-   gates.
+1. Build the baseline resolver and phase database from the frozen universal
+   manifest. Record requested and resolved baselines, versions, workspace,
+   correctness, paired timings, confidence, and every losing cell.
+2. Connect compiled `ptxas`/occupancy reports to the SM80/SM90/SM100 resource
+   legality models, then add analytical roofline pruning and active exploration
+   near uncertain phase boundaries.
+3. Expand B200 prefill through the compiler across G4/G8/G16, D64/D128/D256,
+   FP16/BF16, causal/noncausal, and the short-M to long-M transition.
+4. Generate the missing H100 multi-query-row WGMMA prefill family. Reusing the
+   decode-shaped partial/merge path would retain the wrong physical geometry.
+5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
+   with deterministic partial reductions instead of global GQA atomics.
+6. Lower the same family grammar to A100 with `mma.sync`, `cp.async`, smaller
+   tiles, and software-persistent scheduling.
+7. Resume adaptive/selected work above the exact compiler. Unknown or failed
+   guarantees must return to StreamAttn exact execution.
 
 The public engine API is now:
 

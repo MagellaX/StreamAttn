@@ -5,6 +5,9 @@
 - [Blackwell native exact GQA prefill](sm100_gqa_prefill_20260828.md): direct
   BF16 BSHD causal prefill on B200 for the measured `Hq=16`, `Hkv=2`, `D=128`
   cells, including the promotion boundary and Flash SDPA comparison protocol.
+- [Universal Exact Phase Compiler v1](universal_exact_phase_compiler_v1.md):
+  the frozen valid workload surface, guarantee taxonomy, physical schedule IR,
+  resource legality model, and current kernel-family registry.
 
 ## Parameters Explained
 

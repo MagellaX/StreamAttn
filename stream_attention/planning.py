@@ -21,10 +21,13 @@ import torch
 
 
 ATTENTION_GUARANTEE_EXACT = "exact"
+ATTENTION_GUARANTEE_FULL_CONTEXT_EXACT = ATTENTION_GUARANTEE_EXACT
+ATTENTION_GUARANTEE_SCHEDULE_EXACT = "schedule_exact"
 ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED = "distribution_verified"
 ATTENTION_GUARANTEES = frozenset(
     {
         ATTENTION_GUARANTEE_EXACT,
+        ATTENTION_GUARANTEE_SCHEDULE_EXACT,
         ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
     }
 )
@@ -694,8 +697,14 @@ class AttentionTilePlan:
         schedule_epoch: int = 0,
         device_routes: Optional[AttentionRouteCSR] = None,
     ) -> "AttentionTilePlan":
-        if problem.guarantee != ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED:
-            raise ValueError("selected tile plan requires distribution-verified guarantee")
+        if problem.guarantee not in {
+            ATTENTION_GUARANTEE_SCHEDULE_EXACT,
+            ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+        }:
+            raise ValueError(
+                "selected tile plan requires schedule-exact or "
+                "distribution-verified guarantee"
+            )
         source = AttentionTileSource.from_problem(
             problem,
             logical_tile_size=logical_tile_size,
@@ -727,8 +736,14 @@ class AttentionTilePlan:
     ) -> "AttentionTilePlan":
         """Build a selected plan from a device-produced CSR schedule only."""
 
-        if problem.guarantee != ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED:
-            raise ValueError("selected tile plan requires distribution-verified guarantee")
+        if problem.guarantee not in {
+            ATTENTION_GUARANTEE_SCHEDULE_EXACT,
+            ATTENTION_GUARANTEE_DISTRIBUTION_VERIFIED,
+        }:
+            raise ValueError(
+                "selected tile plan requires schedule-exact or "
+                "distribution-verified guarantee"
+            )
         source = AttentionTileSource.from_problem(
             problem,
             logical_tile_size=logical_tile_size,

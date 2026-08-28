@@ -1,0 +1,474 @@
+schema_version: 1
+manifest_id: universal_exact_v1_20260828
+
+defaults:
+  guarantee: exact
+  dtype: bfloat16
+  mask_kind: none
+
+baselines:
+  decode:
+    - flashinfer
+    - cudnn_sdpa
+    - pytorch_sdpa
+  prefill:
+    - flashattention
+    - cudnn_sdpa
+    - pytorch_sdpa
+    - flashinfer_prefill
+  train:
+    - flashattention
+    - cudnn_sdpa
+    - pytorch_sdpa
+
+tolerances:
+  bfloat16: {rtol: 0.03, atol: 0.03}
+  float16: {rtol: 0.015, atol: 0.015}
+
+acceptance:
+  semantic_coverage: 1.0
+  telemetry_coverage: 1.0
+  p90_routing_regret: 0.05
+  zero_timed_loop_allocations: true
+  retain_negative_cells: true
+
+# Cells are intentionally explicit. This is a valid workload surface, not a
+# Cartesian product: paged training, decode dropout, and noncausal cache decode
+# are excluded because they are not core workloads.
+surfaces:
+  real:
+    - id: sm80_decode_b1_32k_g8_d128_hnd
+      architecture: sm80
+      phase: decode
+      batch_size: 1
+      query_len: 1
+      kv_len: 32768
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: HND
+      page_size: 16
+      weights: {trace: 0.08, stratified: 1.0, boundary: 0.0}
+
+    - id: sm80_prefill_b1_2k_g4_d128
+      architecture: sm80
+      phase: prefill
+      batch_size: 1
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.05, stratified: 1.0, boundary: 0.0}
+
+    - id: sm80_train_b1_2k_mha_d128
+      architecture: sm80
+      phase: train
+      batch_size: 1
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 32
+      kv_heads: 32
+      head_dim: 128
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.03, stratified: 1.0, boundary: 0.0}
+
+    - id: sm90_decode_b1_32k_g8_d128_hnd
+      architecture: sm90
+      phase: decode
+      batch_size: 1
+      query_len: 1
+      kv_len: 32768
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: HND
+      page_size: 16
+      weights: {trace: 0.16, stratified: 1.0, boundary: 0.0}
+
+    - id: sm90_decode_b8_64k_g4_d128_nhd
+      architecture: sm90
+      phase: decode
+      batch_size: 8
+      query_len: 1
+      kv_len: 65536
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: NHD
+      page_size: 16
+      weights: {trace: 0.13, stratified: 1.0, boundary: 0.0}
+
+    - id: sm90_prefill_b1_4k_g4_d128
+      architecture: sm90
+      phase: prefill
+      batch_size: 1
+      query_len: 4096
+      kv_len: 4096
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.10, stratified: 1.0, boundary: 0.0}
+
+    - id: sm90_train_b2_2k_g4_d128
+      architecture: sm90
+      phase: train
+      batch_size: 2
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.05, stratified: 1.0, boundary: 0.0}
+
+    - id: sm100_decode_b4_64k_g8_d128_nhd
+      architecture: sm100
+      phase: decode
+      batch_size: 4
+      query_len: 1
+      kv_len: 65536
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: NHD
+      page_size: 16
+      weights: {trace: 0.12, stratified: 1.0, boundary: 0.0}
+
+    - id: sm100_prefill_b1_256_g8_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 256
+      kv_len: 256
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.09, stratified: 1.0, boundary: 0.0}
+
+    - id: sm100_prefill_b1_4k_g4_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 4096
+      kv_len: 4096
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.10, stratified: 1.0, boundary: 0.0}
+
+    - id: sm100_train_b2_4k_g4_d128
+      architecture: sm100
+      phase: train
+      batch_size: 2
+      query_len: 4096
+      kv_len: 4096
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.06, stratified: 1.0, boundary: 0.0}
+
+    - id: sm100_prefill_b1_8k_mha_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 8192
+      kv_len: 8192
+      q_heads: 32
+      kv_heads: 32
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.03, stratified: 1.0, boundary: 0.0}
+
+  boundary:
+    - id: sm80_decode_b4_tail16k_g8_d64
+      architecture: sm80
+      phase: decode
+      batch_size: 4
+      query_len: 1
+      kv_lengths: [16385, 16271, 16001, 8193]
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 64
+      dtype: float16
+      cache_kind: paged
+      cache_layout: NHD
+      page_size: 16
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm80_prefill_b1_tail257_g4_d128
+      architecture: sm80
+      phase: prefill
+      batch_size: 1
+      query_len: 257
+      kv_len: 257
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm90_decode_b4_tail32k_g8_d128
+      architecture: sm90
+      phase: decode
+      batch_size: 4
+      query_len: 1
+      kv_lengths: [32767, 32003, 24577, 16385]
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: HND
+      page_size: 16
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm90_decode_b8_tail64k_g4_d128
+      architecture: sm90
+      phase: decode
+      batch_size: 8
+      query_len: 1
+      kv_lengths: [65535, 65023, 60001, 49153, 32769, 24577, 16385, 8193]
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: paged
+      cache_layout: NHD
+      page_size: 16
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm90_micro_prefill_m16_n32k_g8_d128
+      architecture: sm90
+      phase: prefill
+      batch_size: 1
+      query_len: 16
+      kv_len: 32768
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: none
+      features: [cross_attention]
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm90_prefill_tail129_g8_d64
+      architecture: sm90
+      phase: prefill
+      batch_size: 1
+      query_len: 129
+      kv_len: 129
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 64
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm100_prefill_b1_384_g8_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 384
+      kv_len: 384
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm100_prefill_b1_512_g8_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 512
+      kv_len: 512
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm100_prefill_b2_128_g8_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 2
+      query_len: 128
+      kv_len: 128
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+    - id: sm100_prefill_b1_1k_g4_d256
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 1024
+      kv_len: 1024
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 256
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      weights: {trace: 0.0, stratified: 0.5, boundary: 1.0}
+
+  feature:
+    - id: sm80_prefill_noncausal_mha_d64
+      architecture: sm80
+      phase: prefill
+      batch_size: 2
+      query_len: 1024
+      kv_len: 1024
+      q_heads: 16
+      kv_heads: 16
+      head_dim: 64
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: HND
+      mask_kind: noncausal
+      weights: {trace: 0.0, stratified: 1.0, boundary: 0.5}
+
+    - id: sm80_train_dropout_mha_d128
+      architecture: sm80
+      phase: train
+      batch_size: 1
+      query_len: 1024
+      kv_len: 1024
+      q_heads: 16
+      kv_heads: 16
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      features: [dropout, deterministic_rng]
+      weights: {trace: 0.0, stratified: 1.0, boundary: 0.5}
+
+    - id: sm90_prefill_sliding_g4_d128
+      architecture: sm90
+      phase: prefill
+      batch_size: 2
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: sliding_window
+      features: [window_left_512]
+      weights: {trace: 0.01, stratified: 1.0, boundary: 0.5}
+
+    - id: sm90_prefill_alibi_g8_d128
+      architecture: sm90
+      phase: prefill
+      batch_size: 1
+      query_len: 1024
+      kv_len: 1024
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      features: [alibi]
+      weights: {trace: 0.01, stratified: 1.0, boundary: 0.5}
+
+    - id: sm90_train_deterministic_g4_d128
+      architecture: sm90
+      phase: train
+      batch_size: 2
+      query_len: 1024
+      kv_len: 1024
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: causal
+      features: [dropout, deterministic_rng, need_lse, need_dq_dk_dv]
+      weights: {trace: 0.01, stratified: 1.0, boundary: 0.5}
+
+    - id: sm100_prefill_noncausal_g8_d128
+      architecture: sm100
+      phase: prefill
+      batch_size: 2
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 16
+      kv_heads: 2
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: noncausal
+      weights: {trace: 0.0, stratified: 1.0, boundary: 0.5}
+
+    - id: sm100_prefill_additive_mask_g4_d256
+      architecture: sm100
+      phase: prefill
+      batch_size: 1
+      query_len: 512
+      kv_len: 512
+      q_heads: 32
+      kv_heads: 8
+      head_dim: 256
+      dtype: float16
+      cache_kind: contiguous
+      cache_layout: NHD
+      mask_kind: additive
+      features: [arbitrary_bias]
+      weights: {trace: 0.0, stratified: 1.0, boundary: 0.5}
+
+    - id: sm100_train_noncausal_mha_d128
+      architecture: sm100
+      phase: train
+      batch_size: 2
+      query_len: 2048
+      kv_len: 2048
+      q_heads: 32
+      kv_heads: 32
+      head_dim: 128
+      cache_kind: contiguous
+      cache_layout: HND
+      mask_kind: noncausal
+      features: [need_lse, need_dq_dk_dv]
+      weights: {trace: 0.01, stratified: 1.0, boundary: 0.5}
