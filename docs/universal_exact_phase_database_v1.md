@@ -45,22 +45,25 @@ correctness reference and errors
 ```
 
 The environment fingerprint covers GPU architecture/name/UUID, driver, CUDA,
-PyTorch, relevant libraries, and compilers. One architecture database cannot
-mix fingerprints. Separate machines or software stacks therefore produce
-separate reproducible artifacts rather than an ambiguous aggregate.
+PyTorch, relevant libraries, and compilers. Evidence from separate physical
+GPUs can merge only when GPU SKU and core software match and every commonly
+recorded library/compiler version agrees. Missing optional-library telemetry is
+treated as unknown, while conflicting recorded versions are rejected. PCIe and
+SXM variants therefore remain separate profiles.
 
 ## Resolution Rules
 
 For each manifest cell the compiler:
 
 1. verifies that every eligible external baseline has an outcome;
-2. ignores measurements that failed correctness or allocated in the timed loop;
-3. selects the lowest-p50 valid external measurement, preserving both requested
-   and resolved backend names;
+2. ignores measurements that failed correctness;
+3. prefers the lowest-p50 allocation-free external measurement, falling back
+   to a correct allocating measurement only when no fixed-buffer route exists;
 4. selects the lowest-p50 valid native StreamAttn candidate only when it is no
    slower than the external baseline; otherwise the default route is an
    explicit external fallback;
-5. preserves an explicit native selection when evaluating routing regret;
+5. permits an explicit routable native or conservative external selection when
+   evaluating routing regret;
 6. computes speedup against the fastest correct baseline;
 7. computes routing regret against the fastest valid native-or-external route;
 8. retains every input record, including failed candidates and negative cells.
@@ -118,10 +121,13 @@ the artifact because they define the next kernel and routing work.
 
 ## Current Boundary
 
-The first partial real-GPU calibration now exists. Four H100 cells compile to
-three native routes and one external fallback; four B200 cells compile to
-external fallbacks against stronger graph-captured baselines. The remaining
-SM80/SM90/SM100 cells are explicitly unresolved. See [the calibration
-report](universal_exact_calibration_20260828.md). StreamAttn therefore has a
-working universal compiler and partial measured phase databases, not a
-universal overall performance result.
+The SM80 database is architecture-complete for its seven declared cells: all
+baseline telemetry and semantic routes resolve, every route currently falls
+back externally, and negative native evidence is retained. It does not pass v1
+because deterministic-dropout training still selects an allocating eager
+fallback. Four H100 cells compile to three native routes and one external
+fallback; four B200 cells compile to external fallbacks against stronger
+graph-captured baselines. Remaining SM90/SM100 cells are explicitly unresolved.
+See [the calibration report](universal_exact_calibration_20260828.md).
+StreamAttn therefore has a working fail-closed exact compiler and one complete
+architecture profile, not a universal overall performance result.

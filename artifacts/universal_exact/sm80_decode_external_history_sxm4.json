@@ -1,0 +1,1142 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_initial.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-527b4e51-ebb2-b0de-b622-205a505aa2e5",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "70ad9226a19c7d7f36c6",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_initial",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.08191999793052673,
+        "confidence": 0.95,
+        "p10_ms": 0.07782399654388428,
+        "p50_ms": 0.0798719972372055,
+        "p90_ms": 0.08304639831185341,
+        "process_count": 1,
+        "sample_count": 30,
+        "timed_allocation_count": 0,
+        "variance_ms2": 5.615710824458109e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_initial.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-527b4e51-ebb2-b0de-b622-205a505aa2e5",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "70ad9226a19c7d7f36c6",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_initial",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_initial.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-527b4e51-ebb2-b0de-b622-205a505aa2e5",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "70ad9226a19c7d7f36c6",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_initial",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_confirmation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-ae294d2c-150b-d042-93d5-f666c9d6b005",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "130eff233ddd2f5a09f9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_confirmation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.09728000313043594,
+        "confidence": 0.95,
+        "p10_ms": 0.08294399827718735,
+        "p50_ms": 0.08396799862384796,
+        "p90_ms": 0.08980480059981352,
+        "process_count": 1,
+        "sample_count": 100,
+        "timed_allocation_count": 0,
+        "variance_ms2": 6.327727517299031e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_confirmation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-ae294d2c-150b-d042-93d5-f666c9d6b005",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "130eff233ddd2f5a09f9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_confirmation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_confirmation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-ae294d2c-150b-d042-93d5-f666c9d6b005",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "130eff233ddd2f5a09f9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_confirmation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_prefill_probe.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-65bd9064-2d60-131f-def9-43646e2617d4",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "a32020422f6597dd20e4",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_prefill_probe",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.06860800087451935,
+        "confidence": 0.8,
+        "p10_ms": 0.060825600475072863,
+        "p50_ms": 0.062463998794555664,
+        "p90_ms": 0.06656000018119812,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 0,
+        "variance_ms2": 8.136950996837644e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_prefill_probe.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-65bd9064-2d60-131f-def9-43646e2617d4",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "a32020422f6597dd20e4",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_prefill_probe",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_prefill_probe.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-65bd9064-2d60-131f-def9-43646e2617d4",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "a32020422f6597dd20e4",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_prefill_probe",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_causal_truncation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-b798cf0f-dbee-97e3-7585-e27889e07ad3",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "d57802e7d55da8deb2c9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_causal_truncation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.08601599931716919,
+        "confidence": 0.8,
+        "p10_ms": 0.08191999793052673,
+        "p50_ms": 0.08191999793052673,
+        "p90_ms": 0.08437759876251222,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.6843563775003078e-06
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_causal_truncation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-b798cf0f-dbee-97e3-7585-e27889e07ad3",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "d57802e7d55da8deb2c9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_causal_truncation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_causal_truncation.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-b798cf0f-dbee-97e3-7585-e27889e07ad3",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "d57802e7d55da8deb2c9",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_causal_truncation",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_prefill_portfolio.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_prefill_portfolio",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.09830400347709656,
+        "confidence": 0.8,
+        "p10_ms": 0.0888832002878189,
+        "p50_ms": 0.09625600278377533,
+        "p90_ms": 0.11120640337467194,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.00012767463672828328
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_prefill_portfolio.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_prefill_portfolio",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_prefill_portfolio.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_prefill_portfolio",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.12492799758911133,
+        "confidence": 0.95,
+        "p10_ms": 0.08888320028781892,
+        "p50_ms": 0.09216000139713287,
+        "p90_ms": 0.10526719689369202,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.00011837255797700032
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": {
+        "checked_cases": 4096,
+        "failure_reason": null,
+        "max_abs_error": 3.0517578125e-05,
+        "max_relative_error": 6.258487701416016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:flashinfer:fa2@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b4_tail16k_g8_d64"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.11264000087976456,
+        "confidence": 0.95,
+        "p10_ms": 0.0817151978611946,
+        "p50_ms": 0.08396799862384796,
+        "p90_ms": 0.10035200268030167,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 9.393172064954941e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_full_surface.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-26b2bb43-e29b-6b88-309f-91acd3b24cc7",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "3eb577387f3cd495852b",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_full_surface",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.10547199845314026,
+        "confidence": 0.95,
+        "p10_ms": 0.090726400911808,
+        "p50_ms": 0.09728000313043594,
+        "p90_ms": 0.11038720011711121,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.00013999139886115516
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": {
+        "checked_cases": 4096,
+        "failure_reason": null,
+        "max_abs_error": 3.0517578125e-05,
+        "max_relative_error": 6.258487701416016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": "source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:flashinfer:fa2@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b4_tail16k_g8_d64"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.09113600105047226,
+        "confidence": 0.95,
+        "p10_ms": 0.08355839848518372,
+        "p50_ms": 0.08806400001049042,
+        "p90_ms": 0.10137600302696229,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 8.77179355643717e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:cudnn_sdpa:direct-paged-unsupported@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload; source artifact: artifacts/universal_exact/sm80_calibration_decode_sxm4_candidate.json",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-4d7aa014-fcf3-67eb-b866-7c52e76a087a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "b61f7f318c8f44fcfb88",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:pytorch_sdpa:direct-paged-unsupported@sm80_calibration_decode_sxm4_candidate",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1,
+  "source_artifacts": [
+    "artifacts\\universal_exact\\sm80_calibration_initial.json",
+    "artifacts\\universal_exact\\sm80_calibration_confirmation.json",
+    "artifacts\\universal_exact\\sm80_calibration_prefill_probe.json",
+    "artifacts\\universal_exact\\sm80_calibration_causal_truncation.json",
+    "artifacts\\universal_exact\\sm80_calibration_prefill_portfolio.json",
+    "artifacts\\universal_exact\\sm80_calibration_full_surface.json",
+    "artifacts\\universal_exact\\sm80_calibration_decode_sxm4_candidate.json"
+  ]
+}

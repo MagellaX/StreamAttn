@@ -3,6 +3,32 @@
     {
       "acceptance": {
         "compiler_v1_pass": false,
+        "native_coverage": 0.0,
+        "negative_cells": [
+          "sm80_decode_b1_32k_g8_d128_hnd",
+          "sm80_decode_b4_tail16k_g8_d64",
+          "sm80_prefill_b1_2k_g4_d128",
+          "sm80_prefill_b1_tail257_g4_d128",
+          "sm80_prefill_noncausal_mha_d64",
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "negative_cells_retained": true,
+        "p90_routing_regret": 0.0,
+        "resolved_coverage": 1.0,
+        "semantic_coverage": 1.0,
+        "telemetry_coverage": 1.0,
+        "zero_timed_loop_allocations": false
+      },
+      "architecture": "sm80",
+      "entry_count": 7,
+      "evidence_count": 107,
+      "path": "sm80.json",
+      "sha256": "c961da8d9fe73981395b968a05e7551c5cb3305e370c3851a3b936d6ebaeb2a1",
+      "source_commit": "3539608ea59a562bd517483ff9ca3366d82fb25b"
+    },
+    {
+      "acceptance": {
+        "compiler_v1_pass": false,
         "native_coverage": 0.2727272727272727,
         "negative_cells": [
           "sm90_decode_b8_tail64k_g4_d128"
@@ -18,7 +44,8 @@
       "entry_count": 11,
       "evidence_count": 16,
       "path": "sm90.json",
-      "sha256": "1e9d37c6a8a6a3c2f697a9894c69349328d90af719adf1abf03d3b3543a51d0f"
+      "sha256": "1e9d37c6a8a6a3c2f697a9894c69349328d90af719adf1abf03d3b3543a51d0f",
+      "source_commit": "8f6f36f8fbe0248f3c7e109c81194cc30e90aa19"
     },
     {
       "acceptance": {
@@ -41,10 +68,11 @@
       "entry_count": 12,
       "evidence_count": 39,
       "path": "sm100.json",
-      "sha256": "6d0e17bda3765d4c9099e69f6c108847430b56969337d42100cab939ac27f3a3"
+      "sha256": "6d0e17bda3765d4c9099e69f6c108847430b56969337d42100cab939ac27f3a3",
+      "source_commit": "8f6f36f8fbe0248f3c7e109c81194cc30e90aa19"
     }
   ],
   "manifest_id": "universal_exact_v1_20260828",
   "schema_version": 1,
-  "source_commit": "8f6f36f8fbe0248f3c7e109c81194cc30e90aa19"
+  "source_commit": "3539608ea59a562bd517483ff9ca3366d82fb25b"
 }

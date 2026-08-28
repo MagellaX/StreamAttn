@@ -16,11 +16,13 @@ The common foundation is single-pass streaming attention with online softmax:
 K/V tiles are consumed once, numerically stable running statistics are updated
 on the fly, and the full attention matrix is never materialized.
 
-> **Project status:** research engine with measured H100 native routes and a
-> partial universal phase database. StreamAttn has apples-to-apples exact decode
-> wins over FlashInfer on promoted shapes and a measured model-level Qwen decode
-> win on a validated request tier. It is not yet a universal replacement for
-> FlashInfer, FlashAttention, or a full serving runtime.
+> **Project status:** research engine with measured H100 native routes, a
+> complete seven-cell A100 exact routing profile, and partial H100/B200 phase
+> databases. StreamAttn has apples-to-apples exact decode wins over FlashInfer
+> on promoted Hopper shapes and a measured model-level Qwen decode win on a
+> validated request tier. The strict A100 compiler currently selects exact
+> external fallbacks for every declared cell. StreamAttn is not yet a universal
+> replacement for FlashInfer, FlashAttention, or a full serving runtime.
 
 ## Why StreamAttn Exists
 
@@ -105,6 +107,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D128, GQA group 8 | NHD/page-16; B1-B8; 16K-64K; full and ragged | `1.058x` worst paired trial; `1.283x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
 | Paged D128, GQA group 8 | A100/NHD/page-16; B1/32K full row | `1.20x-1.26x` in two repeated runs; `0.975x` in one warm-state sweep | Experimental candidate; not auto-routed |
+| Paged D128, GQA group 8 | A100/HND/page-16; B1/32K full row | `0.9375x` against the fastest measured FlashInfer FA2 process | Correct native kernel; exact external fallback |
 | Paged D128, GQA group 8 | B200/NHD/page-16; six B1-B8, 32K/64K full-row cells | `1.144x-1.441x` initial confirmation; `1.122x` worst paired trial | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
@@ -267,10 +270,11 @@ verifier.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
 - No A100, FP8, or non-Qwen model-family performance claim has been promoted
-  yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA
-  exact backend for direct NHD page-16 D128/G8 decode. It is correct and has
-  repeated B1/32K wins, but another independent warm-state sweep reached only
-  `0.975x`; it therefore remains explicit experimental opt-in.
+  yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA exact
+  backend for direct HND/NHD page-16 D128/G8 decode. Same-process runs often
+  beat FlashInfer, but the strict multi-process HND gate resolves to
+  `0.065536 ms` native versus a `0.061440 ms` FlashInfer FA2 floor. The complete
+  seven-cell A100 database therefore emits exact external fallbacks.
 - B200 promotion is narrow: BF16, direct NHD page-16, D128/G8, full fixed rows,
   and six measured B/N cells only. B1/64K and B8/64K did not clear the paired
   gate and remain on exact fallback. This is not a universal Blackwell claim.
@@ -536,10 +540,11 @@ schedule_exact         exact arithmetic over an explicitly selected schedule
 distribution_verified  approximation validated at model-output level
 ```
 
-Eight current implementations are registered as candidate families, including
-the promoted SM90 decode and SM100 prefill kernels, generic native Triton, and
-an explicitly non-native external fallback. The manifest already exposes one
-native gap: deterministic dropout training currently requires that fallback.
+Current implementations are registered as candidate families, including the
+promoted SM90 decode and SM100 prefill kernels, the SM80 `cp.async` decode
+kernel, generic native Triton, and an explicitly non-native external fallback.
+The manifest exposes a native feature gap: deterministic-dropout training
+currently requires an exact PyTorch math fallback.
 This is compiler infrastructure, not a new overall performance claim. Inspect
 the frozen surface with:
 
@@ -557,13 +562,20 @@ workspace, supported range, and timed-allocation count. The phase compiler then:
 
 ```text
 requires an explicit outcome for every eligible baseline
-chooses the fastest correct, allocation-free resolved baseline
+prefers the fastest correct allocation-free baseline, then a correct allocating fallback
 chooses native only when the fastest correct native candidate beats the baseline
 otherwise emits an explicit external fallback and retains the native loss
 retains failed, unsupported, slower, and losing measurements
 computes regret against the fastest valid native-or-external route
 writes SHA-indexed phase_db/sm80.json, sm90.json, and sm100.json
 ```
+
+The SM80 database now resolves all seven declared cells with complete baseline
+telemetry and zero routing regret. None is promoted native: D128 paged decode is
+the closest at `0.9375x` of FlashInfer, while causal/noncausal prefill and
+training remain larger kernel-family gaps. Deterministic dropout is exactly
+resolved by PyTorch math SDPA, but its eager autograd path allocates, so the
+architecture database correctly remains below compiler-v1 acceptance.
 
 A baseline that was never attempted makes the cell unresolved; it cannot be
 silently omitted. Current deterministic-dropout training gaps are emitted as
@@ -687,14 +699,14 @@ not hidden StreamAttn dependencies.
 | Python | 3.10+ |
 | PyTorch | 2.1+ |
 | CPU | Correctness and SDPA fallback |
-| Native GPU evidence | NVIDIA H100 / SM90 and B200 / SM100; A100 / SM80 experimental |
+| Native GPU evidence | NVIDIA H100 / SM90 and B200 / SM100; complete seven-cell A100 / SM80 routing evidence |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
 | Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Prefill/forward/backward | Public exact MHA/GQA `prefill(...)` and `train(...)` plans; promoted B200 BF16 `Hq16/Hkv2/D128` causal prefill cells; compact Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
 | Distributed research | Ring and Star attention prototypes |
-| Experimental hardware | A100 has native `cp.async` + MMA exact decode with a variable B1/32K candidate edge |
-| Not yet promoted | H100 WGMMA prefill, A100, other B200 prefill/decode shapes, ragged page-64 WGMMA, FP8 selected cache, second model family |
+| Experimental hardware | A100 has native `cp.async` + MMA exact decode; the strict phase profile currently falls back externally |
+| Not yet promoted | H100 WGMMA prefill, A100 native cells, other B200 prefill/decode shapes, ragged page-64 WGMMA, FP8 selected cache, second model family |
 
 ## Repository Guide
 
@@ -758,9 +770,8 @@ The project has proved that StreamAttn-owned exact kernels can beat strong
 baselines on guarded Hopper and Blackwell cells. The next objective is broad,
 reproducible exact coverage rather than another isolated promotion:
 
-1. Calibrate the strict phase-database evidence on SM80, SM90, and SM100. Run
-   every eligible baseline, preserve its resolved backend, and retain every
-   unsupported, failed, and losing cell.
+1. Complete the remaining SM90 and SM100 manifest cells with the same strict
+   evidence contract now used by the complete seven-cell SM80 database.
 2. Connect compiled `ptxas`/occupancy reports to the SM80/SM90/SM100 resource
    legality models, then add analytical roofline pruning and active exploration
    near uncertain phase boundaries.
@@ -770,8 +781,9 @@ reproducible exact coverage rather than another isolated promotion:
    decode-shaped partial/merge path would retain the wrong physical geometry.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
-6. Lower the same family grammar to A100 with `mma.sync`, `cp.async`, smaller
-   tiles, and software-persistent scheduling.
+6. Close the measured A100 family gaps: beat the `0.061440 ms` FlashInfer D128
+   decode floor, replace the generic D64 route, and build distinct prefill and
+   backward schedules rather than stretching the decode kernel geometry.
 7. Resume adaptive/selected work above the exact compiler. Unknown or failed
    guarantees must return to StreamAttn exact execution.
 

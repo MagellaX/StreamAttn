@@ -1,0 +1,381 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_sm80_cp_async_exact",
+      "family_id": "sm80_paged_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm80_cp_async_exact:s128:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm80_cp_async_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm80_cp_async_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.058368001133203506,
+        "confidence": 0.95,
+        "p10_ms": 0.05427199974656105,
+        "p50_ms": 0.05427199974656105,
+        "p90_ms": 0.05857280120253563,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.4952556998701922e-06
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.08396799862384796,
+        "confidence": 0.95,
+        "p10_ms": 0.07659520357847213,
+        "p50_ms": 0.07884799689054489,
+        "p90_ms": 0.08703999817371369,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.6551580670652466e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": {
+        "checked_cases": 4096,
+        "failure_reason": null,
+        "max_abs_error": 3.0517578125e-05,
+        "max_relative_error": 6.258487701416016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:streamattn:streamattn_paged_exact_native",
+      "family_id": "triton_paged_exact_decode",
+      "kernel_key": "streamattn_paged_exact_native:s8:t512:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm80_cp_async_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_exact_native",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b4_tail16k_g8_d64"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.19046400487422943,
+        "confidence": 0.95,
+        "p10_ms": 0.17715199291706085,
+        "p50_ms": 0.1812479943037033,
+        "p90_ms": 0.19251200258731843,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 5.3127859511303556e-05
+      },
+      "workspace_bytes": 135168
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": {
+        "checked_cases": 4096,
+        "failure_reason": null,
+        "max_abs_error": 3.0517578125e-05,
+        "max_relative_error": 6.258487701416016,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b4_tail16k_g8_d64"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.07782399654388428,
+        "confidence": 0.95,
+        "p10_ms": 0.06860800087451935,
+        "p50_ms": 0.06963200122117996,
+        "p90_ms": 0.07700480222702026,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.136604317103427e-05
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b4_tail16k_g8_d64",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100 80GB PCIe",
+        "device_uuid": "GPU-bf46037b-b7a3-f2fc-d601-428edbec3bec",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "8a6659e55d5a65dcdb88",
+      "environment_id": "4816277704b7e47c709e",
+      "evidence_id": "sm80_decode_b4_tail16k_g8_d64:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1
+}

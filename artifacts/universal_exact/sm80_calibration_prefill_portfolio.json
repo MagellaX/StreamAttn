@@ -1,0 +1,2044 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:streamattn:streamattn_paged_sm80_cp_async_exact",
+      "family_id": "sm80_paged_gqa_exact_decode",
+      "kernel_key": "streamattn_paged_sm80_cp_async_exact:s128:t64:w4",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "sm80_cp_async_gqa_exact_decode",
+      "resolved_backend": "streamattn_paged_sm80_cp_async_exact",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.0727040022611618,
+        "confidence": 0.8,
+        "p10_ms": 0.06942720115184783,
+        "p50_ms": 0.07168000191450119,
+        "p90_ms": 0.07393280267715455,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.194306839844231e-06
+      },
+      "workspace_bytes": 1056768
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": {
+        "checked_cases": 2048,
+        "failure_reason": null,
+        "max_abs_error": 0.0001220703125,
+        "max_relative_error": 24.372943878173828,
+        "passed": true,
+        "reference": "paired_exact_crosscheck:flashinfer:fa2"
+      },
+      "detail": null,
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:flashinfer:fa2",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer",
+      "resolved_backend": "fa2",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_decode_b1_32k_g8_d128_hnd"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.09830400347709656,
+        "confidence": 0.8,
+        "p10_ms": 0.0888832002878189,
+        "p50_ms": 0.09625600278377533,
+        "p90_ms": 0.11120640337467194,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 0,
+        "variance_ms2": 0.00012767463672828328
+      },
+      "workspace_bytes": 134217728
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:cudnn_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_decode_b1_32k_g8_d128_hnd",
+      "correctness": null,
+      "detail": "backend has no direct paged-KV/page-table contract; materializing a contiguous cache would change the timed workload",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "e0264f324de9a64a6814",
+      "evidence_id": "sm80_decode_b1_32k_g8_d128_hnd:external:pytorch_sdpa:direct-paged-unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 56.91314697265625,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager module allocates its output",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q64_k32:eager",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q64_k32",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.863206481933594,
+        "confidence": 0.95,
+        "p10_ms": 2.3385906982421876,
+        "p50_ms": 2.749337577819824,
+        "p90_ms": 2.860175323486328,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.06153483973428886
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 56.91314697265625,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q64_k32:cuda-graph",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q64_k32:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.311884880065918,
+        "confidence": 0.95,
+        "p10_ms": 2.303774795532227,
+        "p50_ms": 2.305023956298828,
+        "p90_ms": 2.3097549057006836,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 7.102449918072462e-06
+      },
+      "workspace_bytes": 16778240
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager module allocates its output",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q64_k64:eager",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q64_k64",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 3.2955390930175783,
+        "confidence": 0.95,
+        "p10_ms": 2.7051827621459963,
+        "p50_ms": 2.708582305908203,
+        "p90_ms": 3.296706466674805,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.07129428718361505
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q64_k64:cuda-graph",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q64_k64:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.6806272506713866,
+        "confidence": 0.95,
+        "p10_ms": 2.6758758926391604,
+        "p50_ms": 2.676838493347168,
+        "p90_ms": 2.679480400085449,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.4718602475736165e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 56.91314697265625,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager module allocates its output",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k32:eager",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k32",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.3261184692382812,
+        "confidence": 0.95,
+        "p10_ms": 2.3261184692382812,
+        "p50_ms": 2.329088020324707,
+        "p90_ms": 2.33478141784668,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 2.47265235799364e-05
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 56.91314697265625,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k32:cuda-graph",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k32:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.3006208419799803,
+        "confidence": 0.95,
+        "p10_ms": 2.3002521896362302,
+        "p50_ms": 2.3034879684448244,
+        "p90_ms": 2.3068262863159177,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 8.420760253405459e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager module allocates its output",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k64:eager",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k64",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.7021312713623047,
+        "confidence": 0.95,
+        "p10_ms": 2.6985267257690433,
+        "p50_ms": 2.7021312713623047,
+        "p90_ms": 2.7044659423828126,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 6.016611569290837e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k64:cuda-graph",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k64:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.679500770568848,
+        "confidence": 0.95,
+        "p10_ms": 2.6761625289916995,
+        "p50_ms": 2.6766336441040037,
+        "p90_ms": 2.6787634658813477,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.2546279735325397e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager module allocates its output",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k128:eager",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k128",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.697011184692383,
+        "confidence": 0.95,
+        "p10_ms": 2.698731460571289,
+        "p50_ms": 2.7036672592163087,
+        "p90_ms": 2.7067187118530276,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.0853543775019354e-05
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0016639232635498047,
+        "max_relative_error": 53.108482360839844,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:online-softmax:q128_k128:cuda-graph",
+      "family_id": "triton_online_softmax_exact",
+      "kernel_key": "q128_k128:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact",
+      "resolved_backend": "triton_online_softmax:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 2.6774528503417967,
+        "confidence": 0.95,
+        "p10_ms": 2.671144905090332,
+        "p50_ms": 2.673356819152832,
+        "p90_ms": 2.6774528503417967,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 6.915552634673886e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h1_m64_n64_w4_s2:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h1_m64_n64_w4_s2",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.6193151950836182,
+        "confidence": 0.95,
+        "p10_ms": 0.612433910369873,
+        "p50_ms": 0.61593599319458,
+        "p90_ms": 0.6184959888458252,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 5.401593442866891e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h1_m64_n64_w4_s2:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h1_m64_n64_w4_s2:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.6011903762817383,
+        "confidence": 0.95,
+        "p10_ms": 0.6021734237670899,
+        "p50_ms": 0.6059008121490479,
+        "p90_ms": 0.6079692649841308,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.690136443620973e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h1_m64_n128_w4_s3:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h1_m64_n128_w4_s3",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.9470975875854493,
+        "confidence": 0.95,
+        "p10_ms": 0.9409126091003417,
+        "p50_ms": 0.9430015563964844,
+        "p90_ms": 0.9504153823852539,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.328667182718223e-05
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h1_m64_n128_w4_s3:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h1_m64_n128_w4_s3:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.8264703750610352,
+        "confidence": 0.95,
+        "p10_ms": 0.8229478454589844,
+        "p50_ms": 0.8241151809692383,
+        "p90_ms": 0.8265113449096679,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.6546696580333564e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h2_m32_n64_w4_s2:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h2_m32_n64_w4_s2",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.6457344055175781,
+        "confidence": 0.95,
+        "p10_ms": 0.6380134391784668,
+        "p50_ms": 0.6411263942718506,
+        "p90_ms": 0.6442598342895507,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 7.27711143745059e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h2_m32_n64_w4_s2:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h2_m32_n64_w4_s2:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.6317056179046631,
+        "confidence": 0.95,
+        "p10_ms": 0.6270361518859863,
+        "p50_ms": 0.6295551776885986,
+        "p90_ms": 0.6308864116668701,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.531664702780129e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h2_m32_n128_w8_s3:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h2_m32_n128_w8_s3",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.766156816482544,
+        "confidence": 0.95,
+        "p10_ms": 0.7638220596313476,
+        "p50_ms": 0.7656447887420654,
+        "p90_ms": 0.7664230346679687,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.4100229135591498e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h2_m32_n128_w8_s3:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h2_m32_n128_w8_s3:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.7553023815155029,
+        "confidence": 0.95,
+        "p10_ms": 0.7520051193237305,
+        "p50_ms": 0.7525375843048095,
+        "p90_ms": 0.7551385402679442,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.6430247842997227e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m16_n64_w4_s2:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m16_n64_w4_s2",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.7073791980743408,
+        "confidence": 0.95,
+        "p10_ms": 0.7032422351837158,
+        "p50_ms": 0.7051263809204101,
+        "p90_ms": 0.7077478599548339,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.628347337752616e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m16_n64_w4_s2:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m16_n64_w4_s2:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.6975488185882568,
+        "confidence": 0.95,
+        "p10_ms": 0.6929408073425293,
+        "p50_ms": 0.6941696166992187,
+        "p90_ms": 0.6959104061126709,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.576662776801269e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m16_n128_w8_s3:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m16_n128_w8_s3",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.738099193572998,
+        "confidence": 0.95,
+        "p10_ms": 0.7334707069396973,
+        "p50_ms": 0.7365632057189941,
+        "p90_ms": 0.7377715110778809,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.4653236768143466e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m16_n128_w8_s3:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m16_n128_w8_s3:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.7261184215545654,
+        "confidence": 0.95,
+        "p10_ms": 0.7234150409698485,
+        "p50_ms": 0.724070405960083,
+        "p90_ms": 0.7256268978118896,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 9.297515458052254e-07
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m32_n64_w8_s2:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m32_n64_w8_s2",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 1.112268829345703,
+        "confidence": 0.95,
+        "p10_ms": 1.1120025825500488,
+        "p50_ms": 1.1150336265563965,
+        "p90_ms": 1.118638095855713,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 1.3168836952293813e-05
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m32_n64_w8_s2:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m32_n64_w8_s2:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.9182208061218262,
+        "confidence": 0.95,
+        "p10_ms": 0.9178521728515625,
+        "p50_ms": 0.9182208061218262,
+        "p90_ms": 0.9189580726623535,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.192987262844197e-07
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "preallocated direct Triton launch",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m32_n128_w8_s3:direct",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m32_n128_w8_s3",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 1.1356160163879394,
+        "confidence": 0.95,
+        "p10_ms": 1.1352473258972167,
+        "p50_ms": 1.1362303733825683,
+        "p90_ms": 1.1396915626525879,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 4.329015650629553e-06
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:streamattn:h4_m32_n128_w8_s3:cuda-graph",
+      "family_id": "triton_grouped_gqa_prefill",
+      "kernel_key": "h4_m32_n128_w8_s3:cuda_graph",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_grouped_gqa_prefill",
+      "resolved_backend": "triton_grouped_gqa_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.923033618927002,
+        "confidence": 0.95,
+        "p10_ms": 0.9215794944763184,
+        "p50_ms": 0.9226240158081055,
+        "p90_ms": 0.9230541038513184,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.0785854898658785e-07
+      },
+      "workspace_bytes": 17039360
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.2618367910385132,
+        "confidence": 0.95,
+        "p10_ms": 0.254955530166626,
+        "p50_ms": 0.26081280708312987,
+        "p90_ms": 0.26218495368957523,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 7.906511122913823e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 46.573020935058594,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:pytorch_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.25425920486450193,
+        "confidence": 0.95,
+        "p10_ms": 0.24760320663452146,
+        "p50_ms": 0.25036799907684326,
+        "p90_ms": 0.25368576049804686,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 7.036576897058257e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.2563071966171265,
+        "confidence": 0.95,
+        "p10_ms": 0.25214975357055663,
+        "p50_ms": 0.2535423994064331,
+        "p90_ms": 0.2557337522506714,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 2.2620733106274997e-06
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009598731994628906,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:cudnn_sdpa:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.2446336030960083,
+        "confidence": 0.95,
+        "p10_ms": 0.23957503318786622,
+        "p50_ms": 0.24176640510559083,
+        "p90_ms": 0.2427494478225708,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 2.0655690534034368e-06
+      },
+      "workspace_bytes": 16777216
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009932518005371094,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "eager API returns a newly allocated output tensor per call",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:flashinfer_prefill:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.3063807964324951,
+        "confidence": 0.95,
+        "p10_ms": 0.30140416622161864,
+        "p50_ms": 0.30361599922180177,
+        "p90_ms": 0.31111167907714843,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 1,
+        "variance_ms2": 6.38950080127994e-05
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_prefill_b1_2k_g4_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0009932518005371094,
+        "max_relative_error": 43.77253723144531,
+        "passed": true,
+        "reference": "fp32_dense_causal_gqa"
+      },
+      "detail": "fixed-address CUDA graph replay; capture excluded from timing",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-057e788e-be0a-ffcf-8fd0-b3086c554412",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "c879c5b9351412f704e5",
+      "evidence_id": "sm80_prefill_b1_2k_g4_d128:external:flashinfer_prefill:cuda-graph",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashinfer_prefill",
+      "resolved_backend": "flashinfer_single_prefill:cuda_graph_replay",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_prefill_b1_2k_g4_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.2979840040206909,
+        "confidence": 0.95,
+        "p10_ms": 0.293887996673584,
+        "p50_ms": 0.2959359884262085,
+        "p90_ms": 0.2981478452682495,
+        "process_count": 1,
+        "sample_count": 9,
+        "timed_allocation_count": 0,
+        "variance_ms2": 3.4970793989694347e-06
+      },
+      "workspace_bytes": 16777216
+    }
+  ],
+  "schema_version": 1
+}

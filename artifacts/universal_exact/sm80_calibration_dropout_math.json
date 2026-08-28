@@ -1,0 +1,207 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm80_train_dropout_mha_d128",
+      "correctness": null,
+      "detail": "native backward intentionally excludes dropout until the forward Philox mask is replayed exactly in dQ/dK/dV",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-52576fed-c89d-dbe6-ff0f-55237b16ef46",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "5eb9c16b372551271b95",
+      "evidence_id": "sm80_train_dropout_mha_d128:streamattn:native-dropout-unsupported",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "triton_online_softmax_exact_train",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_dropout_mha_d128",
+      "correctness": {
+        "checked_cases": 8388608,
+        "failure_reason": null,
+        "max_abs_error": 0.0,
+        "max_relative_error": 0.0,
+        "passed": true,
+        "reference": "same-seed deterministic backend replay"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-52576fed-c89d-dbe6-ff0f-55237b16ef46",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "5eb9c16b372551271b95",
+      "evidence_id": "sm80_train_dropout_mha_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_math:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_dropout_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 3.692202568054199,
+        "confidence": 0.8,
+        "p10_ms": 3.643733278910319,
+        "p50_ms": 3.670698801676432,
+        "p90_ms": 3.778355280558268,
+        "process_count": 1,
+        "sample_count": 7,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.004487472626434011
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_dropout_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: CUDA error: operation failed due to a previous error during capture\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-52576fed-c89d-dbe6-ff0f-55237b16ef46",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "5eb9c16b372551271b95",
+      "evidence_id": "sm80_train_dropout_mha_d128:external:pytorch_sdpa:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_dropout_mha_d128",
+      "correctness": null,
+      "detail": "deterministic dropout backward uses the PyTorch math baseline; cuDNN RNG replay is backend-specific and is not directly comparable",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-52576fed-c89d-dbe6-ff0f-55237b16ef46",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "5eb9c16b372551271b95",
+      "evidence_id": "sm80_train_dropout_mha_d128:external:cudnn_sdpa:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_dropout_mha_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-52576fed-c89d-dbe6-ff0f-55237b16ef46",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_compatibility_id": "6cd635f1fc26c5e4df23",
+      "environment_id": "5eb9c16b372551271b95",
+      "evidence_id": "sm80_train_dropout_mha_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1
+}

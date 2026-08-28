@@ -1,0 +1,592 @@
+{
+  "evidence": [
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0029549598693847656,
+        "max_relative_error": 93.98184204101562,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q64_k32:eager-allocating",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": "q64_k32",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q64_k32",
+      "resolved_backend": "triton_online_softmax_autograd:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 53.48078918457031,
+        "confidence": 0.8,
+        "p10_ms": 50.657005818684894,
+        "p50_ms": 50.66888427734375,
+        "p90_ms": 52.36244405110677,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 1.2665769768775332
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: CUDA error: operation failed due to a previous error during capture\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q64_k32:unsupported",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q64_k32",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0029549598693847656,
+        "max_relative_error": 93.98184204101562,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q64_k64:eager-allocating",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": "q64_k64",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q64_k64",
+      "resolved_backend": "triton_online_softmax_autograd:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 51.01397196451823,
+        "confidence": 0.8,
+        "p10_ms": 50.97294514973959,
+        "p50_ms": 51.01397196451823,
+        "p90_ms": 51.02571411132813,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.0006745955865416575
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: captures_underway.empty() INTERNAL ASSERT FAILED at \"/pytorch/c10/cuda/CUDACachingAllocator.cpp\":3089, please report a bug to PyTorch. ",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q64_k64:unsupported",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q64_k64",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0029549598693847656,
+        "max_relative_error": 93.98184204101562,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q128_k32:eager-allocating",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": "q128_k32",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q128_k32",
+      "resolved_backend": "triton_online_softmax_autograd:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 50.6077880859375,
+        "confidence": 0.8,
+        "p10_ms": 50.611338297526046,
+        "p50_ms": 50.627583821614586,
+        "p90_ms": 50.660010782877606,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.0004659780756466834
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: captures_underway.empty() INTERNAL ASSERT FAILED at \"/pytorch/c10/cuda/CUDACachingAllocator.cpp\":3089, please report a bug to PyTorch. ",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q128_k32:unsupported",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q128_k32",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0029549598693847656,
+        "max_relative_error": 93.98184204101562,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q128_k64:eager-allocating",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": "q128_k64",
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q128_k64",
+      "resolved_backend": "triton_online_softmax_autograd:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 50.95423889160156,
+        "confidence": 0.8,
+        "p10_ms": 50.972807820638025,
+        "p50_ms": 51.007486979166664,
+        "p90_ms": 51.01533813476563,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.0005181274273329426
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: captures_underway.empty() INTERNAL ASSERT FAILED at \"/pytorch/c10/cuda/CUDACachingAllocator.cpp\":3089, please report a bug to PyTorch. ",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:streamattn:online-softmax-q128_k64:unsupported",
+      "family_id": "triton_online_softmax_exact_train",
+      "kernel_key": null,
+      "native": true,
+      "provider": "streamattn",
+      "requested_backend": "online-softmax-q128_k64",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0023860931396484375,
+        "max_relative_error": 74.17063903808594,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:external:pytorch_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": "torch_sdpa_flash_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 0.9983999729156494,
+        "confidence": 0.8,
+        "p10_ms": 0.9955327987670899,
+        "p50_ms": 1.0260480244954426,
+        "p90_ms": 1.0593621095021566,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.0008314504282998296
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: captures_underway.empty() INTERNAL ASSERT FAILED at \"/pytorch/c10/cuda/CUDACachingAllocator.cpp\":3089, please report a bug to PyTorch. ",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:external:pytorch_sdpa:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "pytorch_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": {
+        "checked_cases": 33554432,
+        "failure_reason": null,
+        "max_abs_error": 0.0023860931396484375,
+        "max_relative_error": 56.73989486694336,
+        "passed": true,
+        "reference": "fp32_sdpa_forward_dq_dk_dv"
+      },
+      "detail": "eager forward and dQ/dK/dV allocate autograd outputs",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:external:cudnn_sdpa:eager-allocating",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": "torch_sdpa_cudnn_attention:eager",
+      "status": "measured",
+      "supported_range": {
+        "cell_ids": [
+          "sm80_train_b1_2k_mha_d128"
+        ],
+        "manifest_id": "universal_exact_v1_20260828"
+      },
+      "timing": {
+        "cold_ms": 1.5441919962565105,
+        "confidence": 0.8,
+        "p10_ms": 1.5319039980570475,
+        "p50_ms": 1.5629653930664062,
+        "p90_ms": 1.6016725858052572,
+        "process_count": 1,
+        "sample_count": 5,
+        "timed_allocation_count": 1,
+        "variance_ms2": 0.0010009955235384244
+      },
+      "workspace_bytes": 0
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "RuntimeError: captures_underway.empty() INTERNAL ASSERT FAILED at \"/pytorch/c10/cuda/CUDACachingAllocator.cpp\":3089, please report a bug to PyTorch. ",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:external:cudnn_sdpa:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "cudnn_sdpa",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    },
+    {
+      "cell_id": "sm80_train_b1_2k_mha_d128",
+      "correctness": null,
+      "detail": "ModuleNotFoundError: No module named 'flash_attn'",
+      "environment": {
+        "architecture": "sm80",
+        "compiler_versions": {
+          "nvcc": "Build cuda_12.8.r12.8/compiler.35404655_0",
+          "triton": "3.3.1"
+        },
+        "cuda_version": "12.8",
+        "device_name": "NVIDIA A100-SXM4-80GB",
+        "device_uuid": "GPU-48402372-8361-ec7c-8841-cdb85d89930a",
+        "driver_version": "580.95.05",
+        "library_versions": {
+          "cudnn": "90701",
+          "flash-attn": "not-installed",
+          "flashinfer-cubin": "0.6.17",
+          "flashinfer-python": "0.6.17"
+        },
+        "torch_version": "2.7.1+cu128"
+      },
+      "environment_id": "6aaf0994dd328c8acc91",
+      "evidence_id": "sm80_train_b1_2k_mha_d128:external:flashattention:unsupported",
+      "family_id": null,
+      "kernel_key": null,
+      "native": false,
+      "provider": "external",
+      "requested_backend": "flashattention",
+      "resolved_backend": null,
+      "status": "unsupported",
+      "supported_range": null,
+      "timing": null,
+      "workspace_bytes": null
+    }
+  ],
+  "schema_version": 1
+}
