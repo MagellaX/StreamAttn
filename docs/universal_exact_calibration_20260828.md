@@ -32,7 +32,7 @@ regret is `0.0`. Every cell currently selects an exact external fallback.
 
 | Manifest cell | Best StreamAttn | Fastest exact baseline | Native/baseline | Compiled route |
 |---|---:|---:|---:|---|
-| B1, 32K, G8, D128, HND paged decode | `0.065536 ms` | FlashInfer FA2 `0.061440 ms` | `0.9375x` | external fallback |
+| B1, 32K, G8, D128, HND paged decode | `0.060416 ms` | FlashInfer FA2 `0.057344 ms` | `0.949x` | external fallback |
 | B4 ragged 16K, G8, D64, NHD paged decode | `0.193536 ms` | FlashInfer FA2 `0.054272 ms` | `0.280x` | external fallback |
 | B1, S2048, G4, D128 causal prefill | `0.568218 ms` | cuDNN graph `0.242995 ms` | `0.428x` | external fallback |
 | B1, S257, G4, D128 causal prefill | `0.038195 ms` | cuDNN graph `0.019558 ms` | `0.512x` | external fallback |
@@ -42,11 +42,20 @@ regret is `0.0`. Every cell currently selects an exact external fallback.
 
 The D128 decode kernel reads HND or NHD page-16 caches directly, uses BF16
 `mma.sync`, `cp.async`, exact online softmax, and exact split-state merging.
-Warp-broadcasting one page-table lookup for 32 vector lanes reduced its focused
-sweep floor from `0.065536 ms` to `0.064512 ms`, but the strict calibration
-still measured `0.065536 ms`. Split counts from 64 through 168 and an earlier-V
-prefetch pipeline did not beat the historical FlashInfer floor. Those negative
-ablations are retained rather than promoted.
+The latest kernel partitions only the 128 output dimensions during merge,
+raising low-batch merge parallelism from `B*Hq` to `B*Hq*M` CTAs without
+duplicating QK/PV producer work. It automatically chooses `M=8/4/2/1` at
+batch `1/2/4/8`. The strict calibration improved the native median to
+`0.060416 ms`, but FlashInfer's fastest warm-state process measured
+`0.057344 ms`, so the compiler correctly keeps the external fallback.
+
+Exploratory HND and NHD phase maps each found `6/12` wins, concentrated at low
+`B*N`; they are not promoted because their FlashInfer process was slower than
+the strict run. At B2/64K, all 18 split/merge variants lost (best `0.843x`). A
+128-token producer and page-descriptor register reuse also regressed. This
+falsifies further merge-only tuning for large-work cells and moves the next
+D128 target to producer memory/MMA overlap. See
+[SM80 segmented exact merge](sm80_segmented_exact_merge_20260829.md).
 
 Causal stream truncation improved the S2048 grouped prefill kernel from roughly
 `0.90 ms` to `0.57 ms` by avoiding mathematically masked upper-triangle K/V
@@ -132,8 +141,9 @@ nearby shapes. Therefore `compiler_v1_pass=false` is the correct result.
 This calibration changes the next kernel work:
 
 1. preserve the three measured SM90 native wins;
-2. treat the A100 D128 decode gap as a measured 5-7% kernel target while using
-   exact fallback for the other six cells;
+2. treat the A100 D128 decode gap as a measured producer-mainloop target while
+   preserving exact fallback; segmented merge is retained but is insufficient
+   against the fastest SXM FlashInfer process;
 3. repair or route around ragged NHD/G4 merge cost;
 4. treat B200 graph replay as the minimum baseline, then reduce TGV launch and
    epilogue cost or capture a routable native graph plan;

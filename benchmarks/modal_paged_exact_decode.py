@@ -72,9 +72,11 @@ def _profile_gpu(
     dtype: str,
     split_counts: str,
     batch_splits: str,
+    batch_merge_segments: str,
     token_tiles: str,
     partial_num_warps: int,
     sm80_cp_async_experimental: bool,
+    sm80_merge_segments: str,
     sm80_grouped_experimental: bool,
     sm100_grouped_experimental: bool,
     sm100_tgv_experimental: bool,
@@ -104,65 +106,88 @@ def _profile_gpu(
         [None] if split_counts.strip().lower() == "auto" else _parse_ints(split_counts)
     )
     batch_split_map = _parse_batch_splits(batch_splits)
+    batch_merge_map = _parse_batch_splits(batch_merge_segments)
     for batch in _parse_ints(batches):
         batch_split_values = (
             [batch_split_map[batch]] if batch in batch_split_map else split_values
+        )
+        merge_segment_values = (
+            [batch_merge_map[batch]]
+            if batch in batch_merge_map
+            else (
+                [None]
+                if sm80_merge_segments.strip().lower() == "auto"
+                else _parse_ints(sm80_merge_segments)
+            )
         )
         for kv_len in _parse_ints(kv_lens):
             for length_profile in (
                 item.strip() for item in length_profiles.split(",") if item.strip()
             ):
-                for splits in batch_split_values:
-                    for tokens_per_tile in _parse_ints(token_tiles):
-                        args = argparse.Namespace(
-                            batch=batch,
-                            kv_len=kv_len,
-                            q_heads=q_heads,
-                            kv_heads=kv_heads,
-                            head_dim=head_dim,
-                            page_size=page_size,
-                            layout=layout,
-                            dtype=dtype,
-                            splits=splits,
-                            tokens_per_tile=tokens_per_tile,
-                            partial_num_warps=partial_num_warps,
-                            sm80_cp_async_experimental=sm80_cp_async_experimental,
-                            sm80_grouped_experimental=sm80_grouped_experimental,
-                            sm100_grouped_experimental=sm100_grouped_experimental,
-                            sm100_tgv_experimental=sm100_tgv_experimental,
-                            sm90_fragmented_experimental=(sm90_fragmented_experimental),
-                            sm90_fragmented_ragged_experimental=(
-                                sm90_fragmented_ragged_experimental
-                            ),
-                            length_profile=length_profile,
-                            flashinfer_backends=flashinfer_backends,
-                            workspace_mb=workspace_mb,
-                            warmup=warmup,
-                            repeats=repeats,
-                            paired_trials=paired_trials,
-                            paired_repeats=paired_repeats,
-                            atol=atol,
-                            seed=seed,
-                        )
-                        print(
-                            f"[paged-exact] starting B={batch} N={kv_len} "
-                            f"profile={length_profile} C={splits or 'auto'} "
-                            f"T={tokens_per_tile} W={partial_num_warps} "
-                            f"Hq={q_heads} Hkv={kv_heads} D={head_dim} {dtype}",
-                            flush=True,
-                        )
-                        result = profile(args)
-                        cells.append(result)
-                        print(
-                            f"[paged-exact] B={batch} N={kv_len} "
-                            f"profile={length_profile} splits={result['splits']} "
-                            f"tile={result['tokens_per_tile']} "
-                            f"stream={result['streamattn_ms']:.5f} ms "
-                            f"flashinfer={result['flashinfer_ms']:.5f} ms "
-                            f"speedup={result['speedup_vs_flashinfer']:.3f}x "
-                            f"max_err={result['max_abs_error']:.3e}",
-                            flush=True,
-                        )
+                for merge_segments in merge_segment_values:
+                    for splits in batch_split_values:
+                        for tokens_per_tile in _parse_ints(token_tiles):
+                            args = argparse.Namespace(
+                                batch=batch,
+                                kv_len=kv_len,
+                                q_heads=q_heads,
+                                kv_heads=kv_heads,
+                                head_dim=head_dim,
+                                page_size=page_size,
+                                layout=layout,
+                                dtype=dtype,
+                                splits=splits,
+                                tokens_per_tile=tokens_per_tile,
+                                partial_num_warps=partial_num_warps,
+                                sm80_cp_async_experimental=(
+                                    sm80_cp_async_experimental
+                                ),
+                                sm80_merge_segments=merge_segments,
+                                sm80_grouped_experimental=(
+                                    sm80_grouped_experimental
+                                ),
+                                sm100_grouped_experimental=(
+                                    sm100_grouped_experimental
+                                ),
+                                sm100_tgv_experimental=sm100_tgv_experimental,
+                                sm90_fragmented_experimental=(
+                                    sm90_fragmented_experimental
+                                ),
+                                sm90_fragmented_ragged_experimental=(
+                                    sm90_fragmented_ragged_experimental
+                                ),
+                                length_profile=length_profile,
+                                flashinfer_backends=flashinfer_backends,
+                                workspace_mb=workspace_mb,
+                                warmup=warmup,
+                                repeats=repeats,
+                                paired_trials=paired_trials,
+                                paired_repeats=paired_repeats,
+                                atol=atol,
+                                seed=seed,
+                            )
+                            print(
+                                f"[paged-exact] starting B={batch} N={kv_len} "
+                                f"profile={length_profile} C={splits or 'auto'} "
+                                f"merge={merge_segments or 'auto'} "
+                                f"T={tokens_per_tile} W={partial_num_warps} "
+                                f"Hq={q_heads} Hkv={kv_heads} D={head_dim} {dtype}",
+                                flush=True,
+                            )
+                            result = profile(args)
+                            cells.append(result)
+                            print(
+                                f"[paged-exact] B={batch} N={kv_len} "
+                                f"profile={length_profile} "
+                                f"splits={result['splits']} "
+                                f"merge={result['sm80_merge_segments']} "
+                                f"tile={result['tokens_per_tile']} "
+                                f"stream={result['streamattn_ms']:.5f} ms "
+                                f"flashinfer={result['flashinfer_ms']:.5f} ms "
+                                f"speedup={result['speedup_vs_flashinfer']:.3f}x "
+                                f"max_err={result['max_abs_error']:.3e}",
+                                flush=True,
+                            )
 
     correct = [cell for cell in cells if float(cell["max_abs_error"]) <= atol]
     winners = [cell for cell in correct if float(cell["speedup_vs_flashinfer"]) > 1.0]
@@ -222,9 +247,11 @@ def main(
     dtype: str = "bf16",
     split_counts: str = "4",
     batch_splits: str = "",
+    batch_merge_segments: str = "",
     token_tiles: str = "128",
     partial_num_warps: int = 4,
     sm80_cp_async_experimental: bool = False,
+    sm80_merge_segments: str = "auto",
     sm80_grouped_experimental: bool = False,
     sm100_grouped_experimental: bool = False,
     sm100_tgv_experimental: bool = False,
@@ -262,9 +289,11 @@ def main(
             "dtype": dtype,
             "split_counts": split_counts,
             "batch_splits": batch_splits,
+            "batch_merge_segments": batch_merge_segments,
             "token_tiles": token_tiles,
             "partial_num_warps": partial_num_warps,
             "sm80_cp_async_experimental": sm80_cp_async_experimental,
+            "sm80_merge_segments": sm80_merge_segments,
             "sm80_grouped_experimental": sm80_grouped_experimental,
             "sm100_grouped_experimental": sm100_grouped_experimental,
             "sm100_tgv_experimental": sm100_tgv_experimental,

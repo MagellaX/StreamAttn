@@ -397,6 +397,17 @@ def choose_paged_exact_splits(
     return max(1, min(max_pages_per_request, max_splits, needed))
 
 
+def choose_sm80_merge_segments(
+    *, batch: int, query_heads: int, target_ctas: int = 128
+) -> int:
+    """Choose exact output-dimension segments for the SM80 split-state merge."""
+
+    if min(batch, query_heads, target_ctas) <= 0:
+        raise ValueError("SM80 merge schedule inputs must be positive")
+    required = (target_ctas + batch * query_heads - 1) // (batch * query_heads)
+    return next((segments for segments in (1, 2, 4, 8) if segments >= required), 8)
+
+
 def paged_exact_reference(
     query: torch.Tensor,
     cache: PagedKVCache,
@@ -542,6 +553,7 @@ class PagedExactDecodePlan:
     partial_num_warps: int = 4
     query_group: Optional[torch.Tensor] = None
     output_group: Optional[torch.Tensor] = None
+    merge_segments: int = 1
 
     @classmethod
     def build(
@@ -553,6 +565,7 @@ class PagedExactDecodePlan:
         splits: Optional[int] = None,
         tokens_per_tile: int = 512,
         partial_num_warps: int = 4,
+        sm80_merge_segments: Optional[int] = None,
         validate_metadata: bool = True,
         sm80_cp_async_experimental: bool = False,
         sm80_grouped_experimental: bool = False,
@@ -586,6 +599,13 @@ class PagedExactDecodePlan:
             raise ValueError("tokens_per_tile must be divisible by page_size")
         if partial_num_warps not in {1, 2, 4, 8}:
             raise ValueError("partial_num_warps must be one of 1, 2, 4, or 8")
+        if sm80_merge_segments is not None and sm80_merge_segments not in {
+            1,
+            2,
+            4,
+            8,
+        }:
+            raise ValueError("sm80_merge_segments must be one of 1, 2, 4, or 8")
 
         if query.is_cuda:
             full_lengths = bool(
@@ -782,7 +802,11 @@ class PagedExactDecodePlan:
                 except FileNotFoundError:
                     use_sm80_cp_async = False
             if use_sm80_cp_async:
-                logical_tiles = (cache.max_pages_per_request + 3) // 4
+                producer_tile = 128 if int(tokens_per_tile) == 128 else 64
+                pages_per_tile = producer_tile // cache.page_size
+                logical_tiles = (
+                    cache.max_pages_per_request + pages_per_tile - 1
+                ) // pages_per_tile
                 if splits is None:
                     target_ctas = 256
                     group_count = int(query.shape[0]) * cache.kv_heads
@@ -796,9 +820,15 @@ class PagedExactDecodePlan:
                 if selected_splits > min(logical_tiles, 512):
                     raise ValueError(
                         "SM80 cp.async splits must be <= "
-                        "min(ceil(max_pages/4), 512)"
+                        "min(ceil(max_pages/pages_per_tile), 512)"
                     )
                 groups = int(query.shape[0]) * cache.kv_heads
+                selected_merge_segments = sm80_merge_segments
+                if selected_merge_segments is None:
+                    selected_merge_segments = choose_sm80_merge_segments(
+                        batch=int(query.shape[0]),
+                        query_heads=int(query.shape[2]),
+                    )
                 partial_o = torch.empty(
                     groups,
                     selected_splits,
@@ -823,12 +853,13 @@ class PagedExactDecodePlan:
                     workspace={"partial_o": partial_o, "partial_lse": partial_lse},
                     backend=PAGED_EXACT_SM80_CP_ASYNC_BACKEND,
                     launch=extension.paged_exact_decode_out,
-                    tokens_per_tile=64,
+                    tokens_per_tile=producer_tile,
                     partial_num_warps=4,
                     query_group=query.view(
                         int(query.shape[0]), cache.kv_heads, group_size, head_dim
                     ),
                     output_group=output.view(groups, group_size, head_dim),
+                    merge_segments=int(selected_merge_segments),
                 )
             sm100_tgv_cell = (
                 int(query.shape[0]),
@@ -1016,6 +1047,8 @@ class PagedExactDecodePlan:
                     self.output_group,
                     self.splits,
                     self.cache.normalized_layout == "HND",
+                    self.merge_segments,
+                    self.tokens_per_tile,
                 )
             elif self.backend in {
                 PAGED_EXACT_SM90_FRAGMENTED_RAGGED_BACKEND,

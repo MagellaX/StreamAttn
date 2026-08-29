@@ -41,6 +41,7 @@ from stream_attention.paged import (
     PagedKVCache,
     build_paged_support_keys,
     choose_paged_exact_splits,
+    choose_sm80_merge_segments,
     paged_exact_reference,
     paged_selected_reference,
 )
@@ -257,6 +258,15 @@ def test_paged_split_rule_targets_producer_parallelism():
         choose_paged_exact_splits(batch=8, query_heads=16, max_pages_per_request=2048)
         == 4
     )
+
+
+def test_sm80_merge_segment_rule_targets_low_batch_parallelism():
+    assert choose_sm80_merge_segments(batch=1, query_heads=16) == 8
+    assert choose_sm80_merge_segments(batch=2, query_heads=16) == 4
+    assert choose_sm80_merge_segments(batch=4, query_heads=16) == 2
+    assert choose_sm80_merge_segments(batch=8, query_heads=16) == 1
+    with pytest.raises(ValueError, match="must be positive"):
+        choose_sm80_merge_segments(batch=0, query_heads=16)
 
 
 def test_promoted_paged_sm90_cells_and_source_contract():
@@ -589,13 +599,18 @@ def test_sm100_tgv_source_contract():
 def test_sm80_cp_async_source_contract():
     assert "paged_exact_decode_out" in SM80_CPP_SOURCE
     assert "SM80_CP_ASYNC_CACHEGLOBAL" in SM80_CUDA_SOURCE
-    assert "streamattn_cp_async_tile<kHnd>" in SM80_CUDA_SOURCE
-    assert "32 identical page-table loads" in SM80_CUDA_SOURCE
+    assert "streamattn_cp_async_tile<kBlockM, kHnd>" in SM80_CUDA_SOURCE
+    assert "streamattn_cp_async_tile<kBlockM128, kHnd>" in SM80_CUDA_SOURCE
+    assert "page_table[batch * max_pages + logical_page]" in SM80_CUDA_SOURCE
     assert "HND pages must have shape [pages,Hkv,16,128]" in SM80_CUDA_SOURCE
     assert "SM80_16x8x16_F32BF16BF16F32_TN" in SM80_CUDA_SOURCE
     assert "SM75_U32x4_LDSM_N" in SM80_CUDA_SOURCE
     assert "streamattn_group_max" in SM80_CUDA_SOURCE
     assert "streamattn_sm80_exact_merge_warp_kernel" in SM80_CUDA_SOURCE
+    assert "streamattn_sm80_exact_merge_segmented_kernel" in SM80_CUDA_SOURCE
+    assert "streamattn_sm80_paged_gqa_partial_128_kernel" in SM80_CUDA_SOURCE
+    assert "producer_tile must be 64 or 128" in SM80_CUDA_SOURCE
+    assert "merge_segments must be 1, 2, 4, or 8" in SM80_CUDA_SOURCE
     assert "num_splits <= 512" in SM80_CUDA_SOURCE
 
 

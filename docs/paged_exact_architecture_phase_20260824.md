@@ -19,7 +19,7 @@ fastest correct requested backend is selected per run.
 |---|---|---:|---:|---:|---|
 | H100 80GB | Direct NHD SM90 WGMMA | 24/24 auto cells | 24/24 | 1.283x median cell; 1.058x worst paired trial | Promoted for measured cells |
 | A100 80GB PCIe | SM80 grouped Triton floor | 96/96 | 0/96 | 0.992x best paired cell | Experimental; near parity |
-| A100 80GB SXM4 | Native SM80 `cp.async` + MMA | B1/B2/B4/B8 at 32K | Variable | B1 repeated `1.20x-1.26x`; one sweep `0.975x` | Correct candidate; not promoted |
+| A100 80GB SXM4 | Native SM80 `cp.async` + MMA + segmented merge | B1-B8 at 16K-64K | 6/12 discovery wins per HND/NHD layout | Strict B1/32K/HND `0.949x` | Correct candidate; exact external fallback |
 | B200 | Native SM100 TMA+TMEM+`tcgen05` | 8/8 independent confirmation cells | 6/8 | 1.122x worst paired trial among promoted cells; 1.443x best paired median | Six full-row NHD cells promoted |
 
 The H100 gate includes B1/B2/B4/B8, 16K/32K/64K capacity, and full plus
@@ -87,21 +87,20 @@ That backend now exists for BF16 direct-NHD page-16 D128/G8. One CTA owns
 all eight query heads with `m16n8k16` BF16 MMA, updates online-softmax state,
 and merges FP32 split states exactly. It does not gather or repack pages.
 
-The short-reference gate passed with `9.77e-4` maximum error; every 32K phase
-cell stayed at or below `2.44e-4` cross-backend error. The first B1 phase run
-measured `1.29x`, five repeated B1 cells measured `1.185x-1.206x` with `45/45`
-paired wins, and a final 15-trial confirmation measured `1.262x`. However, a
-separate warm-state sweep measured a faster FlashInfer FA2 baseline and only
-`0.975x` at the same B1/C128 cell. StreamAttn itself stayed near
-`0.065-0.067 ms`; FlashInfer varied from roughly `0.061-0.084 ms`.
+The merge now segments the 128 output dimensions, increasing low-batch merge
+parallelism from `B*Hq` to `B*Hq*M` CTAs without changing producer work or the
+exact online-softmax algebra. HND and NHD discovery maps each produced `12/12`
+correct cells and `6/12` wins. Those wins are not promoted: the strict
+warm-state B1/32K/HND run measured StreamAttn `0.060416 ms` versus FlashInfer
+FA2 `0.057344 ms`, or `0.949x`.
 
-This is evidence for the architecture and an exact-kernel candidate, not an
-automatic A100 promotion. B2/B4/B8 are also excluded. The current scaling
-limit is the PV shared-to-register edge: QK uses native `ldmatrix`, while the
-correct PV path uses scalar loads from a logical transposed V view. CuTe
-rejected both normal and transposed `ldmatrix` atoms for the tested physical V
-layouts. A production B4+ backend needs a hand-authored transposed load map or
-a producer layout designed around `ldmatrix.trans`.
+The scaling boundary is now measured. At B2/64K, 18 split/merge schedules all
+lost and the best reached only `0.843x`. A 128-token producer also lost all 20
+ablation cells because its roughly 100 KiB shared footprint restricted
+residency. Page-descriptor register caching regressed as well. Large-work
+cells therefore need a faster 64-token QK/PV producer or less partial-state
+traffic, not more merge tuning. See
+[the segmented-merge report](sm80_segmented_exact_merge_20260829.md).
 
 On B200, grouped algebra alone was much farther from the baseline. Faster MMA
 makes page issue, synchronization, exponentiation, rescaling, and epilogue
@@ -155,6 +154,11 @@ no-repack verification pass for that exact architecture and shape cell.
 - `artifacts/gate0/paged_exact_sm80_cp_async_winner_sweep_a100.json`
 - `artifacts/gate0/paged_exact_sm80_cp_async_repro_b1_a100.json`
 - `artifacts/gate0/paged_exact_sm80_cp_async_confirm_b1_a100.json`
+- `artifacts/universal_exact/sm80_d128_segmented_merge_hnd_phase.json`
+- `artifacts/universal_exact/sm80_d128_segmented_merge_nhd_phase.json`
+- `artifacts/universal_exact/sm80_d128_b2_64k_schedule_falsification.json`
+- `artifacts/universal_exact/sm80_d128_tile128_b2_64k_ablation.json`
+- `artifacts/universal_exact/sm80_calibration_segmented_merge_sxm4_attempt.json`
 - `artifacts/gate0/paged_exact_nhd_d128_g8_grouped_phase_b200.json`
 - `artifacts/gate0/paged_exact_sm100_tgv_arch_phase_b200.json`
 - `artifacts/gate0/paged_exact_sm100_tgv_confirmation_b200.json`

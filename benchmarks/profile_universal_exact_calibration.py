@@ -222,6 +222,7 @@ def _profile_paged_cells(
             splits=None,
             tokens_per_tile=512,
             partial_num_warps=4,
+            sm80_merge_segments=8 if sm80_cp_async else None,
             sm80_cp_async_experimental=sm80_cp_async,
             sm80_grouped_experimental=False,
             sm100_grouped_experimental=False,
@@ -275,7 +276,8 @@ def _profile_paged_cells(
                 family_id=resolved_family,
                 kernel_key=(
                     f"{result['backend_variant']}:s{result['splits']}:"
-                    f"t{result['tokens_per_tile']}:w{result['partial_num_warps']}"
+                    f"t{result['tokens_per_tile']}:w{result['partial_num_warps']}:"
+                    f"m{result['sm80_merge_segments']}"
                     f"{source_suffix}"
                 ),
             )

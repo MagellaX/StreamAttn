@@ -300,6 +300,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         splits=args.splits,
         tokens_per_tile=args.tokens_per_tile,
         partial_num_warps=args.partial_num_warps,
+        sm80_merge_segments=getattr(args, "sm80_merge_segments", None),
         sm80_cp_async_experimental=getattr(
             args, "sm80_cp_async_experimental", False
         ),
@@ -514,6 +515,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "splits": plan.splits,
         "tokens_per_tile": plan.tokens_per_tile,
         "partial_num_warps": plan.partial_num_warps,
+        "sm80_merge_segments": plan.merge_segments,
         "backend_variant": plan.backend,
         "producer_ctas": producer_groups * plan.splits,
         "active_producer_ctas": active_producer_ctas,
@@ -580,6 +582,9 @@ def main() -> None:
     parser.add_argument("--workspace-mb", type=int, default=128)
     parser.add_argument("--flashinfer-backends", default="auto")
     parser.add_argument("--sm80-cp-async-experimental", action="store_true")
+    parser.add_argument(
+        "--sm80-merge-segments", type=int, choices=(1, 2, 4, 8), default=None
+    )
     parser.add_argument("--sm80-grouped-experimental", action="store_true")
     parser.add_argument("--sm100-grouped-experimental", action="store_true")
     parser.add_argument("--sm100-tgv-experimental", action="store_true")

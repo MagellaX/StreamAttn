@@ -11,6 +11,8 @@
 - [Universal Exact Phase Database v1](universal_exact_phase_database_v1.md):
   strict backend evidence, fastest-correct baseline resolution, routing regret,
   negative-cell retention, and reproducible architecture phase tables.
+- [SM80 Segmented Exact Merge](sm80_segmented_exact_merge_20260829.md):
+  low-batch merge parallelism, strict A100 boundary, and falsified alternatives.
 
 ## Parameters Explained
 

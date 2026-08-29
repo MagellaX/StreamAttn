@@ -300,14 +300,20 @@ uses `m16n8k16` BF16 MMA for QK and PV, maintains online-softmax state, and
 merges FP32 split states exactly. It consumes paged cache tensors directly;
 there is no page gather or NHD-to-HND repack in the timed path.
 
-At B1/32K on A100 80GB SXM4, five repeated cells measured `1.185x-1.206x`
-with `45/45` paired wins, and a separate 15-trial confirmation measured
-`1.262x`. An independent warm-state sweep also produced a `0.975x` result
-because the selected FlashInfer FA2 baseline moved from roughly `0.084 ms` to
-`0.061 ms`, while StreamAttn stayed near `0.065 ms`. B2/B4/B8 lose. Therefore
-this backend remains explicit experimental opt-in and is not part of automatic
-dispatch. Its next scaling problem is the PV shared-to-register transpose, not
-more split-count tuning.
+The merge now partitions D128 output dimensions across independent CTAs. This
+changes merge parallelism from `B*Hq` to `B*Hq*M`, with automatic
+`M=8/4/2/1` for batch `1/2/4/8`, while preserving FP32 partial states and the
+exact online-softmax merge. Exploratory HND and NHD phase maps each produced
+`6/12` wins, but their FlashInfer process was slower than the strict warm-state
+baseline. The strict B1/32K/HND run measured StreamAttn `0.060416 ms` versus
+FlashInfer FA2 `0.057344 ms` (`0.949x`). The backend therefore remains an
+explicit experimental opt-in and is not part of automatic dispatch.
+
+At B2/64K, all 18 tested split/merge schedules lost, with `0.843x` best. A
+128-token producer and page-descriptor register cache also regressed. Those
+negative results establish that large-work cells are producer-throughput
+limited; more merge tuning is not the next lever. See
+[the segmented-merge report](sm80_segmented_exact_merge_20260829.md).
 
 On B200, the generic grouped Triton floor was correct in `108/108` cells but
 reached only `0.667x` at best. StreamAttn now has a separate Blackwell-native
@@ -378,6 +384,7 @@ python benchmarks/profile_paged_exact_decode.py \
   --dtype bf16 \
   --splits 128 \
   --sm80-cp-async-experimental \
+  --sm80-merge-segments 8 \
   --flashinfer-backends auto,fa2
 ~~~
 
@@ -417,5 +424,6 @@ D128/G8, NHD, page-16
 The B200 promoted matrix is BF16 direct-NHD page-16 D128/G8 with full rows at
 `(B,N) = (1,32K), (2,32K), (2,64K), (4,32K), (4,64K), (8,32K)`. Other
 dimensions, page sizes, ragged rows, and B200 cells remain on generic exact
-fallback. A100 has one variable B1 candidate but no promoted phase. Successful
-compilation or correctness alone does not enable an unmeasured route.
+fallback. A100 has a correct segmented-merge candidate but no promoted phase
+against the strict fast-SXM baseline. Successful compilation, correctness, or
+a win in a slower comparison process does not enable an unmeasured route.

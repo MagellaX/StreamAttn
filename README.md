@@ -106,8 +106,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 | Paged D128, GQA group 8 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.075x` worst paired trial; `1.75x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 8 | NHD/page-16; B1-B8; 16K-64K; full and ragged | `1.058x` worst paired trial; `1.283x` median auto-gate cell | Promoted per cell |
 | Paged D128, GQA group 4 | HND/page-16; B1-B8; 16K-64K; full and ragged | `1.017x` worst paired trial; `1.34x` median cell | Promoted per cell |
-| Paged D128, GQA group 8 | A100/NHD/page-16; B1/32K full row | `1.20x-1.26x` in two repeated runs; `0.975x` in one warm-state sweep | Experimental candidate; not auto-routed |
-| Paged D128, GQA group 8 | A100/HND/page-16; B1/32K full row | `0.9375x` against the fastest measured FlashInfer FA2 process | Correct native kernel; exact external fallback |
+| Paged D128, GQA group 8 | A100/HND and NHD/page-16; B1-B8, 16K-64K exploratory matrix | `6/12` discovery-process wins per layout; strict B1/32K/HND `0.949x` | Segmented exact merge is correct; fast-SXM route remains external fallback |
 | Paged D128, GQA group 8 | B200/NHD/page-16; six B1-B8, 32K/64K full-row cells | `1.144x-1.441x` initial confirmation; `1.122x` worst paired trial | Promoted per cell |
 
 The exact backend uses transposed WGMMA so that long context occupies the
@@ -126,6 +125,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [D128/G4 H100 phase diagram](docs/exact_native_h100_d128_g4_phase_diagram_20260819.md)
 - [Paged D64/D128 H100 phase diagram](docs/paged_exact_decode.md)
 - [Paged exact SM80/SM90/SM100 architecture phase](docs/paged_exact_architecture_phase_20260824.md)
+- [SM80 segmented exact merge and falsification boundary](docs/sm80_segmented_exact_merge_20260829.md)
 - [Native B200 exact backend and promotion boundary](docs/paged_exact_sm100_tgv_20260824.md)
 
 ### Selected paged decode
@@ -272,9 +272,9 @@ verifier.
 - No A100, FP8, or non-Qwen model-family performance claim has been promoted
   yet. A100 now has an architecture-native SM80 `cp.async` + BF16 MMA exact
   backend for direct HND/NHD page-16 D128/G8 decode. Same-process runs often
-  beat FlashInfer, but the strict multi-process HND gate resolves to
-  `0.065536 ms` native versus a `0.061440 ms` FlashInfer FA2 floor. The complete
-  seven-cell A100 database therefore emits exact external fallbacks.
+  beat FlashInfer, but the strict HND gate resolves to `0.060416 ms` native
+  versus a `0.057344 ms` FlashInfer FA2 floor. The complete seven-cell A100
+  database therefore emits exact external fallbacks.
 - B200 promotion is narrow: BF16, direct NHD page-16, D128/G8, full fixed rows,
   and six measured B/N cells only. B1/64K and B8/64K did not clear the paired
   gate and remain on exact fallback. This is not a universal Blackwell claim.
@@ -572,7 +572,7 @@ writes SHA-indexed phase_db/sm80.json, sm90.json, and sm100.json
 
 The SM80 database now resolves all seven declared cells with complete baseline
 telemetry and zero routing regret. None is promoted native: D128 paged decode is
-the closest at `0.9375x` of FlashInfer, while causal/noncausal prefill and
+the closest at `0.949x` of FlashInfer, while causal/noncausal prefill and
 training remain larger kernel-family gaps. Deterministic dropout is exactly
 resolved by PyTorch math SDPA, but its eager autograd path allocates, so the
 architecture database correctly remains below compiler-v1 acceptance.
@@ -781,9 +781,10 @@ reproducible exact coverage rather than another isolated promotion:
    decode-shaped partial/merge path would retain the wrong physical geometry.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
-6. Close the measured A100 family gaps: beat the `0.061440 ms` FlashInfer D128
-   decode floor, replace the generic D64 route, and build distinct prefill and
-   backward schedules rather than stretching the decode kernel geometry.
+6. Close the measured A100 family gaps: beat the strict `0.057344 ms`
+   FlashInfer D128 decode floor by improving the 64-token QK/PV producer, not
+   by adding merge splits already falsified at B2/64K; replace the generic D64
+   route and build distinct prefill and backward schedules.
 7. Resume adaptive/selected work above the exact compiler. Unknown or failed
    guarantees must return to StreamAttn exact execution.
 
