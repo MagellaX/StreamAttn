@@ -26,7 +26,7 @@ eligible as a baseline. Capture is excluded from timing.
 
 ## SM80 Results
 
-The A100 SXM4 profile resolves all seven declared cells and records 107 raw
+The A100 SXM4 profile resolves all seven declared cells and records 115 raw
 evidence rows. Semantic, telemetry, and route coverage are each `1.0`; routing
 regret is `0.0`. Every cell currently selects an exact external fallback.
 

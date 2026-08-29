@@ -21,10 +21,10 @@
       },
       "architecture": "sm80",
       "entry_count": 7,
-      "evidence_count": 107,
+      "evidence_count": 115,
       "path": "sm80.json",
-      "sha256": "c961da8d9fe73981395b968a05e7551c5cb3305e370c3851a3b936d6ebaeb2a1",
-      "source_commit": "3539608ea59a562bd517483ff9ca3366d82fb25b"
+      "sha256": "4fa9f743cc386bcfc6b54781676c431addfc23a940b9e40ed9c0adcdaadea7b4",
+      "source_commit": "db04b88433d387feeba4084344b5c1827a480d61"
     },
     {
       "acceptance": {
@@ -74,5 +74,5 @@
   ],
   "manifest_id": "universal_exact_v1_20260828",
   "schema_version": 1,
-  "source_commit": "3539608ea59a562bd517483ff9ca3366d82fb25b"
+  "source_commit": "db04b88433d387feeba4084344b5c1827a480d61"
 }
