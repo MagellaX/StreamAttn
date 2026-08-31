@@ -54,6 +54,11 @@ def test_sm80_source_contains_fused_boundary_and_allocation_free_entrypoint():
     assert "streamattn_tk_tc_exact_warp_merge_direct_kernel" in CUDA_SOURCE
     assert "warp::load_async" in CUDA_SOURCE
     assert "producer_warps = 4" in CUDA_SOURCE
+    assert "D == 128 ? 2 : 4" in CUDA_SOURCE
+    assert (
+        "streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<128, 2>"
+        in CUDA_SOURCE
+    )
 
 
 def test_sm80_plan_reuses_bound_workspace_and_output():

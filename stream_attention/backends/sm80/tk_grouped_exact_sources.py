@@ -673,11 +673,10 @@ __global__ void streamattn_tk_tc_exact_decode_chunk_staged_grouped_kernel(
   }
 }
 
-template <int D>
+template <int D, int producer_warps>
 __global__ void streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel(
     const __grid_constant__ streamattn_tc_grouped_direct_globals g) {
   using T = streamattn_tc_exact_tiles<D>;
-  constexpr int producer_warps = 4;
   const int producer_warp = threadIdx.x >> 5;
   const int grouped_pid = blockIdx.x;
   const int grouped_chunk = grouped_pid % g.num_chunks;
@@ -1340,7 +1339,7 @@ std::vector<torch::Tensor> streamattn_tk_tc_exact_decode_chunk_states_staged_gro
   TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
   TORCH_CHECK(num_chunks > 0 && num_chunks % producer_warps == 0,
-              "num_chunks must be positive and divisible by four");
+              "num_chunks must be positive and divisible by producer warps");
   TORCH_CHECK((N / 16) % num_chunks == 0, "num_chunks must divide N/16 for this spike");
   const int logical_chunks = static_cast<int>(num_chunks);
   const int grouped_chunks = logical_chunks / producer_warps;
@@ -1413,7 +1412,6 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_o
     torch::Tensor partial_lse,
     torch::Tensor out,
     int64_t num_chunks) {
-  constexpr int producer_warps = 4;
   TORCH_CHECK(q.is_cuda() && k_group.is_cuda() && v_group.is_cuda(),
               "Q/K/V must be CUDA");
   TORCH_CHECK(q.is_contiguous(), "q must be contiguous [B,Hq,D]");
@@ -1437,10 +1435,12 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_o
   const int group_size = Hq / Hkv;
   TORCH_CHECK(group_size == 4 || group_size == 8,
               "direct grouped path currently supports G4 or G8");
-  TORCH_CHECK(D == 64, "direct grouped path currently supports D=64 only");
+  TORCH_CHECK(D == 64 || D == 128,
+              "direct grouped path currently supports D64 or D128");
+  const int producer_warps = D == 128 ? 2 : 4;
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
   TORCH_CHECK(num_chunks > 0 && num_chunks % producer_warps == 0,
-              "num_chunks must be positive and divisible by four");
+              "num_chunks must be positive and divisible by producer warps");
   TORCH_CHECK((N / 16) % num_chunks == 0,
               "num_chunks must divide N/16");
   const int logical_chunks = static_cast<int>(num_chunks);
@@ -1494,8 +1494,13 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_o
       tiles_per_chunk};
   const dim3 producer_grid(B * Hkv * grouped_chunks);
   const dim3 producer_block(32 * producer_warps);
-  streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<64>
-      <<<producer_grid, producer_block>>>(g);
+  if (D == 64) {
+    streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<64, 4>
+        <<<producer_grid, producer_block>>>(g);
+  } else {
+    streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<128, 2>
+        <<<producer_grid, producer_block>>>(g);
+  }
   cudaError_t err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
 
@@ -1521,12 +1526,14 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_c
     torch::Tensor k_group,
     torch::Tensor v_group,
     int64_t num_chunks) {
-  constexpr int producer_warps = 4;
   TORCH_CHECK(q.dim() == 3 && k_group.dim() == 4,
               "expected q [B,Hq,D] and K [B,Hkv,N,D]");
   const int B = q.size(0);
   const int Hkv = k_group.size(1);
   const int D = q.size(2);
+  TORCH_CHECK(D == 64 || D == 128,
+              "direct grouped path currently supports D64 or D128");
+  const int producer_warps = D == 128 ? 2 : 4;
   const int grouped_chunks = static_cast<int>(num_chunks) / producer_warps;
   auto partial = torch::empty({B, Hkv, grouped_chunks * 16, D}, q.options());
   auto partial_lse = torch::empty(

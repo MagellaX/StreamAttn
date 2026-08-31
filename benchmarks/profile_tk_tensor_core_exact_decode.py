@@ -474,11 +474,12 @@ def main() -> None:
         return sorted(set(counts))
 
     chunk_counts = _chunk_counts()
+    direct_producer_warps = 2 if args.head_dim == 128 else 4
     direct_workspaces: dict[
         int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
     ] = {}
     for count in chunk_counts:
-        grouped_chunks = count // 4
+        grouped_chunks = count // direct_producer_warps
         direct_workspaces[count] = (
             torch.empty(
                 args.batch,
@@ -623,8 +624,14 @@ def main() -> None:
         for producer_warps in producer_warp_counts
     }
     staged_merged_group = tk_merged_staged(args.num_chunks)
-    staged_grouped_merged_group = tk_merged_staged_grouped(args.num_chunks)
-    staged_grouped_runtime_io_out = tk_merged_staged_grouped_runtime_io(args.num_chunks)
+    staged_grouped_merged_group = (
+        tk_merged_staged_grouped(args.num_chunks) if args.head_dim == 64 else None
+    )
+    staged_grouped_runtime_io_out = (
+        tk_merged_staged_grouped_runtime_io(args.num_chunks)
+        if args.head_dim == 64
+        else None
+    )
     staged_grouped_direct_out = tk_merged_staged_grouped_direct(args.num_chunks)
     staged_grouped_direct_preallocated_out = tk_merged_staged_grouped_direct_out(
         args.num_chunks
@@ -652,8 +659,10 @@ def main() -> None:
     head_mode_out = _unpack_q_by_kv_group(head_mode_group, args.q_heads)
     compact_head_mode_out = _unpack_q_by_kv_group(compact_head_mode_group, args.q_heads)
     staged_merged_out = _unpack_q_by_kv_group(staged_merged_group, args.q_heads)
-    staged_grouped_merged_out = _unpack_q_by_kv_group(
-        staged_grouped_merged_group, args.q_heads
+    staged_grouped_merged_out = (
+        _unpack_q_by_kv_group(staged_grouped_merged_group, args.q_heads)
+        if staged_grouped_merged_group is not None
+        else None
     )
 
     def dense_true() -> torch.Tensor:
@@ -752,24 +761,25 @@ def main() -> None:
             warmup=args.warmup,
             iters=args.iters,
         )
-        staged_grouped_chunk_sweep[str(num_chunks)] = _time_cuda(
-            lambda c=num_chunks: tk_chunk_staged_grouped(c),
-            device=device,
-            warmup=args.warmup,
-            iters=args.iters,
-        )
-        staged_grouped_merged_sweep[str(num_chunks)] = _time_cuda(
-            lambda c=num_chunks: tk_merged_staged_grouped(c),
-            device=device,
-            warmup=args.warmup,
-            iters=args.iters,
-        )
-        staged_grouped_runtime_io_sweep[str(num_chunks)] = _time_cuda(
-            lambda c=num_chunks: tk_merged_staged_grouped_runtime_io(c),
-            device=device,
-            warmup=args.warmup,
-            iters=args.iters,
-        )
+        if args.head_dim == 64:
+            staged_grouped_chunk_sweep[str(num_chunks)] = _time_cuda(
+                lambda c=num_chunks: tk_chunk_staged_grouped(c),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            staged_grouped_merged_sweep[str(num_chunks)] = _time_cuda(
+                lambda c=num_chunks: tk_merged_staged_grouped(c),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            staged_grouped_runtime_io_sweep[str(num_chunks)] = _time_cuda(
+                lambda c=num_chunks: tk_merged_staged_grouped_runtime_io(c),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
         staged_grouped_direct_sweep[str(num_chunks)] = _time_cuda(
             lambda c=num_chunks: tk_merged_staged_grouped_direct(c),
             device=device,
@@ -846,6 +856,7 @@ def main() -> None:
             "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": staged_grouped_runtime_io_sweep,
             "tk_tensor_core_staged_grouped_direct_sweep_ms": staged_grouped_direct_sweep,
             "tk_tensor_core_staged_grouped_direct_out_sweep_ms": staged_grouped_direct_out_sweep,
+            "tk_tensor_core_staged_grouped_direct_producer_warps": direct_producer_warps,
             "tk_tensor_core_best_staged_grouped_chunk_ms": min(
                 staged_grouped_chunk_sweep.values()
             )
@@ -964,14 +975,26 @@ def main() -> None:
             "staged_merged_vs_dense_true_gqa": _error(
                 staged_merged_out[:, None, :, :], dense_ref[:, None, :, :]
             ),
-            "staged_grouped_merged_vs_packed_torch_ref": _error(
-                staged_grouped_merged_group, torch_ref_group
+            "staged_grouped_merged_vs_packed_torch_ref": (
+                _error(staged_grouped_merged_group, torch_ref_group)
+                if staged_grouped_merged_group is not None
+                else None
             ),
-            "staged_grouped_merged_vs_dense_true_gqa": _error(
-                staged_grouped_merged_out[:, None, :, :], dense_ref[:, None, :, :]
+            "staged_grouped_merged_vs_dense_true_gqa": (
+                _error(
+                    staged_grouped_merged_out[:, None, :, :],
+                    dense_ref[:, None, :, :],
+                )
+                if staged_grouped_merged_out is not None
+                else None
             ),
-            "staged_grouped_runtime_io_vs_dense_true_gqa": _error(
-                staged_grouped_runtime_io_out[:, None, :, :], dense_ref[:, None, :, :]
+            "staged_grouped_runtime_io_vs_dense_true_gqa": (
+                _error(
+                    staged_grouped_runtime_io_out[:, None, :, :],
+                    dense_ref[:, None, :, :],
+                )
+                if staged_grouped_runtime_io_out is not None
+                else None
             ),
             "staged_grouped_direct_vs_dense_true_gqa": _error(
                 staged_grouped_direct_out[:, None, :, :], dense_ref[:, None, :, :]

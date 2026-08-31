@@ -20,13 +20,36 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from benchmarks.run_lightning_mistral_marginals import _fetch_finished_logs, _quote
-
-
 BASE_SHA = "38cf8505947d21024f918b4e97dac020146380d5"
 RESULT_SCHEMA = "streamattn.tk_tensor_core_exact_decode.v1"
 MATRIX_SCHEMA = "streamattn.tk_tensor_core_exact_decode.matrix.v1"
 TERMINAL_STATES = {"completed", "failed", "stopped", "cancelled", "error"}
+
+
+def _quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _fetch_finished_logs(
+    api: JobApiV2,
+    *,
+    job_id: str,
+    teamspace_id: str,
+    attempts: int,
+    delay: float,
+) -> str:
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return api.get_logs_finished(job_id=job_id, teamspace_id=teamspace_id)
+        except Exception as exc:
+            last_error = exc
+            print(
+                f"log fetch attempt {attempt} failed: {type(exc).__name__}",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"could not fetch Lightning logs: {last_error}")
 
 
 def _overlay_b64() -> str:

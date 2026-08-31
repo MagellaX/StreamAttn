@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-BASE_SHA = "fa81ba54d574d3b179c99ba75933112e1f759bd8"
+BASE_SHA = "0394801d6c508ef21f674a108b98aef9173e9e30"
 RESULT_SCHEMA = "streamattn.paged_exact_decode_profile.v1"
 TERMINAL_STATES = {"completed", "failed", "stopped", "cancelled", "error"}
 OVERLAY_PATHS = (
@@ -30,6 +30,9 @@ OVERLAY_PATHS = (
     "stream_attention/engine.py",
     "stream_attention/paged.py",
     "stream_attention/kernels/paged_exact_triton.py",
+    "stream_attention/backends/sm80/__init__.py",
+    "stream_attention/backends/sm80/paged_gqa_exact.py",
+    "stream_attention/backends/sm80/paged_gqa_exact_sources.py",
 )
 
 
@@ -89,7 +92,11 @@ def _job_command(args: argparse.Namespace) -> str:
             f"--kv-heads {args.kv_heads}",
             f"--head-dim {args.head_dim}",
             f"--page-size {args.page_size}",
+            f"--layout {args.layout}",
             f"--dtype {args.dtype}",
+            f"--tokens-per-tile {args.tokens_per_tile}",
+            f"--partial-num-warps {args.partial_num_warps}",
+            f"--flashinfer-backends {args.flashinfer_backends}",
             f"--warmup {args.warmup}",
             f"--repeats {args.repeats}",
             f"--atol {args.atol}",
@@ -98,6 +105,10 @@ def _job_command(args: argparse.Namespace) -> str:
     )
     if args.splits is not None:
         benchmark += f" --splits {args.splits}"
+    if args.sm80_cp_async_experimental:
+        benchmark += " --sm80-cp-async-experimental"
+    if args.sm80_merge_segments is not None:
+        benchmark += f" --sm80-merge-segments {args.sm80_merge_segments}"
     return "\n".join(
         [
             "set -eu",
@@ -119,7 +130,7 @@ def _job_command(args: argparse.Namespace) -> str:
             "with tarfile.open(fileobj=io.BytesIO(base64.b64decode(payload)), mode='r:gz') as archive:\n"
             "    archive.extractall('.')\n"
             "PY",
-            "python -m pip install -q flashinfer-python==0.6.12 flashinfer-cubin==0.6.12 ninja",
+            "python -m pip install -q flashinfer-python==0.6.17 flashinfer-cubin==0.6.17 ninja",
             benchmark,
             "cat /tmp/result.json",
         ]
@@ -223,8 +234,16 @@ def main() -> None:
     parser.add_argument("--kv-heads", type=int, default=2)
     parser.add_argument("--head-dim", type=int, default=64)
     parser.add_argument("--page-size", type=int, default=16)
+    parser.add_argument("--layout", choices=("NHD", "HND"), default="NHD")
     parser.add_argument("--dtype", choices=("fp16", "bf16"), default="bf16")
     parser.add_argument("--splits", type=int)
+    parser.add_argument("--tokens-per-tile", type=int, default=512)
+    parser.add_argument("--partial-num-warps", type=int, default=4)
+    parser.add_argument("--flashinfer-backends", default="auto,fa2")
+    parser.add_argument("--sm80-cp-async-experimental", action="store_true")
+    parser.add_argument(
+        "--sm80-merge-segments", type=int, choices=(1, 2, 4, 8), default=None
+    )
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--atol", type=float, default=1e-2)
