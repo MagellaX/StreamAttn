@@ -6,7 +6,7 @@ per-head loop?
 
 It intentionally starts with a compact, testable shape:
 
-* B=1/M=1 decode;
+* batched M=1 decode;
 * Q heads are packed by KV group into a 16-row tensor-core tile;
 * K/V are packed as [B, Hkv, N, D] for the spike;
 * one warp processes one KV group exactly.
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import tempfile
@@ -33,7 +34,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from benchmarks.profile_gate0_true_gqa import _dense_true_gqa  # noqa: E402
-from benchmarks.profile_head_mode_decode_cuda import _flashinfer_exact, _torch_head_mode_reference  # noqa: E402
+from benchmarks.profile_head_mode_decode_cuda import _torch_head_mode_reference  # noqa: E402
 from benchmarks.profile_stream_attn_gate0_wrapper import _dtype, _error, _time_cuda  # noqa: E402
 from benchmarks.profile_thunderkittens_extension_smoke import (  # noqa: E402
     _clone_tk,
@@ -41,894 +42,98 @@ from benchmarks.profile_thunderkittens_extension_smoke import (  # noqa: E402
     _tk_arch_define,
 )
 
-
-CPP_SOURCE = r"""
-#include <torch/extension.h>
-
-torch::Tensor streamattn_tk_tc_exact_decode_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group);
-
-torch::Tensor streamattn_tk_tc_exact_decode_chunks_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks);
-
-std::vector<torch::Tensor> streamattn_tk_tc_exact_decode_chunk_states_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks);
-
-torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks);
-
-torch::Tensor streamattn_tk_tc_head_mode_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    torch::Tensor row_modes,
-    int64_t num_chunks,
-    int64_t block_size,
-    int64_t sink_blocks,
-    int64_t recent_blocks,
-    int64_t middle_seed_blocks,
-    int64_t block_order);
-
-torch::Tensor streamattn_tk_tc_head_mode_compact_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    torch::Tensor row_modes,
-    torch::Tensor active_chunks,
-    torch::Tensor active_counts,
-    torch::Tensor flat_active_chunks,
-    torch::Tensor active_offsets,
-    int64_t logical_num_chunks,
-    int64_t block_size,
-    int64_t sink_blocks,
-    int64_t recent_blocks,
-    int64_t middle_seed_blocks,
-    int64_t block_order);
-
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("exact_decode", &streamattn_tk_tc_exact_decode_cuda,
-        "StreamAttn TK tensor-core exact true-GQA decode baseline");
-  m.def("exact_decode_chunks", &streamattn_tk_tc_exact_decode_chunks_cuda,
-        "StreamAttn TK tensor-core exact true-GQA chunk-only decode baseline");
-  m.def("exact_decode_chunk_states", &streamattn_tk_tc_exact_decode_chunk_states_cuda,
-        "StreamAttn TK tensor-core exact true-GQA chunk states baseline");
-  m.def("exact_decode_chunk_merged", &streamattn_tk_tc_exact_decode_chunk_merged_cuda,
-        "StreamAttn TK tensor-core exact true-GQA chunk+merge baseline");
-  m.def("head_mode_chunk_merged", &streamattn_tk_tc_head_mode_chunk_merged_cuda,
-        "StreamAttn TK tensor-core true-GQA head-mode chunk+merge baseline");
-  m.def("head_mode_compact_chunk_merged", &streamattn_tk_tc_head_mode_compact_chunk_merged_cuda,
-        "StreamAttn TK tensor-core true-GQA compact head-mode chunk+merge baseline");
-}
-"""
+try:
+    import flashinfer
+except Exception:  # pragma: no cover - optional benchmark dependency
+    flashinfer = None
 
 
-CUDA_SOURCE = r"""
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <torch/extension.h>
-#include "kittens.cuh"
+def _make_flashinfer_batched_exact_runner(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    *,
+    page_size: int,
+    workspace_mb: int,
+):
+    """Prepare FlashInfer's production batched paged-decode path once."""
+    if flashinfer is None:
+        raise RuntimeError("FlashInfer is not available")
+    if k.shape != v.shape or k.ndim != 4:
+        raise ValueError(f"expected matching [B,N,Hkv,D] K/V, got {k.shape=} {v.shape=}")
+    batch, kv_len, kv_heads, dim = k.shape
+    if q.ndim != 3 or q.shape[0] != batch or q.shape[2] != dim:
+        raise ValueError(f"Q shape is incompatible with K/V: {q.shape=} {k.shape=}")
+    if page_size <= 0 or workspace_mb <= 0:
+        raise ValueError("FlashInfer page size and workspace size must be positive")
 
-using namespace kittens;
+    pages_per_request = math.ceil(kv_len / page_size)
+    padded_len = pages_per_request * page_size
+    if padded_len == kv_len:
+        k_padded = k
+        v_padded = v
+    else:
+        k_padded = torch.zeros(
+            batch, padded_len, kv_heads, dim, device=k.device, dtype=k.dtype
+        )
+        v_padded = torch.zeros_like(k_padded)
+        k_padded[:, :kv_len].copy_(k)
+        v_padded[:, :kv_len].copy_(v)
 
-template <int D>
-struct streamattn_tc_exact_tiles {};
+    key_pages = k_padded.view(batch * pages_per_request, page_size, kv_heads, dim)
+    value_pages = v_padded.view(batch * pages_per_request, page_size, kv_heads, dim)
+    paged_cache = torch.stack((key_pages, value_pages), dim=1).contiguous()
+    total_pages = batch * pages_per_request
+    indptr = torch.arange(
+        0,
+        total_pages + 1,
+        pages_per_request,
+        device=q.device,
+        dtype=torch.int32,
+    )
+    indices = torch.arange(total_pages, device=q.device, dtype=torch.int32)
+    last_page_len = torch.full(
+        (batch,),
+        kv_len - (pages_per_request - 1) * page_size,
+        device=q.device,
+        dtype=torch.int32,
+    )
+    workspace = torch.empty(
+        workspace_mb * 1024 * 1024, device=q.device, dtype=torch.uint8
+    )
+    wrapper = flashinfer.decode.BatchDecodeWithPagedKVCacheWrapper(
+        workspace,
+        "NHD",
+        use_tensor_cores=True,
+        backend="auto",
+    )
+    wrapper.plan(
+        indptr,
+        indices,
+        last_page_len,
+        q.shape[1],
+        kv_heads,
+        dim,
+        page_size,
+        pos_encoding_mode="NONE",
+        q_data_type=q.dtype,
+        kv_data_type=k.dtype,
+        o_data_type=q.dtype,
+        sm_scale=1.0 / math.sqrt(float(dim)),
+        disable_split_kv=False,
+    )
+    out = torch.empty_like(q)
 
-template <>
-struct streamattn_tc_exact_tiles<64> {
-  using q_tile = rt_bf<16, 64>;
-  using k_tile = rt_bf<16, 64>;
-  using v_tile = rt_bf<16, 64, ducks::rt_layout::col>;
-  using scores_fl = rt_fl<16, 16>;
-  using scores_bf = rt_bf<16, 16>;
-  using out_tile = rt_fl<16, 64>;
-  using score_col = col_vec<scores_fl>;
-};
+    def run() -> torch.Tensor:
+        return wrapper.run(q, paged_cache, out=out)
 
-template <>
-struct streamattn_tc_exact_tiles<128> {
-  using q_tile = rt_bf<16, 128>;
-  using k_tile = rt_bf<16, 128>;
-  using v_tile = rt_bf<16, 128, ducks::rt_layout::col>;
-  using scores_fl = rt_fl<16, 16>;
-  using scores_bf = rt_bf<16, 16>;
-  using out_tile = rt_fl<16, 128>;
-  using score_col = col_vec<scores_fl>;
-};
+    return run
 
-struct streamattn_tc_exact_globals {
-  using q_gl = gl<bf16, -1, -1, -1, -1>;
-  using kv_gl = gl<bf16, -1, -1, -1, -1>;
-  q_gl q;
-  kv_gl k;
-  kv_gl v;
-  q_gl out;
-  int N;
-  int Hkv;
-};
 
-struct streamattn_tc_chunk_globals {
-  using q_gl = gl<bf16, -1, -1, -1, -1>;
-  using kv_gl = gl<bf16, -1, -1, -1, -1>;
-  using lse_gl = gl<float, -1, -1, -1, -1>;
-  q_gl q;
-  kv_gl k;
-  kv_gl v;
-  q_gl partial_out;
-  lse_gl partial_lse;
-  const int32_t* row_modes;
-  const int32_t* active_chunks;
-  const int32_t* active_counts;
-  const int32_t* flat_active_chunks;
-  const int32_t* active_offsets;
-  int N;
-  int Hkv;
-  int num_chunks;
-  int tiles_per_chunk;
-  int total_active_entries;
-  int block_size;
-  int sink_blocks;
-  int recent_blocks;
-  int middle_seed_blocks;
-  int block_order;
-  int use_head_modes;
-  int compact_chunks;
-};
-
-__device__ __forceinline__ bool streamattn_tc_tile_is_seed(
-    int tile,
-    int N,
-    int block_size,
-    int sink_blocks,
-    int recent_blocks,
-    int middle_seed_blocks,
-    int block_order) {
-  const int tile_tokens = 16;
-  const int token_start = tile * tile_tokens;
-  const int bs = block_size <= 0 ? tile_tokens : block_size;
-  const int num_blocks = (N + bs - 1) / bs;
-  const int sink_end = min(sink_blocks * bs, N);
-  const int recent_start = recent_blocks >= num_blocks ? 0 : (num_blocks - recent_blocks) * bs;
-  bool keep = token_start < sink_end || token_start >= recent_start;
-  if (middle_seed_blocks > 0) {
-    const int middle_seed_tokens = middle_seed_blocks * bs;
-    if (block_order == 0) {
-      const int middle_start = sink_end;
-      const int middle_end = min(middle_start + middle_seed_tokens, recent_start);
-      keep = keep || (token_start >= middle_start && token_start < middle_end);
-    } else {
-      const int middle_end = recent_start;
-      const int middle_start = max(sink_end, middle_end - middle_seed_tokens);
-      keep = keep || (token_start >= middle_start && token_start < middle_end);
-    }
-  }
-  return keep;
-}
-
-template <int D>
-__global__ void streamattn_tk_tc_exact_decode_kernel(
-    const __grid_constant__ streamattn_tc_exact_globals g) {
-  using T = streamattn_tc_exact_tiles<D>;
-  const int bh = blockIdx.x;
-  const int b = bh / g.Hkv;
-  const int kvh = bh - b * g.Hkv;
-  if (threadIdx.x >= 32) return;
-
-  typename T::q_tile q_reg;
-  typename T::k_tile k_reg;
-  typename T::v_tile v_reg;
-  typename T::scores_fl scores;
-  typename T::scores_bf scores_mma;
-  typename T::out_tile acc;
-  typename T::score_col max_vec;
-  typename T::score_col norm_vec;
-  typename T::score_col max_vec_last_scaled;
-  typename T::score_col max_vec_scaled;
-
-  warp::load(q_reg, g.q, {b, kvh, 0, 0});
-  warp::zero(acc);
-  warp::zero(norm_vec);
-  warp::neg_infty(max_vec);
-
-  const float scale = rsqrtf(static_cast<float>(D));
-  const float scale_log2 = scale * 1.44269504089f;
-  const int tiles = g.N / 16;
-  for (int tile = 0; tile < tiles; ++tile) {
-    warp::load(k_reg, g.k, {b, kvh, tile, 0});
-    warp::zero(scores);
-    warp::mma_ABt(scores, q_reg, k_reg, scores);
-
-    warp::copy(max_vec_last_scaled, max_vec);
-    warp::mul(max_vec_last_scaled, max_vec_last_scaled, scale_log2);
-    warp::row_max(max_vec, scores, max_vec);
-    warp::mul(scores, scores, scale_log2);
-    warp::mul(max_vec_scaled, max_vec, scale_log2);
-    warp::sub_row(scores, scores, max_vec_scaled);
-    warp::exp2(scores, scores);
-    warp::sub(max_vec_last_scaled, max_vec_last_scaled, max_vec_scaled);
-    warp::exp2(max_vec_last_scaled, max_vec_last_scaled);
-    warp::mul(norm_vec, norm_vec, max_vec_last_scaled);
-    warp::row_sum(norm_vec, scores, norm_vec);
-    warp::copy(scores_mma, scores);
-    warp::mul_row(acc, acc, max_vec_last_scaled);
-
-    warp::load(v_reg, g.v, {b, kvh, tile, 0});
-    warp::mma_AB(acc, scores_mma, v_reg, acc);
-  }
-
-  warp::div_row(acc, acc, norm_vec);
-  warp::store(g.out, acc, {b, kvh, 0, 0});
-}
-
-template <int D>
-__global__ void streamattn_tk_tc_exact_decode_chunk_kernel(
-    const __grid_constant__ streamattn_tc_chunk_globals g) {
-  using T = streamattn_tc_exact_tiles<D>;
-  const int pid = blockIdx.x;
-  int chunk_slot = pid % g.num_chunks;
-  int bh = pid / g.num_chunks;
-  int b = bh / g.Hkv;
-  int kvh = bh - b * g.Hkv;
-  int chunk = chunk_slot;
-  if (g.compact_chunks) {
-    const int entry = pid % g.total_active_entries;
-    b = pid / g.total_active_entries;
-    kvh = 0;
-    #pragma unroll
-    for (int candidate = 0; candidate < 16; ++candidate) {
-      if (candidate < g.Hkv &&
-          entry >= g.active_offsets[candidate] &&
-          entry < g.active_offsets[candidate + 1]) {
-        kvh = candidate;
-      }
-    }
-    chunk_slot = entry - g.active_offsets[kvh];
-    chunk = g.flat_active_chunks[entry];
-  }
-  if (threadIdx.x >= 32) return;
-
-  typename T::q_tile q_reg;
-  typename T::k_tile k_reg;
-  typename T::v_tile v_reg;
-  typename T::scores_fl scores;
-  typename T::scores_bf scores_mma;
-  typename T::out_tile acc;
-  typename T::score_col max_vec;
-  typename T::score_col norm_vec;
-  typename T::score_col max_vec_last_scaled;
-  typename T::score_col max_vec_scaled;
-
-  warp::load(q_reg, g.q, {b, kvh, 0, 0});
-  warp::zero(acc);
-  warp::zero(norm_vec);
-  warp::neg_infty(max_vec);
-
-  const float scale = rsqrtf(static_cast<float>(D));
-  const float scale_log2 = scale * 1.44269504089f;
-  const int tile_begin = chunk * g.tiles_per_chunk;
-  const int tile_end = min(tile_begin + g.tiles_per_chunk, g.N / 16);
-  for (int tile = tile_begin; tile < tile_end; ++tile) {
-    bool tile_seed = true;
-    bool has_active_rows = true;
-    if (g.use_head_modes) {
-      tile_seed = streamattn_tc_tile_is_seed(
-          tile,
-          g.N,
-          g.block_size,
-          g.sink_blocks,
-          g.recent_blocks,
-          g.middle_seed_blocks,
-          g.block_order);
-      has_active_rows = false;
-      #pragma unroll
-      for (int row = 0; row < 16; ++row) {
-        const int mode = g.row_modes[kvh * 16 + row];
-        has_active_rows = has_active_rows || (mode == 0) || (mode == 1 && tile_seed);
-      }
-    }
-    if (!has_active_rows) {
-      continue;
-    }
-    warp::load(k_reg, g.k, {b, kvh, tile, 0});
-    warp::zero(scores);
-    warp::mma_ABt(scores, q_reg, k_reg, scores);
-    if (g.use_head_modes) {
-      scores = warp::apply(scores, [row_modes = g.row_modes, kvh, tile_seed] __device__ (int row, int col, float val) {
-        const int mode = row_modes[kvh * 16 + row];
-        const bool active = (mode == 0) || (mode == 1 && tile_seed);
-        return active ? val : -1.0e20f;
-      });
-    }
-
-    warp::copy(max_vec_last_scaled, max_vec);
-    warp::mul(max_vec_last_scaled, max_vec_last_scaled, scale_log2);
-    warp::row_max(max_vec, scores, max_vec);
-    warp::mul(scores, scores, scale_log2);
-    warp::mul(max_vec_scaled, max_vec, scale_log2);
-    warp::sub_row(scores, scores, max_vec_scaled);
-    warp::exp2(scores, scores);
-    warp::sub(max_vec_last_scaled, max_vec_last_scaled, max_vec_scaled);
-    warp::exp2(max_vec_last_scaled, max_vec_last_scaled);
-    warp::mul(norm_vec, norm_vec, max_vec_last_scaled);
-    warp::row_sum(norm_vec, scores, norm_vec);
-    warp::copy(scores_mma, scores);
-    warp::mul_row(acc, acc, max_vec_last_scaled);
-
-    warp::load(v_reg, g.v, {b, kvh, tile, 0});
-    warp::mma_AB(acc, scores_mma, v_reg, acc);
-  }
-
-  warp::div_row(acc, acc, norm_vec);
-  warp::store(g.partial_out, acc, {b, kvh, chunk_slot, 0});
-  warp::mul(max_vec_scaled, max_vec, scale);
-  warp::log(norm_vec, norm_vec);
-  warp::add(norm_vec, norm_vec, max_vec_scaled);
-  warp::store(g.partial_lse, norm_vec, {b, kvh, chunk_slot, 0});
-}
-
-#define STREAMATTN_TK_TC_DISPATCH_D(D_VALUE, KERNEL_NAME, GRID, BLOCK, GLOBALS) \
-  do { \
-    if ((D_VALUE) == 64) { \
-      KERNEL_NAME<64><<<(GRID), (BLOCK)>>>(GLOBALS); \
-    } else if ((D_VALUE) == 128) { \
-      KERNEL_NAME<128><<<(GRID), (BLOCK)>>>(GLOBALS); \
-    } else { \
-      TORCH_CHECK(false, "only D=64 or D=128 is implemented"); \
-    } \
-  } while (0)
-
-__global__ void streamattn_tk_tc_exact_merge_kernel(
-    const bf16* __restrict__ partial_out,
-    const float* __restrict__ partial_lse,
-    bf16* __restrict__ out,
-    const int32_t* __restrict__ active_counts,
-    int B,
-    int Hkv,
-    int num_chunks,
-    int D) {
-  const int row_pid = blockIdx.x;
-  const int row = row_pid % 16;
-  const int kvh = (row_pid / 16) % Hkv;
-  const int b = row_pid / (16 * Hkv);
-  const int tid = threadIdx.x;
-  const int chunks_to_merge = active_counts == nullptr ? num_chunks : active_counts[kvh];
-
-  float max_lse = -INFINITY;
-  for (int chunk = 0; chunk < chunks_to_merge; ++chunk) {
-    const int64_t lse_idx = (((int64_t)b * Hkv + kvh) * num_chunks + chunk) * 16 + row;
-    const float lse = partial_lse[lse_idx];
-    if (isfinite(lse)) {
-      max_lse = fmaxf(max_lse, lse);
-    }
-  }
-  float den = 0.0f;
-  if (isfinite(max_lse)) {
-    for (int chunk = 0; chunk < chunks_to_merge; ++chunk) {
-      const int64_t lse_idx = (((int64_t)b * Hkv + kvh) * num_chunks + chunk) * 16 + row;
-      const float lse = partial_lse[lse_idx];
-      if (isfinite(lse)) {
-        den += expf(lse - max_lse);
-      }
-    }
-  }
-  for (int d = tid; d < D; d += blockDim.x) {
-    float num = 0.0f;
-    if (den > 0.0f && isfinite(max_lse)) {
-      for (int chunk = 0; chunk < chunks_to_merge; ++chunk) {
-        const int64_t lse_idx = (((int64_t)b * Hkv + kvh) * num_chunks + chunk) * 16 + row;
-        const float lse = partial_lse[lse_idx];
-        if (!isfinite(lse)) {
-          continue;
-        }
-        const float w = expf(lse - max_lse);
-        const int64_t out_idx = ((((int64_t)b * Hkv + kvh) * (num_chunks * 16) + chunk * 16 + row) * D) + d;
-        const float value = __bfloat162float(partial_out[out_idx]);
-        num += isfinite(value) ? (w * value) : 0.0f;
-      }
-    }
-    const int64_t dst_idx = ((((int64_t)b * Hkv + kvh) * 16 + row) * D) + d;
-    out[dst_idx] = __float2bfloat16(den > 0.0f ? (num / den) : 0.0f);
-  }
-}
-
-torch::Tensor streamattn_tk_tc_exact_decode_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group) {
-  TORCH_CHECK(q_group.is_cuda(), "q_group must be CUDA");
-  TORCH_CHECK(k_group.is_cuda(), "k_group must be CUDA");
-  TORCH_CHECK(v_group.is_cuda(), "v_group must be CUDA");
-  TORCH_CHECK(q_group.is_contiguous(), "q_group must be contiguous [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.is_contiguous(), "k_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.is_contiguous(), "v_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16, "q_group must be bf16 for this spike");
-  TORCH_CHECK(k_group.scalar_type() == at::ScalarType::BFloat16, "k_group must be bf16 for this spike");
-  TORCH_CHECK(v_group.scalar_type() == at::ScalarType::BFloat16, "v_group must be bf16 for this spike");
-  TORCH_CHECK(q_group.dim() == 4, "q_group must have shape [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.dim() == 4, "k_group must have shape [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.sizes() == k_group.sizes(), "v_group must match k_group shape");
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int N = k_group.size(2);
-  TORCH_CHECK(k_group.size(0) == B && k_group.size(1) == Hkv && k_group.size(3) == D,
-              "K shape incompatible with Q");
-  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
-  TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
-  TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
-
-  auto out = torch::empty_like(q_group);
-  const dim3 grid(B * Hkv);
-  const dim3 block(32);
-  using q_gl = streamattn_tc_exact_globals::q_gl;
-  using kv_gl = streamattn_tc_exact_globals::kv_gl;
-  streamattn_tc_exact_globals g{
-      q_gl{reinterpret_cast<bf16*>(q_group.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(k_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(v_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      q_gl{reinterpret_cast<bf16*>(out.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      N,
-      Hkv};
-  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_kernel, grid, block, g);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return out;
-}
-
-torch::Tensor streamattn_tk_tc_exact_decode_chunks_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks) {
-  TORCH_CHECK(q_group.is_cuda(), "q_group must be CUDA");
-  TORCH_CHECK(k_group.is_cuda(), "k_group must be CUDA");
-  TORCH_CHECK(v_group.is_cuda(), "v_group must be CUDA");
-  TORCH_CHECK(q_group.is_contiguous(), "q_group must be contiguous [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.is_contiguous(), "k_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.is_contiguous(), "v_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16, "q_group must be bf16 for this spike");
-  TORCH_CHECK(k_group.scalar_type() == at::ScalarType::BFloat16, "k_group must be bf16 for this spike");
-  TORCH_CHECK(v_group.scalar_type() == at::ScalarType::BFloat16, "v_group must be bf16 for this spike");
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int N = k_group.size(2);
-  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
-  TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
-  TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
-  TORCH_CHECK(num_chunks > 0, "num_chunks must be positive");
-  TORCH_CHECK((N / 16) % num_chunks == 0, "num_chunks must divide N/16 for this spike");
-  const int chunks = static_cast<int>(num_chunks);
-  const int tiles_per_chunk = (N / 16) / chunks;
-
-  auto partial = torch::empty({B, Hkv, chunks * padded_rows, D}, q_group.options());
-  auto partial_lse = torch::empty({B, Hkv, chunks, padded_rows}, q_group.options().dtype(torch::kFloat32));
-  const dim3 grid(B * Hkv * chunks);
-  const dim3 block(32);
-  using q_gl = streamattn_tc_chunk_globals::q_gl;
-  using kv_gl = streamattn_tc_chunk_globals::kv_gl;
-  streamattn_tc_chunk_globals g{
-      q_gl{reinterpret_cast<bf16*>(q_group.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(k_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(v_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      q_gl{reinterpret_cast<bf16*>(partial.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks * padded_rows),
-           static_cast<unsigned long>(D)},
-      streamattn_tc_chunk_globals::lse_gl{partial_lse.data_ptr<float>(),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks),
-           static_cast<unsigned long>(padded_rows)},
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      N,
-      Hkv,
-      chunks,
-      tiles_per_chunk,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0};
-  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, grid, block, g);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return partial;
-}
-
-std::vector<torch::Tensor> streamattn_tk_tc_exact_decode_chunk_states_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks) {
-  TORCH_CHECK(q_group.is_cuda(), "q_group must be CUDA");
-  TORCH_CHECK(k_group.is_cuda(), "k_group must be CUDA");
-  TORCH_CHECK(v_group.is_cuda(), "v_group must be CUDA");
-  TORCH_CHECK(q_group.is_contiguous(), "q_group must be contiguous [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.is_contiguous(), "k_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.is_contiguous(), "v_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16, "q_group must be bf16 for this spike");
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int N = k_group.size(2);
-  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
-  TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
-  TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
-  TORCH_CHECK(num_chunks > 0, "num_chunks must be positive");
-  TORCH_CHECK((N / 16) % num_chunks == 0, "num_chunks must divide N/16 for this spike");
-  const int chunks = static_cast<int>(num_chunks);
-  const int tiles_per_chunk = (N / 16) / chunks;
-
-  auto partial = torch::empty({B, Hkv, chunks * padded_rows, D}, q_group.options());
-  auto partial_lse = torch::empty({B, Hkv, chunks, padded_rows}, q_group.options().dtype(torch::kFloat32));
-  const dim3 grid(B * Hkv * chunks);
-  const dim3 block(32);
-  using q_gl = streamattn_tc_chunk_globals::q_gl;
-  using kv_gl = streamattn_tc_chunk_globals::kv_gl;
-  streamattn_tc_chunk_globals g{
-      q_gl{reinterpret_cast<bf16*>(q_group.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(k_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(v_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      q_gl{reinterpret_cast<bf16*>(partial.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks * padded_rows),
-           static_cast<unsigned long>(D)},
-      streamattn_tc_chunk_globals::lse_gl{partial_lse.data_ptr<float>(),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks),
-           static_cast<unsigned long>(padded_rows)},
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      N,
-      Hkv,
-      chunks,
-      tiles_per_chunk,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0};
-  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, grid, block, g);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return {partial, partial_lse};
-}
-
-torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    int64_t num_chunks) {
-  auto states = streamattn_tk_tc_exact_decode_chunk_states_cuda(q_group, k_group, v_group, num_chunks);
-  auto partial = states[0];
-  auto partial_lse = states[1];
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int chunks = static_cast<int>(num_chunks);
-  auto out = torch::empty_like(q_group);
-  const dim3 grid(B * Hkv * padded_rows);
-  const dim3 block(128);
-  streamattn_tk_tc_exact_merge_kernel<<<grid, block>>>(
-      reinterpret_cast<const bf16*>(partial.data_ptr<at::BFloat16>()),
-      partial_lse.data_ptr<float>(),
-      reinterpret_cast<bf16*>(out.data_ptr<at::BFloat16>()),
-      nullptr,
-      B,
-      Hkv,
-      chunks,
-      D);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return out;
-}
-
-torch::Tensor streamattn_tk_tc_head_mode_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    torch::Tensor row_modes,
-    int64_t num_chunks,
-    int64_t block_size,
-    int64_t sink_blocks,
-    int64_t recent_blocks,
-    int64_t middle_seed_blocks,
-    int64_t block_order) {
-  TORCH_CHECK(q_group.is_cuda(), "q_group must be CUDA");
-  TORCH_CHECK(k_group.is_cuda(), "k_group must be CUDA");
-  TORCH_CHECK(v_group.is_cuda(), "v_group must be CUDA");
-  TORCH_CHECK(row_modes.is_cuda(), "row_modes must be CUDA");
-  TORCH_CHECK(q_group.is_contiguous(), "q_group must be contiguous [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.is_contiguous(), "k_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.is_contiguous(), "v_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(row_modes.is_contiguous(), "row_modes must be contiguous [Hkv,16]");
-  TORCH_CHECK(row_modes.scalar_type() == at::ScalarType::Int, "row_modes must be int32");
-  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16, "q_group must be bf16 for this spike");
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int N = k_group.size(2);
-  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
-  TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
-  TORCH_CHECK(row_modes.size(0) == Hkv && row_modes.size(1) == padded_rows, "row_modes shape mismatch");
-  TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
-  TORCH_CHECK(num_chunks > 0, "num_chunks must be positive");
-  TORCH_CHECK((N / 16) % num_chunks == 0, "num_chunks must divide N/16 for this spike");
-  const int chunks = static_cast<int>(num_chunks);
-  const int tiles_per_chunk = (N / 16) / chunks;
-
-  auto partial = torch::empty({B, Hkv, chunks * padded_rows, D}, q_group.options());
-  auto partial_lse = torch::empty({B, Hkv, chunks, padded_rows}, q_group.options().dtype(torch::kFloat32));
-  const dim3 chunk_grid(B * Hkv * chunks);
-  const dim3 chunk_block(32);
-  using q_gl = streamattn_tc_chunk_globals::q_gl;
-  using kv_gl = streamattn_tc_chunk_globals::kv_gl;
-  streamattn_tc_chunk_globals g{
-      q_gl{reinterpret_cast<bf16*>(q_group.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(k_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(v_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      q_gl{reinterpret_cast<bf16*>(partial.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks * padded_rows),
-           static_cast<unsigned long>(D)},
-      streamattn_tc_chunk_globals::lse_gl{partial_lse.data_ptr<float>(),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(chunks),
-           static_cast<unsigned long>(padded_rows)},
-      row_modes.data_ptr<int32_t>(),
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      N,
-      Hkv,
-      chunks,
-      tiles_per_chunk,
-      0,
-      static_cast<int>(block_size),
-      static_cast<int>(sink_blocks),
-      static_cast<int>(recent_blocks),
-      static_cast<int>(middle_seed_blocks),
-      static_cast<int>(block_order),
-      1,
-      0};
-  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, chunk_grid, chunk_block, g);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-
-  auto out = torch::empty_like(q_group);
-  const dim3 merge_grid(B * Hkv * padded_rows);
-  const dim3 merge_block(128);
-  streamattn_tk_tc_exact_merge_kernel<<<merge_grid, merge_block>>>(
-      reinterpret_cast<const bf16*>(partial.data_ptr<at::BFloat16>()),
-      partial_lse.data_ptr<float>(),
-      reinterpret_cast<bf16*>(out.data_ptr<at::BFloat16>()),
-      nullptr,
-      B,
-      Hkv,
-      chunks,
-      D);
-  err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return out;
-}
-
-torch::Tensor streamattn_tk_tc_head_mode_compact_chunk_merged_cuda(
-    torch::Tensor q_group,
-    torch::Tensor k_group,
-    torch::Tensor v_group,
-    torch::Tensor row_modes,
-    torch::Tensor active_chunks,
-    torch::Tensor active_counts,
-    torch::Tensor flat_active_chunks,
-    torch::Tensor active_offsets,
-    int64_t logical_num_chunks,
-    int64_t block_size,
-    int64_t sink_blocks,
-    int64_t recent_blocks,
-    int64_t middle_seed_blocks,
-    int64_t block_order) {
-  TORCH_CHECK(q_group.is_cuda(), "q_group must be CUDA");
-  TORCH_CHECK(k_group.is_cuda(), "k_group must be CUDA");
-  TORCH_CHECK(v_group.is_cuda(), "v_group must be CUDA");
-  TORCH_CHECK(row_modes.is_cuda(), "row_modes must be CUDA");
-  TORCH_CHECK(active_chunks.is_cuda(), "active_chunks must be CUDA");
-  TORCH_CHECK(active_counts.is_cuda(), "active_counts must be CUDA");
-  TORCH_CHECK(flat_active_chunks.is_cuda(), "flat_active_chunks must be CUDA");
-  TORCH_CHECK(active_offsets.is_cuda(), "active_offsets must be CUDA");
-  TORCH_CHECK(q_group.is_contiguous(), "q_group must be contiguous [B,Hkv,16,D]");
-  TORCH_CHECK(k_group.is_contiguous(), "k_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(v_group.is_contiguous(), "v_group must be contiguous [B,Hkv,N,D]");
-  TORCH_CHECK(row_modes.is_contiguous(), "row_modes must be contiguous [Hkv,16]");
-  TORCH_CHECK(active_chunks.is_contiguous(), "active_chunks must be contiguous [Hkv,max_active_chunks]");
-  TORCH_CHECK(active_counts.is_contiguous(), "active_counts must be contiguous [Hkv]");
-  TORCH_CHECK(flat_active_chunks.is_contiguous(), "flat_active_chunks must be contiguous [total_active_entries]");
-  TORCH_CHECK(active_offsets.is_contiguous(), "active_offsets must be contiguous [Hkv+1]");
-  TORCH_CHECK(row_modes.scalar_type() == at::ScalarType::Int, "row_modes must be int32");
-  TORCH_CHECK(active_chunks.scalar_type() == at::ScalarType::Int, "active_chunks must be int32");
-  TORCH_CHECK(active_counts.scalar_type() == at::ScalarType::Int, "active_counts must be int32");
-  TORCH_CHECK(flat_active_chunks.scalar_type() == at::ScalarType::Int, "flat_active_chunks must be int32");
-  TORCH_CHECK(active_offsets.scalar_type() == at::ScalarType::Int, "active_offsets must be int32");
-  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16, "q_group must be bf16 for this spike");
-  const int B = q_group.size(0);
-  const int Hkv = q_group.size(1);
-  const int padded_rows = q_group.size(2);
-  const int D = q_group.size(3);
-  const int N = k_group.size(2);
-  const int max_active_chunks = active_chunks.size(1);
-  const int total_active_entries = flat_active_chunks.size(0);
-  TORCH_CHECK(D == 64 || D == 128, "only D=64 or D=128 is implemented");
-  TORCH_CHECK(padded_rows == 16, "only 16 padded Q rows are implemented");
-  TORCH_CHECK(row_modes.size(0) == Hkv && row_modes.size(1) == padded_rows, "row_modes shape mismatch");
-  TORCH_CHECK(active_chunks.size(0) == Hkv, "active_chunks Hkv mismatch");
-  TORCH_CHECK(active_counts.size(0) == Hkv, "active_counts Hkv mismatch");
-  TORCH_CHECK(active_offsets.size(0) == Hkv + 1, "active_offsets shape mismatch");
-  TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
-  TORCH_CHECK(logical_num_chunks > 0, "logical_num_chunks must be positive");
-  TORCH_CHECK(max_active_chunks > 0, "active_chunks must contain at least one slot");
-  TORCH_CHECK(total_active_entries > 0, "flat_active_chunks must contain at least one entry");
-  TORCH_CHECK((N / 16) % logical_num_chunks == 0, "logical_num_chunks must divide N/16 for this spike");
-  const int logical_chunks = static_cast<int>(logical_num_chunks);
-  const int compact_chunks = static_cast<int>(max_active_chunks);
-  const int tiles_per_chunk = (N / 16) / logical_chunks;
-
-  auto partial = torch::empty({B, Hkv, compact_chunks * padded_rows, D}, q_group.options());
-  auto partial_lse = torch::empty({B, Hkv, compact_chunks, padded_rows}, q_group.options().dtype(torch::kFloat32));
-  const dim3 chunk_grid(B * total_active_entries);
-  const dim3 chunk_block(32);
-  using q_gl = streamattn_tc_chunk_globals::q_gl;
-  using kv_gl = streamattn_tc_chunk_globals::kv_gl;
-  streamattn_tc_chunk_globals g{
-      q_gl{reinterpret_cast<bf16*>(q_group.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(padded_rows),
-           static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(k_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      kv_gl{reinterpret_cast<bf16*>(v_group.data_ptr<at::BFloat16>()),
-            static_cast<unsigned long>(B),
-            static_cast<unsigned long>(Hkv),
-            static_cast<unsigned long>(N),
-            static_cast<unsigned long>(D)},
-      q_gl{reinterpret_cast<bf16*>(partial.data_ptr<at::BFloat16>()),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(compact_chunks * padded_rows),
-           static_cast<unsigned long>(D)},
-      streamattn_tc_chunk_globals::lse_gl{partial_lse.data_ptr<float>(),
-           static_cast<unsigned long>(B),
-           static_cast<unsigned long>(Hkv),
-           static_cast<unsigned long>(compact_chunks),
-           static_cast<unsigned long>(padded_rows)},
-      row_modes.data_ptr<int32_t>(),
-      active_chunks.data_ptr<int32_t>(),
-      active_counts.data_ptr<int32_t>(),
-      flat_active_chunks.data_ptr<int32_t>(),
-      active_offsets.data_ptr<int32_t>(),
-      N,
-      Hkv,
-      compact_chunks,
-      tiles_per_chunk,
-      total_active_entries,
-      static_cast<int>(block_size),
-      static_cast<int>(sink_blocks),
-      static_cast<int>(recent_blocks),
-      static_cast<int>(middle_seed_blocks),
-      static_cast<int>(block_order),
-      1,
-      1};
-  STREAMATTN_TK_TC_DISPATCH_D(D, streamattn_tk_tc_exact_decode_chunk_kernel, chunk_grid, chunk_block, g);
-  cudaError_t err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-
-  auto out = torch::empty_like(q_group);
-  const dim3 merge_grid(B * Hkv * padded_rows);
-  const dim3 merge_block(128);
-  streamattn_tk_tc_exact_merge_kernel<<<merge_grid, merge_block>>>(
-      reinterpret_cast<const bf16*>(partial.data_ptr<at::BFloat16>()),
-      partial_lse.data_ptr<float>(),
-      reinterpret_cast<bf16*>(out.data_ptr<at::BFloat16>()),
-      active_counts.data_ptr<int32_t>(),
-      B,
-      Hkv,
-      compact_chunks,
-      D);
-  err = cudaGetLastError();
-  TORCH_CHECK(err == cudaSuccess, cudaGetErrorString(err));
-  return out;
-}
-"""
-
+from stream_attention.backends.sm80.tk_grouped_exact_sources import (
+    CPP_SOURCE,
+    CUDA_SOURCE,
+)
 
 def _compile_extension(
     *,
@@ -1165,6 +370,7 @@ def _find_or_clone_tk(args: argparse.Namespace) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--kv-len", type=int, default=32768)
     parser.add_argument("--q-heads", type=int, default=14)
     parser.add_argument("--kv-heads", type=int, default=2)
@@ -1175,12 +381,15 @@ def main() -> None:
     parser.add_argument("--iters", type=int, default=20)
     parser.add_argument("--num-chunks", type=int, default=64)
     parser.add_argument("--num-chunks-list", default="")
+    parser.add_argument("--producer-warps-list", default="1,2,4,8")
     parser.add_argument("--seed-heads", default="2,3,4,6,7")
     parser.add_argument("--block-size", type=int, default=32)
     parser.add_argument("--sink-blocks", type=int, default=2)
     parser.add_argument("--recent-blocks", type=int, default=2)
     parser.add_argument("--middle-seed-blocks", type=int, default=2)
     parser.add_argument("--block-order", default="recent_first", choices=["sequential", "recent_first"])
+    parser.add_argument("--flashinfer-page-size", type=int, default=16)
+    parser.add_argument("--flashinfer-workspace-mb", type=int, default=128)
     parser.add_argument("--tk-root", default="")
     parser.add_argument("--checkout-dir", default="")
     parser.add_argument("--cuda-arch", default="sm_90a")
@@ -1191,18 +400,30 @@ def main() -> None:
 
     if args.dtype != "bf16":
         raise ValueError("this spike currently supports --dtype bf16 only")
+    if args.batch <= 0:
+        raise ValueError("--batch must be positive")
     if args.head_dim not in (64, 128):
         raise ValueError("this spike currently supports --head-dim 64 or 128 only")
 
     device = torch.device("cuda")
     dtype = _dtype(args.dtype)
     torch.manual_seed(args.seed)
-    q = torch.randn((1, args.q_heads, args.head_dim), device=device, dtype=dtype)
-    k = torch.randn((1, args.kv_len, args.kv_heads, args.head_dim), device=device, dtype=dtype)
+    q = torch.randn((args.batch, args.q_heads, args.head_dim), device=device, dtype=dtype)
+    k = torch.randn(
+        (args.batch, args.kv_len, args.kv_heads, args.head_dim),
+        device=device,
+        dtype=dtype,
+    )
     v = torch.randn_like(k)
     q_group = _pack_q_by_kv_group(q, args.kv_heads, padded_rows=16)
     k_group = _pack_kv_head_major(k)
     v_group = _pack_kv_head_major(v)
+    group_size = args.q_heads // args.kv_heads
+    q_runtime_view = q.view(args.batch, args.kv_heads, group_size, args.head_dim)
+    runtime_io_output = torch.empty_like(q)
+    runtime_io_output_view = runtime_io_output.view(
+        args.batch, args.kv_heads, group_size, args.head_dim
+    )
     seed_heads = _parse_heads(args.seed_heads)
     row_modes = _pack_row_modes_by_kv_group(
         q_heads=args.q_heads,
@@ -1229,7 +450,7 @@ def main() -> None:
     tk_root = _find_or_clone_tk(args)
     print(
         "[tk-tc] compiling extension "
-        f"head_dim={args.head_dim} dtype={args.dtype} q_heads={args.q_heads} "
+        f"batch={args.batch} head_dim={args.head_dim} dtype={args.dtype} q_heads={args.q_heads} "
         f"kv_heads={args.kv_heads} kv_len={args.kv_len}",
         flush=True,
     )
@@ -1253,6 +474,36 @@ def main() -> None:
         return sorted(set(counts))
 
     chunk_counts = _chunk_counts()
+    direct_workspaces: dict[
+        int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ] = {}
+    for count in chunk_counts:
+        grouped_chunks = count // 4
+        direct_workspaces[count] = (
+            torch.empty(
+                args.batch,
+                args.kv_heads,
+                grouped_chunks * 16,
+                args.head_dim,
+                device=device,
+                dtype=dtype,
+            ),
+            torch.empty(
+                args.batch,
+                args.kv_heads,
+                grouped_chunks,
+                16,
+                device=device,
+                dtype=torch.float32,
+            ),
+            torch.empty_like(q),
+        )
+    producer_warp_counts = sorted(
+        set(int(item.strip()) for item in args.producer_warps_list.split(",") if item.strip())
+    )
+    invalid_warp_counts = [count for count in producer_warp_counts if count not in (1, 2, 4, 8)]
+    if invalid_warp_counts:
+        raise ValueError(f"producer warp counts must be in (1,2,4,8), got {invalid_warp_counts}")
     compact_inputs_by_chunk: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[list[int]]]] = {}
     for count in chunk_counts:
         compact_inputs_by_chunk[count] = _pack_active_chunks_by_kv_group(
@@ -1274,6 +525,61 @@ def main() -> None:
 
     def tk_chunk_merged(num_chunks: int) -> torch.Tensor:
         return ext.exact_decode_chunk_merged(q_group, k_group, v_group, num_chunks)
+
+    def tk_chunk_warpgroup(num_chunks: int, producer_warps: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_states_warpgroup(
+            q_group, k_group, v_group, num_chunks, producer_warps
+        )[0]
+
+    def tk_merged_warpgroup(num_chunks: int, producer_warps: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_merged_warpgroup(
+            q_group, k_group, v_group, num_chunks, producer_warps
+        )
+
+    def tk_chunk_staged(num_chunks: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_states_staged(
+            q_group, k_group, v_group, num_chunks
+        )[0]
+
+    def tk_merged_staged(num_chunks: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_merged_staged(
+            q_group, k_group, v_group, num_chunks
+        )
+
+    def tk_chunk_staged_grouped(num_chunks: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_states_staged_grouped(
+            q_group, k_group, v_group, num_chunks
+        )[0]
+
+    def tk_merged_staged_grouped(num_chunks: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_merged_staged_grouped(
+            q_group, k_group, v_group, num_chunks
+        )
+
+    def tk_merged_staged_grouped_runtime_io(num_chunks: int) -> torch.Tensor:
+        q_group[:, :, :group_size, :].copy_(q_runtime_view)
+        grouped_output = ext.exact_decode_chunk_merged_staged_grouped(
+            q_group, k_group, v_group, num_chunks
+        )
+        runtime_io_output_view.copy_(grouped_output[:, :, :group_size, :])
+        return runtime_io_output
+
+    def tk_merged_staged_grouped_direct(num_chunks: int) -> torch.Tensor:
+        return ext.exact_decode_chunk_merged_staged_grouped_direct(
+            q, k_group, v_group, num_chunks
+        )
+
+    def tk_merged_staged_grouped_direct_out(num_chunks: int) -> torch.Tensor:
+        partial_out, partial_lse, direct_out = direct_workspaces[num_chunks]
+        return ext.exact_decode_chunk_merged_staged_grouped_direct_out(
+            q,
+            k_group,
+            v_group,
+            partial_out,
+            partial_lse,
+            direct_out,
+            num_chunks,
+        )
 
     def tk_head_mode_merged(num_chunks: int) -> torch.Tensor:
         return ext.head_mode_chunk_merged(
@@ -1312,6 +618,17 @@ def main() -> None:
     tk_out_group = tk_exact()
     partial_group = tk_chunk_only(args.num_chunks)
     merged_group = tk_chunk_merged(args.num_chunks)
+    warpgroup_outputs = {
+        str(producer_warps): tk_merged_warpgroup(args.num_chunks, producer_warps)
+        for producer_warps in producer_warp_counts
+    }
+    staged_merged_group = tk_merged_staged(args.num_chunks)
+    staged_grouped_merged_group = tk_merged_staged_grouped(args.num_chunks)
+    staged_grouped_runtime_io_out = tk_merged_staged_grouped_runtime_io(args.num_chunks)
+    staged_grouped_direct_out = tk_merged_staged_grouped_direct(args.num_chunks)
+    staged_grouped_direct_preallocated_out = tk_merged_staged_grouped_direct_out(
+        args.num_chunks
+    )
     head_mode_group = tk_head_mode_merged(args.num_chunks)
     compact_head_mode_group = ext.head_mode_compact_chunk_merged(
         q_group,
@@ -1334,6 +651,10 @@ def main() -> None:
     merged_out = _unpack_q_by_kv_group(merged_group, args.q_heads)
     head_mode_out = _unpack_q_by_kv_group(head_mode_group, args.q_heads)
     compact_head_mode_out = _unpack_q_by_kv_group(compact_head_mode_group, args.q_heads)
+    staged_merged_out = _unpack_q_by_kv_group(staged_merged_group, args.q_heads)
+    staged_grouped_merged_out = _unpack_q_by_kv_group(
+        staged_grouped_merged_group, args.q_heads
+    )
 
     def dense_true() -> torch.Tensor:
         return _dense_true_gqa(q[:, None, :, :], k, v)[:, 0]
@@ -1358,9 +679,18 @@ def main() -> None:
     dense_ref = dense_true()
     head_ref = head_mode_ref()
     print("[tk-tc] timing kernels", flush=True)
+    flashinfer_out = None
     try:
+        flashinfer_run = _make_flashinfer_batched_exact_runner(
+            q,
+            k,
+            v,
+            page_size=args.flashinfer_page_size,
+            workspace_mb=args.flashinfer_workspace_mb,
+        )
+        flashinfer_out = flashinfer_run().clone()
         flashinfer_ms = _time_cuda(
-            lambda: _flashinfer_exact(q, k, v, use_tensor_cores=True),
+            flashinfer_run,
             device=device,
             warmup=args.warmup,
             iters=args.iters,
@@ -1376,6 +706,15 @@ def main() -> None:
     merged_sweep: Dict[str, float] = {}
     head_mode_sweep: Dict[str, float] = {}
     compact_head_mode_sweep: Dict[str, float] = {}
+    warpgroup_chunk_sweep: Dict[str, float] = {}
+    warpgroup_merged_sweep: Dict[str, float] = {}
+    staged_chunk_sweep: Dict[str, float] = {}
+    staged_merged_sweep: Dict[str, float] = {}
+    staged_grouped_chunk_sweep: Dict[str, float] = {}
+    staged_grouped_merged_sweep: Dict[str, float] = {}
+    staged_grouped_runtime_io_sweep: Dict[str, float] = {}
+    staged_grouped_direct_sweep: Dict[str, float] = {}
+    staged_grouped_direct_out_sweep: Dict[str, float] = {}
     for num_chunks in chunk_counts:
         chunk_sweep[str(num_chunks)] = _time_cuda(
             lambda c=num_chunks: tk_chunk_only(c),
@@ -1401,13 +740,69 @@ def main() -> None:
             warmup=args.warmup,
             iters=args.iters,
         )
+        staged_chunk_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_chunk_staged(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_merged_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_merged_staged(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_grouped_chunk_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_chunk_staged_grouped(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_grouped_merged_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_merged_staged_grouped(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_grouped_runtime_io_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_merged_staged_grouped_runtime_io(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_grouped_direct_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_merged_staged_grouped_direct(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        staged_grouped_direct_out_sweep[str(num_chunks)] = _time_cuda(
+            lambda c=num_chunks: tk_merged_staged_grouped_direct_out(c),
+            device=device,
+            warmup=args.warmup,
+            iters=args.iters,
+        )
+        for producer_warps in producer_warp_counts:
+            key = f"c{num_chunks}_w{producer_warps}"
+            warpgroup_chunk_sweep[key] = _time_cuda(
+                lambda c=num_chunks, w=producer_warps: tk_chunk_warpgroup(c, w),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
+            warpgroup_merged_sweep[key] = _time_cuda(
+                lambda c=num_chunks, w=producer_warps: tk_merged_warpgroup(c, w),
+                device=device,
+                warmup=args.warmup,
+                iters=args.iters,
+            )
     chunk_ms = chunk_sweep[str(args.num_chunks)]
     merged_ms = merged_sweep[str(args.num_chunks)]
     dense_ms = _time_cuda(dense_true, device=device, warmup=args.warmup, iters=args.iters)
     output = {
         "schema": "streamattn.tk_tensor_core_exact_decode.v1",
         "shape": {
-            "batch": 1,
+            "batch": args.batch,
             "q_heads": args.q_heads,
             "kv_heads": args.kv_heads,
             "group_size": args.q_heads // args.kv_heads,
@@ -1442,6 +837,97 @@ def main() -> None:
             "tk_tensor_core_chunk_merged_sweep_ms": merged_sweep,
             "tk_tensor_core_head_mode_merged_sweep_ms": head_mode_sweep,
             "tk_tensor_core_head_mode_compact_sweep_ms": compact_head_mode_sweep,
+            "tk_tensor_core_warpgroup_chunk_sweep_ms": warpgroup_chunk_sweep,
+            "tk_tensor_core_warpgroup_merged_sweep_ms": warpgroup_merged_sweep,
+            "tk_tensor_core_staged_chunk_sweep_ms": staged_chunk_sweep,
+            "tk_tensor_core_staged_merged_sweep_ms": staged_merged_sweep,
+            "tk_tensor_core_staged_grouped_chunk_sweep_ms": staged_grouped_chunk_sweep,
+            "tk_tensor_core_staged_grouped_merged_sweep_ms": staged_grouped_merged_sweep,
+            "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": staged_grouped_runtime_io_sweep,
+            "tk_tensor_core_staged_grouped_direct_sweep_ms": staged_grouped_direct_sweep,
+            "tk_tensor_core_staged_grouped_direct_out_sweep_ms": staged_grouped_direct_out_sweep,
+            "tk_tensor_core_best_staged_grouped_chunk_ms": min(
+                staged_grouped_chunk_sweep.values()
+            )
+            if staged_grouped_chunk_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_chunk_count": int(
+                min(staged_grouped_chunk_sweep, key=staged_grouped_chunk_sweep.get)
+            )
+            if staged_grouped_chunk_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_merged_ms": min(
+                staged_grouped_merged_sweep.values()
+            )
+            if staged_grouped_merged_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_merged_chunk_count": int(
+                min(staged_grouped_merged_sweep, key=staged_grouped_merged_sweep.get)
+            )
+            if staged_grouped_merged_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_runtime_io_ms": min(
+                staged_grouped_runtime_io_sweep.values()
+            )
+            if staged_grouped_runtime_io_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": int(
+                min(staged_grouped_runtime_io_sweep, key=staged_grouped_runtime_io_sweep.get)
+            )
+            if staged_grouped_runtime_io_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_direct_ms": min(
+                staged_grouped_direct_sweep.values()
+            )
+            if staged_grouped_direct_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_direct_chunk_count": int(
+                min(staged_grouped_direct_sweep, key=staged_grouped_direct_sweep.get)
+            )
+            if staged_grouped_direct_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_direct_out_ms": min(
+                staged_grouped_direct_out_sweep.values()
+            )
+            if staged_grouped_direct_out_sweep
+            else None,
+            "tk_tensor_core_best_staged_grouped_direct_out_chunk_count": int(
+                min(staged_grouped_direct_out_sweep, key=staged_grouped_direct_out_sweep.get)
+            )
+            if staged_grouped_direct_out_sweep
+            else None,
+            "tk_tensor_core_best_staged_chunk_ms": min(staged_chunk_sweep.values())
+            if staged_chunk_sweep
+            else None,
+            "tk_tensor_core_best_staged_chunk_count": int(
+                min(staged_chunk_sweep, key=staged_chunk_sweep.get)
+            )
+            if staged_chunk_sweep
+            else None,
+            "tk_tensor_core_best_staged_merged_ms": min(staged_merged_sweep.values())
+            if staged_merged_sweep
+            else None,
+            "tk_tensor_core_best_staged_merged_chunk_count": int(
+                min(staged_merged_sweep, key=staged_merged_sweep.get)
+            )
+            if staged_merged_sweep
+            else None,
+            "tk_tensor_core_best_warpgroup_chunk_ms": min(warpgroup_chunk_sweep.values())
+            if warpgroup_chunk_sweep
+            else None,
+            "tk_tensor_core_best_warpgroup_chunk_config": min(
+                warpgroup_chunk_sweep, key=warpgroup_chunk_sweep.get
+            )
+            if warpgroup_chunk_sweep
+            else None,
+            "tk_tensor_core_best_warpgroup_merged_ms": min(warpgroup_merged_sweep.values())
+            if warpgroup_merged_sweep
+            else None,
+            "tk_tensor_core_best_warpgroup_merged_config": min(
+                warpgroup_merged_sweep, key=warpgroup_merged_sweep.get
+            )
+            if warpgroup_merged_sweep
+            else None,
             "tk_tensor_core_best_chunk_only_ms": min(chunk_sweep.values()) if chunk_sweep else None,
             "tk_tensor_core_best_chunk_count": int(min(chunk_sweep, key=chunk_sweep.get)) if chunk_sweep else None,
             "tk_tensor_core_best_merged_ms": min(merged_sweep.values()) if merged_sweep else None,
@@ -1462,6 +948,8 @@ def main() -> None:
             else None,
             "torch_dense_true_gqa_ms": dense_ms,
             "flashinfer_exact_ms": flashinfer_ms,
+            "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+            "flashinfer_page_size": args.flashinfer_page_size,
             "tk_speedup_vs_torch_dense": dense_ms / tk_ms if tk_ms else None,
             "tk_speedup_vs_flashinfer": flashinfer_ms / tk_ms if flashinfer_ms and tk_ms else None,
             "chunk_only_speedup_vs_tk_serial": tk_ms / chunk_ms if chunk_ms else None,
@@ -1472,6 +960,35 @@ def main() -> None:
             "tk_vs_dense_true_gqa": _error(tk_out[:, None, :, :], dense_ref[:, None, :, :]),
             "merged_vs_packed_torch_ref": _error(merged_group, torch_ref_group),
             "merged_vs_dense_true_gqa": _error(merged_out[:, None, :, :], dense_ref[:, None, :, :]),
+            "staged_merged_vs_packed_torch_ref": _error(staged_merged_group, torch_ref_group),
+            "staged_merged_vs_dense_true_gqa": _error(
+                staged_merged_out[:, None, :, :], dense_ref[:, None, :, :]
+            ),
+            "staged_grouped_merged_vs_packed_torch_ref": _error(
+                staged_grouped_merged_group, torch_ref_group
+            ),
+            "staged_grouped_merged_vs_dense_true_gqa": _error(
+                staged_grouped_merged_out[:, None, :, :], dense_ref[:, None, :, :]
+            ),
+            "staged_grouped_runtime_io_vs_dense_true_gqa": _error(
+                staged_grouped_runtime_io_out[:, None, :, :], dense_ref[:, None, :, :]
+            ),
+            "staged_grouped_direct_vs_dense_true_gqa": _error(
+                staged_grouped_direct_out[:, None, :, :], dense_ref[:, None, :, :]
+            ),
+            "staged_grouped_direct_out_vs_dense_true_gqa": _error(
+                staged_grouped_direct_preallocated_out[:, None, :, :],
+                dense_ref[:, None, :, :],
+            ),
+            "flashinfer_vs_dense_true_gqa": _error(
+                flashinfer_out[:, None, :, :], dense_ref[:, None, :, :]
+            )
+            if flashinfer_out is not None
+            else None,
+            "warpgroup_merged_vs_packed_torch_ref": {
+                producer_warps: _error(result, torch_ref_group)
+                for producer_warps, result in warpgroup_outputs.items()
+            },
             "head_mode_vs_reference": _error(head_mode_out, head_ref),
             "head_mode_vs_dense_true_gqa": _error(head_mode_out[:, None, :, :], dense_ref[:, None, :, :]),
             "compact_head_mode_vs_reference": _error(compact_head_mode_out, head_ref),

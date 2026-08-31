@@ -196,11 +196,14 @@ def stream_attn_exact_native_decode(
 ) -> torch.Tensor:
     """StreamAttn-owned exact decode path for serving fail-closed execution.
 
-    The promoted SM90 cell uses StreamAttn's transposed true-GQA WGMMA kernel.
-    Other CUDA M=1 GQA shapes use the native Triton exact kernel, while CPU and
-    unsupported shapes retain the dense reference as a fail-closed path.
+    Promoted SM90 cells use StreamAttn's transposed true-GQA WGMMA kernel, and
+    promoted SM80 cells use the grouped cp.async tensor-core kernel. Other CUDA
+    M=1 GQA shapes use the native Triton exact kernel, while CPU and unsupported
+    shapes retain the dense reference as a fail-closed path.
     """
     if _exact_native_sm90_wgmma_supported(query, key_cache, value_cache) or (
+        _exact_native_sm80_grouped_supported(query, key_cache, value_cache)
+    ) or (
         _exact_native_triton_supported(query, key_cache, value_cache)
     ):
         output = torch.empty_like(query)
@@ -223,6 +226,16 @@ def _exact_native_sm90_wgmma_supported(
     from .backends.sm90.transposed_gqa_exact import supports_transposed_gqa_exact
 
     return supports_transposed_gqa_exact(query, key_cache, value_cache)
+
+
+def _exact_native_sm80_grouped_supported(
+    query: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+) -> bool:
+    from .backends.sm80.tk_grouped_exact import supports_grouped_exact
+
+    return supports_grouped_exact(query, key_cache, value_cache)
 
 
 def _exact_native_triton_supported(
@@ -785,9 +798,10 @@ class StreamAttnSeedOnlyDirectRunner:
 class StreamAttnExactNativeDirectRunner:
     """Fixed-buffer exact-native M=1 GQA decode runner.
 
-    Promoted SM90 buffers bind the transposed WGMMA plan and its FP32 partial
-    workspace once. Other supported BNHD buffers reuse the native Triton exact
-    kernel without allocating or rebuilding row metadata in the decode loop.
+    Promoted SM90 buffers bind the transposed WGMMA plan; promoted SM80 buffers
+    bind the grouped cp.async plan. Both reuse fixed split-state workspaces.
+    Other supported BNHD buffers reuse the native Triton exact kernel without
+    allocating or rebuilding row metadata in the decode loop.
     """
 
     def __init__(
@@ -820,6 +834,7 @@ class StreamAttnExactNativeDirectRunner:
         self.key_data_ptr = int(key_cache.data_ptr())
         self.value_data_ptr = int(value_cache.data_ptr())
         self._sm90_plan = None
+        self._sm80_plan = None
         if _exact_native_sm90_wgmma_supported(query, key_cache, value_cache):
             from .backends.sm90.transposed_gqa_exact import ExactDecodePlan
 
@@ -830,6 +845,17 @@ class StreamAttnExactNativeDirectRunner:
                 output=output,
             )
             self.backend_variant = self._sm90_plan.backend
+            return
+        if _exact_native_sm80_grouped_supported(query, key_cache, value_cache):
+            from .backends.sm80.tk_grouped_exact import ExactDecodePlan
+
+            self._sm80_plan = ExactDecodePlan.build(
+                query,
+                key_cache,
+                value_cache,
+                output=output,
+            )
+            self.backend_variant = self._sm80_plan.backend
             return
 
         from .kernels.gate0_exact_refresh_triton import (
@@ -858,6 +884,8 @@ class StreamAttnExactNativeDirectRunner:
 
         if self._sm90_plan is not None:
             return self._sm90_plan.run()
+        if self._sm80_plan is not None:
+            return self._sm80_plan.run()
         return self._launch(
             self._query_bhnd,
             self._key_bhnd,
@@ -2420,6 +2448,7 @@ class StreamAttnSeedOnlyDecodeService:
 
         if not (
             _exact_native_sm90_wgmma_supported(query, key_cache, value_cache)
+            or _exact_native_sm80_grouped_supported(query, key_cache, value_cache)
             or _exact_native_triton_supported(query, key_cache, value_cache)
         ):
             raise ValueError("cannot plan exact-native route: backend_unavailable")

@@ -1,0 +1,2739 @@
+{
+  "results": [
+    {
+      "compile": {
+        "compile_s": 57.53958943500004,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b1_g8_n32k_s0",
+      "next_path": "optimize_partial_state_merge_or_embed_head_modes_in_flashinfer_scheduler",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.474609375,
+          "mean_abs_error": 0.04291949048638344
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.419921875,
+          "mean_abs_error": 0.03463912755250931
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.154306275770068e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.474609375,
+          "mean_abs_error": 0.04291949048638344
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.419921875,
+          "mean_abs_error": 0.03463912755250931
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.8179300241172314e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.232372596859932e-05
+        },
+        "partial_group_shape": [
+          1,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.069899346679449e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.4755059964954853e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.917389454320073e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.8179300241172314e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.232372596859932e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.532898750156164e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 5.670764949172735e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 1.232372596859932e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 1,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.9565434187840356,
+        "chunk_only_speedup_vs_tk_serial": 77.95629134066598,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.03268266717592875,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.0122702530140124,
+        "tk_speedup_vs_torch_dense": 0.03419972564299886,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.020539732774098714,
+        "tk_tensor_core_best_head_mode_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.07045119603474935,
+        "tk_tensor_core_best_head_mode_ms": 0.06999039649963379,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.056277334690093994,
+        "tk_tensor_core_best_staged_chunk_count": 128,
+        "tk_tensor_core_best_staged_chunk_ms": 0.01392639974753062,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.015121066570281982,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.023296000560124715,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.057506132125854495,
+        "tk_tensor_core_best_staged_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_merged_ms": 0.03330559929211934,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.020488532384236653,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.05626879930496216,
+        "tk_tensor_core_chunk_merged_ms": 0.056277334690093994,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.06094506581624349,
+          "64": 0.056277334690093994
+        },
+        "tk_tensor_core_chunk_only_ms": 0.034167468547821045,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.020539732774098714,
+          "64": 0.034167468547821045
+        },
+        "tk_tensor_core_exact_ms": 2.663569132486979,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.07045119603474935,
+          "64": 0.07404373486836752
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.06999039649963379,
+          "64": 0.07356586456298828
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.01392639974753062,
+          "64": 0.022536534070968627
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.015121066570281982,
+          "64": 0.024678399165471394
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.023296000560124715,
+          "64": 0.030822400252024332
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.057506132125854495,
+          "64": 0.05802666743596395
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.03330559929211934,
+          "64": 0.034713598092397054
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.020488532384236653,
+          "c64_w1": 0.034167468547821045
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.06093653440475464,
+          "c64_w1": 0.05626879930496216
+        },
+        "torch_dense_true_gqa_ms": 0.09109333356221518
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.16728078799997,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b2_g8_n32k_s0",
+      "next_path": "optimize_partial_state_merge_or_embed_head_modes_in_flashinfer_scheduler",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 1.1796875,
+          "mean_abs_error": 0.051041439175605774
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.90625,
+          "mean_abs_error": 0.043707117438316345
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.1439162082970142e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 1.1796875,
+          "mean_abs_error": 0.051041439175605774
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.90625,
+          "mean_abs_error": 0.043707117438316345
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.7270853277295828e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.1826385161839426e-05
+        },
+        "partial_group_shape": [
+          2,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0867300918325782e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.51023268699646e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.0624021999537945e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.7270853277295828e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.1826385161839426e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.5493598766624928e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 5.848276487085968e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 1.1826385161839426e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 2,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.7037302542410419,
+        "chunk_only_speedup_vs_tk_serial": 81.95452246301282,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.0418559988339742,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.008586838567190051,
+        "tk_speedup_vs_torch_dense": 0.028220150853568396,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.039944533507029215,
+        "tk_tensor_core_best_head_mode_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.08868693510691325,
+        "tk_tensor_core_best_head_mode_ms": 0.08807253042856852,
+        "tk_tensor_core_best_merged_chunk_count": 128,
+        "tk_tensor_core_best_merged_ms": 0.08058880170186361,
+        "tk_tensor_core_best_staged_chunk_count": 128,
+        "tk_tensor_core_best_staged_chunk_ms": 0.027221333980560303,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.02890239953994751,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.036497068405151364,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 64,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.053998935222625735,
+        "tk_tensor_core_best_staged_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_merged_ms": 0.04702719847361247,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.04021759827931722,
+        "tk_tensor_core_best_warpgroup_merged_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.08083626429239908,
+        "tk_tensor_core_chunk_merged_ms": 0.0817578633626302,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.08058880170186361,
+          "64": 0.0817578633626302
+        },
+        "tk_tensor_core_chunk_only_ms": 0.059477333227793375,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.039944533507029215,
+          "64": 0.059477333227793375
+        },
+        "tk_tensor_core_exact_ms": 4.874436442057291,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.08868693510691325,
+          "64": 0.09965226650238038
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.08807253042856852,
+          "64": 0.0984661340713501
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.027221333980560303,
+          "64": 0.03541333278020223
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.02890239953994751,
+          "64": 0.037307735284169516
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.036497068405151364,
+          "64": 0.04307626485824585
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.0543232003847758,
+          "64": 0.053998935222625735
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.04702719847361247,
+          "64": 0.04759039878845215
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.04021759827931722,
+          "c64_w1": 0.06056960026423137
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.08083626429239908,
+          "c64_w1": 0.08253440062204996
+        },
+        "torch_dense_true_gqa_ms": 0.13755733172098797
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.42235107600004,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b4_g8_n32k_s1",
+      "next_path": "calibrate_kv_group_coherent_seed_policies_and_reduce_merge_overhead",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.62890625,
+          "mean_abs_error": 0.044441644102334976
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.474609375,
+          "mean_abs_error": 0.036885350942611694
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1421219571493566e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.62890625,
+          "mean_abs_error": 0.044441644102334976
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.474609375,
+          "mean_abs_error": 0.036885350942611694
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.8156832084059715e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.0646072041708976e-05
+        },
+        "partial_group_shape": [
+          4,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1948828361928463e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.4743527572136372e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.1010884665884078e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.815671566873789e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.064604293787852e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.6061545466072857e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 5.9397207223810256e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 1.0646072041708976e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 4,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.897058766193551,
+        "chunk_only_speedup_vs_tk_serial": 60.23282144249227,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.07131306330362956,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.014893188542562701,
+        "tk_speedup_vs_torch_dense": 0.04991366018311522,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.06661119858423868,
+        "tk_tensor_core_best_head_mode_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.11304106712341308,
+        "tk_tensor_core_best_head_mode_ms": 0.11159040133158366,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.10286933581034342,
+        "tk_tensor_core_best_staged_chunk_count": 128,
+        "tk_tensor_core_best_staged_chunk_ms": 0.057198933760325116,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.056925865014394124,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.06463146607081095,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.07361706892649332,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.07006719907124838,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.06667946974436442,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.10296320120493571,
+        "tk_tensor_core_chunk_merged_ms": 0.10286933581034342,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.11083947022755941,
+          "64": 0.10286933581034342
+        },
+        "tk_tensor_core_chunk_only_ms": 0.07949653466542562,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.06661119858423868,
+          "64": 0.07949653466542562
+        },
+        "tk_tensor_core_exact_ms": 4.788300577799479,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.11304106712341308,
+          "64": 0.11684693495432535
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.11159040133158366,
+          "64": 0.11551573276519775
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.057198933760325116,
+          "64": 0.05771093368530274
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.056925865014394124,
+          "64": 0.059383467833201094
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.06463146607081095,
+          "64": 0.06512639919916789
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.07361706892649332,
+          "64": 0.07441066900889079
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.07669760386149088,
+          "64": 0.07006719907124838
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.06667946974436442,
+          "c64_w1": 0.07945386568705241
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.11088213125864664,
+          "c64_w1": 0.10296320120493571
+        },
+        "torch_dense_true_gqa_ms": 0.23900160789489747
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.47694886900001,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b8_g8_n32k_s0",
+      "next_path": "calibrate_kv_group_coherent_seed_policies_and_reduce_merge_overhead",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.98046875,
+          "mean_abs_error": 0.04758267104625702
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.7890625,
+          "mean_abs_error": 0.03977102413773537
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.911432991619222e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.98046875,
+          "mean_abs_error": 0.04758267104625702
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.7890625,
+          "mean_abs_error": 0.03977102413773537
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.8334671040065587e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.1499349056975916e-05
+        },
+        "partial_group_shape": [
+          8,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.2331241780193523e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.536963645776268e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.197247522417456e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.8327220459468663e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.1495623766677454e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.6008936654543504e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 5.862488251295872e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.000244140625,
+            "mean_abs_error": 1.1499349056975916e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 8,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.9658938787082108,
+        "chunk_only_speedup_vs_tk_serial": 40.82024010547682,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.11696639855702719,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.023662131242060416,
+        "tk_speedup_vs_torch_dense": 0.08857029166228508,
+        "tk_tensor_core_best_chunk_count": 64,
+        "tk_tensor_core_best_chunk_only_ms": 0.12109653155008952,
+        "tk_tensor_core_best_head_mode_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.15489706993103028,
+        "tk_tensor_core_best_head_mode_ms": 0.15383893648783367,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.14642346700032552,
+        "tk_tensor_core_best_staged_chunk_count": 64,
+        "tk_tensor_core_best_staged_chunk_ms": 0.10466132958730062,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.10381653308868408,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.1104213317235311,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 64,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.11976532936096192,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.11648853619893391,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.12118186950683593,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.14646612803141276,
+        "tk_tensor_core_chunk_merged_ms": 0.14642346700032552,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.20566186904907227,
+          "64": 0.14642346700032552
+        },
+        "tk_tensor_core_chunk_only_ms": 0.12109653155008952,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.13037226994832357,
+          "64": 0.12109653155008952
+        },
+        "tk_tensor_core_exact_ms": 4.943189493815104,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.21224106152852376,
+          "64": 0.15489706993103028
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.21032106081644694,
+          "64": 0.15383893648783367
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.10915839672088623,
+          "64": 0.10466132958730062
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.10381653308868408,
+          "64": 0.10449066956837973
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.11529386838277181,
+          "64": 0.1104213317235311
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.12493653297424316,
+          "64": 0.11976532936096192
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.13962240219116212,
+          "64": 0.11648853619893391
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.13025279839833578,
+          "c64_w1": 0.12118186950683593
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.20573867162068685,
+          "c64_w1": 0.14646612803141276
+        },
+        "torch_dense_true_gqa_ms": 0.43781973520914713
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.383579403,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b4_g4_n32k_s0",
+      "next_path": "calibrate_kv_group_coherent_seed_policies_and_reduce_merge_overhead",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 1.0703125,
+          "mean_abs_error": 0.05380832403898239
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.64453125,
+          "mean_abs_error": 0.04240576922893524
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.9119463104289025e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 1.0703125,
+          "mean_abs_error": 0.05380832403898239
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.64453125,
+          "mean_abs_error": 0.04240576922893524
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.7621030565351248e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 9.535023309581447e-06
+        },
+        "partial_group_shape": [
+          4,
+          4,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1070591174066067e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.2616033927770332e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.13264356716536e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.7621030565351248e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 9.535023309581447e-06
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.5958190488163382e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.9057409847155213e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 9.535023309581447e-06
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64,
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 4,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 4,
+        "head_dim": 64,
+        "kv_heads": 4,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.9651432483082603,
+        "chunk_only_speedup_vs_tk_serial": 40.56756413606111,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.11695786317189534,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.023791008133276854,
+        "tk_speedup_vs_torch_dense": 0.08896545589535572,
+        "tk_tensor_core_best_chunk_count": 64,
+        "tk_tensor_core_best_chunk_only_ms": 0.12118186950683593,
+        "tk_tensor_core_best_head_mode_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.1539584000905355,
+        "tk_tensor_core_best_head_mode_ms": 0.15287466049194337,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.14615893363952637,
+        "tk_tensor_core_best_staged_chunk_count": 64,
+        "tk_tensor_core_best_staged_chunk_ms": 0.10454186598459879,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.10383360385894776,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.11008853117624919,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 64,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.1186901330947876,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.11646293004353842,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.12139519850413004,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.14594559669494628,
+        "tk_tensor_core_chunk_merged_ms": 0.14615893363952637,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.20569599469502767,
+          "64": 0.14615893363952637
+        },
+        "tk_tensor_core_chunk_only_ms": 0.12118186950683593,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.1303551991780599,
+          "64": 0.12118186950683593
+        },
+        "tk_tensor_core_exact_ms": 4.916053263346354,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.2117461363474528,
+          "64": 0.1539584000905355
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.21009066899617512,
+          "64": 0.15287466049194337
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.10949119726816813,
+          "64": 0.10454186598459879
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.10383360385894776,
+          "64": 0.10421760082244873
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.11485013167063395,
+          "64": 0.11008853117624919
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.12415146827697754,
+          "64": 0.1186901330947876
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.13928106625874836,
+          "64": 0.11646293004353842
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.1303125301996867,
+          "c64_w1": 0.12139519850413004
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.2056191921234131,
+          "c64_w1": 0.14594559669494628
+        },
+        "torch_dense_true_gqa_ms": 0.4373589197794596
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.331007473,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b4_g8_n16k_s0",
+      "next_path": "optimize_partial_state_merge_or_embed_head_modes_in_flashinfer_scheduler",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.6796875,
+          "mean_abs_error": 0.04662438854575157
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.578125,
+          "mean_abs_error": 0.03922712430357933
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.9942355467937887e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.6796875,
+          "mean_abs_error": 0.04662438854575157
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.578125,
+          "mean_abs_error": 0.03922712430357933
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.320397470612079e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.5860830899327993e-05
+        },
+        "partial_group_shape": [
+          4,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.8651731554418802e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.1081024897284806e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.9289411031641066e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.320397470612079e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 1.5860830899327993e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 2.128146297764033e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.000244140625,
+          "mean_abs_error": 7.965376426000148e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.000244140625,
+            "mean_abs_error": 1.5860830899327993e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 4,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 16384,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 1.0092378475167096,
+        "chunk_only_speedup_vs_tk_serial": 58.74490532059308,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.04101973374684652,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.017180006368363664,
+        "tk_speedup_vs_torch_dense": 0.055353428339718916,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.03578879833221436,
+        "tk_tensor_core_best_head_mode_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 64,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.07144959767659505,
+        "tk_tensor_core_best_head_mode_ms": 0.070033065478007,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.06419626474380494,
+        "tk_tensor_core_best_staged_chunk_count": 64,
+        "tk_tensor_core_best_staged_chunk_ms": 0.028305067618687948,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.027289599180221558,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.034542934099833174,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.05783040126164754,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.040686933199564616,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.0355840007464091,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.0648959994316101,
+        "tk_tensor_core_chunk_merged_ms": 0.06419626474380494,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.08023040294647217,
+          "64": 0.06419626474380494
+        },
+        "tk_tensor_core_chunk_only_ms": 0.04064426819483439,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.03578879833221436,
+          "64": 0.04064426819483439
+        },
+        "tk_tensor_core_exact_ms": 2.3876436869303386,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.08058880170186361,
+          "64": 0.07144959767659505
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.07906986872355143,
+          "64": 0.070033065478007
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.029824000597000123,
+          "64": 0.028305067618687948
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.027289599180221558,
+          "64": 0.02874026695887248
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.034542934099833174,
+          "64": 0.03472213347752889
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.05783040126164754,
+          "64": 0.05817173322041829
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.04927999973297119,
+          "64": 0.040686933199564616
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.0355840007464091,
+          "c64_w1": 0.04131840070088704
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.08015360037485758,
+          "c64_w1": 0.0648959994316101
+        },
+        "torch_dense_true_gqa_ms": 0.13216426372528076
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.55961110399994,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b4_g8_n64k_s0",
+      "next_path": "calibrate_kv_group_coherent_seed_policies_and_reduce_merge_overhead",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.76171875,
+          "mean_abs_error": 0.04508155956864357
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.6953125,
+          "mean_abs_error": 0.038585443049669266
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.5340894606197253e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.76171875,
+          "mean_abs_error": 0.04508155956864357
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.6953125,
+          "mean_abs_error": 0.038585443049669266
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.3490811397787184e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 8.185090337065049e-06
+        },
+        "partial_group_shape": [
+          4,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.5679113857913762e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.038180198520422e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.54062217916362e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.3490811397787184e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 8.185090337065049e-06
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.1271513358224183e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 4.227295903547201e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 8.185090337065049e-06
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 4,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 65536,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.7813064577450289,
+        "chunk_only_speedup_vs_tk_serial": 64.33747221715815,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.11798186302185058,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.012143878688735031,
+        "tk_speedup_vs_torch_dense": 0.04543195040627967,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.12122453053792318,
+        "tk_tensor_core_best_head_mode_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.17232213020324708,
+        "tk_tensor_core_best_head_mode_ms": 0.17105919520060223,
+        "tk_tensor_core_best_merged_chunk_count": 128,
+        "tk_tensor_core_best_merged_ms": 0.16565759976704916,
+        "tk_tensor_core_best_staged_chunk_count": 128,
+        "tk_tensor_core_best_staged_chunk_ms": 0.10460159778594971,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.10437119801839193,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.11192320187886556,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.12087466716766357,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.11783680121103922,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.12101120154062907,
+        "tk_tensor_core_best_warpgroup_merged_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.16549545923868816,
+        "tk_tensor_core_chunk_merged_ms": 0.17500160535176595,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.16565759976704916,
+          "64": 0.17500160535176595
+        },
+        "tk_tensor_core_chunk_only_ms": 0.15100587209065755,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.12122453053792318,
+          "64": 0.15100587209065755
+        },
+        "tk_tensor_core_exact_ms": 9.715336100260417,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.17232213020324708,
+          "64": 0.20343467394510906
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.17105919520060223,
+          "64": 0.20210347175598145
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.10460159778594971,
+          "64": 0.10545492966969808
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.10437119801839193,
+          "64": 0.10774186452229818
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.11192320187886556,
+          "64": 0.1137237310409546
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.12087466716766357,
+          "64": 0.12351146539052328
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.12381866772969564,
+          "64": 0.11783680121103922
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.12101120154062907,
+          "c64_w1": 0.1511679967244466
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.16549545923868816,
+          "c64_w1": 0.1751039981842041
+        },
+        "torch_dense_true_gqa_ms": 0.4413866678873698
+      }
+    },
+    {
+      "compile": {
+        "compile_s": 58.30576979600005,
+        "cuda_arch": "sm_80",
+        "tk_root": "/tmp/streamattn_backend_sources/ThunderKittens"
+      },
+      "flashinfer_error": null,
+      "matrix_name": "b4_g8_n32k_s7",
+      "next_path": "calibrate_kv_group_coherent_seed_policies_and_reduce_merge_overhead",
+      "quality": {
+        "compact_head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.86328125,
+          "mean_abs_error": 0.053383804857730865
+        },
+        "compact_head_mode_vs_reference": {
+          "max_abs_error": 0.53515625,
+          "mean_abs_error": 0.0406668558716774
+        },
+        "flashinfer_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.2339434508467093e-05
+        },
+        "head_mode_vs_dense_true_gqa": {
+          "max_abs_error": 0.86328125,
+          "mean_abs_error": 0.053383804857730865
+        },
+        "head_mode_vs_reference": {
+          "max_abs_error": 0.53515625,
+          "mean_abs_error": 0.0406668558716774
+        },
+        "merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.8267059203935787e-05
+        },
+        "merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.149216404883191e-05
+        },
+        "partial_group_shape": [
+          4,
+          2,
+          1024,
+          64
+        ],
+        "staged_grouped_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.198188849433791e-05
+        },
+        "staged_grouped_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.546223575132899e-05
+        },
+        "staged_grouped_runtime_io_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 2.163076715078205e-05
+        },
+        "staged_merged_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.8267059203935787e-05
+        },
+        "staged_merged_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.149216404883191e-05
+        },
+        "tk_vs_dense_true_gqa": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 1.6147896531037986e-05
+        },
+        "tk_vs_packed_torch_ref": {
+          "max_abs_error": 0.0001220703125,
+          "mean_abs_error": 5.965717718936503e-06
+        },
+        "warpgroup_merged_vs_packed_torch_ref": {
+          "1": {
+            "max_abs_error": 0.0001220703125,
+            "mean_abs_error": 1.149216404883191e-05
+          }
+        }
+      },
+      "schema": "streamattn.tk_tensor_core_exact_decode.v1",
+      "shape": {
+        "active_chunk_counts_by_kv_group": [
+          64,
+          64
+        ],
+        "active_chunks_by_kv_group": [
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ]
+        ],
+        "batch": 4,
+        "block_size": 32,
+        "dtype": "bf16",
+        "group_size": 8,
+        "head_dim": 64,
+        "kv_heads": 2,
+        "kv_layout_runtime": "B,Hkv,N,D",
+        "kv_len": 32768,
+        "note": "spike packs NHD KV to head-major layout before the TK kernel",
+        "num_chunks": 64,
+        "padded_group_rows": 16,
+        "q_heads": 16,
+        "seed_heads": [
+          2,
+          3,
+          4,
+          6,
+          7
+        ],
+        "seed_tile_blocks": {
+          "block_order": "recent_first",
+          "middle_seed_blocks": 2,
+          "recent_blocks": 2,
+          "sink_blocks": 2
+        }
+      },
+      "timing": {
+        "chunk_only_speedup_vs_flashinfer": 0.8968961581818055,
+        "chunk_only_speedup_vs_tk_serial": 59.77274328564527,
+        "flashinfer_baseline": "batch_decode_paged_nhd_auto_tensor_cores",
+        "flashinfer_exact_ms": 0.07126186688741049,
+        "flashinfer_page_size": 16,
+        "tk_speedup_vs_flashinfer": 0.015005102809079195,
+        "tk_speedup_vs_torch_dense": 0.05033923432454856,
+        "tk_tensor_core_best_chunk_count": 128,
+        "tk_tensor_core_best_chunk_only_ms": 0.06661119858423868,
+        "tk_tensor_core_best_head_mode_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_chunk_count": 128,
+        "tk_tensor_core_best_head_mode_compact_ms": 0.11297279993693034,
+        "tk_tensor_core_best_head_mode_ms": 0.11164159774780273,
+        "tk_tensor_core_best_merged_chunk_count": 64,
+        "tk_tensor_core_best_merged_ms": 0.10284372965494791,
+        "tk_tensor_core_best_staged_chunk_count": 128,
+        "tk_tensor_core_best_staged_chunk_ms": 0.05726720094680786,
+        "tk_tensor_core_best_staged_grouped_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_chunk_ms": 0.057045332590738934,
+        "tk_tensor_core_best_staged_grouped_merged_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_merged_ms": 0.06445226669311524,
+        "tk_tensor_core_best_staged_grouped_runtime_io_chunk_count": 128,
+        "tk_tensor_core_best_staged_grouped_runtime_io_ms": 0.07335253556569417,
+        "tk_tensor_core_best_staged_merged_chunk_count": 64,
+        "tk_tensor_core_best_staged_merged_ms": 0.07008426984151205,
+        "tk_tensor_core_best_warpgroup_chunk_config": "c128_w1",
+        "tk_tensor_core_best_warpgroup_chunk_ms": 0.066594131787618,
+        "tk_tensor_core_best_warpgroup_merged_config": "c64_w1",
+        "tk_tensor_core_best_warpgroup_merged_ms": 0.10275839964548747,
+        "tk_tensor_core_chunk_merged_ms": 0.10284372965494791,
+        "tk_tensor_core_chunk_merged_sweep_ms": {
+          "128": 0.11076266765594482,
+          "64": 0.10284372965494791
+        },
+        "tk_tensor_core_chunk_only_ms": 0.07945386568705241,
+        "tk_tensor_core_chunk_only_sweep_ms": {
+          "128": 0.06661119858423868,
+          "64": 0.07945386568705241
+        },
+        "tk_tensor_core_exact_ms": 4.749175516764323,
+        "tk_tensor_core_head_mode_compact_sweep_ms": {
+          "128": 0.11297279993693034,
+          "64": 0.11681280136108399
+        },
+        "tk_tensor_core_head_mode_merged_sweep_ms": {
+          "128": 0.11164159774780273,
+          "64": 0.11539626916249593
+        },
+        "tk_tensor_core_staged_chunk_sweep_ms": {
+          "128": 0.05726720094680786,
+          "64": 0.05774506727854411
+        },
+        "tk_tensor_core_staged_grouped_chunk_sweep_ms": {
+          "128": 0.057045332590738934,
+          "64": 0.059357865651448564
+        },
+        "tk_tensor_core_staged_grouped_merged_sweep_ms": {
+          "128": 0.06445226669311524,
+          "64": 0.0650325338045756
+        },
+        "tk_tensor_core_staged_grouped_runtime_io_sweep_ms": {
+          "128": 0.07335253556569417,
+          "64": 0.07436800003051758
+        },
+        "tk_tensor_core_staged_merged_sweep_ms": {
+          "128": 0.07673172950744629,
+          "64": 0.07008426984151205
+        },
+        "tk_tensor_core_warpgroup_chunk_sweep_ms": {
+          "c128_w1": 0.066594131787618,
+          "c64_w1": 0.07955626646677653
+        },
+        "tk_tensor_core_warpgroup_merged_sweep_ms": {
+          "c128_w1": 0.11073706944783529,
+          "c64_w1": 0.10275839964548747
+        },
+        "torch_dense_true_gqa_ms": 0.23906985918680826
+      }
+    }
+  ],
+  "schema": "streamattn.tk_tensor_core_exact_decode.matrix.v1"
+}
