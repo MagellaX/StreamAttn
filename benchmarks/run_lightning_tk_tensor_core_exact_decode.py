@@ -12,9 +12,10 @@ import sys
 import tarfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from lightning_sdk.api.job_api import JobApiV2
+if TYPE_CHECKING:
+    from lightning_sdk.api.job_api import JobApiV2
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -209,6 +210,12 @@ def _delete_job(api: JobApiV2, args: argparse.Namespace, job: Any) -> None:
 
 
 def run(args: argparse.Namespace) -> Dict[str, Any]:
+    try:
+        from lightning_sdk.api.job_api import JobApiV2
+    except ImportError as exc:
+        raise RuntimeError(
+            "Lightning job submission requires the optional lightning-sdk package"
+        ) from exc
     api = JobApiV2()
     job = None
     try:
