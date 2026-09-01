@@ -23,7 +23,10 @@ if str(REPO_ROOT) not in sys.path:
 BASE_SHA = "0394801d6c508ef21f674a108b98aef9173e9e30"
 RESULT_SCHEMA = "streamattn.tk_tensor_core_exact_decode.v1"
 MATRIX_SCHEMA = "streamattn.tk_tensor_core_exact_decode.matrix.v1"
-PHASED_GATE_SCHEMA = "streamattn.sm80_d128_phased_kv_gate.matrix.v1"
+PHASED_GATE_SCHEMAS = {
+    "streamattn.sm80_d128_phased_kv_gate.matrix.v1",
+    "streamattn.sm80_d128_phased_kv_gate.matrix.v2",
+}
 TERMINAL_STATES = {"completed", "failed", "stopped", "cancelled", "error"}
 
 
@@ -80,7 +83,7 @@ def _results_from_logs(logs: str) -> list[Dict[str, Any]]:
             continue
         if isinstance(payload, dict) and payload.get("schema") in {
             RESULT_SCHEMA,
-            PHASED_GATE_SCHEMA,
+            *PHASED_GATE_SCHEMAS,
         }:
             key = json.dumps(payload, sort_keys=True)
             if key not in seen:
