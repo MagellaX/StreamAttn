@@ -39,6 +39,15 @@ void streamattn_transposed_wgmma_qkpv_ws_cp_async_checksum_out_cuda(
 torch::Tensor streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda(
     int64_t consumer_registers);
 
+void streamattn_grouped_wgmma_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor lse);
+
+torch::Tensor streamattn_grouped_wgmma_prefill_resource_info_cuda();
+
 void streamattn_transposed_wgmma_exact_partial_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_cache,
@@ -219,6 +228,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("qkpv_floor_resource_info",
         &streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda,
         "Compiled resources for cooperative and warp-specialized QK+PV floors");
+  m.def("grouped_wgmma_prefill_out",
+        &streamattn_grouped_wgmma_prefill_out_cuda,
+        "StreamAttn natural m64n64 grouped exact causal prefill");
+  m.def("grouped_wgmma_prefill_resource_info",
+        &streamattn_grouped_wgmma_prefill_resource_info_cuda,
+        "Compiled resources for natural m64n64 grouped exact causal prefill");
   m.def("exact_partial_out", &streamattn_transposed_wgmma_exact_partial_out_cuda,
         "StreamAttn transposed m64n8k16 exact attention partial states");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
@@ -309,6 +324,14 @@ using TiledMma = decltype(make_tiled_mma(
     SM90_64x8x16_F32BF16BF16_SS<GMMA::Major::K, GMMA::Major::K>{}));
 using TiledMmaO = decltype(make_tiled_mma(
     SM90_64x8x16_F32BF16BF16_SS<GMMA::Major::MN, GMMA::Major::MN>{}));
+static constexpr int kPrefillRowsPerWarpGroup = 64;
+static constexpr int kPrefillConsumerGroups = 2;
+static constexpr int kPrefillRows =
+    kPrefillRowsPerWarpGroup * kPrefillConsumerGroups;
+using PrefillTiledMma = decltype(make_tiled_mma(
+    SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::K, GMMA::Major::K>{}));
+using PrefillTiledMmaO = decltype(make_tiled_mma(
+    SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::MN, GMMA::Major::MN>{}));
 using SmemLayoutV = SmemLayoutK;
 using SmemLayoutVt = decltype(composition(
     SmemLayoutV{},
@@ -324,6 +347,17 @@ using SmemLayoutP = decltype(tile_to_shape(
 using SmemLayoutPOrigin = decltype(composition(
     SmemLayoutP{},
     make_layout(Shape<Int<kBlockM>, Int<kBlockN>>{}, GenRowMajor{})));
+
+using PrefillSmemLayoutQ = decltype(tile_to_shape(
+    GMMA::Layout_K_SW128_Atom<Element>{},
+    Shape<Int<kPrefillRowsPerWarpGroup>, Int<kHeadDim>>{}));
+using PrefillSmemLayoutP = decltype(tile_to_shape(
+    GMMA::Layout_MN_SW128_Atom<Element>{},
+    Shape<Int<kPrefillRowsPerWarpGroup>, Int<kBlockM>>{}));
+using PrefillSmemLayoutPOrigin = decltype(composition(
+    PrefillSmemLayoutP{},
+    make_layout(
+        Shape<Int<kBlockM>, Int<kPrefillRowsPerWarpGroup>>{}, GenRowMajor{})));
 
 struct alignas(128) SharedStorage {
   cute::array_aligned<Element, cute::cosize_v<SmemLayoutK>> k;
@@ -347,6 +381,24 @@ struct alignas(128) AsyncQKPVSharedStorage {
   Accum row_reduce[4][kBlockN];
   Accum row_max[kBlockN];
   Accum row_sum[kBlockN];
+};
+
+struct alignas(128) GroupedPrefillSharedStorage {
+  cute::array_aligned<
+      Element, cute::cosize_v<SmemLayoutK> * kPipelineStages> k;
+  cute::array_aligned<
+      Element, kSeparateVStages == 2
+          ? cute::cosize_v<SmemLayoutV> * kSeparateVStages
+          : 1> v;
+  cute::array_aligned<
+      Element,
+      cute::cosize_v<PrefillSmemLayoutQ> * kPrefillConsumerGroups> q;
+  cute::array_aligned<
+      Element,
+      cute::cosize_v<PrefillSmemLayoutPOrigin> * kPrefillConsumerGroups> p;
+  Accum row_reduce[kPrefillConsumerGroups][4][kPrefillRowsPerWarpGroup];
+  Accum row_max[kPrefillConsumerGroups][kPrefillRowsPerWarpGroup];
+  Accum row_sum[kPrefillConsumerGroups][kPrefillRowsPerWarpGroup];
 };
 
 using WsPipelineK = cutlass::PipelineAsync<kPipelineStages>;
@@ -409,6 +461,383 @@ __forceinline__ __device__ Accum streamattn_group_sum(Accum value) {
   value += __shfl_xor_sync(mask, value, 8);
   value += __shfl_xor_sync(mask, value, 4);
   return value;
+}
+
+__global__ __launch_bounds__(256, 1)
+void streamattn_grouped_wgmma_prefill_kernel(
+    const Element* __restrict__ query,
+    const Element* __restrict__ key,
+    const Element* __restrict__ value,
+    Element* __restrict__ output,
+    Accum* __restrict__ lse,
+    int batch_size,
+    int sequence_length,
+    int q_heads,
+    int kv_heads,
+    int group_size) {
+  const int query_positions = kPrefillRows / group_size;
+  const int query_tiles =
+      (sequence_length + query_positions - 1) / query_positions;
+  const int work = blockIdx.x;
+  const int group = work / query_tiles;
+  const int query_tile = work - group * query_tiles;
+  if (group >= batch_size * kv_heads) {
+    return;
+  }
+  const int batch = group / kv_heads;
+  const int kv_head = group - batch * kv_heads;
+  const int query_begin = query_tile * query_positions;
+  const int query_end = min(sequence_length, query_begin + query_positions);
+  const int key_tiles = (query_end + kBlockM - 1) / kBlockM;
+  const int consumer_group = threadIdx.x / 128;
+  const int local_thread = threadIdx.x % 128;
+
+  extern __shared__ __align__(128) unsigned char shared_bytes[];
+  auto& storage =
+      *reinterpret_cast<GroupedPrefillSharedStorage*>(shared_bytes);
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr =
+      storage.k.data() + cute::cosize_v<SmemLayoutK>;
+  Element* v0_ptr =
+      kSeparateVStages == 2 ? storage.v.data() : k0_ptr;
+  Element* v1_ptr = kSeparateVStages == 2
+      ? storage.v.data() + cute::cosize_v<SmemLayoutV>
+      : k1_ptr;
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutV{});
+  Tensor sV1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutV{});
+  Tensor sVt0 = make_tensor(make_smem_ptr(v0_ptr), SmemLayoutVt{});
+  Tensor sVt1 = make_tensor(make_smem_ptr(v1_ptr), SmemLayoutVt{});
+  Element* q_ptr = storage.q.data()
+      + consumer_group * cute::cosize_v<PrefillSmemLayoutQ>;
+  Element* p_ptr = storage.p.data()
+      + consumer_group * cute::cosize_v<PrefillSmemLayoutPOrigin>;
+  Tensor sQ = make_tensor(make_smem_ptr(q_ptr), PrefillSmemLayoutQ{});
+  Tensor sPOrigin = make_tensor(
+      make_smem_ptr(p_ptr), PrefillSmemLayoutPOrigin{});
+  Tensor sP = make_tensor(make_smem_ptr(p_ptr), PrefillSmemLayoutP{});
+
+  for (int idx = local_thread;
+       idx < kPrefillRowsPerWarpGroup * kHeadDim;
+       idx += 128) {
+    const int local_query_row = idx / kHeadDim;
+    const int dim = idx - local_query_row * kHeadDim;
+    const int global_query_row =
+        consumer_group * kPrefillRowsPerWarpGroup + local_query_row;
+    const int query_offset = global_query_row / group_size;
+    const int head_offset = global_query_row - query_offset * group_size;
+    const int query_position = query_begin + query_offset;
+    const int q_head = kv_head * group_size + head_offset;
+    Element item = Element(0.0f);
+    if (query_position < sequence_length) {
+      const int64_t source =
+          ((static_cast<int64_t>(batch) * sequence_length + query_position)
+               * q_heads
+           + q_head)
+              * kHeadDim
+          + dim;
+      item = query[source];
+    }
+    sQ(local_query_row, dim) = item;
+  }
+  cutlass::arch::fence_view_async_shared();
+  __syncthreads();
+
+  PrefillTiledMma tiled_mma;
+  auto thr_mma = tiled_mma.get_thread_slice(local_thread);
+  Tensor tSrK0 = thr_mma.partition_fragment_A(sK0);
+  Tensor tSrK1 = thr_mma.partition_fragment_A(sK1);
+  Tensor tSrQ = thr_mma.partition_fragment_B(sQ);
+  Tensor tPsP = thr_mma.partition_C(sPOrigin);
+  Tensor cS = make_identity_tensor(
+      Shape<Int<kBlockM>, Int<kPrefillRowsPerWarpGroup>>{});
+  Tensor tScS = thr_mma.partition_C(cS);
+  Tensor tScSRowCol = make_tensor(
+      tScS.data(), streamattn_acc_rowcol<true>(tScS.layout()));
+
+  PrefillTiledMmaO tiled_mma_o;
+  auto thr_mma_o = tiled_mma_o.get_thread_slice(local_thread);
+  Tensor tOrV0 = thr_mma_o.partition_fragment_A(sVt0);
+  Tensor tOrV1 = thr_mma_o.partition_fragment_A(sVt1);
+  Tensor tOrP = thr_mma_o.partition_fragment_B(sP);
+  Tensor tOrO = partition_fragment_C(
+      tiled_mma_o,
+      Shape<Int<kHeadDim>, Int<kPrefillRowsPerWarpGroup>>{});
+  Tensor tOrORowCol = make_tensor(
+      tOrO.data(), streamattn_acc_rowcol<true>(tOrO.layout()));
+  Tensor cO = make_identity_tensor(
+      Shape<Int<kHeadDim>, Int<kPrefillRowsPerWarpGroup>>{});
+  Tensor tOcO = thr_mma_o.partition_C(cO);
+  clear(tOrO);
+
+  constexpr int kRowsPerThread = decltype(size<0>(tOrORowCol))::value;
+  static_assert(
+      kRowsPerThread == decltype(size<0>(tScSRowCol))::value,
+      "QK and PV fragments must expose the same query rows");
+  Accum row_max[kRowsPerThread];
+  Accum row_sum[kRowsPerThread];
+  CUTE_UNROLL
+  for (int row = 0; row < kRowsPerThread; ++row) {
+    row_max[row] = -INFINITY;
+    row_sum[row] = 0.0f;
+  }
+
+  GmemCopyK copy_kv;
+  auto thr_copy_kv = copy_kv.get_thread_slice(local_thread);
+  Tensor tK0sK0 = thr_copy_kv.partition_D(sK0);
+  Tensor tK1sK1 = thr_copy_kv.partition_D(sK1);
+  Tensor tV0sV0 = thr_copy_kv.partition_D(sV0);
+  Tensor tV1sV1 = thr_copy_kv.partition_D(sV1);
+
+  auto copy_tile = [&](const Element* source, int tile, auto destination) {
+    Tensor global = make_tensor(
+        make_gmem_ptr(source
+            + ((static_cast<int64_t>(batch) * sequence_length
+                + tile * kBlockM)
+                   * kv_heads
+               + kv_head)
+                * kHeadDim),
+        Shape<Int<kBlockM>, Int<kHeadDim>>{},
+        make_stride(kv_heads * kHeadDim, _1{}));
+    cute::copy(copy_kv, thr_copy_kv.partition_S(global), destination);
+  };
+
+  if (key_tiles > 0) {
+    if (consumer_group == 0) {
+      copy_tile(key, 0, tK0sK0);
+      if constexpr (kSeparateVStages == 2) {
+        copy_tile(value, 0, tV0sV0);
+      }
+      cute::cp_async_fence();
+      cute::cp_async_wait<0>();
+    }
+    __syncthreads();
+  }
+
+  constexpr Accum kSoftmaxScaleLog2 = kHeadDim == 64
+      ? 0.18033688011112042f
+      : 0.12751743082459868f;
+  int read_pipe = 0;
+  for (int tile = 0; tile < key_tiles; ++tile) {
+    const int next_tile = tile + 1;
+    const int write_pipe = read_pipe ^ 1;
+    if (consumer_group == 0 && next_tile < key_tiles) {
+      if (write_pipe == 0) {
+        copy_tile(key, next_tile, tK0sK0);
+        if constexpr (kSeparateVStages == 2) {
+          copy_tile(value, next_tile, tV0sV0);
+        }
+      } else {
+        copy_tile(key, next_tile, tK1sK1);
+        if constexpr (kSeparateVStages == 2) {
+          copy_tile(value, next_tile, tV1sV1);
+        }
+      }
+      cute::cp_async_fence();
+    }
+
+    Tensor tCrS = partition_fragment_C(
+        tiled_mma,
+        Shape<Int<kBlockM>, Int<kPrefillRowsPerWarpGroup>>{});
+    clear(tCrS);
+    warpgroup_fence_operand(tCrS);
+    warpgroup_arrive();
+    if (read_pipe == 0) {
+      cute::gemm(tiled_mma, tSrK0, tSrQ, tCrS);
+    } else {
+      cute::gemm(tiled_mma, tSrK1, tSrQ, tCrS);
+    }
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(tCrS);
+
+    if constexpr (kSeparateVStages == 0) {
+      if (consumer_group == 0) {
+        if (read_pipe == 0) {
+          copy_tile(value, tile, tV0sV0);
+        } else {
+          copy_tile(value, tile, tV1sV1);
+        }
+        cute::cp_async_fence();
+      }
+    }
+
+    Tensor scores = make_tensor(
+        tCrS.data(), streamattn_acc_rowcol<true>(tCrS.layout()));
+    CUTE_UNROLL
+    for (int row = 0; row < size<0>(scores); ++row) {
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(scores); ++col) {
+        const int token = int(get<0>(tScSRowCol(row, col)));
+        const int local_query_row = int(get<1>(tScSRowCol(row, col)));
+        const int global_query_row =
+            consumer_group * kPrefillRowsPerWarpGroup + local_query_row;
+        const int query_position = query_begin + global_query_row / group_size;
+        const int key_position = tile * kBlockM + token;
+        if (query_position >= sequence_length ||
+            key_position > query_position ||
+            key_position >= sequence_length) {
+          scores(row, col) = -INFINITY;
+        }
+      }
+    }
+
+    const int lane = local_thread & 31;
+    const int warp = local_thread >> 5;
+    const int group_row = lane >> 2;
+    CUTE_UNROLL
+    for (int row = 0; row < kRowsPerThread; ++row) {
+      Accum tile_max = -INFINITY;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(scores); ++col) {
+        tile_max = fmaxf(tile_max, scores(row, col));
+      }
+      tile_max = streamattn_group_max(tile_max);
+      const int query_row = int(get<1>(tScSRowCol(row, 0)));
+      if (group_row == 0) {
+        storage.row_reduce[consumer_group][warp][query_row] = tile_max;
+      }
+    }
+    __syncthreads();
+
+    CUTE_UNROLL
+    for (int row = 0; row < kRowsPerThread; ++row) {
+      const int query_row = int(get<1>(tScSRowCol(row, 0)));
+      Accum tile_max = storage.row_reduce[consumer_group][0][query_row];
+      CUTE_UNROLL
+      for (int warp_index = 1; warp_index < 4; ++warp_index) {
+        tile_max = fmaxf(
+            tile_max,
+            storage.row_reduce[consumer_group][warp_index][query_row]);
+      }
+      const Accum next_max = fmaxf(row_max[row], tile_max);
+      const Accum alpha = row_max[row] == -INFINITY
+          ? 0.0f
+          : exp2f((row_max[row] - next_max) * kSoftmaxScaleLog2);
+      row_max[row] = next_max;
+      row_sum[row] *= alpha;
+
+      Accum local_sum = 0.0f;
+      const Accum max_scaled = next_max * kSoftmaxScaleLog2;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(scores); ++col) {
+        const Accum probability = next_max == -INFINITY
+            ? 0.0f
+            : exp2f(scores(row, col) * kSoftmaxScaleLog2 - max_scaled);
+        scores(row, col) = probability;
+        local_sum += probability;
+      }
+      row_sum[row] += local_sum;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(tOrORowCol); ++col) {
+        tOrORowCol(row, col) *= alpha;
+      }
+    }
+
+    Tensor rP = streamattn_convert_type<Element>(tCrS);
+    cute::copy(rP, tPsP);
+    cutlass::arch::fence_view_async_shared();
+    __syncthreads();
+
+    if constexpr (kSeparateVStages == 0) {
+      if (consumer_group == 0) {
+        cute::cp_async_wait<0>();
+      }
+      __syncthreads();
+    }
+
+    warpgroup_fence_operand(tOrO);
+    warpgroup_arrive();
+    if (read_pipe == 0) {
+      cute::gemm(tiled_mma_o, tOrV0, tOrP, tOrO);
+    } else {
+      cute::gemm(tiled_mma_o, tOrV1, tOrP, tOrO);
+    }
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(tOrO);
+
+    if (next_tile < key_tiles) {
+      if (consumer_group == 0) {
+        cute::cp_async_wait<0>();
+      }
+      __syncthreads();
+      read_pipe = write_pipe;
+    }
+  }
+
+  const int lane = local_thread & 31;
+  const int warp = local_thread >> 5;
+  const int group_row = lane >> 2;
+  CUTE_UNROLL
+  for (int row = 0; row < kRowsPerThread; ++row) {
+    const int query_row = int(get<1>(tScSRowCol(row, 0)));
+    const Accum total = streamattn_group_sum(row_sum[row]);
+    if (group_row == 0) {
+      storage.row_reduce[consumer_group][warp][query_row] = total;
+    }
+  }
+  __syncthreads();
+  if (warp == 0 && group_row == 0) {
+    CUTE_UNROLL
+    for (int row = 0; row < kRowsPerThread; ++row) {
+      const int query_row = int(get<1>(tScSRowCol(row, 0)));
+      Accum total = 0.0f;
+      CUTE_UNROLL
+      for (int warp_index = 0; warp_index < 4; ++warp_index) {
+        total += storage.row_reduce[consumer_group][warp_index][query_row];
+      }
+      storage.row_max[consumer_group][query_row] = row_max[row];
+      storage.row_sum[consumer_group][query_row] = total;
+      const int global_query_row =
+          consumer_group * kPrefillRowsPerWarpGroup + query_row;
+      const int query_offset = global_query_row / group_size;
+      const int head_offset = global_query_row - query_offset * group_size;
+      const int query_position = query_begin + query_offset;
+      if (query_position < sequence_length) {
+        const int q_head = kv_head * group_size + head_offset;
+        constexpr Accum kLn2 = 0.6931471805599453f;
+        lse[(static_cast<int64_t>(batch) * sequence_length + query_position)
+                * q_heads
+            + q_head] = total > 0.0f
+            ? (row_max[row] * kSoftmaxScaleLog2 + log2f(total)) * kLn2
+            : -INFINITY;
+      }
+    }
+  }
+  __syncthreads();
+
+  Tensor tOcORowCol = make_tensor(
+      tOcO.data(), streamattn_acc_rowcol<true>(tOcO.layout()));
+  CUTE_UNROLL
+  for (int row = 0; row < size<0>(tOrORowCol); ++row) {
+    CUTE_UNROLL
+    for (int col = 0; col < size<1>(tOrORowCol); ++col) {
+      const auto coordinate = tOcORowCol(row, col);
+      const int dim = int(get<0>(coordinate));
+      const int query_row = int(get<1>(coordinate));
+      const int global_query_row =
+          consumer_group * kPrefillRowsPerWarpGroup + query_row;
+      const int query_offset = global_query_row / group_size;
+      const int head_offset = global_query_row - query_offset * group_size;
+      const int query_position = query_begin + query_offset;
+      if (query_position < sequence_length) {
+        const int q_head = kv_head * group_size + head_offset;
+        const int64_t destination =
+            ((static_cast<int64_t>(batch) * sequence_length + query_position)
+                 * q_heads
+             + q_head)
+                * kHeadDim
+            + dim;
+        output[destination] = storage.row_sum[consumer_group][query_row] > 0.0f
+            ? Element(
+                tOrORowCol(row, col)
+                / storage.row_sum[consumer_group][query_row])
+            : Element(0.0f);
+      }
+    }
+  }
 }
 
 __global__ __launch_bounds__(128)
@@ -2191,6 +2620,104 @@ torch::Tensor streamattn_transposed_wgmma_qkpv_floor_resource_info_cuda(
   values.push_back(static_cast<int64_t>(sizeof(AsyncQKPVSharedStorage)));
   values.push_back(specialized_smem);
   return torch::tensor(values, torch::TensorOptions().dtype(torch::kInt64));
+}
+
+torch::Tensor streamattn_grouped_wgmma_prefill_resource_info_cuda() {
+  auto kernel = streamattn_grouped_wgmma_prefill_kernel;
+  const int shared_bytes =
+      static_cast<int>(sizeof(GroupedPrefillSharedStorage));
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_bytes));
+  cudaFuncAttributes attributes{};
+  C10_CUDA_CHECK(cudaFuncGetAttributes(&attributes, kernel));
+  int blocks = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &blocks, kernel, 256, shared_bytes));
+  return torch::tensor(
+      {
+          static_cast<int64_t>(attributes.numRegs),
+          static_cast<int64_t>(attributes.sharedSizeBytes),
+          static_cast<int64_t>(shared_bytes),
+          static_cast<int64_t>(blocks),
+          static_cast<int64_t>(attributes.maxThreadsPerBlock),
+      },
+      torch::TensorOptions().dtype(torch::kInt64));
+}
+
+void streamattn_grouped_wgmma_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor lse) {
+  TORCH_CHECK(
+      query.is_cuda() && key.is_cuda() && value.is_cuda() &&
+          output.is_cuda() && lse.is_cuda(),
+      "grouped prefill tensors must be CUDA tensors");
+  TORCH_CHECK(
+      query.is_contiguous() && key.is_contiguous() && value.is_contiguous() &&
+          output.is_contiguous() && lse.is_contiguous(),
+      "grouped prefill tensors must be contiguous");
+  TORCH_CHECK(
+      query.scalar_type() == at::ScalarType::BFloat16 &&
+          key.scalar_type() == at::ScalarType::BFloat16 &&
+          value.scalar_type() == at::ScalarType::BFloat16 &&
+          output.scalar_type() == at::ScalarType::BFloat16,
+      "grouped prefill Q/K/V/output must use bf16");
+  TORCH_CHECK(
+      lse.scalar_type() == at::ScalarType::Float,
+      "grouped prefill LSE must use fp32");
+  TORCH_CHECK(
+      query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
+      "grouped prefill Q/K/V must have shape [B,S,H,D]");
+  TORCH_CHECK(key.sizes() == value.sizes(), "K/V shapes must match");
+  TORCH_CHECK(
+      query.size(0) == key.size(0) && query.size(1) == key.size(1) &&
+          query.size(3) == key.size(3),
+      "Q/K/V batch, sequence, and head dimensions must match");
+  TORCH_CHECK(
+      query.size(3) == kHeadDim,
+      "Q/K/V head dimension does not match the compiled specialization");
+  const int batch_size = static_cast<int>(query.size(0));
+  const int sequence_length = static_cast<int>(query.size(1));
+  const int q_heads = static_cast<int>(query.size(2));
+  const int kv_heads = static_cast<int>(key.size(2));
+  TORCH_CHECK(
+      batch_size > 0 && sequence_length > 0 && kv_heads > 0 &&
+          q_heads % kv_heads == 0,
+      "grouped prefill requires positive dimensions and integral GQA groups");
+  const int group_size = q_heads / kv_heads;
+  TORCH_CHECK(
+      group_size == 4 || group_size == 8,
+      "grouped prefill currently supports G4 or G8");
+  TORCH_CHECK(
+      output.sizes() == query.sizes(),
+      "grouped prefill output must match query shape");
+  TORCH_CHECK(
+      lse.sizes() == torch::IntArrayRef({batch_size, sequence_length, q_heads}),
+      "grouped prefill LSE must have shape [B,S,Hq]");
+
+  const int query_positions = kPrefillRows / group_size;
+  const int query_tiles =
+      (sequence_length + query_positions - 1) / query_positions;
+  const int shared_bytes =
+      static_cast<int>(sizeof(GroupedPrefillSharedStorage));
+  auto kernel = streamattn_grouped_wgmma_prefill_kernel;
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_bytes));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  kernel<<<batch_size * kv_heads * query_tiles, 256, shared_bytes, stream>>>(
+      reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(key.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(value.data_ptr<at::BFloat16>()),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      lse.data_ptr<float>(),
+      batch_size,
+      sequence_length,
+      q_heads,
+      kv_heads,
+      group_size);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
 void streamattn_transposed_wgmma_exact_partial_out_cuda(

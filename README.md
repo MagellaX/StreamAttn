@@ -505,6 +505,14 @@ FP32 online-softmax states. It improves the first native forward by up to
 still `0.89x` of Flash SDPA. It is therefore not auto-routed. See the
 [grouped-GQA prefill floor](docs/grouped_gqa_prefill_floor_20260828.md).
 
+A native Hopper follow-up replaced the Triton dot-product floor with natural
+`m64n64` WGMMA and tested both one and two consumer warpgroups sharing K/V.
+All 12 H100 G4/G8 D128 cells were exact, but the two-consumer schedule reached
+only `0.408x-0.551x` of graph-captured Flash SDPA and was limited to one CTA/SM
+by 223 registers per thread and 85,120 bytes of dynamic shared memory. It is a
+recorded negative canary, not a production route. See the
+[SM90 grouped WGMMA study](docs/sm90_grouped_gqa_prefill_wgmma_20260902.md).
+
 For Blackwell, a separate architecture-native exact forward keeps compact GQA
 K/V in BSHD layout and uses TMA,
 `tcgen05` MMA, TMEM accumulators, streaming online softmax, query-tile causal
@@ -801,8 +809,10 @@ reproducible exact coverage rather than another isolated promotion:
    near uncertain phase boundaries.
 3. Expand B200 prefill through the compiler across G4/G8/G16, D64/D128/D256,
    FP16/BF16, causal/noncausal, and the short-M to long-M transition.
-4. Generate the missing H100 multi-query-row WGMMA prefill family. Reusing the
-   decode-shaped partial/merge path would retain the wrong physical geometry.
+4. Research a producer-specialized H100 multi-query-row prefill pipeline. The
+   exact natural-WGMMA one/two-consumer canaries reached at most `0.596x` of
+   Flash SDPA, so further consumer-symmetric tile tuning is closed. Any new
+   attempt must first prove TMA/consumer overlap and a viable register budget.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
 6. Extend the register-resident A100 D128 producer beyond the promoted

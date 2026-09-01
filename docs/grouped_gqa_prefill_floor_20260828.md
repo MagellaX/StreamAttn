@@ -102,11 +102,18 @@ close the final gap. More Triton tile tuning is low-value after this phase.
 
 ## Next Boundary
 
-The next forward experiment must preserve the same grouped mathematical
-mapping but change the hardware pipeline:
+The first H100 follow-up has now been executed. Natural-orientation WGMMA with
+one and two consumer warpgroups remained exact, but reached only `0.352x-0.596x`
+and `0.408x-0.551x` of graph-captured Flash SDPA respectively. The two-consumer
+variant increased K/V reuse but consumed 223 registers per thread, 85,120 bytes
+of dynamic shared memory, and one CTA/SM. See the
+[SM90 grouped WGMMA canary](sm90_grouped_gqa_prefill_wgmma_20260902.md).
+
+The next H100 forward experiment, if resumed, must change the hardware
+pipeline rather than tune another consumer-symmetric tile:
 
 ```text
-H100: WGMMA + staged/TMA K/V movement + warp-specialized softmax
+H100: dedicated TMA producer + asynchronous consumer warpgroups
 B200: tcgen05 MMA + TMEM accumulators + Blackwell-specific rescaling pipeline
 ```
 

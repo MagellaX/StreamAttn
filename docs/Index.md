@@ -16,6 +16,9 @@
 - [A100 D128 Register-Resident Decode](exact_native_a100_d128_register_pipeline_20260901.md):
   one cross-provider promoted contiguous cell, production-plan evidence, and the
   measured 32K/G4/B8 boundary.
+- [SM90 Natural-Orientation Grouped GQA Prefill](sm90_grouped_gqa_prefill_wgmma_20260902.md):
+  exact one/two-consumer WGMMA canaries, the H100 resource boundary, and the
+  evidence for closing consumer-symmetric prefill tuning.
 
 ## Parameters Explained
 

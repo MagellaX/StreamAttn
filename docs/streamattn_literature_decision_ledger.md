@@ -1,6 +1,6 @@
 # StreamAttn Literature Decision Ledger
 
-Date: 2026-06-04
+Last updated: 2026-09-02
 
 This ledger maps the relevant long-context attention literature to concrete
 StreamAttn route decisions. It is intentionally decision-oriented: papers are
@@ -201,17 +201,18 @@ softmax/matmul overlap, and Blackwell-specific non-matmul reduction
 StreamAttn decision:
 
 ```text
-do not try to be a worse dense exact kernel
-win by scheduling much less work and by owning the model integration path
+do not force one dense kernel across incompatible architectures
+build distinct exact SM80/SM90/SM100 schedules behind one phase compiler
+retain reduced-work routing as an optional, separately proven execution mode
 ```
 
-Validated-bucket backend target:
+Exact-engine target:
 
 ```text
-native routed Qwen module
-projection path reduction
-RoPE/cache append/seed fusion
-eventual exact_native verifier
+architecture-native online-softmax pipelines
+strict fastest-correct baseline selection
+resource-legality and negative-cell retention
+exact fallback for every unresolved phase cell
 ```
 
 ### FlashMLA-ETAP / SnapMLA
@@ -316,6 +317,73 @@ elif risk < dynamic_threshold:
 else:
     exact_native
 ```
+
+### Residual-Mass Accounting / SpotAttention / vAttention
+
+Sources:
+
+```text
+Residual-Mass Accounting: https://arxiv.org/abs/2604.05438
+SpotAttention:             https://arxiv.org/abs/2606.22874
+vAttention:                https://arxiv.org/abs/2510.05688
+```
+
+Relevant signal:
+
+```text
+modern adaptive attention succeeds by training or calibrating the selector,
+estimating omitted mass under one normalization, or combining top-k selection
+with statistically controlled sampling
+```
+
+Repository evidence:
+
+```text
+Qwen global residual predictors fail unseen-prompt transfer
+Mistral exposes one narrow layer-specific residual signal
+hard QK selection and oracle-like mass selection still leave large value error
+```
+
+StreamAttn decision:
+
+```text
+freeze the training-free universal adaptive-completion hypothesis
+do not spend more GPU time on fixed-S or hand-built residual sweeps
+re-enter adaptive research only with a trained/co-adapted selector or residual
+model, held-out model families, and end-to-end speed in the acceptance gate
+```
+
+## 2026-09 Exact Research Boundary
+
+The natural-orientation H100 grouped-prefill experiment adds a useful negative
+result. Exact WGMMA math and K/V reuse were correct, but one/two symmetric
+consumer schedules reached only `0.352x-0.596x` of graph-captured Flash SDPA.
+The two-consumer kernel used 223 registers per thread, 85,120 bytes of dynamic
+shared memory, and one CTA/SM.
+
+Research is therefore needed in one immediate exact-kernel area:
+
+```text
+H100 prefill producer/consumer dataflow:
+  dedicated TMA producer
+  asynchronous barrier schedule
+  bounded consumer register allocation
+  softmax/rescaling overlap with WGMMA
+```
+
+The following work is engineering and evidence expansion, not open-ended
+research:
+
+```text
+complete exact phase-manifest cells
+calibrate fastest-correct external/native backends
+expand layouts, dtypes, head dimensions, masks, and architecture coverage
+retain exact fallback for unresolved cells
+```
+
+Multi-GPU work remains downstream of broad single-GPU exact coverage. Adaptive
+work remains downstream of a trained method that beats the already measured
+training-free frontier.
 
 ## StreamAttn-Specific Moat
 
