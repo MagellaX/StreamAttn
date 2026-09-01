@@ -20,9 +20,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-BASE_SHA = "38cf8505947d21024f918b4e97dac020146380d5"
+BASE_SHA = "0394801d6c508ef21f674a108b98aef9173e9e30"
 RESULT_SCHEMA = "streamattn.tk_tensor_core_exact_decode.v1"
 MATRIX_SCHEMA = "streamattn.tk_tensor_core_exact_decode.matrix.v1"
+PHASED_GATE_SCHEMA = "streamattn.sm80_d128_phased_kv_gate.matrix.v1"
 TERMINAL_STATES = {"completed", "failed", "stopped", "cancelled", "error"}
 
 
@@ -57,6 +58,9 @@ def _overlay_b64() -> str:
     with tarfile.open(fileobj=buffer, mode="w:gz", compresslevel=9) as archive:
         for path in (
             "benchmarks/profile_tk_tensor_core_exact_decode.py",
+            "benchmarks/profile_sm80_d128_phased_gate.py",
+            "stream_attention/backends/sm80/__init__.py",
+            "stream_attention/backends/sm80/tk_grouped_exact.py",
             "stream_attention/backends/sm80/tk_grouped_exact_sources.py",
         ):
             archive.add(REPO_ROOT / path, arcname=path)
@@ -74,7 +78,10 @@ def _results_from_logs(logs: str) -> list[Dict[str, Any]]:
             payload, _ = decoder.raw_decode(logs[start:])
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and payload.get("schema") == RESULT_SCHEMA:
+        if isinstance(payload, dict) and payload.get("schema") in {
+            RESULT_SCHEMA,
+            PHASED_GATE_SCHEMA,
+        }:
             key = json.dumps(payload, sort_keys=True)
             if key not in seen:
                 seen.add(key)
@@ -102,26 +109,41 @@ def _profile_command(args: argparse.Namespace, spec: Dict[str, Any], index: int)
     def value(name: str) -> Any:
         return spec.get(name, getattr(args, name))
 
+    common = [
+        f"--batch {value('batch')}",
+        f"--q-heads {value('q_heads')}",
+        f"--kv-heads {value('kv_heads')}",
+        f"--head-dim {value('head_dim')}",
+        f"--kv-len {value('kv_len')}",
+        f"--dtype {_quote(str(value('dtype')))}",
+        f"--seed {value('seed')}",
+        f"--num-chunks {value('num_chunks')}",
+        f"--flashinfer-page-size {value('flashinfer_page_size')}",
+        f"--flashinfer-workspace-mb {value('flashinfer_workspace_mb')}",
+        f"--cuda-arch {_quote(args.cuda_arch)}",
+        f"--torch-cuda-arch-list {_quote(args.torch_cuda_arch_list)}",
+        "--checkout-dir /tmp/streamattn_backend_sources",
+    ]
+    if args.profile == "sm80_d128_phased_gate":
+        command = [
+            "python -u -m benchmarks.profile_sm80_d128_phased_gate",
+            *common,
+            f"--warmup {value('warmup')}",
+            f"--paired-trials {value('paired_trials')}",
+            f"--paired-iters {value('paired_iters')}",
+            f"--output-json /tmp/sm80_d128_phased_gate_{index}.json",
+        ]
+        if args.production_plan:
+            command.append("--production-plan")
+        return " ".join(command)
     return " ".join(
         [
             "python -u benchmarks/profile_tk_tensor_core_exact_decode.py",
-            f"--batch {value('batch')}",
-            f"--q-heads {value('q_heads')}",
-            f"--kv-heads {value('kv_heads')}",
-            f"--head-dim {value('head_dim')}",
-            f"--kv-len {value('kv_len')}",
-            f"--dtype {_quote(str(value('dtype')))}",
-            f"--seed {value('seed')}",
-            f"--num-chunks {value('num_chunks')}",
+            *common,
             f"--num-chunks-list {_quote(str(value('num_chunks_list')))}",
             f"--producer-warps-list {_quote(str(value('producer_warps_list')))}",
-            f"--flashinfer-page-size {value('flashinfer_page_size')}",
-            f"--flashinfer-workspace-mb {value('flashinfer_workspace_mb')}",
-            f"--cuda-arch {_quote(args.cuda_arch)}",
-            f"--torch-cuda-arch-list {_quote(args.torch_cuda_arch_list)}",
             f"--warmup {value('warmup')}",
             f"--iters {value('iters')}",
-            "--checkout-dir /tmp/streamattn_backend_sources",
             f"--output-json /tmp/tk_tensor_core_exact_decode_{index}.json",
         ]
     )
@@ -247,7 +269,15 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
                 labeled = dict(row)
                 labeled["matrix_name"] = str(spec.get("name", f"cell_{index}"))
                 labeled_results.append(labeled)
-            result: Dict[str, Any] = {"schema": MATRIX_SCHEMA, "results": labeled_results}
+            result_schema = (
+                "streamattn.sm80_d128_phased_kv_gate.lightning_matrix.v1"
+                if args.profile == "sm80_d128_phased_gate"
+                else MATRIX_SCHEMA
+            )
+            result: Dict[str, Any] = {
+                "schema": result_schema,
+                "results": labeled_results,
+            }
         else:
             result = results[-1]
         if args.output_json is not None:
@@ -280,6 +310,11 @@ def main() -> None:
     parser.add_argument("--image", default="pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
     parser.add_argument("--max-runtime", type=int, default=3600)
     parser.add_argument("--poll-seconds", type=int, default=15)
+    parser.add_argument(
+        "--profile",
+        choices=("tk", "sm80_d128_phased_gate"),
+        default="tk",
+    )
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--q-heads", type=int, default=16)
     parser.add_argument("--kv-heads", type=int, default=2)
@@ -303,6 +338,9 @@ def main() -> None:
     parser.add_argument("--matrix-specs", default="")
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=100)
+    parser.add_argument("--paired-trials", type=int, default=15)
+    parser.add_argument("--paired-iters", type=int, default=100)
+    parser.add_argument("--production-plan", action="store_true")
     parser.add_argument("--output-json", type=Path, default=None)
     parser.add_argument("--log-path", type=Path, default=None)
     args = parser.parse_args()

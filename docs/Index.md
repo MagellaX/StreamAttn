@@ -13,6 +13,9 @@
   negative-cell retention, and reproducible architecture phase tables.
 - [SM80 Segmented Exact Merge](sm80_segmented_exact_merge_20260829.md):
   low-batch merge parallelism, strict A100 boundary, and falsified alternatives.
+- [A100 D128 Register-Resident Decode](exact_native_a100_d128_register_pipeline_20260901.md):
+  one cross-provider promoted contiguous cell, production-plan evidence, and the
+  measured 32K/G4/B8 boundary.
 
 ## Parameters Explained
 

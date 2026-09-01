@@ -2,6 +2,7 @@ import torch
 
 from stream_attention.backends.sm80.tk_grouped_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_D128_G8_SPLITS,
     PROMOTED_EXACT_G4_SPLITS,
     PROMOTED_EXACT_G8_SPLITS,
     _shape_reasons,
@@ -23,6 +24,7 @@ def test_promoted_sm80_phase_table_matches_a100_gate():
         (8, 32768): 64,
     }
     assert PROMOTED_EXACT_G4_SPLITS == {(4, 32768): 64}
+    assert PROMOTED_EXACT_D128_G8_SPLITS == {(4, 16384): 64}
 
 
 def test_sm80_shape_contract_is_head_major_bf16_d64():
@@ -41,9 +43,14 @@ def test_sm80_shape_contract_is_head_major_bf16_d64():
     )
 
     q_d128 = torch.empty(4, 1, 16, 128, dtype=torch.bfloat16, device="meta")
-    k_d128 = torch.empty(4, 2, 32768, 128, dtype=torch.bfloat16, device="meta")
-    assert "head_dim" in _shape_reasons(
-        q_d128, k_d128, k_d128, promoted_only=True
+    k_d128 = torch.empty(4, 2, 16384, 128, dtype=torch.bfloat16, device="meta")
+    assert _shape_reasons(q_d128, k_d128, k_d128, promoted_only=True) == []
+
+    k_d128_32k = torch.empty(
+        4, 2, 32768, 128, dtype=torch.bfloat16, device="meta"
+    )
+    assert "unpromoted_shape" in _shape_reasons(
+        q_d128, k_d128_32k, k_d128_32k, promoted_only=True
     )
     assert not supports_grouped_exact(q, k_g8, k_g8)
 
@@ -54,11 +61,14 @@ def test_sm80_source_contains_fused_boundary_and_allocation_free_entrypoint():
     assert "streamattn_tk_tc_exact_warp_merge_direct_kernel" in CUDA_SOURCE
     assert "warp::load_async" in CUDA_SOURCE
     assert "producer_warps = 4" in CUDA_SOURCE
-    assert "D == 128 ? 2 : 4" in CUDA_SOURCE
+    assert "constexpr int producer_warps = 4" in CUDA_SOURCE
     assert (
-        "streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<128, 2>"
+        "streamattn_tk_tc_exact_decode_chunk_phased_grouped_direct_d128_kernel<4>"
         in CUDA_SOURCE
     )
+    assert "k_smem[producer_warps]" in CUDA_SOURCE
+    assert "v_smem[producer_warps]" in CUDA_SOURCE
+    assert "k_smem[producer_warp], acc" in CUDA_SOURCE
 
 
 def test_sm80_plan_reuses_bound_workspace_and_output():

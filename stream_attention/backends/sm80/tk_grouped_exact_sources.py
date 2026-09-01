@@ -795,6 +795,127 @@ __global__ void streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel
   }
 }
 
+template <int producer_warps>
+__global__ void streamattn_tk_tc_exact_decode_chunk_phased_grouped_direct_d128_kernel(
+    const __grid_constant__ streamattn_tc_grouped_direct_globals g) {
+  constexpr int D = 128;
+  using T = streamattn_tc_exact_tiles<D>;
+  const int producer_warp = threadIdx.x >> 5;
+  const int grouped_pid = blockIdx.x;
+  const int grouped_chunk = grouped_pid % g.num_chunks;
+  const int bh = grouped_pid / g.num_chunks;
+  const int b = bh / g.Hkv;
+  const int kvh = bh - b * g.Hkv;
+  const int logical_chunk = grouped_chunk * producer_warps + producer_warp;
+
+  // K_t and V_t become register-resident together. Their shared slots can
+  // then receive K_{t+1}/V_{t+1} while the full attention body executes.
+  __shared__ typename T::kv_smem k_smem[producer_warps];
+  __shared__ typename T::kv_smem v_smem[producer_warps];
+  __shared__ typename T::lse_smem lse_smem[producer_warps];
+  typename T::q_tile q_reg;
+  typename T::k_tile k_reg;
+  typename T::v_tile v_reg;
+  typename T::scores_fl scores;
+  typename T::scores_bf scores_mma;
+  typename T::out_tile acc;
+  typename T::score_col max_vec;
+  typename T::score_col norm_vec;
+  typename T::score_col max_vec_last_scaled;
+  typename T::score_col max_vec_scaled;
+
+  streamattn_tc_load_grouped_query<D>(
+      q_reg, g.q, b, g.Hq, kvh, g.group_size);
+  warp::zero(acc);
+  warp::zero(norm_vec);
+  warp::neg_infty(max_vec);
+
+  const float scale = rsqrtf(static_cast<float>(D));
+  const float scale_log2 = scale * 1.44269504089f;
+  const int tile_begin = logical_chunk * g.tiles_per_chunk;
+  const int tile_end = min(tile_begin + g.tiles_per_chunk, g.N / 16);
+
+  warp::load_async(k_smem[producer_warp], g.k, {b, kvh, tile_begin, 0});
+  warp::load_async(v_smem[producer_warp], g.v, {b, kvh, tile_begin, 0});
+  warp::load_async_wait();
+
+  for (int tile = tile_begin; tile < tile_end; ++tile) {
+    warp::load(k_reg, k_smem[producer_warp]);
+    warp::load(v_reg, v_smem[producer_warp]);
+
+    const int next_tile = tile + 1;
+    if (next_tile < tile_end) {
+      warp::load_async(
+          k_smem[producer_warp], g.k, {b, kvh, next_tile, 0});
+      warp::load_async(
+          v_smem[producer_warp], g.v, {b, kvh, next_tile, 0});
+    }
+    warp::zero(scores);
+    warp::mma_ABt(scores, q_reg, k_reg, scores);
+    warp::copy(max_vec_last_scaled, max_vec);
+    warp::mul(max_vec_last_scaled, max_vec_last_scaled, scale_log2);
+    warp::row_max(max_vec, scores, max_vec);
+    warp::mul(scores, scores, scale_log2);
+    warp::mul(max_vec_scaled, max_vec, scale_log2);
+    warp::sub_row(scores, scores, max_vec_scaled);
+    warp::exp2(scores, scores);
+    warp::sub(max_vec_last_scaled, max_vec_last_scaled, max_vec_scaled);
+    warp::exp2(max_vec_last_scaled, max_vec_last_scaled);
+    warp::mul(norm_vec, norm_vec, max_vec_last_scaled);
+    warp::row_sum(norm_vec, scores, norm_vec);
+    warp::copy(scores_mma, scores);
+    warp::mul_row(acc, acc, max_vec_last_scaled);
+    warp::mma_AB(acc, scores_mma, v_reg, acc);
+    if (next_tile < tile_end) {
+      warp::load_async_wait();
+    }
+  }
+
+  warp::div_row(acc, acc, norm_vec);
+  warp::mul(max_vec_scaled, max_vec, scale);
+  warp::log(norm_vec, norm_vec);
+  warp::add(norm_vec, norm_vec, max_vec_scaled);
+  warp::store(k_smem[producer_warp], acc);
+  warp::store(lse_smem[producer_warp], norm_vec);
+  __syncthreads();
+
+  if (producer_warp == 0) {
+    typename T::out_tile merged_out;
+    typename T::out_tile partial_out;
+    typename T::score_col merged_lse;
+    typename T::score_col partial_lse;
+    typename T::score_col new_lse;
+    typename T::score_col merged_weight;
+    typename T::score_col partial_weight;
+    typename T::score_col weight_sum;
+    warp::load(merged_out, k_smem[0]);
+    warp::load(merged_lse, lse_smem[0]);
+
+    #pragma unroll
+    for (int producer = 1; producer < producer_warps; ++producer) {
+      warp::load(partial_out, k_smem[producer]);
+      warp::load(partial_lse, lse_smem[producer]);
+      warp::max(new_lse, merged_lse, partial_lse);
+      warp::sub(merged_weight, merged_lse, new_lse);
+      warp::exp(merged_weight, merged_weight);
+      warp::sub(partial_weight, partial_lse, new_lse);
+      warp::exp(partial_weight, partial_weight);
+      warp::add(weight_sum, merged_weight, partial_weight);
+      warp::div(merged_weight, merged_weight, weight_sum);
+      warp::div(partial_weight, partial_weight, weight_sum);
+      warp::log(weight_sum, weight_sum);
+      warp::add(new_lse, new_lse, weight_sum);
+      warp::mul_row(merged_out, merged_out, merged_weight);
+      warp::mul_row(partial_out, partial_out, partial_weight);
+      warp::add(merged_out, merged_out, partial_out);
+      warp::copy(merged_lse, new_lse);
+    }
+
+    warp::store(g.partial_out, merged_out, {b, kvh, grouped_chunk, 0});
+    warp::store(g.partial_lse, merged_lse, {b, kvh, grouped_chunk, 0});
+  }
+}
+
 #define STREAMATTN_TK_TC_DISPATCH_D(D_VALUE, KERNEL_NAME, GRID, BLOCK, GLOBALS) \
   do { \
     if ((D_VALUE) == 64) { \
@@ -1437,7 +1558,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_o
               "direct grouped path currently supports G4 or G8");
   TORCH_CHECK(D == 64 || D == 128,
               "direct grouped path currently supports D64 or D128");
-  const int producer_warps = D == 128 ? 2 : 4;
+  constexpr int producer_warps = 4;
   TORCH_CHECK(N % 16 == 0, "N must be divisible by 16");
   TORCH_CHECK(num_chunks > 0 && num_chunks % producer_warps == 0,
               "num_chunks must be positive and divisible by producer warps");
@@ -1498,7 +1619,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_o
     streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<64, 4>
         <<<producer_grid, producer_block>>>(g);
   } else {
-    streamattn_tk_tc_exact_decode_chunk_staged_grouped_direct_kernel<128, 2>
+    streamattn_tk_tc_exact_decode_chunk_phased_grouped_direct_d128_kernel<4>
         <<<producer_grid, producer_block>>>(g);
   }
   cudaError_t err = cudaGetLastError();
@@ -1533,7 +1654,7 @@ torch::Tensor streamattn_tk_tc_exact_decode_chunk_merged_staged_grouped_direct_c
   const int D = q.size(2);
   TORCH_CHECK(D == 64 || D == 128,
               "direct grouped path currently supports D64 or D128");
-  const int producer_warps = D == 128 ? 2 : 4;
+  constexpr int producer_warps = 4;
   const int grouped_chunks = static_cast<int>(num_chunks) / producer_warps;
   auto partial = torch::empty({B, Hkv, grouped_chunks * 16, D}, q.options());
   auto partial_lse = torch::empty(

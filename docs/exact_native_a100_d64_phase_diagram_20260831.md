@@ -100,13 +100,12 @@ select the specialization. Other shapes remain on an exact fallback.
 This is a real exact-kernel result, but it is not yet a universal A100 backend.
 The matrix is one process per cell rather than a repeated paired-trial gate, and
 the production-plan canary covers B4/32K. Native paged KV, ragged lengths,
-FP16/FP8, arbitrary heads, and D128 remain unpromoted.
+FP16/FP8, and arbitrary heads remain unpromoted.
 
-The highest-reward next SM80 expansion is D128. It requires a different shared-
-memory lifetime because four producer warps cannot retain double-buffered D128
-K, V, and four partial outputs simultaneously at the current footprint. The
-likely design is phased K/V buffer reuse or two producer warps per CTA, selected
-by measured producer-wave and merge-cost economics rather than extrapolation.
+Since this D64 phase was recorded, one contiguous D128 cell has passed a strict
+paired production-plan gate on both A100 SXM4 40GB and 80GB. Its distinct
+register-resident K/V lifetime and narrow B4/G8/16K boundary are documented in
+[Exact-Native A100 D128 Register-Resident Pipeline](exact_native_a100_d128_register_pipeline_20260901.md).
 
 ## Artifacts
 

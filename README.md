@@ -16,14 +16,14 @@ The common foundation is single-pass streaming attention with online softmax:
 K/V tiles are consumed once, numerically stable running statistics are updated
 on the fly, and the full attention matrix is never materialized.
 
-> **Project status:** research engine with promoted H100 routes, a guarded
-> contiguous A100 D64 exact backend, a complete A100 paged-D128 routing profile,
-> and partial H100/B200 phase databases. StreamAttn has apples-to-apples exact
-> decode wins over FlashInfer on promoted Hopper and Ampere cells, plus a
-> measured model-level Qwen decode win on a validated request tier. The A100
-> paged-D128 profile still selects exact external fallback. StreamAttn is not
-> yet a universal replacement for FlashInfer, FlashAttention, or a full serving
-> runtime.
+> **Project status:** research engine with promoted H100 routes, guarded
+> contiguous A100 D64 routes plus one cross-provider D128 cell, a complete A100
+> paged-D128 routing profile, and partial H100/B200 phase databases. StreamAttn
+> has apples-to-apples exact decode wins over FlashInfer on promoted Hopper and
+> Ampere cells, plus a measured model-level Qwen decode win on a validated
+> request tier. The A100 paged-D128 profile still selects exact external
+> fallback. StreamAttn is not yet a universal replacement for FlashInfer,
+> FlashAttention, or a full serving runtime.
 
 ## Why StreamAttn Exists
 
@@ -100,6 +100,7 @@ use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:
 |---|---|---:|---|
 | Contiguous D64, GQA group 8 | A100 40GB; B1-B8; 16K-64K KV | `1.067x-1.477x` | Promoted per cell |
 | Contiguous D64, GQA group 4 | A100 40GB; B4/32K KV | `1.070x` | Promoted per cell |
+| Contiguous D128, GQA group 8 | A100 SXM4 40GB/80GB; B4/16K KV | `1.006x` worst paired extension trial; `1.010x-1.014x` production-plan medians | Promoted discrete cell |
 | D64, GQA group 8 | 7 cells; B2-B8; 16K-64K KV | `1.025x-1.432x` | Promoted per cell |
 | D64, GQA group 4 | 14 cells; B1-B16; 16K-64K KV | `1.027x-1.449x` | Promoted per cell |
 | D128, GQA group 4 | 6 cells; B4-B16; 16K-64K KV | `1.002x-1.012x` | Promoted per cell |
@@ -130,6 +131,7 @@ See the measured phase diagrams for the actual promoted cells:
 - [Paged exact SM80/SM90/SM100 architecture phase](docs/paged_exact_architecture_phase_20260824.md)
 - [SM80 segmented exact merge and falsification boundary](docs/sm80_segmented_exact_merge_20260829.md)
 - [Contiguous D64 A100 phase diagram](docs/exact_native_a100_d64_phase_diagram_20260831.md)
+- [Contiguous D128 A100 register-resident pipeline](docs/exact_native_a100_d128_register_pipeline_20260901.md)
 - [Native B200 exact backend and promotion boundary](docs/paged_exact_sm100_tgv_20260824.md)
 
 The promoted A100 D64 path is a separate architecture-native family. It reads
@@ -141,6 +143,13 @@ the B4/G8/32K allocation-free canary measured `63.155 us` against FlashInfer
 ThunderKittens headers are optional; set `STREAMATTN_TK_ROOT` to a tree
 containing `include/kittens.cuh`, otherwise the dispatcher fails closed to an
 existing exact path.
+
+The promoted A100 D128 cell uses a different shared-memory lifetime. Four
+producer warps load each current K/V pair into registers, asynchronously replace
+the shared slots with the next pair while QK, online softmax, and PV execute, and
+reuse K storage for the final partial output. The real `ExactDecodePlan.run()`
+path passed 15/15 paired trials at B4/G8/16K on both A100 SXM4 40GB and 80GB.
+All other A100 D128 cells still fail closed to exact fallback.
 
 ### Selected paged decode
 
@@ -283,8 +292,10 @@ verifier.
 - StreamAttn is not universally faster than FlashInfer on every exact shape.
 - Seed-only speedups are not exact-kernel speedups; they come from validated
   work avoidance.
-- A100 promotion is limited to contiguous head-major BF16 D64 G4/G8 cells.
-  Native HND/NHD page-16 D128/G8 is correct, but its strict HND gate resolves
+- A100 promotion is limited to contiguous head-major BF16 D64 G4/G8 cells and
+  the discrete contiguous D128 B4/G8/16K cell. Tested D128 32K, G4, and B8 cells
+  remain on exact fallback. Native HND/NHD page-16 D128/G8 is correct, but its
+  strict HND gate resolves
   to `0.060416 ms` versus a `0.057344 ms` FlashInfer FA2 floor, so the complete
   seven-cell paged-D128 database still emits exact external fallbacks. No A100
   FP8 claim has been promoted.
@@ -712,14 +723,14 @@ not hidden StreamAttn dependencies.
 | Python | 3.10+ |
 | PyTorch | 2.1+ |
 | CPU | Correctness and SDPA fallback |
-| Native GPU evidence | NVIDIA H100 / SM90 and B200 / SM100; promoted A100 / SM80 contiguous D64 cells plus complete paged-D128 routing evidence |
+| Native GPU evidence | NVIDIA H100 / SM90 and B200 / SM100; promoted A100 / SM80 contiguous D64 cells, one cross-provider contiguous D128 cell, plus complete paged-D128 routing evidence |
 | Exact decode | Contiguous BF16 KV; guarded D64/D128 GQA cells plus generic exact fallback |
 | Paged exact decode | Direct NHD/HND exact fallback; promoted H100 shape cells plus six B200 NHD/page-16 D128/G8 full-row cells |
 | Reduced-work decode | Packaged Qwen-family 32K cells; request-tier and route-bundle restrictions apply |
 | Prefill/forward/backward | Public exact MHA/GQA `prefill(...)` and `train(...)` plans; promoted B200 BF16 `Hq16/Hkv2/D128` causal prefill cells; compact Triton online-softmax path with masks, dropout, ALiBi, and autograd; exact SDPA fallback |
 | Distributed research | Ring and Star attention prototypes |
-| Experimental hardware | A100 has promoted contiguous D64 `cp.async` + MMA exact decode; paged D128 still falls back externally |
-| Not yet promoted | H100 WGMMA prefill, A100 D128/prefill/backward, other B200 prefill/decode shapes, ragged page-64 WGMMA, FP8 selected cache, second model family |
+| Experimental hardware | A100 has promoted contiguous D64 and B4/G8/16K D128 `cp.async` + MMA exact decode; paged D128 still falls back externally |
+| Not yet promoted | H100 WGMMA prefill, remaining A100 D128 shapes plus prefill/backward, other B200 prefill/decode shapes, ragged page-64 WGMMA, FP8 selected cache, second model family |
 
 ## Repository Guide
 
@@ -730,7 +741,7 @@ stream_attention/
   exact_compiler.py         workload, schedule, and resource compiler IR
   phase_database.py         strict evidence resolution and phase-table compiler
   decode.py                 native modes, planning, and fail-closed service
-  backends/sm80/            promoted D64 and experimental paged-D128 Ampere exact kernels
+  backends/sm80/            promoted contiguous D64/D128 and experimental paged-D128 Ampere exact kernels
   backends/sm90/            promoted Hopper exact kernels and dispatch
   backends/sm100/           promoted Blackwell exact backend and headers
   kernels/                  Triton/CUDA attention kernels
@@ -794,10 +805,11 @@ reproducible exact coverage rather than another isolated promotion:
    decode-shaped partial/merge path would retain the wrong physical geometry.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
-6. Close the measured A100 family gaps: beat the strict `0.057344 ms`
-   FlashInfer D128 decode floor by improving the 64-token QK/PV producer, not
-   by adding merge splits already falsified at B2/64K; then build distinct
-   prefill and backward schedules.
+6. Extend the register-resident A100 D128 producer beyond the promoted
+   B4/G8/16K cell. Strict 32K, G4, and B8 tests rejected the current schedule,
+   so the next step is a different work decomposition rather than more buffer
+   or merge-split permutations; then build distinct prefill and backward
+   schedules.
 7. Resume adaptive/selected work above the exact compiler. Unknown or failed
    guarantees must return to StreamAttn exact execution.
 

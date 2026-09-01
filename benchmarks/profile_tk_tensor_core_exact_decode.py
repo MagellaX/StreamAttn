@@ -474,7 +474,7 @@ def main() -> None:
         return sorted(set(counts))
 
     chunk_counts = _chunk_counts()
-    direct_producer_warps = 2 if args.head_dim == 128 else 4
+    direct_producer_warps = 4
     direct_workspaces: dict[
         int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]
     ] = {}

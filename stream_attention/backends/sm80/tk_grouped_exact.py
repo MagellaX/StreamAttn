@@ -27,9 +27,14 @@ PROMOTED_EXACT_G4_SPLITS = {
     (4, 32768): 64,
 }
 
+PROMOTED_EXACT_D128_G8_SPLITS = {
+    (4, 16384): 64,
+}
+
 PROMOTED_EXACT_SHAPES = {
     (16, 2, 8, 64): PROMOTED_EXACT_G8_SPLITS,
     (16, 4, 4, 64): PROMOTED_EXACT_G4_SPLITS,
+    (16, 2, 8, 128): PROMOTED_EXACT_D128_G8_SPLITS,
 }
 
 _EXTENSIONS: dict[tuple[str, str], Any] = {}
@@ -153,7 +158,7 @@ def _shape_reasons(
     group_size = q_heads // kv_heads if kv_heads > 0 and q_heads % kv_heads == 0 else 0
     if group_size not in (4, 8):
         reasons.append("gqa")
-    if dim != 64:
+    if dim not in (64, 128):
         reasons.append("head_dim")
     if kv_len <= 0 or kv_len % 16:
         reasons.append("kv_len")

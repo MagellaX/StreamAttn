@@ -3,6 +3,7 @@
 from .paged_gqa_exact import compile_sm80_paged_gqa_extension
 from .tk_grouped_exact import (
     ExactDecodePlan,
+    PROMOTED_EXACT_D128_G8_SPLITS,
     PROMOTED_EXACT_G4_SPLITS,
     PROMOTED_EXACT_G8_SPLITS,
     PROMOTED_EXACT_SHAPES,
@@ -13,6 +14,7 @@ from .tk_grouped_exact import (
 
 __all__ = [
     "ExactDecodePlan",
+    "PROMOTED_EXACT_D128_G8_SPLITS",
     "PROMOTED_EXACT_G4_SPLITS",
     "PROMOTED_EXACT_G8_SPLITS",
     "PROMOTED_EXACT_SHAPES",
