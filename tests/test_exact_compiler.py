@@ -59,6 +59,20 @@ def _sm100_candidate() -> ScheduleCandidate:
     )
 
 
+def test_tma_multicast_is_a_distinct_serialized_load_engine():
+    candidate = replace(
+        _sm100_candidate(),
+        architecture="sm90",
+        load_engine=LoadEngine.TMA_MULTICAST,
+        mma_engine=MmaEngine.WGMMA,
+        accumulator_space=AccumulatorSpace.REGISTERS,
+        cluster_shape=(2, 1, 1),
+    )
+
+    assert candidate.as_dict()["load_engine"] == "tma_multicast"
+    assert candidate.kernel_key != replace(candidate, load_engine=LoadEngine.TMA).kernel_key
+
+
 def test_universal_exact_manifest_freezes_all_surfaces_architectures_and_phases():
     manifest = load_universal_exact_manifest()
 

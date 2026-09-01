@@ -1,0 +1,117 @@
+{
+  "cells": [
+    {
+      "correctness": {
+        "reference_max_abs": 89.68914794921875,
+        "serial_reference_max_abs": 0.074859619140625,
+        "serial_reference_max_rel": 0.0008346563754068652,
+        "serial_vs_tma_max_abs": 0.0,
+        "tma_reference_max_abs": 0.074859619140625,
+        "tma_reference_max_rel": 0.0008346563754068652
+      },
+      "groups": 256,
+      "modes": {
+        "serial_grouped2": {
+          "eager": {
+            "max_ms": 0.007964800298213958,
+            "median_ms": 0.007075200229883194,
+            "min_ms": 0.0070431999862194065,
+            "samples_ms": [
+              0.007964800298213958,
+              0.007075200229883194,
+              0.0070431999862194065
+            ]
+          },
+          "graph_device_floor": {
+            "max_ms": 0.006521599739789963,
+            "median_ms": 0.006371200084686279,
+            "min_ms": 0.006351999938488007,
+            "samples_ms": [
+              0.006521599739789963,
+              0.006371200084686279,
+              0.006351999938488007
+            ]
+          }
+        },
+        "tma_grouped2": {
+          "eager": {
+            "max_ms": 0.00966079980134964,
+            "median_ms": 0.009600000083446502,
+            "min_ms": 0.0095551997423172,
+            "samples_ms": [
+              0.0095551997423172,
+              0.00966079980134964,
+              0.009600000083446502
+            ]
+          },
+          "graph_device_floor": {
+            "max_ms": 0.008892799913883209,
+            "median_ms": 0.008816000074148178,
+            "min_ms": 0.008806400001049042,
+            "samples_ms": [
+              0.008892799913883209,
+              0.008816000074148178,
+              0.008806400001049042
+            ]
+          }
+        }
+      },
+      "query_tiles": 512,
+      "ratios": {
+        "tma_grouped2_vs_serial_grouped2": 0.7226860289360738
+      },
+      "tiles_per_group": 1
+    }
+  ],
+  "compute_capability": "9.0",
+  "device": "NVIDIA H100 80GB HBM3",
+  "gate": {
+    "all_cells_faster": false,
+    "decision": "reject_same_cta_grouped_candidate",
+    "minimum_ratio": 0.7226860289360738,
+    "paired_correct": true,
+    "zero_local_bytes": false
+  },
+  "geometry": {
+    "dtype": "bfloat16",
+    "k_stages": 2,
+    "pv": [
+      64,
+      128,
+      64
+    ],
+    "qk": [
+      64,
+      64,
+      128
+    ],
+    "queries_per_kv_group": 2,
+    "serial_topology": "two_independent_128_thread_rs_ctas",
+    "tma_topology": "one_producer_warpgroup_two_consumer_warpgroups",
+    "v_stages": 2
+  },
+  "interpretation_contract": {
+    "positive_gate": "paired correctness, zero local bytes, and grouped TMA faster than two independent vectorized serial RS CTAs in every tested cell",
+    "scope": "attention-epoch component floor; not a complete attention kernel"
+  },
+  "resources": {
+    "serial_grouped2": {
+      "blocks_per_sm": 4,
+      "dynamic_shared_bytes": 49792,
+      "local_bytes_per_thread": 0,
+      "max_threads_per_block": 128,
+      "registers_per_thread": 124,
+      "static_shared_bytes": 0
+    },
+    "tma_grouped2": {
+      "blocks_per_sm": 1,
+      "dynamic_shared_bytes": 99456,
+      "local_bytes_per_thread": 32,
+      "max_threads_per_block": 384,
+      "registers_per_thread": 168,
+      "static_shared_bytes": 0
+    }
+  },
+  "schema": "streamattn.sm90_grouped_prefill_dual_consumer_floor.v1",
+  "total_tiles": 256
+}

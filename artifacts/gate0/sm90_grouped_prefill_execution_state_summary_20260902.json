@@ -1,0 +1,83 @@
+{
+  "paired_correct": true,
+  "producer_topologies": {
+    "one_producer_one_consumer": {
+      "decision": "reject",
+      "resources": {
+        "blocks_per_sm": 1,
+        "dynamic_shared_bytes": 82560,
+        "local_bytes_per_thread": 0,
+        "max_threads_per_block": 256,
+        "registers_per_thread": 255,
+        "static_shared_bytes": 0
+      },
+      "vs_serial": {
+        "max": 0.9615786780776263,
+        "min": 0.8100770738134075
+      }
+    },
+    "one_producer_two_consumers_same_cta": {
+      "decision": "reject_spills_and_slowdown",
+      "resources": {
+        "blocks_per_sm": 1,
+        "dynamic_shared_bytes": 99456,
+        "local_bytes_per_thread": 32,
+        "max_threads_per_block": 384,
+        "registers_per_thread": 168,
+        "static_shared_bytes": 0
+      },
+      "vs_serial": {
+        "max": 0.7226860289360738,
+        "min": 0.7226860289360738
+      }
+    },
+    "two_cta_multicast_attention_epoch": {
+      "decision": "reject",
+      "resources": {
+        "blocks_per_sm": 1,
+        "dynamic_shared_bytes": 82560,
+        "local_bytes_per_thread": 0,
+        "max_threads_per_block": 256,
+        "registers_per_thread": 255,
+        "static_shared_bytes": 0
+      },
+      "vs_independent_tma": {
+        "max": 0.9773439954179193,
+        "min": 0.9277575453432629
+      },
+      "vs_serial": {
+        "max": 0.712067512518088,
+        "min": 0.521618196406298
+      }
+    },
+    "two_cta_multicast_transport": {
+      "decision": "retain_transport_primitive",
+      "vs_independent_tma": {
+        "max": 0.9777231122195219,
+        "min": 0.9481746870311508
+      }
+    }
+  },
+  "recommendation": "integrate RS-PV into the lean 128-thread consumer-owned cp.async prefill path; do not build another producer-heavy TMA topology",
+  "schema": "streamattn.sm90_grouped_prefill_execution_state_summary.v1",
+  "serial_rs": {
+    "decision": "retain_rs_pv_dataflow",
+    "epoch_rs_vs_ss": {
+      "max": 1.4938180113034725,
+      "min": 1.1774931548982464
+    },
+    "pv_rs_vs_ss": {
+      "max": 1.0167660085074341,
+      "min": 1.006115982341524
+    },
+    "resources": {
+      "blocks_per_sm": 4,
+      "dynamic_shared_bytes": 49792,
+      "local_bytes_per_thread": 0,
+      "max_threads_per_block": 128,
+      "registers_per_thread": 123,
+      "static_shared_bytes": 0
+    }
+  },
+  "zero_local_bytes_except_rejected_dual_consumer": true
+}

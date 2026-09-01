@@ -513,6 +513,17 @@ by 223 registers per thread and 85,120 bytes of dynamic shared memory. It is a
 recorded negative canary, not a production route. See the
 [SM90 grouped WGMMA study](docs/sm90_grouped_gqa_prefill_wgmma_20260902.md).
 
+The execution-state follow-up found one reusable mechanism and closed three
+topologies. Register/shared PV improved the serial attention epoch by
+`1.177x-1.494x` over shared/shared PV. A fair producer-consumer TMA epoch,
+however, reached only `0.810x-0.962x` of the lean vectorized serial path; a
+same-CTA two-consumer version spilled and reached `0.723x`. Two-CTA TMA
+multicast preserved `0.948x-0.978x` of independent load throughput, but its
+complete attention epoch still reached only `0.522x-0.712x` of serial RS.
+StreamAttn therefore retains RS-PV and the multicast transport primitive while
+rejecting these producer-heavy attention schedules. See the [SM90 RS-PV
+execution-state study](docs/sm90_grouped_prefill_rs_pv_epoch_floor_20260902.md).
+
 For Blackwell, a separate architecture-native exact forward keeps compact GQA
 K/V in BSHD layout and uses TMA,
 `tcgen05` MMA, TMEM accumulators, streaming online softmax, query-tile causal
@@ -809,10 +820,12 @@ reproducible exact coverage rather than another isolated promotion:
    near uncertain phase boundaries.
 3. Expand B200 prefill through the compiler across G4/G8/G16, D64/D128/D256,
    FP16/BF16, causal/noncausal, and the short-M to long-M transition.
-4. Research a producer-specialized H100 multi-query-row prefill pipeline. The
-   exact natural-WGMMA one/two-consumer canaries reached at most `0.596x` of
-   Flash SDPA, so further consumer-symmetric tile tuning is closed. Any new
-   attempt must first prove TMA/consumer overlap and a viable register budget.
+4. Integrate the measured RS-PV dataflow into the lean 128-thread,
+   consumer-owned `cp.async` H100 prefill canary. Dedicated-producer TMA,
+   same-CTA dual-consumer TMA, and two-CTA multicast attention epochs are now
+   closed negative branches; multicast remains available as a transport
+   primitive for a different family. Require `>=0.90x` Flash SDPA before broad
+   tuning and close this grouped-prefill family if the canary misses that gate.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
 6. Extend the register-resident A100 D128 producer beyond the promoted

@@ -63,6 +63,7 @@ class LoadEngine(str, Enum):
     LDST = "ldst"
     CP_ASYNC = "cp_async"
     TMA = "tma"
+    TMA_MULTICAST = "tma_multicast"
 
 
 class MmaEngine(str, Enum):

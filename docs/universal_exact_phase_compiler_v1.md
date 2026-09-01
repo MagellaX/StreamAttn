@@ -168,3 +168,12 @@ and four B200 native losses against graph-captured baselines, routing each loss
 externally. See [the calibration report](universal_exact_calibration_20260828.md).
 The next stage fills SM80 and the remaining phase/feature cells while optimizing
 the measured negative boundaries.
+
+The physical schedule IR distinguishes ordinary `tma` from `tma_multicast`.
+The distinction is evidence-driven: on H100, two-CTA multicast K/V transport
+retained `0.948x-0.978x` of independent TMA throughput with exact outputs and
+zero spills, while the complete multicast attention epoch reached only
+`0.522x-0.712x` of the lean serial RS path. The compiler may reuse the transport
+primitive in a different family, but must retain the producer-heavy attention
+topology as a negative result. See the [SM90 RS-PV execution-state
+study](sm90_grouped_prefill_rs_pv_epoch_floor_20260902.md).

@@ -122,6 +122,13 @@ resource and instruction-overlap floor before another complete attention
 kernel is built. Until such a floor approaches parity, the exact phase
 compiler should keep these cells on the fastest correct external fallback.
 
+That follow-up floor is now complete. RS-PV improved the lean serial attention
+epoch, but one-producer/one-consumer TMA, same-CTA two-consumer TMA, and a
+two-CTA multicast attention epoch all lost to the vectorized 128-thread serial
+RS path. TMA multicast remains a viable transport primitive, not a promoted
+attention topology. See the [RS-PV execution-state
+study](sm90_grouped_prefill_rs_pv_epoch_floor_20260902.md).
+
 ## Artifacts
 
 ```text
