@@ -524,6 +524,21 @@ StreamAttn therefore retains RS-PV and the multicast transport primitive while
 rejecting these producer-heavy attention schedules. See the [SM90 RS-PV
 execution-state study](docs/sm90_grouped_prefill_rs_pv_epoch_floor_20260902.md).
 
+The resulting complete 128-thread consumer-owned kernel is the first positive
+Hopper grouped-prefill result. It combines double-buffered `cp.async` K loads,
+shared/shared QK WGMMA, exact FP32 online softmax, register/shared PV WGMMA, and
+direct output/LSE writes. The compiled kernel uses 168 registers per thread,
+65,536 bytes of dynamic shared memory, zero local memory, and allows three
+CTAs/SM. All 30 tested H100 B1/B2/B4, G4/G8, S512-S8192 cells passed output and
+sampled-LSE correctness. Eleven cells passed the strict paired performance gate:
+B1 at G4 S4K/S8K and G8 S2K/S4K/S8K; B2 at G4/G8 S4K/S8K; and B4 at G4/G8
+S8K. Their median speedups over graph-captured Flash SDPA range from `1.02x` to
+`1.18x`, while the new dataflow is roughly `1.69x-2.15x` faster than the prior
+complete shared/shared PV canary. These are phase-compiler candidates, not yet
+public auto-routes; short and medium losing cells remain on exact fallback. See
+[SM90 consumer-owned RS-PV grouped
+prefill](docs/sm90_grouped_rs_prefill_complete_20260902.md).
+
 For Blackwell, a separate architecture-native exact forward keeps compact GQA
 K/V in BSHD layout and uses TMA,
 `tcgen05` MMA, TMEM accumulators, streaming online softmax, query-tile causal
@@ -820,12 +835,11 @@ reproducible exact coverage rather than another isolated promotion:
    near uncertain phase boundaries.
 3. Expand B200 prefill through the compiler across G4/G8/G16, D64/D128/D256,
    FP16/BF16, causal/noncausal, and the short-M to long-M transition.
-4. Integrate the measured RS-PV dataflow into the lean 128-thread,
-   consumer-owned `cp.async` H100 prefill canary. Dedicated-producer TMA,
-   same-CTA dual-consumer TMA, and two-CTA multicast attention epochs are now
-   closed negative branches; multicast remains available as a transport
-   primitive for a different family. Require `>=0.90x` Flash SDPA before broad
-   tuning and close this grouped-prefill family if the canary misses that gate.
+4. Independently replay the 11 winning cells from the completed 30-cell H100
+   consumer-owned RS-PV prefill screen, then insert only replicated winners into
+   the exact phase database and guarded public dispatch. Expand that family
+   across query-head counts, GQA groups, D64/D256, FP16, noncausal attention,
+   and ragged lengths; keep every unmeasured or losing cell on exact fallback.
 5. Split native backward into query-owned dQ and KV-group-owned dK/dV families
    with deterministic partial reductions instead of global GQA atomics.
 6. Extend the register-resident A100 D128 producer beyond the promoted

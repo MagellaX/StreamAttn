@@ -1,0 +1,140 @@
+{
+  "capability": [
+    9,
+    0
+  ],
+  "device": "NVIDIA H100 80GB HBM3",
+  "gate": {
+    "all_correct": true,
+    "canary_pass": false,
+    "decision": "close_h100_grouped_prefill_family",
+    "minimum_cell_median_speedup": 0.531818951614381,
+    "promotion_pass": false,
+    "zero_local_bytes": true
+  },
+  "provider": "modal",
+  "rows": [
+    {
+      "baseline": "torch_flash_sdpa_cuda_graph",
+      "batch": 1,
+      "canary_pass": false,
+      "candidate": "sm90_grouped_m64n64_cp_async_rs_pv_prefill_canary",
+      "causal": true,
+      "control": "sm90_grouped_m64n64x2_wgmma_prefill_canary",
+      "dtype": "bfloat16",
+      "group_size": 4,
+      "head_dim": 128,
+      "kv_heads": 4,
+      "max_abs_error": 0.00390625,
+      "median_baseline_ms": 0.009785600006580353,
+      "median_candidate_ms": 0.018412800133228303,
+      "median_control_ms": 0.02348480001091957,
+      "median_speedup_vs_flash": 0.531818951614381,
+      "median_speedup_vs_ss": 1.2766129015675731,
+      "minimum_speedup_vs_flash": 0.521490901036581,
+      "paired_wins_vs_flash": 0,
+      "promotion_pass": false,
+      "provider": "modal",
+      "q_heads": 16,
+      "relative_l2_error": 0.0007912830333225429,
+      "resources": {
+        "blocks_per_sm": 3,
+        "dynamic_shared_bytes": 65536,
+        "local_bytes_per_thread": 0,
+        "max_threads_per_block": 128,
+        "registers_per_thread": 168,
+        "static_shared_bytes": 0
+      },
+      "rs_vs_ss_max_abs": 0.000244140625,
+      "sampled_lse_max_abs_error": 4.76837158203125e-07,
+      "sampled_lse_positions": [
+        0,
+        31,
+        63,
+        64,
+        127
+      ],
+      "sequence_length": 128,
+      "strict_correct": true,
+      "trials": [
+        {
+          "flash_ms": 0.009939199686050415,
+          "flash_over_rs": 0.521490901036581,
+          "rs_ms": 0.01905920058488846,
+          "ss_ms": 0.023705600202083586,
+          "ss_over_rs": 1.2437877494651657
+        },
+        {
+          "flash_ms": 0.00963200032711029,
+          "flash_over_rs": 0.542147002192181,
+          "rs_ms": 0.017766399681568144,
+          "ss_ms": 0.023263999819755556,
+          "ss_over_rs": 1.3094380536699808
+        }
+      ],
+      "zero_local_bytes": true
+    },
+    {
+      "baseline": "torch_flash_sdpa_cuda_graph",
+      "batch": 1,
+      "canary_pass": false,
+      "candidate": "sm90_grouped_m64n64_cp_async_rs_pv_prefill_canary",
+      "causal": true,
+      "control": "sm90_grouped_m64n64x2_wgmma_prefill_canary",
+      "dtype": "bfloat16",
+      "group_size": 8,
+      "head_dim": 128,
+      "kv_heads": 2,
+      "max_abs_error": 0.00390625,
+      "median_baseline_ms": 0.009846400097012521,
+      "median_candidate_ms": 0.018159999698400497,
+      "median_control_ms": 0.023110400140285495,
+      "median_speedup_vs_flash": 0.5425769521002266,
+      "median_speedup_vs_ss": 1.2737383089001737,
+      "minimum_speedup_vs_flash": 0.5312180140856584,
+      "paired_wins_vs_flash": 0,
+      "promotion_pass": false,
+      "provider": "modal",
+      "q_heads": 16,
+      "relative_l2_error": 0.0008175617549568415,
+      "resources": {
+        "blocks_per_sm": 3,
+        "dynamic_shared_bytes": 65536,
+        "local_bytes_per_thread": 0,
+        "max_threads_per_block": 128,
+        "registers_per_thread": 168,
+        "static_shared_bytes": 0
+      },
+      "rs_vs_ss_max_abs": 0.001953125,
+      "sampled_lse_max_abs_error": 9.5367431640625e-07,
+      "sampled_lse_positions": [
+        0,
+        31,
+        63,
+        64,
+        127
+      ],
+      "sequence_length": 128,
+      "strict_correct": true,
+      "trials": [
+        {
+          "flash_ms": 0.009964799880981446,
+          "flash_over_rs": 0.5312180140856584,
+          "rs_ms": 0.01875839978456497,
+          "ss_ms": 0.023244799673557283,
+          "ss_over_rs": 1.2391675164468916
+        },
+        {
+          "flash_ms": 0.009728000313043595,
+          "flash_over_rs": 0.5539358901147947,
+          "rs_ms": 0.017561599612236023,
+          "ss_ms": 0.022976000607013703,
+          "ss_over_rs": 1.3083091013534556
+        }
+      ],
+      "zero_local_bytes": true
+    }
+  ],
+  "schema": "streamattn.sm90_grouped_rs_prefill_canary.v1",
+  "torch": "2.7.1+cu128"
+}

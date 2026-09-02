@@ -19,6 +19,8 @@ RESOURCE_FIELDS = (
     "max_threads_per_block",
 )
 
+RS_RESOURCE_FIELDS = RESOURCE_FIELDS + ("local_bytes_per_thread",)
+
 
 def supports_grouped_wgmma_prefill(
     query: torch.Tensor,
@@ -48,6 +50,18 @@ def supports_grouped_wgmma_prefill(
     return torch.cuda.get_device_capability(query.device) == (9, 0)
 
 
+def supports_grouped_rs_prefill(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+) -> bool:
+    """Return whether tensors match the lean D128 RS-PV H100 canary."""
+
+    return supports_grouped_wgmma_prefill(query, key, value) and int(
+        query.shape[1]
+    ) % 64 == 0
+
+
 def decode_grouped_prefill_resources(values: torch.Tensor) -> dict[str, int]:
     """Decode the compact CUDA resource vector returned by the extension."""
 
@@ -57,6 +71,17 @@ def decode_grouped_prefill_resources(values: torch.Tensor) -> dict[str, int]:
             f"expected {len(RESOURCE_FIELDS)} resource values, got {len(raw)}"
         )
     return dict(zip(RESOURCE_FIELDS, raw))
+
+
+def decode_grouped_rs_prefill_resources(values: torch.Tensor) -> dict[str, int]:
+    """Decode the RS-PV canary resource vector, including local memory."""
+
+    raw = [int(value) for value in values.cpu().tolist()]
+    if len(raw) != len(RS_RESOURCE_FIELDS):
+        raise ValueError(
+            f"expected {len(RS_RESOURCE_FIELDS)} RS resource values, got {len(raw)}"
+        )
+    return dict(zip(RS_RESOURCE_FIELDS, raw))
 
 
 @dataclass
@@ -132,9 +157,86 @@ class GroupedWgmmaPrefillPlan:
         )
 
 
+@dataclass
+class GroupedRSPrefillPlan:
+    """Allocation-free plan for consumer-owned cp.async and register PV."""
+
+    query: torch.Tensor
+    key: torch.Tensor
+    value: torch.Tensor
+    output: torch.Tensor
+    lse: torch.Tensor
+    extension: Any
+    launch: Any
+    backend: str = "sm90_grouped_m64n64_cp_async_rs_pv_prefill_canary"
+
+    @classmethod
+    def build(
+        cls,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        *,
+        output: Optional[torch.Tensor] = None,
+        lse: Optional[torch.Tensor] = None,
+        cutlass_root: Optional[Path] = None,
+        build_dir: Optional[Path] = None,
+        compile_verbose: bool = False,
+    ) -> "GroupedRSPrefillPlan":
+        if not supports_grouped_rs_prefill(query, key, value):
+            raise ValueError("unsupported SM90 grouped RS-prefill tensors")
+        if output is None:
+            output = torch.empty_like(query)
+        if (
+            output.shape != query.shape
+            or output.dtype != query.dtype
+            or output.device != query.device
+            or not output.is_contiguous()
+        ):
+            raise ValueError("output must be a contiguous tensor matching query")
+        expected_lse = (query.shape[0], query.shape[1], query.shape[2])
+        if lse is None:
+            lse = torch.empty(expected_lse, device=query.device, dtype=torch.float32)
+        if (
+            tuple(lse.shape) != expected_lse
+            or lse.dtype != torch.float32
+            or lse.device != query.device
+            or not lse.is_contiguous()
+        ):
+            raise ValueError("lse must be contiguous FP32 [B,S,Hq]")
+        extension = compile_transposed_gqa_exact_extension(
+            cutlass_root=cutlass_root,
+            build_dir=build_dir,
+            head_dim=int(query.shape[-1]),
+            verbose=compile_verbose,
+        )
+        return cls(
+            query=query,
+            key=key,
+            value=value,
+            output=output,
+            lse=lse,
+            extension=extension,
+            launch=extension.grouped_rs_prefill_out,
+        )
+
+    def run(self) -> torch.Tensor:
+        self.launch(self.query, self.key, self.value, self.output, self.lse)
+        return self.output
+
+    def resource_info(self) -> dict[str, int]:
+        return decode_grouped_rs_prefill_resources(
+            self.extension.grouped_rs_prefill_resource_info()
+        )
+
+
 __all__ = [
+    "GroupedRSPrefillPlan",
     "GroupedWgmmaPrefillPlan",
     "RESOURCE_FIELDS",
+    "RS_RESOURCE_FIELDS",
     "decode_grouped_prefill_resources",
+    "decode_grouped_rs_prefill_resources",
+    "supports_grouped_rs_prefill",
     "supports_grouped_wgmma_prefill",
 ]

@@ -19,6 +19,9 @@
 - [SM90 Natural-Orientation Grouped GQA Prefill](sm90_grouped_gqa_prefill_wgmma_20260902.md):
   exact one/two-consumer WGMMA canaries, the H100 resource boundary, and the
   evidence for closing consumer-symmetric prefill tuning.
+- [SM90 Consumer-Owned RS-PV Grouped Prefill](sm90_grouped_rs_prefill_complete_20260902.md):
+  the exact 128-thread complete kernel, independent Hopper canary, 30-cell H100
+  promotion screen, and scoped long-sequence phase boundary.
 
 ## Parameters Explained
 

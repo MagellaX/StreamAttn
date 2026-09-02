@@ -148,6 +148,15 @@ promotion: > 1.00x median and >= 1.00x minimum paired ratio
 If that canary does not reach `0.90x`, close this H100 grouped-prefill family.
 Do not add another producer warpgroup, stage-count sweep, or cluster variant.
 
+## Complete-Kernel Outcome
+
+The proposed consumer-owned canary was subsequently implemented. It passed the
+exactness/resource gate, improved the prior complete shared/shared PV kernel by
+roughly `1.69x-2.15x`, and produced 11 strict winners in a 30-cell H100 phase
+screen. The resulting scoped boundary and remaining replication requirement are
+recorded in [SM90 consumer-owned RS-PV grouped
+prefill](sm90_grouped_rs_prefill_complete_20260902.md).
+
 ## Artifacts
 
 ```text

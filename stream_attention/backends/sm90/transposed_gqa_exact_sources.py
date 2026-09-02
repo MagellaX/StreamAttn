@@ -48,6 +48,15 @@ void streamattn_grouped_wgmma_prefill_out_cuda(
 
 torch::Tensor streamattn_grouped_wgmma_prefill_resource_info_cuda();
 
+void streamattn_grouped_rs_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor lse);
+
+torch::Tensor streamattn_grouped_rs_prefill_resource_info_cuda();
+
 void streamattn_transposed_wgmma_exact_partial_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_cache,
@@ -234,6 +243,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("grouped_wgmma_prefill_resource_info",
         &streamattn_grouped_wgmma_prefill_resource_info_cuda,
         "Compiled resources for natural m64n64 grouped exact causal prefill");
+  m.def("grouped_rs_prefill_out",
+        &streamattn_grouped_rs_prefill_out_cuda,
+        "StreamAttn consumer-owned cp.async SS-QK/RS-PV exact causal prefill");
+  m.def("grouped_rs_prefill_resource_info",
+        &streamattn_grouped_rs_prefill_resource_info_cuda,
+        "Compiled resources for consumer-owned grouped RS-PV prefill");
   m.def("exact_partial_out", &streamattn_transposed_wgmma_exact_partial_out_cuda,
         "StreamAttn transposed m64n8k16 exact attention partial states");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
@@ -332,10 +347,26 @@ using PrefillTiledMma = decltype(make_tiled_mma(
     SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::K, GMMA::Major::K>{}));
 using PrefillTiledMmaO = decltype(make_tiled_mma(
     SM90_64x64x16_F32BF16BF16_SS<GMMA::Major::MN, GMMA::Major::MN>{}));
+using PrefillRSTileShapePV =
+    Shape<Int<kPrefillRowsPerWarpGroup>, Int<kHeadDim>, Int<kBlockM>>;
+using PrefillRSTiledMmaPV = decltype(make_tiled_mma(
+    GMMA::rs_op_selector<
+        Element,
+        Element,
+        Accum,
+        PrefillRSTileShapePV,
+        GMMA::Major::K,
+        GMMA::Major::MN>()));
 using SmemLayoutV = SmemLayoutK;
 using SmemLayoutVt = decltype(composition(
     SmemLayoutV{},
     make_layout(Shape<Int<kHeadDim>, Int<kBlockM>>{}, GenRowMajor{})));
+using PrefillRSSmemLayoutKStages = decltype(tile_to_shape(
+    GMMA::Layout_K_SW128_Atom<Element>{},
+    Shape<Int<kBlockM>, Int<kHeadDim>, _2>{}));
+using PrefillRSSmemLayoutV = decltype(tile_to_shape(
+    GMMA::Layout_MN_SW128_Atom<Element>{},
+    Shape<Int<kHeadDim>, Int<kBlockM>>{}, Step<_2, _1>{}));
 // PV consumes P as an [N=8,K=64] Major-MN operand.  The wider swizzled
 // atoms require N >= 16/32/64, while the interleaved atom is canonical for
 // the native m64n8 WGMMA.  Expose a transposed [M=64,N=8] alias so the QK
@@ -401,6 +432,12 @@ struct alignas(128) GroupedPrefillSharedStorage {
   Accum row_sum[kPrefillConsumerGroups][kPrefillRowsPerWarpGroup];
 };
 
+struct alignas(128) GroupedRSPrefillSharedStorage {
+  cute::array_aligned<Element, cute::cosize_v<PrefillSmemLayoutQ>> q;
+  cute::array_aligned<Element, cute::cosize_v<PrefillRSSmemLayoutKStages>> k;
+  cute::array_aligned<Element, cute::cosize_v<PrefillRSSmemLayoutV>> v;
+};
+
 using WsPipelineK = cutlass::PipelineAsync<kPipelineStages>;
 using WsPipelineV = cutlass::PipelineAsync<1>;
 
@@ -418,6 +455,10 @@ using GmemCopyK = decltype(make_tiled_copy(
     Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, Element>{},
     Layout<Shape<_16, _8>, Stride<_8, _1>>{},
     Layout<Shape<_1, _8>>{}));
+using GmemCopyPrefillRSV = decltype(make_tiled_copy(
+    Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, Element>{},
+    Layout<Shape<_8, _16>, Stride<_1, _8>>{},
+    Layout<Shape<_8, _1>>{}));
 
 template <typename To, typename Engine, typename Layout>
 __forceinline__ __device__ auto streamattn_convert_type(Tensor<Engine, Layout> const& tensor) {
@@ -427,6 +468,21 @@ __forceinline__ __device__ auto streamattn_convert_type(Tensor<Engine, Layout> c
   auto fragment = convert_op(
       *reinterpret_cast<const cutlass::Array<From, numel>*>(tensor.data()));
   return make_tensor(make_rmem_ptr<To>(&fragment), tensor.layout());
+}
+
+template <typename MmaTraits, typename Layout0>
+__forceinline__ __device__ auto streamattn_convert_layout_acc_aregs(
+    Layout0 layout) {
+  static_assert(decltype(rank<0>(layout))::value == 3);
+  static_assert(decltype(size<0, 0>(layout))::value == 2);
+  static_assert(decltype(size<0, 1>(layout))::value == 2);
+  static_assert(sizeof(typename MmaTraits::ValTypeA) == 2);
+  auto divided = logical_divide(get<0, 2>(layout), Tile<_2>{});
+  return make_layout(
+      make_layout(
+          get<0, 0>(layout), get<0, 1>(layout), get<0, 0>(divided)),
+      get<1>(layout),
+      coalesce(make_layout(get<0, 1>(divided), get<2>(layout))));
 }
 
 template <bool Transposed = false, typename Layout0>
@@ -460,6 +516,18 @@ __forceinline__ __device__ Accum streamattn_group_sum(Accum value) {
   value += __shfl_xor_sync(mask, value, 16);
   value += __shfl_xor_sync(mask, value, 8);
   value += __shfl_xor_sync(mask, value, 4);
+  return value;
+}
+
+__forceinline__ __device__ Accum streamattn_quad_max(Accum value) {
+  value = fmaxf(value, __shfl_xor_sync(0xffffffffu, value, 2));
+  value = fmaxf(value, __shfl_xor_sync(0xffffffffu, value, 1));
+  return value;
+}
+
+__forceinline__ __device__ Accum streamattn_quad_sum(Accum value) {
+  value += __shfl_xor_sync(0xffffffffu, value, 2);
+  value += __shfl_xor_sync(0xffffffffu, value, 1);
   return value;
 }
 
@@ -835,6 +903,287 @@ void streamattn_grouped_wgmma_prefill_kernel(
                 tOrORowCol(row, col)
                 / storage.row_sum[consumer_group][query_row])
             : Element(0.0f);
+      }
+    }
+  }
+}
+
+__global__ __launch_bounds__(128)
+void streamattn_grouped_rs_prefill_kernel(
+    const Element* __restrict__ query,
+    const Element* __restrict__ key,
+    const Element* __restrict__ value,
+    Element* __restrict__ output,
+    Accum* __restrict__ lse,
+    int batch_size,
+    int sequence_length,
+    int q_heads,
+    int kv_heads,
+    int group_size) {
+  const int query_positions = kPrefillRowsPerWarpGroup / group_size;
+  const int query_tiles =
+      (sequence_length + query_positions - 1) / query_positions;
+  const int work = blockIdx.x;
+  const int work_group = work / query_tiles;
+  const int query_tile = work - work_group * query_tiles;
+  if (work_group >= batch_size * kv_heads) {
+    return;
+  }
+  const int batch = work_group / kv_heads;
+  const int kv_head = work_group - batch * kv_heads;
+  const int query_begin = query_tile * query_positions;
+  const int query_end = min(sequence_length, query_begin + query_positions);
+  const int key_tiles = (query_end + kBlockM - 1) / kBlockM;
+
+  extern __shared__ __align__(128) unsigned char shared_bytes[];
+  auto& storage =
+      *reinterpret_cast<GroupedRSPrefillSharedStorage*>(shared_bytes);
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr = storage.k.data() + cute::cosize_v<SmemLayoutK>;
+  Tensor sQ = make_tensor(
+      make_smem_ptr(storage.q.data()), PrefillSmemLayoutQ{});
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV = make_tensor(
+      make_smem_ptr(storage.v.data()), PrefillRSSmemLayoutV{});
+
+  for (int idx = threadIdx.x;
+       idx < kPrefillRowsPerWarpGroup * kHeadDim;
+       idx += 128) {
+    const int local_query_row = idx / kHeadDim;
+    const int dim = idx - local_query_row * kHeadDim;
+    const int query_offset = local_query_row / group_size;
+    const int head_offset = local_query_row - query_offset * group_size;
+    const int query_position = query_begin + query_offset;
+    const int q_head = kv_head * group_size + head_offset;
+    Element item = Element(0.0f);
+    if (query_position < sequence_length) {
+      const int64_t source =
+          ((static_cast<int64_t>(batch) * sequence_length + query_position)
+               * q_heads
+           + q_head)
+              * kHeadDim
+          + dim;
+      item = query[source];
+    }
+    sQ(local_query_row, dim) = item;
+  }
+  cutlass::arch::fence_view_async_shared();
+  __syncthreads();
+
+  PrefillTiledMma tiled_qk;
+  auto thread_qk = tiled_qk.get_thread_slice(threadIdx.x);
+  Tensor rQ = thread_qk.partition_fragment_A(sQ);
+  Tensor rK0 = thread_qk.partition_fragment_B(sK0);
+  Tensor rK1 = thread_qk.partition_fragment_B(sK1);
+  Tensor cScores = make_identity_tensor(
+      Shape<Int<kPrefillRowsPerWarpGroup>, Int<kBlockM>>{});
+  Tensor tScScores = thread_qk.partition_C(cScores);
+  Tensor tScScoresRowCol = make_tensor(
+      tScScores.data(), streamattn_acc_rowcol<false>(tScScores.layout()));
+
+  PrefillRSTiledMmaPV tiled_pv;
+  auto thread_pv = tiled_pv.get_thread_slice(threadIdx.x);
+  Tensor rV = thread_pv.partition_fragment_B(sV);
+  Tensor output_acc = partition_fragment_C(
+      tiled_pv,
+      Shape<Int<kPrefillRowsPerWarpGroup>, Int<kHeadDim>>{});
+  clear(output_acc);
+  Tensor output_rows = make_tensor(
+      output_acc.data(), streamattn_acc_rowcol<false>(output_acc.layout()));
+  Tensor cOutput = make_identity_tensor(
+      Shape<Int<kPrefillRowsPerWarpGroup>, Int<kHeadDim>>{});
+  Tensor tOcOutput = thread_pv.partition_C(cOutput);
+  Tensor tOcOutputRowCol = make_tensor(
+      tOcOutput.data(), streamattn_acc_rowcol<false>(tOcOutput.layout()));
+
+  constexpr int kRowsPerThread = decltype(size<0>(output_rows))::value;
+  Accum row_max[kRowsPerThread];
+  Accum row_sum[kRowsPerThread];
+  CUTE_UNROLL
+  for (int row = 0; row < kRowsPerThread; ++row) {
+    row_max[row] = -INFINITY;
+    row_sum[row] = 0.0f;
+  }
+
+  GmemCopyK copy_k;
+  auto thread_copy_k = copy_k.get_thread_slice(threadIdx.x);
+  Tensor tK0sK0 = thread_copy_k.partition_D(sK0);
+  Tensor tK1sK1 = thread_copy_k.partition_D(sK1);
+  GmemCopyPrefillRSV copy_v;
+  auto thread_copy_v = copy_v.get_thread_slice(threadIdx.x);
+  Tensor tVsV = thread_copy_v.partition_D(sV);
+
+  auto copy_k_tile = [&](int tile, auto destination) {
+    Tensor global = make_tensor(
+        make_gmem_ptr(
+            key
+            + ((static_cast<int64_t>(batch) * sequence_length
+                + tile * kBlockM)
+                   * kv_heads
+               + kv_head)
+                * kHeadDim),
+        Shape<Int<kBlockM>, Int<kHeadDim>>{},
+        make_stride(kv_heads * kHeadDim, _1{}));
+    cute::copy(
+        copy_k, thread_copy_k.partition_S(global), destination);
+  };
+  auto copy_v_tile = [&](int tile) {
+    Tensor global = make_tensor(
+        make_gmem_ptr(
+            value
+            + ((static_cast<int64_t>(batch) * sequence_length
+                + tile * kBlockM)
+                   * kv_heads
+               + kv_head)
+                * kHeadDim),
+        Shape<Int<kHeadDim>, Int<kBlockM>>{},
+        make_stride(_1{}, kv_heads * kHeadDim));
+    cute::copy(copy_v, thread_copy_v.partition_S(global), tVsV);
+  };
+
+  if (key_tiles > 0) {
+    copy_k_tile(0, tK0sK0);
+    cute::cp_async_fence();
+    cute::cp_async_wait<0>();
+    __syncthreads();
+  }
+
+  constexpr Accum kScaleLog2 = 0.12751743082459868f;
+  int read_pipe = 0;
+  for (int tile = 0; tile < key_tiles; ++tile) {
+    const int next_tile = tile + 1;
+    const int write_pipe = read_pipe ^ 1;
+    if (next_tile < key_tiles) {
+      if (write_pipe == 0) {
+        copy_k_tile(next_tile, tK0sK0);
+      } else {
+        copy_k_tile(next_tile, tK1sK1);
+      }
+      cute::cp_async_fence();
+    }
+
+    Tensor scores = partition_fragment_C(
+        tiled_qk,
+        Shape<Int<kPrefillRowsPerWarpGroup>, Int<kBlockM>>{});
+    clear(scores);
+    warpgroup_fence_operand(scores);
+    warpgroup_arrive();
+    if (read_pipe == 0) {
+      cute::gemm(tiled_qk, rQ, rK0, scores);
+    } else {
+      cute::gemm(tiled_qk, rQ, rK1, scores);
+    }
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(scores);
+
+    copy_v_tile(tile);
+    cute::cp_async_fence();
+
+    Tensor score_rows = make_tensor(
+        scores.data(), streamattn_acc_rowcol<false>(scores.layout()));
+    static_assert(
+        kRowsPerThread == decltype(size<0>(score_rows))::value,
+        "QK and PV fragments must expose the same query rows");
+    CUTE_UNROLL
+    for (int row = 0; row < size<0>(score_rows); ++row) {
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(score_rows); ++col) {
+        const auto coordinate = tScScoresRowCol(row, col);
+        const int local_query_row = int(get<0>(coordinate));
+        const int token = int(get<1>(coordinate));
+        const int query_position =
+            query_begin + local_query_row / group_size;
+        const int key_position = tile * kBlockM + token;
+        if (query_position >= sequence_length ||
+            key_position > query_position ||
+            key_position >= sequence_length) {
+          score_rows(row, col) = -INFINITY;
+        }
+      }
+    }
+
+    CUTE_UNROLL
+    for (int row = 0; row < kRowsPerThread; ++row) {
+      Accum tile_max = -INFINITY;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(score_rows); ++col) {
+        tile_max = fmaxf(tile_max, score_rows(row, col));
+      }
+      tile_max = streamattn_quad_max(tile_max);
+      const Accum next_max = fmaxf(row_max[row], tile_max);
+      const Accum alpha = row_max[row] == -INFINITY
+          ? 0.0f
+          : exp2f((row_max[row] - next_max) * kScaleLog2);
+      row_max[row] = next_max;
+      row_sum[row] *= alpha;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(output_rows); ++col) {
+        output_rows(row, col) *= alpha;
+      }
+
+      Accum local_sum = 0.0f;
+      const Accum max_scaled = next_max * kScaleLog2;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(score_rows); ++col) {
+        const Accum probability = next_max == -INFINITY
+            ? 0.0f
+            : exp2f(score_rows(row, col) * kScaleLog2 - max_scaled);
+        score_rows(row, col) = probability;
+        local_sum += probability;
+      }
+      row_sum[row] += streamattn_quad_sum(local_sum);
+    }
+
+    Tensor p_acc = make_tensor(
+        scores.data(),
+        streamattn_convert_layout_acc_aregs<PrefillRSTiledMmaPV>(
+            scores.layout()));
+    Tensor p_regs = streamattn_convert_type<Element>(p_acc);
+    cute::cp_async_wait<0>();
+    __syncthreads();
+    warpgroup_fence_operand(p_regs);
+    warpgroup_fence_operand(output_acc);
+    warpgroup_arrive();
+    cute::gemm(tiled_pv, p_regs, rV, output_acc);
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(p_regs);
+    warpgroup_fence_operand(output_acc);
+    __syncthreads();
+    read_pipe = write_pipe;
+  }
+
+  constexpr Accum kLn2 = 0.6931471805599453f;
+  CUTE_UNROLL
+  for (int row = 0; row < size<0>(output_rows); ++row) {
+    CUTE_UNROLL
+    for (int col = 0; col < size<1>(output_rows); ++col) {
+      const auto coordinate = tOcOutputRowCol(row, col);
+      const int local_query_row = int(get<0>(coordinate));
+      const int dim = int(get<1>(coordinate));
+      const int query_offset = local_query_row / group_size;
+      const int head_offset = local_query_row - query_offset * group_size;
+      const int query_position = query_begin + query_offset;
+      if (query_position < sequence_length) {
+        const int q_head = kv_head * group_size + head_offset;
+        const int64_t destination =
+            ((static_cast<int64_t>(batch) * sequence_length + query_position)
+                 * q_heads
+             + q_head)
+                * kHeadDim
+            + dim;
+        output[destination] = row_sum[row] > 0.0f
+            ? Element(output_rows(row, col) / row_sum[row])
+            : Element(0.0f);
+        if (dim == 0) {
+          lse[(static_cast<int64_t>(batch) * sequence_length + query_position)
+                  * q_heads
+              + q_head] = row_sum[row] > 0.0f
+              ? (row_max[row] * kScaleLog2 + log2f(row_sum[row])) * kLn2
+              : -INFINITY;
+        }
       }
     }
   }
@@ -2644,6 +2993,29 @@ torch::Tensor streamattn_grouped_wgmma_prefill_resource_info_cuda() {
       torch::TensorOptions().dtype(torch::kInt64));
 }
 
+torch::Tensor streamattn_grouped_rs_prefill_resource_info_cuda() {
+  auto kernel = streamattn_grouped_rs_prefill_kernel;
+  const int shared_bytes =
+      static_cast<int>(sizeof(GroupedRSPrefillSharedStorage));
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_bytes));
+  cudaFuncAttributes attributes{};
+  C10_CUDA_CHECK(cudaFuncGetAttributes(&attributes, kernel));
+  int blocks = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &blocks, kernel, 128, shared_bytes));
+  return torch::tensor(
+      {
+          static_cast<int64_t>(attributes.numRegs),
+          static_cast<int64_t>(attributes.sharedSizeBytes),
+          static_cast<int64_t>(shared_bytes),
+          static_cast<int64_t>(blocks),
+          static_cast<int64_t>(attributes.maxThreadsPerBlock),
+          static_cast<int64_t>(attributes.localSizeBytes),
+      },
+      torch::TensorOptions().dtype(torch::kInt64));
+}
+
 void streamattn_grouped_wgmma_prefill_out_cuda(
     torch::Tensor query,
     torch::Tensor key,
@@ -2707,6 +3079,83 @@ void streamattn_grouped_wgmma_prefill_out_cuda(
       kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_bytes));
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   kernel<<<batch_size * kv_heads * query_tiles, 256, shared_bytes, stream>>>(
+      reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(key.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(value.data_ptr<at::BFloat16>()),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      lse.data_ptr<float>(),
+      batch_size,
+      sequence_length,
+      q_heads,
+      kv_heads,
+      group_size);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_grouped_rs_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor key,
+    torch::Tensor value,
+    torch::Tensor output,
+    torch::Tensor lse) {
+  TORCH_CHECK(
+      query.is_cuda() && key.is_cuda() && value.is_cuda() &&
+          output.is_cuda() && lse.is_cuda(),
+      "grouped RS prefill tensors must be CUDA tensors");
+  TORCH_CHECK(
+      query.is_contiguous() && key.is_contiguous() && value.is_contiguous() &&
+          output.is_contiguous() && lse.is_contiguous(),
+      "grouped RS prefill tensors must be contiguous");
+  TORCH_CHECK(
+      query.scalar_type() == at::ScalarType::BFloat16 &&
+          key.scalar_type() == at::ScalarType::BFloat16 &&
+          value.scalar_type() == at::ScalarType::BFloat16 &&
+          output.scalar_type() == at::ScalarType::BFloat16,
+      "grouped RS prefill Q/K/V/output must use bf16");
+  TORCH_CHECK(
+      lse.scalar_type() == at::ScalarType::Float,
+      "grouped RS prefill LSE must use fp32");
+  TORCH_CHECK(
+      query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
+      "grouped RS prefill Q/K/V must have shape [B,S,H,D]");
+  TORCH_CHECK(key.sizes() == value.sizes(), "grouped RS K/V shapes must match");
+  TORCH_CHECK(
+      query.size(0) == key.size(0) && query.size(1) == key.size(1) &&
+          query.size(3) == key.size(3),
+      "grouped RS Q/K/V batch, sequence, and head dimensions must match");
+  TORCH_CHECK(
+      kHeadDim == 128 && query.size(3) == kHeadDim,
+      "grouped RS prefill is specialized for D128");
+  const int batch_size = static_cast<int>(query.size(0));
+  const int sequence_length = static_cast<int>(query.size(1));
+  const int q_heads = static_cast<int>(query.size(2));
+  const int kv_heads = static_cast<int>(key.size(2));
+  TORCH_CHECK(
+      batch_size > 0 && sequence_length > 0 && sequence_length % kBlockM == 0 &&
+          kv_heads > 0 && q_heads % kv_heads == 0,
+      "grouped RS prefill requires positive dimensions, S divisible by 64, "
+      "and integral GQA groups");
+  const int group_size = q_heads / kv_heads;
+  TORCH_CHECK(
+      group_size == 4 || group_size == 8,
+      "grouped RS prefill currently supports G4 or G8");
+  TORCH_CHECK(
+      output.sizes() == query.sizes(),
+      "grouped RS prefill output must match query shape");
+  TORCH_CHECK(
+      lse.sizes() == torch::IntArrayRef({batch_size, sequence_length, q_heads}),
+      "grouped RS prefill LSE must have shape [B,S,Hq]");
+
+  const int query_positions = kPrefillRowsPerWarpGroup / group_size;
+  const int query_tiles =
+      (sequence_length + query_positions - 1) / query_positions;
+  const int shared_bytes =
+      static_cast<int>(sizeof(GroupedRSPrefillSharedStorage));
+  auto kernel = streamattn_grouped_rs_prefill_kernel;
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared_bytes));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  kernel<<<batch_size * kv_heads * query_tiles, 128, shared_bytes, stream>>>(
       reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
       reinterpret_cast<const Element*>(key.data_ptr<at::BFloat16>()),
       reinterpret_cast<const Element*>(value.data_ptr<at::BFloat16>()),
