@@ -65,6 +65,24 @@ void streamattn_transposed_wgmma_exact_partial_out_cuda(
     torch::Tensor partial_lse,
     int64_t num_splits);
 
+void streamattn_transposed_wgmma_micro_prefill_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits);
+
+void streamattn_natural_wgmma_micro_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits);
+
 void streamattn_transposed_wgmma_exact_merge_out_cuda(
     torch::Tensor partial_o,
     torch::Tensor partial_lse,
@@ -251,6 +269,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Compiled resources for consumer-owned grouped RS-PV prefill");
   m.def("exact_partial_out", &streamattn_transposed_wgmma_exact_partial_out_cuda,
         "StreamAttn transposed m64n8k16 exact attention partial states");
+  m.def("micro_prefill_out", &streamattn_transposed_wgmma_micro_prefill_out_cuda,
+        "StreamAttn transposed GQA exact micro-prefill with split-state merge");
+  m.def("natural_micro_prefill_out", &streamattn_natural_wgmma_micro_prefill_out_cuda,
+        "StreamAttn natural small-M GQA exact micro-prefill");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
         "StreamAttn exact split-state merge");
   m.def("exact_merge_warp_out", &streamattn_transposed_wgmma_exact_merge_warp_out_cuda,
@@ -1190,6 +1212,351 @@ void streamattn_grouped_rs_prefill_kernel(
 }
 
 __global__ __launch_bounds__(128)
+void streamattn_natural_wgmma_micro_prefill_partial_kernel(
+    const Element* __restrict__ query,
+    const Element* __restrict__ key,
+    const Element* __restrict__ value,
+    Accum* __restrict__ partial_o,
+    Accum* __restrict__ partial_lse,
+    int batch_size,
+    int query_length,
+    int kv_length,
+    int q_heads,
+    int kv_heads,
+    int group_size,
+    int num_splits) {
+  constexpr int kQueryRows = kPrefillRowsPerWarpGroup;
+  const int query_positions_per_tile = kQueryRows / group_size;
+  const int query_tiles =
+      (query_length + query_positions_per_tile - 1) / query_positions_per_tile;
+  const int work = blockIdx.x;
+  const int work_group = work / num_splits;
+  const int split = work - work_group * num_splits;
+  if (work_group >= batch_size * kv_heads * query_tiles) {
+    return;
+  }
+  const int batch_kv_group = work_group / query_tiles;
+  const int query_tile = work_group - batch_kv_group * query_tiles;
+  const int batch = batch_kv_group / kv_heads;
+  const int kv_head = batch_kv_group - batch * kv_heads;
+  const int query_begin = query_tile * query_positions_per_tile;
+  const int num_kv_tiles = kv_length / kBlockM;
+  const int tiles_per_split =
+      (num_kv_tiles + num_splits - 1) / num_splits;
+  const int tile_begin = split * tiles_per_split;
+  const int tile_end = min(num_kv_tiles, tile_begin + tiles_per_split);
+
+  extern __shared__ __align__(128) unsigned char shared_bytes[];
+  auto& storage =
+      *reinterpret_cast<GroupedRSPrefillSharedStorage*>(shared_bytes);
+  Element* k0_ptr = storage.k.data();
+  Element* k1_ptr = storage.k.data() + cute::cosize_v<SmemLayoutK>;
+  Tensor sQ = make_tensor(
+      make_smem_ptr(storage.q.data()), PrefillSmemLayoutQ{});
+  Tensor sK0 = make_tensor(make_smem_ptr(k0_ptr), SmemLayoutK{});
+  Tensor sK1 = make_tensor(make_smem_ptr(k1_ptr), SmemLayoutK{});
+  Tensor sV = make_tensor(
+      make_smem_ptr(storage.v.data()), PrefillRSSmemLayoutV{});
+
+  for (int idx = threadIdx.x; idx < kQueryRows * kHeadDim; idx += 128) {
+    const int local_query_row = idx / kHeadDim;
+    const int dim = idx - local_query_row * kHeadDim;
+    const int query_offset = local_query_row / group_size;
+    const int head_offset = local_query_row - query_offset * group_size;
+    const int query_position = query_begin + query_offset;
+    const int q_head = kv_head * group_size + head_offset;
+    Element item = Element(0.0f);
+    if (query_position < query_length) {
+      const int64_t source =
+          ((static_cast<int64_t>(batch) * query_length + query_position)
+               * q_heads
+           + q_head)
+              * kHeadDim
+          + dim;
+      item = query[source];
+    }
+    sQ(local_query_row, dim) = item;
+  }
+  cutlass::arch::fence_view_async_shared();
+  __syncthreads();
+
+  PrefillTiledMma tiled_qk;
+  auto thread_qk = tiled_qk.get_thread_slice(threadIdx.x);
+  Tensor rQ = thread_qk.partition_fragment_A(sQ);
+  Tensor rK0 = thread_qk.partition_fragment_B(sK0);
+  Tensor rK1 = thread_qk.partition_fragment_B(sK1);
+  Tensor cScores = make_identity_tensor(
+      Shape<Int<kQueryRows>, Int<kBlockM>>{});
+  Tensor tScScores = thread_qk.partition_C(cScores);
+  Tensor tScScoresRowCol = make_tensor(
+      tScScores.data(), streamattn_acc_rowcol<false>(tScScores.layout()));
+
+  PrefillRSTiledMmaPV tiled_pv;
+  auto thread_pv = tiled_pv.get_thread_slice(threadIdx.x);
+  Tensor rV = thread_pv.partition_fragment_B(sV);
+  Tensor output_acc = partition_fragment_C(
+      tiled_pv, Shape<Int<kQueryRows>, Int<kHeadDim>>{});
+  clear(output_acc);
+  Tensor output_rows = make_tensor(
+      output_acc.data(), streamattn_acc_rowcol<false>(output_acc.layout()));
+  Tensor cOutput = make_identity_tensor(
+      Shape<Int<kQueryRows>, Int<kHeadDim>>{});
+  Tensor tOcOutput = thread_pv.partition_C(cOutput);
+  Tensor tOcOutputRowCol = make_tensor(
+      tOcOutput.data(), streamattn_acc_rowcol<false>(tOcOutput.layout()));
+
+  constexpr int kRowsPerThread = decltype(size<0>(output_rows))::value;
+  Accum row_max[kRowsPerThread];
+  Accum row_sum[kRowsPerThread];
+  CUTE_UNROLL
+  for (int row = 0; row < kRowsPerThread; ++row) {
+    row_max[row] = -INFINITY;
+    row_sum[row] = 0.0f;
+  }
+
+  GmemCopyK copy_k;
+  auto thread_copy_k = copy_k.get_thread_slice(threadIdx.x);
+  Tensor tK0sK0 = thread_copy_k.partition_D(sK0);
+  Tensor tK1sK1 = thread_copy_k.partition_D(sK1);
+  GmemCopyPrefillRSV copy_v;
+  auto thread_copy_v = copy_v.get_thread_slice(threadIdx.x);
+  Tensor tVsV = thread_copy_v.partition_D(sV);
+
+  auto copy_k_tile = [&](int tile, auto destination) {
+    const Element* source =
+        key
+        + ((static_cast<int64_t>(batch) * kv_heads + kv_head) * kv_length
+           + tile * kBlockM)
+            * kHeadDim;
+    Tensor global = make_tensor(
+        make_gmem_ptr(source),
+        Shape<Int<kBlockM>, Int<kHeadDim>>{},
+        make_stride(Int<kHeadDim>{}, _1{}));
+    cute::copy(copy_k, thread_copy_k.partition_S(global), destination);
+  };
+  auto copy_v_tile = [&](int tile) {
+    const Element* source =
+        value
+        + ((static_cast<int64_t>(batch) * kv_heads + kv_head) * kv_length
+           + tile * kBlockM)
+            * kHeadDim;
+    Tensor global = make_tensor(
+        make_gmem_ptr(source),
+        Shape<Int<kHeadDim>, Int<kBlockM>>{},
+        make_stride(_1{}, Int<kHeadDim>{}));
+    cute::copy(copy_v, thread_copy_v.partition_S(global), tVsV);
+  };
+
+  copy_k_tile(tile_begin, tK0sK0);
+  cute::cp_async_fence();
+  cute::cp_async_wait<0>();
+  __syncthreads();
+
+  constexpr Accum kScaleLog2 = kHeadDim == 64
+      ? 0.18033688011112042f
+      : 0.12751743082459868f;
+  int read_pipe = 0;
+  for (int tile = tile_begin; tile < tile_end; ++tile) {
+    const int next_tile = tile + 1;
+    const int write_pipe = read_pipe ^ 1;
+    if (next_tile < tile_end) {
+      if (write_pipe == 0) {
+        copy_k_tile(next_tile, tK0sK0);
+      } else {
+        copy_k_tile(next_tile, tK1sK1);
+      }
+      cute::cp_async_fence();
+    }
+
+    Tensor scores = partition_fragment_C(
+        tiled_qk, Shape<Int<kQueryRows>, Int<kBlockM>>{});
+    clear(scores);
+    warpgroup_fence_operand(scores);
+    warpgroup_arrive();
+    if (read_pipe == 0) {
+      cute::gemm(tiled_qk, rQ, rK0, scores);
+    } else {
+      cute::gemm(tiled_qk, rQ, rK1, scores);
+    }
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(scores);
+
+    copy_v_tile(tile);
+    cute::cp_async_fence();
+
+    Tensor score_rows = make_tensor(
+        scores.data(), streamattn_acc_rowcol<false>(scores.layout()));
+    static_assert(
+        kRowsPerThread == decltype(size<0>(score_rows))::value,
+        "QK and PV fragments must expose the same query rows");
+    CUTE_UNROLL
+    for (int row = 0; row < kRowsPerThread; ++row) {
+      Accum tile_max = -INFINITY;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(score_rows); ++col) {
+        tile_max = fmaxf(tile_max, score_rows(row, col));
+      }
+      tile_max = streamattn_quad_max(tile_max);
+      const Accum next_max = fmaxf(row_max[row], tile_max);
+      const Accum alpha = row_max[row] == -INFINITY
+          ? 0.0f
+          : exp2f((row_max[row] - next_max) * kScaleLog2);
+      row_max[row] = next_max;
+      row_sum[row] *= alpha;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(output_rows); ++col) {
+        output_rows(row, col) *= alpha;
+      }
+
+      Accum local_sum = 0.0f;
+      const Accum max_scaled = next_max * kScaleLog2;
+      CUTE_UNROLL
+      for (int col = 0; col < size<1>(score_rows); ++col) {
+        const Accum probability =
+            exp2f(score_rows(row, col) * kScaleLog2 - max_scaled);
+        score_rows(row, col) = probability;
+        local_sum += probability;
+      }
+      row_sum[row] += streamattn_quad_sum(local_sum);
+    }
+
+    Tensor p_acc = make_tensor(
+        scores.data(),
+        streamattn_convert_layout_acc_aregs<PrefillRSTiledMmaPV>(
+            scores.layout()));
+    Tensor p_regs = streamattn_convert_type<Element>(p_acc);
+    cute::cp_async_wait<0>();
+    __syncthreads();
+    warpgroup_fence_operand(p_regs);
+    warpgroup_fence_operand(output_acc);
+    warpgroup_arrive();
+    cute::gemm(tiled_pv, p_regs, rV, output_acc);
+    warpgroup_commit_batch();
+    warpgroup_wait<0>();
+    warpgroup_fence_operand(p_regs);
+    warpgroup_fence_operand(output_acc);
+    __syncthreads();
+    read_pipe = write_pipe;
+  }
+
+  CUTE_UNROLL
+  for (int row = 0; row < size<0>(output_rows); ++row) {
+    CUTE_UNROLL
+    for (int col = 0; col < size<1>(output_rows); ++col) {
+      const auto coordinate = tOcOutputRowCol(row, col);
+      const int local_query_row = int(get<0>(coordinate));
+      const int dim = int(get<1>(coordinate));
+      const int64_t state_row =
+          static_cast<int64_t>(work) * kQueryRows + local_query_row;
+      partial_o[state_row * kHeadDim + dim] = row_sum[row] > 0.0f
+          ? output_rows(row, col) / row_sum[row]
+          : 0.0f;
+      if (dim == 0) {
+        partial_lse[state_row] = row_sum[row] > 0.0f
+            ? row_max[row] * kScaleLog2 + log2f(row_sum[row])
+            : -INFINITY;
+      }
+    }
+  }
+}
+
+__global__ __launch_bounds__(128)
+void streamattn_natural_wgmma_micro_prefill_merge_kernel(
+    const Accum* __restrict__ partial_o,
+    const Accum* __restrict__ partial_lse,
+    Element* __restrict__ output,
+    int batch_size,
+    int query_length,
+    int q_heads,
+    int kv_heads,
+    int group_size,
+    int num_splits) {
+  constexpr int kQueryRows = kPrefillRowsPerWarpGroup;
+  const int output_row = blockIdx.x;
+  if (output_row >= batch_size * query_length * q_heads) {
+    return;
+  }
+  const int q_head = output_row % q_heads;
+  const int batch_query = output_row / q_heads;
+  const int query_position = batch_query % query_length;
+  const int batch = batch_query / query_length;
+  const int kv_head = q_head / group_size;
+  const int head_offset = q_head - kv_head * group_size;
+  const int query_positions_per_tile = kQueryRows / group_size;
+  const int query_tiles =
+      (query_length + query_positions_per_tile - 1) / query_positions_per_tile;
+  const int query_tile = query_position / query_positions_per_tile;
+  const int local_query_position =
+      query_position - query_tile * query_positions_per_tile;
+  const int local_query_row = local_query_position * group_size + head_offset;
+  const int work_group =
+      (batch * kv_heads + kv_head) * query_tiles + query_tile;
+  const int lane = threadIdx.x & 31;
+  __shared__ Accum weights[512];
+  __shared__ Accum normalizer;
+  __shared__ Accum row_max;
+
+  Accum local_max = -INFINITY;
+  if (threadIdx.x < 32) {
+    for (int split = lane; split < num_splits; split += 32) {
+      local_max = fmaxf(
+          local_max,
+          partial_lse[
+              (static_cast<int64_t>(work_group) * num_splits + split)
+                  * kQueryRows
+              + local_query_row]);
+    }
+    local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffffu, local_max, 16));
+    local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffffu, local_max, 8));
+    local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffffu, local_max, 4));
+    local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffffu, local_max, 2));
+    local_max = fmaxf(local_max, __shfl_xor_sync(0xffffffffu, local_max, 1));
+    if (lane == 0) {
+      row_max = local_max;
+    }
+  }
+  __syncthreads();
+
+  Accum local_sum = 0.0f;
+  if (threadIdx.x < 32) {
+    for (int split = lane; split < num_splits; split += 32) {
+      const Accum lse = partial_lse[
+          (static_cast<int64_t>(work_group) * num_splits + split)
+              * kQueryRows
+          + local_query_row];
+      const Accum weight = exp2f(lse - row_max);
+      weights[split] = weight;
+      local_sum += weight;
+    }
+    local_sum += __shfl_xor_sync(0xffffffffu, local_sum, 16);
+    local_sum += __shfl_xor_sync(0xffffffffu, local_sum, 8);
+    local_sum += __shfl_xor_sync(0xffffffffu, local_sum, 4);
+    local_sum += __shfl_xor_sync(0xffffffffu, local_sum, 2);
+    local_sum += __shfl_xor_sync(0xffffffffu, local_sum, 1);
+    if (lane == 0) {
+      normalizer = local_sum;
+    }
+  }
+  __syncthreads();
+
+  const int dim = threadIdx.x;
+  if (dim < kHeadDim) {
+    Accum result = 0.0f;
+    CUTE_UNROLL
+    for (int split = 0; split < num_splits; ++split) {
+      const int64_t state_row =
+          (static_cast<int64_t>(work_group) * num_splits + split)
+              * kQueryRows
+          + local_query_row;
+      result += weights[split] * partial_o[state_row * kHeadDim + dim];
+    }
+    output[static_cast<int64_t>(output_row) * kHeadDim + dim] =
+        Element(result / normalizer);
+  }
+}
+
+__global__ __launch_bounds__(128)
 void streamattn_transposed_wgmma_qk_kernel(
     const Element* __restrict__ q_group,
     const Element* __restrict__ k_cache,
@@ -1982,7 +2349,8 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     const int* __restrict__ route_physical_page_ids = nullptr,
     const int* __restrict__ route_active_head_masks = nullptr,
     const int* __restrict__ route_token_valid_masks = nullptr,
-    const int* __restrict__ route_counts = nullptr) {
+    const int* __restrict__ route_counts = nullptr,
+    int query_positions_per_batch = 1) {
   const int work = blockIdx.x;
   const int group = work / num_splits;
   const int split = work - group * num_splits;
@@ -1990,12 +2358,17 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     return;
   }
 
+  const int cache_group = query_positions_per_batch == 1
+      ? group
+      : (group / (query_positions_per_batch * kv_heads)) * kv_heads
+          + (group % kv_heads);
+
   int sequence_length = kv_len;
   int selected_route = -1;
   if constexpr (kVariableLength) {
     static_assert(kPagedPageSize == 16,
                   "ragged exact specialization requires page-16 storage");
-    sequence_length = sequence_lengths[group / kv_heads];
+    sequence_length = sequence_lengths[cache_group / kv_heads];
   }
   int tile_begin;
   int tile_end;
@@ -2117,20 +2490,20 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
       }
     } else if constexpr (kPagedPageSize == 16) {
       streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-          k_cache, page_table, group, tile_begin, max_pages, kv_heads,
+          k_cache, page_table, cache_group, tile_begin, max_pages, kv_heads,
           sequence_length,
           sK0Paged16, copy_kv, thr_copy_kv);
       if constexpr (kSeparateVStages == 2) {
         streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-            v_cache, page_table, group, tile_begin, max_pages, kv_heads,
+            v_cache, page_table, cache_group, tile_begin, max_pages, kv_heads,
             sequence_length,
             sV0Paged16, copy_kv, thr_copy_kv);
       }
     } else {
       const Element* first_k = streamattn_exact_tile_ptr<kPagedPageSize>(
-          k_cache, page_table, group, tile_begin, kv_len, max_pages, kv_heads);
+          k_cache, page_table, cache_group, tile_begin, kv_len, max_pages, kv_heads);
       const Element* first_v = streamattn_exact_tile_ptr<kPagedPageSize>(
-          v_cache, page_table, group, tile_begin, kv_len, max_pages, kv_heads);
+          v_cache, page_table, cache_group, tile_begin, kv_len, max_pages, kv_heads);
       Tensor gK = make_tensor(make_gmem_ptr(first_k), Shape<Int<kBlockM>, Int<kHeadDim>>{},
                               make_stride(Int<kHeadDim>{}, _1{}));
       Tensor gV = make_tensor(make_gmem_ptr(first_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
@@ -2176,32 +2549,32 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
       } else if constexpr (kPagedPageSize == 16) {
         if (write_pipe == 0) {
           streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-              k_cache, page_table, group, next_tile, max_pages, kv_heads,
+              k_cache, page_table, cache_group, next_tile, max_pages, kv_heads,
               sequence_length,
               sK0Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
             streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-                v_cache, page_table, group, next_tile, max_pages, kv_heads,
+                v_cache, page_table, cache_group, next_tile, max_pages, kv_heads,
                 sequence_length,
                 sV0Paged16, copy_kv, thr_copy_kv);
           }
         } else {
           streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-              k_cache, page_table, group, next_tile, max_pages, kv_heads,
+              k_cache, page_table, cache_group, next_tile, max_pages, kv_heads,
               sequence_length,
               sK1Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
             streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-                v_cache, page_table, group, next_tile, max_pages, kv_heads,
+                v_cache, page_table, cache_group, next_tile, max_pages, kv_heads,
                 sequence_length,
                 sV1Paged16, copy_kv, thr_copy_kv);
           }
         }
       } else {
         const Element* next_k = streamattn_exact_tile_ptr<kPagedPageSize>(
-            k_cache, page_table, group, next_tile, kv_len, max_pages, kv_heads);
+            k_cache, page_table, cache_group, next_tile, kv_len, max_pages, kv_heads);
         const Element* next_v = streamattn_exact_tile_ptr<kPagedPageSize>(
-            v_cache, page_table, group, next_tile, kv_len, max_pages, kv_heads);
+            v_cache, page_table, cache_group, next_tile, kv_len, max_pages, kv_heads);
         Tensor gKNext = make_tensor(make_gmem_ptr(next_k), Shape<Int<kBlockM>, Int<kHeadDim>>{},
                                     make_stride(Int<kHeadDim>{}, _1{}));
         Tensor gVNext = make_tensor(make_gmem_ptr(next_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
@@ -2251,18 +2624,18 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
       } else if constexpr (kPagedPageSize == 16) {
         if (read_pipe == 0) {
           streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-              v_cache, page_table, group, tile, max_pages, kv_heads,
+              v_cache, page_table, cache_group, tile, max_pages, kv_heads,
               sequence_length,
               sV0Paged16, copy_kv, thr_copy_kv);
         } else {
           streamattn_copy_paged16_tile<kNHD, kVariableLength>(
-              v_cache, page_table, group, tile, max_pages, kv_heads,
+              v_cache, page_table, cache_group, tile, max_pages, kv_heads,
               sequence_length,
               sV1Paged16, copy_kv, thr_copy_kv);
         }
       } else {
         const Element* current_v = streamattn_exact_tile_ptr<kPagedPageSize>(
-            v_cache, page_table, group, tile, kv_len, max_pages, kv_heads);
+            v_cache, page_table, cache_group, tile, kv_len, max_pages, kv_heads);
         Tensor gVCurrent = make_tensor(
             make_gmem_ptr(current_v), Shape<Int<kBlockM>, Int<kHeadDim>>{},
             make_stride(Int<kHeadDim>{}, _1{}));
@@ -3227,6 +3600,201 @@ void streamattn_transposed_wgmma_exact_partial_out_cuda(
       kv_len,
       static_cast<int>(num_splits),
       active_heads);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_transposed_wgmma_micro_prefill_out_cuda(
+    torch::Tensor q_group,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  TORCH_CHECK(q_group.is_cuda() && k_cache.is_cuda() && v_cache.is_cuda() &&
+              partial_o.is_cuda() && partial_lse.is_cuda() && output.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(q_group.is_contiguous() && k_cache.is_contiguous() &&
+              v_cache.is_contiguous() && partial_o.is_contiguous() &&
+              partial_lse.is_contiguous() && output.is_contiguous(),
+              "all tensors must be contiguous");
+  TORCH_CHECK(q_group.scalar_type() == at::ScalarType::BFloat16 &&
+              k_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              v_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              output.scalar_type() == at::ScalarType::BFloat16,
+              "q_group, K/V, and output must be bf16");
+  TORCH_CHECK(partial_o.scalar_type() == at::ScalarType::Float &&
+              partial_lse.scalar_type() == at::ScalarType::Float,
+              "partial outputs must be fp32");
+  TORCH_CHECK(q_group.dim() == 5 &&
+              (q_group.size(3) == 4 || q_group.size(3) == kBlockN) &&
+              q_group.size(4) == kHeadDim,
+              "q_group must have shape [B,M,Hkv,4|8,D]");
+  TORCH_CHECK(q_group.size(1) >= 2 && q_group.size(1) <= 64,
+              "micro-prefill query length must be in [2,64]");
+  TORCH_CHECK(k_cache.sizes() == v_cache.sizes(),
+              "k_cache and v_cache must match");
+  TORCH_CHECK(k_cache.dim() == 4 && k_cache.size(3) == kHeadDim,
+              "K/V must have shape [B,Hkv,N,D]");
+  TORCH_CHECK(k_cache.size(0) == q_group.size(0) &&
+              k_cache.size(1) == q_group.size(2),
+              "q_group and K/V batch/KV-head dimensions must match");
+  TORCH_CHECK(k_cache.size(2) > 0 && k_cache.size(2) % kBlockM == 0,
+              "kv_len must be positive and divisible by 64");
+
+  const int batch_size = static_cast<int>(q_group.size(0));
+  const int query_positions = static_cast<int>(q_group.size(1));
+  const int kv_heads = static_cast<int>(q_group.size(2));
+  const int active_heads = static_cast<int>(q_group.size(3));
+  const int groups = batch_size * query_positions * kv_heads;
+  const int kv_len = static_cast<int>(k_cache.size(2));
+  const int num_tiles = kv_len / kBlockM;
+  TORCH_CHECK(num_splits > 0 && num_splits <= num_tiles,
+              "num_splits must be in [1, kv_len/64]");
+  TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN, kHeadDim}),
+              "partial_o must have shape [B*M*Hkv,num_splits,8,D]");
+  TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
+                  {groups, num_splits, kBlockN}),
+              "partial_lse must have shape [B*M*Hkv,num_splits,8]");
+  TORCH_CHECK(output.sizes() == torch::IntArrayRef(
+                  {groups, active_heads, kHeadDim}),
+              "output must have shape [B*M*Hkv,4|8,D]");
+
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  const dim3 partial_grid(groups * static_cast<int>(num_splits));
+  streamattn_transposed_wgmma_exact_partial_kernel<0><<<
+      partial_grid, 128, 0, stream>>>(
+      reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      groups,
+      kv_len,
+      static_cast<int>(num_splits),
+      active_heads,
+      nullptr,
+      0,
+      kv_heads,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      query_positions);
+
+  const dim3 merge_grid(groups * active_heads);
+  streamattn_transposed_wgmma_exact_merge_warp_kernel<<<
+      merge_grid, 32, 0, stream>>>(
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      groups,
+      static_cast<int>(num_splits),
+      active_heads);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_natural_wgmma_micro_prefill_out_cuda(
+    torch::Tensor query,
+    torch::Tensor k_cache,
+    torch::Tensor v_cache,
+    torch::Tensor partial_o,
+    torch::Tensor partial_lse,
+    torch::Tensor output,
+    int64_t num_splits) {
+  TORCH_CHECK(query.is_cuda() && k_cache.is_cuda() && v_cache.is_cuda() &&
+              partial_o.is_cuda() && partial_lse.is_cuda() && output.is_cuda(),
+              "all tensors must be CUDA tensors");
+  TORCH_CHECK(query.is_contiguous() && k_cache.is_contiguous() &&
+              v_cache.is_contiguous() && partial_o.is_contiguous() &&
+              partial_lse.is_contiguous() && output.is_contiguous(),
+              "all tensors must be contiguous");
+  TORCH_CHECK(query.scalar_type() == at::ScalarType::BFloat16 &&
+              k_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              v_cache.scalar_type() == at::ScalarType::BFloat16 &&
+              output.scalar_type() == at::ScalarType::BFloat16,
+              "query, K/V, and output must be bf16");
+  TORCH_CHECK(partial_o.scalar_type() == at::ScalarType::Float &&
+              partial_lse.scalar_type() == at::ScalarType::Float,
+              "partial outputs must be fp32");
+  TORCH_CHECK(query.dim() == 4 && query.size(3) == kHeadDim,
+              "query must have shape [B,M,Hq,D]");
+  TORCH_CHECK(query.size(1) >= 2 && query.size(1) <= 64,
+              "micro-prefill query length must be in [2,64]");
+  TORCH_CHECK(k_cache.sizes() == v_cache.sizes(),
+              "k_cache and v_cache must match");
+  TORCH_CHECK(k_cache.dim() == 4 && k_cache.size(3) == kHeadDim,
+              "K/V must have shape [B,Hkv,N,D]");
+  TORCH_CHECK(k_cache.size(0) == query.size(0),
+              "query and K/V batch dimensions must match");
+  TORCH_CHECK(k_cache.size(2) > 0 && k_cache.size(2) % kBlockM == 0,
+              "kv_len must be positive and divisible by 64");
+
+  const int batch_size = static_cast<int>(query.size(0));
+  const int query_length = static_cast<int>(query.size(1));
+  const int q_heads = static_cast<int>(query.size(2));
+  const int kv_heads = static_cast<int>(k_cache.size(1));
+  TORCH_CHECK(kv_heads > 0 && q_heads % kv_heads == 0,
+              "Hq must be divisible by Hkv");
+  const int group_size = q_heads / kv_heads;
+  TORCH_CHECK(group_size == 4 || group_size == 8,
+              "group size must be 4 or 8");
+  const int kv_length = static_cast<int>(k_cache.size(2));
+  const int num_tiles = kv_length / kBlockM;
+  TORCH_CHECK(num_splits > 0 && num_splits <= num_tiles && num_splits <= 512,
+              "num_splits must be in [1,min(kv_len/64,512)]");
+
+  constexpr int query_rows = kPrefillRowsPerWarpGroup;
+  const int query_positions = query_rows / group_size;
+  const int query_tiles =
+      (query_length + query_positions - 1) / query_positions;
+  const int work_groups = batch_size * kv_heads * query_tiles;
+  TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
+                  {work_groups, num_splits, query_rows, kHeadDim}),
+              "partial_o must have shape [B*Hkv*Qtiles,splits,64,D]");
+  TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
+                  {work_groups, num_splits, query_rows}),
+              "partial_lse must have shape [B*Hkv*Qtiles,splits,64]");
+  TORCH_CHECK(output.sizes() == query.sizes(),
+              "output must match query shape");
+
+  const int shared_bytes =
+      static_cast<int>(sizeof(GroupedRSPrefillSharedStorage));
+  auto partial_kernel = streamattn_natural_wgmma_micro_prefill_partial_kernel;
+  C10_CUDA_CHECK(cudaFuncSetAttribute(
+      partial_kernel,
+      cudaFuncAttributeMaxDynamicSharedMemorySize,
+      shared_bytes));
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  partial_kernel<<<work_groups * static_cast<int>(num_splits), 128,
+                   shared_bytes, stream>>>(
+      reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
+      reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      batch_size,
+      query_length,
+      kv_length,
+      q_heads,
+      kv_heads,
+      group_size,
+      static_cast<int>(num_splits));
+
+  streamattn_natural_wgmma_micro_prefill_merge_kernel<<<
+      batch_size * query_length * q_heads, 128, 0, stream>>>(
+      partial_o.data_ptr<float>(),
+      partial_lse.data_ptr<float>(),
+      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+      batch_size,
+      query_length,
+      q_heads,
+      kv_heads,
+      group_size,
+      static_cast<int>(num_splits));
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 

@@ -679,10 +679,26 @@ baseline resolution is also explicit: semantic compatibility is checked first,
 then only correctness-passed measurements at the matching backend revision and
 workload fingerprint can compete on latency.
 
-This is compiler and evidence infrastructure, not a new kernel-speed claim. The
-first performance milestone remains a no-external-fallback H100 vertical slice
-covering `M=1`, `M=2-8`, `M=9-64`, `M>=65`, and mixed ragged serving with low
-holdout routing regret. See [Universal Inference v2](docs/universal_inference_v2.md)
+The first SM90 v2 experiment now contains two exact candidate families for the
+previously uncovered `M=2-64` regime. Across 72 BF16 contiguous-HND H100 canary
+cells, both were exact; choosing the faster family per cell measured a `1.342x`
+geometric mean over graph-captured Flash SDPA and won 53/72 paired cells. The
+transposed family owns very small M, while 64-row query/GQA packing takes over
+as KV reuse matters. `M=64` remains below parity, and the fastest eligible
+baseline portfolio has not yet been resolved, so this is directional kernel and
+compiler evidence rather than a promoted universal route.
+
+The architecture-basis harness now expands six H100 serving anchors into 84
+operation-floor cases and records required Nsight Compute counters plus build
+and device fingerprints. Inspect it with:
+
+```bash
+python benchmarks/inspect_architecture_basis_suite.py
+```
+
+The first performance milestone remains a no-external-fallback H100 vertical
+slice covering `M=1`, `M=2-8`, `M=9-64`, `M>=65`, and mixed ragged serving with
+low holdout routing regret. See [Universal Inference v2](docs/universal_inference_v2.md)
 or inspect the contract with:
 
 ```bash

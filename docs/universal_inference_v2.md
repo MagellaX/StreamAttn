@@ -108,16 +108,45 @@ Implemented and CPU-tested:
 - stable calibration/holdout trace partition;
 - immutable workload fingerprints;
 - direct exact-baseline eligibility and measured winner resolution;
-- versioned macro and physical schedule IR.
+- versioned macro and physical schedule IR;
+- a versioned SM90 architecture-basis suite with 6 serving anchors, 14
+  operation floors, required Nsight Compute counters, immutable adapter output,
+  and environment fingerprints;
+- two exact SM90 `M=2-64` candidate families: transposed query/head groups and
+  natural 64-row query/GQA packing with exact split-state merging.
+
+Initial H100 canary evidence covers 72 noncausal, contiguous-HND BF16 cells over
+`M={2,4,8,16,32,64}`, `N={4K,16K,32K}`, `G={4,8}`, and `D={64,128}`. Both
+families were exact in every cell. Selecting the faster StreamAttn family per
+cell produced a `1.342x` geometric mean against graph-captured Flash SDPA and
+won the paired Flash gate in 53/72 cells. The family boundary is material:
+
+```text
+M=2,4       transposed family dominates; 24/24 paired wins
+M=8         mixed family choice; 12/12 paired wins
+M=16        natural family usually wins; 10/12 paired wins
+M=32        natural family usually wins; 7/12 paired wins
+M=64        natural family always selected; 0/12 paired wins
+```
+
+This is a canary result, not compiler promotion. Flash SDPA was the only timed
+baseline, FP16/paged/ragged/masked variants were not included, and the `M=64`
+boundary remains below parity. The result nevertheless validates the central
+v2 design: one semantic workload requires multiple physical families, and the
+compiler must learn their crossover rather than use a global query-length rule.
 
 Not yet implemented:
 
 - real serving trace capture and boundary generators;
-- critical-path resource DAG and architecture basis measurements;
-- SM90 `M=2-64` exact micro-prefill kernels;
+- measured basis-operation adapter kernels and counter artifacts;
+- critical-path resource DAG calibrated from those measurements;
+- fastest-exact-baseline resolution for the micro-prefill matrix;
+- FP16, paged/ragged, causal/sliding, and additive-mask micro-prefill lowering;
+- a competitive `M=64`/short-K physical family;
 - mixed-ragged macro-plan timing and dispatch;
 - a no-external-fallback H100 phase database.
 
-The next implementation stage is the architecture basis-kernel/counter harness,
-followed by the SM90 micro-prefill family. GPU results should not be attributed
-to v2 until those measured artifacts exist.
+The next implementation stage is a measured SM90 attention-epoch basis and a
+128-row asynchronous producer/consumer micro-prefill candidate. Its purpose is
+to remove the remaining `M=64` and short-K critical paths before expanding the
+same semantic family to paged and ragged storage.
