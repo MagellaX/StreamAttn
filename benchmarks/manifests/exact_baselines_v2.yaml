@@ -1,0 +1,75 @@
+schema_version: 1
+
+# Capability declarations are conservative direct-call contracts.  A backend
+# still needs a correctness-passed measurement at this exact revision and
+# workload fingerprint before it can become the latency oracle.
+baselines:
+  - baseline_id: pytorch_sdpa_2_7_1
+    implementation: torch.nn.functional.scaled_dot_product_attention
+    revision: 2.7.1
+    architectures: [sm80, sm90, sm100]
+    phases: [decode, verify, append, micro_prefill, chunked_prefill, full_prefill]
+    attention_kinds: [mha, gqa, mqa]
+    q_dtypes: [fp16, bf16]
+    kv_dtypes: [fp16, bf16]
+    output_dtypes: [fp16, bf16]
+    scale_formats: [scalar_fp32]
+    d_qk: [64, 128, 256]
+    d_v: [64, 128, 256]
+    cache_kinds: [contiguous]
+    cache_layouts: [bshd]
+    mask_kinds: [causal, noncausal, additive]
+    execution_modes: [eager, cuda_graph]
+    supported_features: []
+    supports_mixed_batches: false
+    supports_ragged_batches: false
+    supports_shared_prefixes: false
+    supports_speculative_trees: false
+    direct_layout: true
+
+  - baseline_id: flashinfer_batch_attention_0_6_17
+    implementation: flashinfer.BatchAttention
+    revision: 0.6.17
+    architectures: [sm80, sm90, sm100]
+    phases: [decode, verify, append, micro_prefill, chunked_prefill, full_prefill, mixed]
+    attention_kinds: [mha, gqa, mqa]
+    q_dtypes: [fp16, bf16]
+    kv_dtypes: [fp16, bf16]
+    output_dtypes: [fp16, bf16]
+    scale_formats: [scalar_fp32]
+    d_qk: [64, 128, 256]
+    d_v: [64, 128, 256]
+    cache_kinds: [paged, ragged]
+    cache_layouts: [nhd, hnd, page_major]
+    mask_kinds: [causal, noncausal]
+    page_sizes: [16, 32, 64]
+    execution_modes: [eager, cuda_graph]
+    supported_features: [append_kv]
+    supports_mixed_batches: true
+    supports_ragged_batches: true
+    supports_shared_prefixes: true
+    supports_speculative_trees: false
+    direct_layout: true
+
+  - baseline_id: flashattention_3_beta
+    implementation: flash_attn_interface.flash_attn_varlen_func
+    revision: 3.0.0b1
+    architectures: [sm90]
+    phases: [verify, micro_prefill, chunked_prefill, full_prefill]
+    attention_kinds: [mha, gqa, mqa]
+    q_dtypes: [fp16, bf16]
+    kv_dtypes: [fp16, bf16]
+    output_dtypes: [fp16, bf16]
+    scale_formats: [scalar_fp32]
+    d_qk: [64, 128, 256]
+    d_v: [64, 128, 256]
+    cache_kinds: [contiguous, ragged]
+    cache_layouts: [bshd]
+    mask_kinds: [causal, noncausal, sliding]
+    execution_modes: [eager, cuda_graph]
+    supported_features: [softcap]
+    supports_mixed_batches: false
+    supports_ragged_batches: true
+    supports_shared_prefixes: false
+    supports_speculative_trees: false
+    direct_layout: true

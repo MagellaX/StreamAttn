@@ -3,14 +3,14 @@
 [![CI](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml)
 [![CUDA Source Build](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml)
 
-**A native attention engine for exact streaming attention and model-validated
-reduced-work decode.**
+**A native exact-attention engine built around streaming online softmax and a
+trace-driven hierarchical compiler.**
 
-StreamAttn owns its attention kernels. Its default native serving path does not
-call FlashInfer or FlashAttention; those projects are comparison baselines. At
-runtime, StreamAttn can compute exact attention over the full KV cache or, for
-an explicitly calibrated model/shape cell, execute a much smaller seed-only
-schedule and fail closed to exact attention when the cell does not match.
+StreamAttn owns its attention kernels. Its main serving goal is exact inference
+over the full logical KV cache; FlashInfer and FlashAttention are comparison
+baselines, not dependencies of the native path. Reduced-work routes remain a
+separate, explicitly calibrated research branch and fail closed to exact
+attention when their policy contract does not match.
 
 The common foundation is single-pass streaming attention with online softmax:
 K/V tiles are consumed once, numerically stable running statistics are updated
@@ -51,10 +51,10 @@ That produces three serving modes plus an explicit adaptive research route:
 StreamAttn is therefore not just another sparse mask. The engine owns the
 kernel, policy artifact, fixed-buffer plan, route decision, and exact fallback.
 
-### One engine, multiple tile schedules
+### One engine, multiple execution plans
 
 The engine is organized around the attention work, not around one model or one
-kernel. Every `StreamAttnEngine` plan now lowers through three explicit layers:
+kernel. Public execution currently lowers through three explicit layers:
 
 ```text
 AttentionProblem
@@ -652,6 +652,42 @@ compiled: four SM90 cells resolve to three native routes and one fallback; four
 SM100 cells resolve to external fallbacks against graph-captured baselines. The
 remaining cells stay visibly unresolved, so the repository still does not claim
 the 30-cell performance target. See [the H100/B200 calibration report](docs/universal_exact_calibration_20260828.md).
+
+### Universal Inference v2
+
+The next compiler contract models complete serving batches instead of extending
+v1 into a larger cell list. `AttentionBatchV2` represents heterogeneous request
+phases, per-request Q/KV lengths, page tables, shared prefixes, speculative
+trees, exact attention semantics, and graph/workspace constraints. Its workload
+manifest composes immutable serving traces, stratified semantic coverage, and
+generated regime boundaries.
+
+The v2 compiler separates two decisions:
+
+```text
+macro plan
+  unified persistent vs split phase vs query-length cohorts
+
+physical lowering
+  architecture-native ownership, QK/PV operand paths,
+  producer/barrier topology, overlap, tiles, splits, and output mode
+```
+
+Calibration and holdout records receive stable hash-based assignments, so
+corpus growth cannot move tuned rows into the final evaluation set. Exact
+baseline resolution is also explicit: semantic compatibility is checked first,
+then only correctness-passed measurements at the matching backend revision and
+workload fingerprint can compete on latency.
+
+This is compiler and evidence infrastructure, not a new kernel-speed claim. The
+first performance milestone remains a no-external-fallback H100 vertical slice
+covering `M=1`, `M=2-8`, `M=9-64`, `M>=65`, and mixed ragged serving with low
+holdout routing regret. See [Universal Inference v2](docs/universal_inference_v2.md)
+or inspect the contract with:
+
+```bash
+python benchmarks/inspect_universal_inference_v2.py
+```
 
 ## Decode Request Lifecycle
 

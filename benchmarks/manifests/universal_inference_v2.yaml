@@ -1,0 +1,47 @@
+manifest_id: universal_inference_v2
+schema_version: 2
+
+# The first implementation milestone is the complete H100 serving slice.  The
+# schema already names later compiler backends so traces do not need rewriting.
+architectures: [sm90, sm100, sm80, sm103, sm120]
+
+dataset_split:
+  salt: streamattn-universal-inference-v2-frozen-20260905
+  calibration_fraction: 0.8
+
+# These sources are composed at trace-import time.  This file intentionally
+# does not expand into a hand-authored Cartesian product.
+workload_sources:
+  - source_id: serving_traces
+    kind: trace
+    path: benchmarks/traces/universal_inference_v2.jsonl
+    weight: 0.70
+  - source_id: stratified_coverage
+    kind: stratified
+    generator: stream_attention.workload_generators:stratified_v2
+    weight: 0.20
+  - source_id: regime_boundaries
+    kind: boundary
+    generator: stream_attention.workload_generators:boundaries_v2
+    weight: 0.10
+
+query_regimes:
+  - name: scalar_decode
+    q_len_min: 1
+    q_len_max: 1
+  - name: speculative_verify
+    q_len_min: 2
+    q_len_max: 8
+  - name: micro_prefill
+    q_len_min: 9
+    q_len_max: 64
+  - name: prefill
+    q_len_min: 65
+    q_len_max: null
+
+acceptance:
+  semantic_coverage: 1.0
+  holdout_p90_routing_regret: 0.05
+  zero_timed_loop_allocations: true
+  retain_negative_cells: true
+  require_fastest_correct_baseline: true
