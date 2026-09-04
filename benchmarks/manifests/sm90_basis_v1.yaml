@@ -1,0 +1,133 @@
+suite_id: sm90_attention_basis_v1
+schema_version: 1
+architecture: sm90
+
+# The operation list crosses the anchor list at load time. This remains a small
+# grammar of component floors, not a hand-maintained kernel Cartesian product.
+operations:
+  - load
+  - async_load
+  - qk
+  - softmax
+  - pv
+  - qk_softmax_serial
+  - qk_softmax_overlap
+  - pv_rescale
+  - partial_state_write
+  - partial_state_merge
+  - scheduler
+  - epilogue
+  - attention_epoch_serial
+  - attention_epoch_overlap
+
+timing:
+  graph_replay: true
+  warmup: 10
+  iterations: 100
+  repeats: 7
+
+ncu_metrics:
+  - launch__registers_per_thread
+  - launch__shared_mem_per_block_allocated
+  - launch__local_mem_per_thread
+  - sm__ctas_active.avg
+  - sm__warps_active.avg.pct_of_peak_sustained_active
+  - smsp__warps_eligible.avg.per_cycle_active
+  - sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_active
+  - dram__bytes_read.sum
+  - dram__bytes_write.sum
+  - lts__t_bytes.sum
+  - smsp__pcsamp_warps_issue_stalled_barrier
+  - smsp__pcsamp_warps_issue_stalled_long_scoreboard
+
+anchors:
+  - anchor_id: m1_b1_n32k_g8_d128_paged
+    batch_size: 1
+    query_len: 1
+    kv_len: 32768
+    q_heads: 16
+    kv_heads: 2
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: paged
+    cache_layout: hnd
+    mask_kind: noncausal
+    tags: [decode, long_context]
+
+  - anchor_id: m1_b8_n64k_g4_d128_ragged
+    batch_size: 8
+    query_len: 1
+    kv_len: 65536
+    q_heads: 16
+    kv_heads: 4
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: paged
+    cache_layout: hnd
+    mask_kind: noncausal
+    ragged: true
+    tags: [decode, ragged, occupancy]
+
+  - anchor_id: m4_b1_n32k_g8_d128
+    batch_size: 1
+    query_len: 4
+    kv_len: 32768
+    q_heads: 16
+    kv_heads: 2
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: contiguous
+    cache_layout: bshd
+    mask_kind: noncausal
+    tags: [verify, split_kv]
+
+  - anchor_id: m16_b1_n32k_g8_d128
+    batch_size: 1
+    query_len: 16
+    kv_len: 32768
+    q_heads: 16
+    kv_heads: 2
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: contiguous
+    cache_layout: bshd
+    mask_kind: noncausal
+    tags: [micro_prefill, tensor_core_boundary]
+
+  - anchor_id: m256_b1_n4k_g8_d128_causal
+    batch_size: 1
+    query_len: 256
+    kv_len: 4096
+    q_heads: 16
+    kv_heads: 2
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: contiguous
+    cache_layout: bshd
+    mask_kind: causal
+    tags: [prefill, pipeline]
+
+  - anchor_id: m4k_b1_n4k_g4_d128_causal
+    batch_size: 1
+    query_len: 4096
+    kv_len: 4096
+    q_heads: 16
+    kv_heads: 4
+    d_qk: 128
+    d_v: 128
+    q_dtype: bf16
+    kv_dtype: bf16
+    cache_kind: contiguous
+    cache_layout: bshd
+    mask_kind: causal
+    tags: [prefill, throughput]

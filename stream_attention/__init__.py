@@ -272,6 +272,18 @@ from .inference_schedule import (
     TaskGranularity,
     WorkCohort,
 )
+from .basis_evidence import (
+    BasisAnchor,
+    BasisCase,
+    BasisCounter,
+    BasisEnvironment,
+    BasisEvidence,
+    BasisOperation,
+    BasisSuite,
+    load_basis_suite,
+    missing_required_counters,
+    parse_ncu_csv,
+)
 
 # Utilities
 from .utils.memory import (
@@ -505,6 +517,16 @@ __all__ = [
     "ProducerTopology",
     "TaskGranularity",
     "WorkCohort",
+    "BasisAnchor",
+    "BasisCase",
+    "BasisCounter",
+    "BasisEnvironment",
+    "BasisEvidence",
+    "BasisOperation",
+    "BasisSuite",
+    "load_basis_suite",
+    "missing_required_counters",
+    "parse_ncu_csv",
     # Utilities
     "MemoryProfiler",
     "create_kv_compressor",
