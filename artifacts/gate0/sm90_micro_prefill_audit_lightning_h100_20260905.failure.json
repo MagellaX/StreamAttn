@@ -1,0 +1,10 @@
+{
+  "schema": "streamattn.gpu_launch_failure.v1",
+  "provider": "lightning",
+  "job_id": "job_01m1q4ccr41ep43wjqd882e27e",
+  "state": "failed",
+  "message": "[ERROR]: job reconciliation failed",
+  "cloud_account": "lightning-baremetal",
+  "machine": "lit-h100-80gb-1",
+  "reported_cost": 0.0
+}

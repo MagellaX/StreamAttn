@@ -117,7 +117,7 @@ Implemented and CPU-tested:
 
 Initial H100 canary evidence covers 72 noncausal, contiguous-HND BF16 cells over
 `M={2,4,8,16,32,64}`, `N={4K,16K,32K}`, `G={4,8}`, and `D={64,128}`. Both
-families were exact in every cell. Selecting the faster StreamAttn family per
+families passed the sampled numerical checks in every cell. Selecting the faster StreamAttn family per
 cell produced a `1.342x` geometric mean against graph-captured Flash SDPA and
 won the paired Flash gate in 53/72 cells. The family boundary is material:
 
@@ -146,7 +146,15 @@ Not yet implemented:
 - mixed-ragged macro-plan timing and dispatch;
 - a no-external-fallback H100 phase database.
 
-The next implementation stage is a measured SM90 attention-epoch basis and a
-128-row asynchronous producer/consumer micro-prefill candidate. Its purpose is
-to remove the remaining `M=64` and short-K critical paths before expanding the
-same semantic family to paged and ragged storage.
+The cross-provider [micro-prefill audit](sm90_micro_prefill_audit.md) now implements
+FP32 reference checks, forced FA2/FA3 comparisons and isolated natural-family
+producer/merge timing. It includes irregular lengths and larger batches/head
+counts. Its GPU execution is still pending after launch/connectivity failures;
+the harness itself is not timing evidence or a phase-database registration.
+
+Next, use those measured stages to decide whether a 128-row asynchronous
+producer/consumer family addresses the actual bottleneck. The previous canary
+alone did not establish that split/merge costs were negligible or that a wider
+producer would win. Once that physical boundary is understood, expand the same
+semantic family to paged/ragged storage and masks, then measure mixed batches
+and holdout routing regret. The goal remains the complete H100 vertical slice.

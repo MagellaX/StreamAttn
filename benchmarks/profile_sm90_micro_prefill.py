@@ -35,8 +35,7 @@ SCHEMA = "streamattn.sm90_micro_prefill_canary.v2"
 @contextmanager
 def _flash_context() -> Iterator[None]:
     if sdpa_kernel is None or SDPBackend is None:
-        yield
-        return
+        raise RuntimeError("forced Flash SDPA is unavailable; refusing an implicit fallback")
     with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
         yield
 

@@ -240,6 +240,11 @@ void streamattn_transposed_wgmma_paged_dynamic_qhead_fragmented_nhd_exact_decode
     torch::Tensor output,
     int64_t max_routes_per_group);
 
+void streamattn_natural_wgmma_micro_prefill_components_out_cuda(
+    torch::Tensor query, torch::Tensor k_cache, torch::Tensor v_cache,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t num_splits, int64_t component);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("qk_out", &streamattn_transposed_wgmma_qk_out_cuda,
         "StreamAttn transposed m64n8k16 exact QK (out variant)");
@@ -273,6 +278,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "StreamAttn transposed GQA exact micro-prefill with split-state merge");
   m.def("natural_micro_prefill_out", &streamattn_natural_wgmma_micro_prefill_out_cuda,
         "StreamAttn natural small-M GQA exact micro-prefill");
+  m.def("natural_micro_prefill_components_out",
+        &streamattn_natural_wgmma_micro_prefill_components_out_cuda,
+        "Diagnostic natural micro-prefill: 0 combined, 1 producer, 2 merge");
   m.def("exact_merge_out", &streamattn_transposed_wgmma_exact_merge_out_cuda,
         "StreamAttn exact split-state merge");
   m.def("exact_merge_warp_out", &streamattn_transposed_wgmma_exact_merge_warp_out_cuda,
@@ -1241,10 +1249,10 @@ void streamattn_natural_wgmma_micro_prefill_partial_kernel(
   const int kv_head = batch_kv_group - batch * kv_heads;
   const int query_begin = query_tile * query_positions_per_tile;
   const int num_kv_tiles = kv_length / kBlockM;
-  const int tiles_per_split =
-      (num_kv_tiles + num_splits - 1) / num_splits;
-  const int tile_begin = split * tiles_per_split;
-  const int tile_end = min(num_kv_tiles, tile_begin + tiles_per_split);
+  // Balanced intervals stay nonempty when num_splits <= num_kv_tiles.
+  // Ceil-sized intervals can leave a trailing CTA preloading beyond K/V.
+  const int tile_begin = split * num_kv_tiles / num_splits;
+  const int tile_end = (split + 1) * num_kv_tiles / num_splits;
 
   extern __shared__ __align__(128) unsigned char shared_bytes[];
   auto& storage =
@@ -3697,14 +3705,11 @@ void streamattn_transposed_wgmma_micro_prefill_out_cuda(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-void streamattn_natural_wgmma_micro_prefill_out_cuda(
-    torch::Tensor query,
-    torch::Tensor k_cache,
-    torch::Tensor v_cache,
-    torch::Tensor partial_o,
-    torch::Tensor partial_lse,
-    torch::Tensor output,
-    int64_t num_splits) {
+void streamattn_natural_wgmma_micro_prefill_components_out_cuda(
+    torch::Tensor query, torch::Tensor k_cache, torch::Tensor v_cache,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t num_splits, int64_t component) {
+  TORCH_CHECK(component >= 0 && component <= 2, "invalid diagnostic component");
   TORCH_CHECK(query.is_cuda() && k_cache.is_cuda() && v_cache.is_cuda() &&
               partial_o.is_cuda() && partial_lse.is_cuda() && output.is_cuda(),
               "all tensors must be CUDA tensors");
@@ -3769,33 +3774,44 @@ void streamattn_natural_wgmma_micro_prefill_out_cuda(
       cudaFuncAttributeMaxDynamicSharedMemorySize,
       shared_bytes));
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  partial_kernel<<<work_groups * static_cast<int>(num_splits), 128,
-                   shared_bytes, stream>>>(
-      reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
-      reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
-      reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
-      partial_o.data_ptr<float>(),
-      partial_lse.data_ptr<float>(),
-      batch_size,
-      query_length,
-      kv_length,
-      q_heads,
-      kv_heads,
-      group_size,
-      static_cast<int>(num_splits));
-
-  streamattn_natural_wgmma_micro_prefill_merge_kernel<<<
-      batch_size * query_length * q_heads, 128, 0, stream>>>(
-      partial_o.data_ptr<float>(),
-      partial_lse.data_ptr<float>(),
-      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
-      batch_size,
-      query_length,
-      q_heads,
-      kv_heads,
-      group_size,
-      static_cast<int>(num_splits));
+  if (component != 2) {
+    partial_kernel<<<work_groups * static_cast<int>(num_splits), 128,
+                     shared_bytes, stream>>>(
+        reinterpret_cast<const Element*>(query.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(k_cache.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(v_cache.data_ptr<at::BFloat16>()),
+        partial_o.data_ptr<float>(),
+        partial_lse.data_ptr<float>(),
+        batch_size,
+        query_length,
+        kv_length,
+        q_heads,
+        kv_heads,
+        group_size,
+        static_cast<int>(num_splits));
+  }
+  if (component != 1) {
+    streamattn_natural_wgmma_micro_prefill_merge_kernel<<<
+        batch_size * query_length * q_heads, 128, 0, stream>>>(
+        partial_o.data_ptr<float>(),
+        partial_lse.data_ptr<float>(),
+        reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+        batch_size,
+        query_length,
+        q_heads,
+        kv_heads,
+        group_size,
+        static_cast<int>(num_splits));
+  }
   C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+void streamattn_natural_wgmma_micro_prefill_out_cuda(
+    torch::Tensor query, torch::Tensor k_cache, torch::Tensor v_cache,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t num_splits) {
+  streamattn_natural_wgmma_micro_prefill_components_out_cuda(
+      query, k_cache, v_cache, partial_o, partial_lse, output, num_splits, 0);
 }
 
 void streamattn_transposed_wgmma_exact_merge_out_cuda(

@@ -681,12 +681,20 @@ workload fingerprint can compete on latency.
 
 The first SM90 v2 experiment now contains two exact candidate families for the
 previously uncovered `M=2-64` regime. Across 72 BF16 contiguous-HND H100 canary
-cells, both were exact; choosing the faster family per cell measured a `1.342x`
+cells, both passed the sampled numerical checks; choosing the faster family per cell measured a `1.342x`
 geometric mean over graph-captured Flash SDPA and won 53/72 paired cells. The
 transposed family owns very small M, while 64-row query/GQA packing takes over
 as KV reuse matters. `M=64` remains below parity, and the fastest eligible
 baseline portfolio has not yet been resolved, so this is directional kernel and
 compiler evidence rather than a promoted universal route.
+
+The next micro-prefill audit adds irregular query/KV lengths, larger batches
+and head counts, independent FP32 output/LSE checks, mutable-input CUDA graph
+replay, forced FlashInfer FA2/FA3 baselines, and separate producer/merge timing.
+It also fixes a trailing-split out-of-bounds preload in the experimental natural
+family. The audit is implemented; its GPU replay is pending. The `1.342x` figure
+above remains an oracle choice against Flash SDPA, not a measured public
+dispatcher result. See the [audit notes](docs/sm90_micro_prefill_audit.md).
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build

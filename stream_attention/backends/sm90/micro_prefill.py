@@ -103,6 +103,10 @@ def micro_prefill_shape_reasons(
 
     batch, query_len, q_heads, head_dim = map(int, query.shape)
     kv_batch, kv_heads, kv_len, kv_dim = map(int, key_cache.shape)
+    if batch <= 0:
+        reasons.append("batch")
+    if not query.device == key_cache.device == value_cache.device:
+        reasons.append("device")
     if batch != kv_batch or head_dim != kv_dim:
         reasons.append("shape")
     if not MICRO_PREFILL_MIN_QUERY_LEN <= query_len <= MICRO_PREFILL_MAX_QUERY_LEN:
@@ -221,8 +225,8 @@ class MicroPrefillPlan:
             output = torch.empty_like(query)
         if output.shape != query.shape or output.dtype != query.dtype:
             raise ValueError("output must match query shape and dtype")
-        if not output.is_cuda or not output.is_contiguous():
-            raise ValueError("output must be a contiguous CUDA tensor")
+        if output.device != query.device or not output.is_contiguous():
+            raise ValueError("output must be contiguous on the query CUDA device")
 
         groups = batch * query_len * kv_heads
         partial_output = torch.empty(
@@ -351,8 +355,8 @@ class NaturalMicroPrefillPlan:
             output = torch.empty_like(query)
         if output.shape != query.shape or output.dtype != query.dtype:
             raise ValueError("output must match query shape and dtype")
-        if not output.is_cuda or not output.is_contiguous():
-            raise ValueError("output must be a contiguous CUDA tensor")
+        if output.device != query.device or not output.is_contiguous():
+            raise ValueError("output must be contiguous on the query CUDA device")
 
         work_groups = batch * kv_heads * query_tiles
         partial_output = torch.empty(
