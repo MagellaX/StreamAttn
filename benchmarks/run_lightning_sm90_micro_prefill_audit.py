@@ -23,13 +23,15 @@ from benchmarks.run_lightning_sm90_grouped_rs_prefill_canary import (  # noqa: E
     TERMINAL_STATES,
     _delete_job,
     _fetch_finished_logs,
-    _result_from_logs,
 )
+from benchmarks.lightning_log_artifacts import result_from_logs  # noqa: E402
 
 OVERLAY = (
     "benchmarks/profile_sm90_micro_prefill_audit.py",
     "benchmarks/profile_sm90_micro_prefill.py",
     "stream_attention/backends/sm90/micro_prefill.py",
+    "stream_attention/backends/sm90/micro_prefill_semantics.py",
+    "stream_attention/backends/sm90/micro_prefill_semantics_sources.py",
     "stream_attention/backends/sm90/transposed_gqa_exact_sources.py",
     "stream_attention/baseline_resolver.py",
     "benchmarks/micro_prefill_baselines.py",
@@ -37,15 +39,27 @@ OVERLAY = (
 )
 
 
-def command(cohort, baseline="torch_flash"):
+def command(cohort, baseline="torch_flash", experiment="audit"):
     sha = subprocess.check_output(
         ["git", "rev-parse", "origin/main"], cwd=ROOT, text=True
     ).strip()
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for path in OVERLAY:
+        paths = OVERLAY
+        if experiment == "semantics":
+            paths += (
+                "benchmarks/profile_sm90_micro_prefill_semantics.py",
+            )
+        for path in paths:
             archive.add(ROOT / path, arcname=path)
     payload = base64.b64encode(buffer.getvalue()).decode()
+    profile_command = (
+        "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
+        f"--provider lightning --cohort {cohort} --baseline {baseline} "
+        if experiment == "audit" else
+        "python -u benchmarks/profile_sm90_micro_prefill_semantics.py "
+        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else 'full'} "
+    )
     return "\n".join(
         [
             "set -eu",
@@ -62,12 +76,12 @@ def command(cohort, baseline="torch_flash"):
             "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
             "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
             "PY",
+            "python -m pip install -q ninja pyyaml" if experiment == "semantics" else
             "python -m pip install -q ninja pyyaml flashinfer-python==0.6.13 flashinfer-cubin==0.6.13",
+            "true" if experiment == "semantics" else
             "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128",
             "cd /root/StreamAttn",
-            "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
-            f"--provider lightning --cohort {cohort} --baseline {baseline} "
-            "--cutlass-root /tmp/flashmla-etap/csrc/cutlass "
+            profile_command + "--cutlass-root /tmp/flashmla-etap/csrc/cutlass "
             "--build-dir /tmp/streamattn-audit-build --output-json /tmp/audit.json",
         ]
     )
@@ -75,6 +89,7 @@ def command(cohort, baseline="torch_flash"):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--experiment", choices=("audit", "semantics"), default="audit")
     p.add_argument("--cohort", choices=("lightning", "smoke"), default="lightning")
     p.add_argument(
         "--baseline",
@@ -113,7 +128,7 @@ def main():
     try:
         job = api.submit_job(
             name=f"streamattn-micro-audit-{int(time.time())}",
-            command=command(args.cohort, args.baseline),
+            command=command(args.cohort, args.baseline, args.experiment),
             cloud_account=args.cloud_account,
             teamspace_id=args.teamspace_id,
             studio_id=None,
@@ -170,16 +185,19 @@ def main():
         )
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.with_suffix(".log").write_text(logs, encoding="utf-8")
-        result = _result_from_logs(
-            logs, schema="streamattn.sm90_micro_prefill_audit.v2"
-        )
-        if not result or not result.get("complete"):
+        schema = ("streamattn.sm90_micro_prefill_semantics.v1" if args.experiment == "semantics"
+                  else "streamattn.sm90_micro_prefill_audit.v2")
+        result = result_from_logs(logs, schema=schema)
+        if not result:
             raise RuntimeError(f"incomplete result, state={state}; see local log")
         result["lightning_job_id"] = job.id
+        result["reported_cost"] = current.total_cost
         args.output_json.write_text(
             json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )
         print(f"wrote {args.output_json}", flush=True)
+        if not result.get("complete") or state != "completed":
+            raise RuntimeError(f"failed result, state={state}; evidence retained")
     finally:
         if job is not None:
             _delete_job(api, args, job)

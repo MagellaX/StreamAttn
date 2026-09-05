@@ -263,6 +263,8 @@ class Natural128AsyncMicroPrefillPlan:
         if protocol not in PROTOCOLS:
             raise ValueError("protocol must be overlap, serial, or overlap_drained")
         reasons = micro_prefill_shape_reasons(query, key_cache, value_cache)
+        if query.dtype != torch.bfloat16 and "dtype" not in reasons:
+            reasons.append("dtype")
         if reasons:
             raise ValueError("unsupported M128 buffers: " + ",".join(reasons))
         if not supports_sm90_micro_prefill(

@@ -684,8 +684,8 @@ previously uncovered `M=2-64` regime. Across 72 BF16 contiguous-HND H100 canary
 cells, both passed the sampled numerical checks; choosing the faster family per cell measured a `1.342x`
 geometric mean over graph-captured Flash SDPA and won 53/72 paired cells. The
 transposed family owns very small M, while 64-row query/GQA packing takes over
-as KV reuse matters. `M=64` remains below parity, and the fastest eligible
-baseline portfolio has not yet been resolved, so this is directional kernel and
+as KV reuse matters. `M=64` remains below parity, and that initial canary timed
+only Flash SDPA, so this is directional kernel and
 compiler evidence rather than a promoted universal route.
 
 The micro-prefill audit adds irregular query/KV lengths, larger batches and
@@ -708,6 +708,20 @@ standalone FA3 took `15.37 us` at M64/D128 versus `31.10 us` for the retained
 R64 control in that worker. See the [baseline audit](docs/sm90_micro_prefill_audit.md).
 The earlier `1.342x` figure remains a per-cell oracle choice against Flash SDPA,
 not a measured public dispatcher result or a win over every exact backend.
+
+Both retained families now also run **native FP16 and explicit-position causal
+attention**. Two independent H100 runs passed 84/84 full-matrix cases and a
+24/24-case replay, checking output and LSE against FP32 before and after
+graph-buffer mutations. This includes reordered keys, large logical positions,
+empty visibility rows, B1/B2, and both D64/D128. It is a functional expansion,
+not another speedup claim. See the [contract and evidence](docs/sm90_micro_prefill_semantics.md).
+
+Kernel research also tested delaying softmax denominator reduction until the
+end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
+`1.100x`, but regressed B2/M64/N4K to `0.987x` versus its paired native control.
+It remains experimental, with no dispatcher change. The
+[research notes](docs/sm90_kernel_research_20260905.md) connect this result to
+upstream code and identify the remaining profiling questions.
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build

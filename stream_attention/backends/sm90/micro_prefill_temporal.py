@@ -63,6 +63,8 @@ def temporal_shape_reasons(
     query: torch.Tensor, key_cache: torch.Tensor, value_cache: torch.Tensor
 ) -> list[str]:
     reasons = micro_prefill_shape_reasons(query, key_cache, value_cache)
+    if query.dtype != torch.bfloat16 and "dtype" not in reasons:
+        reasons.append("dtype")
     # The same packed-row geometry also represents a single query position.
     if query.dim() == 4 and query.shape[1] == 1:
         reasons = [reason for reason in reasons if reason != "query_len"]

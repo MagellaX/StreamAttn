@@ -15,10 +15,12 @@ if str(REPO_ROOT) not in sys.path:
 
 
 def compile_sm90_sources(*, cutlass_root: Path, build_root: Path) -> dict[str, object]:
+    import torch
     import torch.utils.cpp_extension as cpp_extension
 
     from stream_attention.backends.sm90 import tma_pipeline_floor
     from stream_attention.backends.sm90 import transposed_gqa_exact
+    from stream_attention.backends.sm90 import micro_prefill_semantics
 
     build_root.mkdir(parents=True, exist_ok=True)
     components: list[str] = []
@@ -41,6 +43,20 @@ def compile_sm90_sources(*, cutlass_root: Path, build_root: Path) -> dict[str, o
             if extension is not sentinel:
                 raise RuntimeError(f"unexpected exact D{head_dim} compile result")
             components.append(f"exact_d{head_dim}")
+
+        micro_prefill_semantics._EXTENSIONS.clear()
+        for head_dim in (64, 128):
+            for dtype, causal in (
+                (torch.float16, False), (torch.float16, True), (torch.bfloat16, True)
+            ):
+                extension = micro_prefill_semantics.compile_semantic_extension(
+                    head_dim=head_dim, dtype=dtype, causal=causal,
+                    cutlass_root=cutlass_root, build_dir=build_root / "micro-semantics",
+                    verbose=True,
+                )
+                if extension is not sentinel:
+                    raise RuntimeError("unexpected micro-prefill semantics compile result")
+                components.append(f"micro_d{head_dim}_{dtype}_causal{causal}")
 
         tma_pipeline_floor._EXTENSIONS.clear()
         extension = tma_pipeline_floor.compile_tma_pipeline_floor_extension(

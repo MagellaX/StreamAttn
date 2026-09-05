@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 import torch
 
+from .micro_prefill_semantics import compile_semantic_extension, validate_positions
 from .transposed_gqa_exact import (
     compile_transposed_gqa_exact_extension,
     resolve_cutlass_root,
@@ -122,8 +123,8 @@ def micro_prefill_shape_reasons(
         reasons.append("head_dim")
     if kv_len <= 0 or kv_len % MICRO_PREFILL_TILE_N:
         reasons.append("kv_len")
-    if not all(
-        tensor.dtype == torch.bfloat16
+    if query.dtype not in (torch.bfloat16, torch.float16) or not all(
+        tensor.dtype == query.dtype
         for tensor in (query, key_cache, value_cache)
     ):
         reasons.append("dtype")
@@ -160,6 +161,29 @@ def supports_sm90_micro_prefill(
     return True
 
 
+def _compile_plan(
+    query, key_cache, *, causal, query_positions, key_positions,
+    cutlass_root, build_dir, verbose,
+):
+    validate_positions(
+        query, key_cache, causal=causal,
+        query_positions=query_positions, key_positions=key_positions,
+    )
+    if causal or query.dtype == torch.float16:
+        extension = compile_semantic_extension(
+            head_dim=int(query.shape[-1]), dtype=query.dtype, causal=causal,
+            cutlass_root=cutlass_root, build_dir=build_dir, verbose=verbose,
+        )
+        if not causal:
+            query_positions = torch.empty(0, dtype=torch.int64, device=query.device)
+            key_positions = torch.empty(0, dtype=torch.int64, device=query.device)
+        return extension, (query_positions, key_positions)
+    return compile_transposed_gqa_exact_extension(
+        head_dim=int(query.shape[-1]), cutlass_root=cutlass_root,
+        build_dir=build_dir, verbose=verbose,
+    ), None
+
+
 @dataclass
 class MicroPrefillPlan:
     """Allocation-free replay plan for exact transposed GQA micro-prefill."""
@@ -176,6 +200,7 @@ class MicroPrefillPlan:
     extension: Any
     launch: Any
     backend: str = "sm90_transposed_gqa_wgmma_micro_prefill"
+    positions: tuple[torch.Tensor, torch.Tensor] | None = None
 
     @classmethod
     def build(
@@ -190,6 +215,9 @@ class MicroPrefillPlan:
         cutlass_root: Optional[Path] = None,
         build_dir: Optional[Path] = None,
         compile_verbose: bool = False,
+        causal: bool = False,
+        query_positions: torch.Tensor | None = None,
+        key_positions: torch.Tensor | None = None,
     ) -> "MicroPrefillPlan":
         if not supports_sm90_micro_prefill(
             query,
@@ -218,8 +246,8 @@ class MicroPrefillPlan:
                 kv_len=kv_len,
                 target_producer_ctas=target_producer_ctas,
             )
-        if splits <= 0 or splits > kv_len // MICRO_PREFILL_TILE_N:
-            raise ValueError("num_splits must be in [1, kv_len/64]")
+        if splits <= 0 or splits > min(kv_len // MICRO_PREFILL_TILE_N, 512):
+            raise ValueError("num_splits must be in [1,min(kv_len/64,512)]")
 
         if output is None:
             output = torch.empty_like(query)
@@ -244,10 +272,11 @@ class MicroPrefillPlan:
             device=query.device,
             dtype=torch.float32,
         )
-        extension = compile_transposed_gqa_exact_extension(
+        extension, positions = _compile_plan(
+            query, key_cache, causal=causal,
+            query_positions=query_positions, key_positions=key_positions,
             cutlass_root=cutlass_root,
             build_dir=build_dir,
-            head_dim=head_dim,
             verbose=compile_verbose,
         )
         return cls(
@@ -263,7 +292,8 @@ class MicroPrefillPlan:
             partial_lse=partial_lse,
             num_splits=splits,
             extension=extension,
-            launch=extension.micro_prefill_out,
+            launch=extension.out if positions is not None else extension.micro_prefill_out,
+            positions=positions,
         )
 
     @property
@@ -275,6 +305,13 @@ class MicroPrefillPlan:
     def run(self) -> torch.Tensor:
         """Replay the preplanned exact producer and associative merge."""
 
+        if self.positions is not None:
+            self.launch(
+                self.query, self.key_cache, self.value_cache,
+                self.partial_output, self.partial_lse, self.output,
+                *self.positions, self.num_splits, False,
+            )
+            return self.output
         self.launch(
             self.query_group,
             self.key_cache,
@@ -302,6 +339,7 @@ class NaturalMicroPrefillPlan:
     extension: Any
     launch: Any
     backend: str = "sm90_natural_wgmma_micro_prefill"
+    positions: tuple[torch.Tensor, torch.Tensor] | None = None
 
     @classmethod
     def build(
@@ -316,6 +354,9 @@ class NaturalMicroPrefillPlan:
         cutlass_root: Optional[Path] = None,
         build_dir: Optional[Path] = None,
         compile_verbose: bool = False,
+        causal: bool = False,
+        query_positions: torch.Tensor | None = None,
+        key_positions: torch.Tensor | None = None,
     ) -> "NaturalMicroPrefillPlan":
         if not supports_sm90_micro_prefill(
             query,
@@ -374,10 +415,11 @@ class NaturalMicroPrefillPlan:
             device=query.device,
             dtype=torch.float32,
         )
-        extension = compile_transposed_gqa_exact_extension(
+        extension, positions = _compile_plan(
+            query, key_cache, causal=causal,
+            query_positions=query_positions, key_positions=key_positions,
             cutlass_root=cutlass_root,
             build_dir=build_dir,
-            head_dim=head_dim,
             verbose=compile_verbose,
         )
         return cls(
@@ -390,7 +432,8 @@ class NaturalMicroPrefillPlan:
             num_splits=splits,
             query_tiles=query_tiles,
             extension=extension,
-            launch=extension.natural_micro_prefill_out,
+            launch=extension.out if positions is not None else extension.natural_micro_prefill_out,
+            positions=positions,
         )
 
     @property
@@ -402,6 +445,13 @@ class NaturalMicroPrefillPlan:
     def run(self) -> torch.Tensor:
         """Replay the preplanned exact natural small-M producer and merge."""
 
+        if self.positions is not None:
+            self.launch(
+                self.query, self.key_cache, self.value_cache,
+                self.partial_output, self.partial_lse, self.output,
+                *self.positions, self.num_splits, True,
+            )
+            return self.output
         self.launch(
             self.query,
             self.key_cache,

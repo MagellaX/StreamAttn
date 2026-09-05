@@ -38,7 +38,7 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Offline-compile D64, D128, and TMA SM90 extensions
+      - name: Offline-compile D64, D128, TMA, and FP16/BF16 masked SM90 extensions
         run: |
           docker run --rm \
             -e MAX_JOBS=2 \

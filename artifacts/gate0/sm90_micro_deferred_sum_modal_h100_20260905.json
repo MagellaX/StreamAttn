@@ -1,0 +1,315 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_deferred_sum.v1",
+  "complete": true,
+  "provider": "modal",
+  "torch_version": "2.7.1+cu128",
+  "cuda_version": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "rows": [
+    {
+      "batch": 1,
+      "m": 64,
+      "n": 4096,
+      "g": 8,
+      "d": 128,
+      "splits": 16,
+      "correctness": {
+        "control": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.0003130584955215454,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "deferred": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.0003130584955215454,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "paired_trials": [
+        {
+          "control": 31.251840591430664,
+          "deferred": 30.806400775909424,
+          "speedup": 1.0144593267730768
+        },
+        {
+          "deferred": 30.809600353240967,
+          "control": 31.194241046905518,
+          "speedup": 1.0124844428118032
+        },
+        {
+          "control": 31.202080249786377,
+          "deferred": 30.801761150360107,
+          "speedup": 1.0129966302079967
+        },
+        {
+          "deferred": 30.780160427093506,
+          "control": 31.13424062728882,
+          "speedup": 1.0115035202962634
+        },
+        {
+          "control": 31.201279163360596,
+          "deferred": 30.79551935195923,
+          "speedup": 1.0131759366277924
+        },
+        {
+          "deferred": 30.78752040863037,
+          "control": 31.173760890960693,
+          "speedup": 1.012545358548006
+        },
+        {
+          "control": 31.13840103149414,
+          "deferred": 30.52527904510498,
+          "speedup": 1.0200857127459242
+        },
+        {
+          "deferred": 30.533440113067627,
+          "control": 30.994880199432373,
+          "speedup": 1.0151126137328776
+        },
+        {
+          "control": 30.957279205322266,
+          "deferred": 30.549280643463135,
+          "speedup": 1.0133554228860846
+        }
+      ],
+      "median_speedup": 1.0131759366277924,
+      "passed": true
+    },
+    {
+      "batch": 1,
+      "m": 64,
+      "n": 16384,
+      "g": 8,
+      "d": 128,
+      "splits": 16,
+      "correctness": {
+        "control": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.00016888976097106934,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.006109476089477539,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "deferred": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.00016888976097106934,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.006109476089477539,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "paired_trials": [
+        {
+          "control": 49.562082290649414,
+          "deferred": 45.03583908081055,
+          "speedup": 1.1005031393268183
+        },
+        {
+          "deferred": 44.98688220977783,
+          "control": 49.48512077331543,
+          "speedup": 1.0999900046987456
+        },
+        {
+          "control": 49.45231914520264,
+          "deferred": 44.98432159423828,
+          "speedup": 1.0993234396478402
+        },
+        {
+          "deferred": 44.969120025634766,
+          "control": 49.472479820251465,
+          "speedup": 1.1001433826601354
+        },
+        {
+          "control": 49.199042320251465,
+          "deferred": 44.63024139404297,
+          "speedup": 1.102370069789009
+        },
+        {
+          "deferred": 44.61359977722168,
+          "control": 49.06015872955322,
+          "speedup": 1.0996682396071034
+        },
+        {
+          "control": 49.1431999206543,
+          "deferred": 44.63551998138428,
+          "speedup": 1.100988628364809
+        },
+        {
+          "deferred": 44.61040019989014,
+          "control": 49.01264190673828,
+          "speedup": 1.098681959523398
+        },
+        {
+          "control": 49.08544063568115,
+          "deferred": 44.63456153869629,
+          "speedup": 1.0997182215652805
+        }
+      ],
+      "median_speedup": 1.0999900046987456,
+      "passed": true
+    },
+    {
+      "batch": 2,
+      "m": 64,
+      "n": 4096,
+      "g": 8,
+      "d": 128,
+      "splits": 16,
+      "correctness": {
+        "control": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.00042457878589630127,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.007761240005493164,
+            "lse_max_abs": 4.76837158203125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "deferred": {
+          "initial": {
+            "passed": true,
+            "max_abs": 0.00042457878589630127,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "mutated": {
+            "passed": true,
+            "max_abs": 0.007761240005493164,
+            "lse_max_abs": 4.76837158203125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "paired_trials": [
+        {
+          "control": 54.63776111602783,
+          "deferred": 55.61215877532959,
+          "speedup": 0.9824786938547327
+        },
+        {
+          "deferred": 55.825438499450684,
+          "control": 55.00368118286133,
+          "speedup": 0.9852798770833221
+        },
+        {
+          "control": 54.92271900177002,
+          "deferred": 55.652642250061035,
+          "speedup": 0.9868843020065194
+        },
+        {
+          "deferred": 55.69551944732666,
+          "control": 54.93648052215576,
+          "speedup": 0.9863716339715846
+        },
+        {
+          "control": 54.936161041259766,
+          "deferred": 55.66544055938721,
+          "speedup": 0.9868988817693916
+        },
+        {
+          "deferred": 55.39231777191162,
+          "control": 54.71456050872803,
+          "speedup": 0.9877644176946271
+        },
+        {
+          "control": 54.66720104217529,
+          "deferred": 55.521278381347656,
+          "speedup": 0.9846171168231009
+        },
+        {
+          "deferred": 55.44191837310791,
+          "control": 54.70064163208008,
+          "speedup": 0.9866296700622937
+        },
+        {
+          "control": 54.67088222503662,
+          "deferred": 55.39711952209473,
+          "speedup": 0.9868903418928046
+        }
+      ],
+      "median_speedup": 0.9866296700622937,
+      "passed": true
+    }
+  ],
+  "ncu_path": "/usr/local/cuda/bin/ncu",
+  "dynamic_counters_collected": false,
+  "timing_contract": "warm repeated CUDA graph; paired within one process; no external baseline",
+  "source_sha256": {
+    "control": "76473f953bcfc85fa55ea24c0261b8bdb05c8b4264a6e8249310bc0758049347",
+    "deferred": "10e4df96f5153d15afbc16d115939d57423c56745025fa4b9f38392526da69a8"
+  },
+  "subprocess_exit_code": 0
+}

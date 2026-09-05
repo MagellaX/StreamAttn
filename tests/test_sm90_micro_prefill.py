@@ -82,8 +82,8 @@ def test_shape_contract_spans_m2_to_m64_without_cell_registration():
 
 
 def test_shape_contract_reports_semantic_boundaries():
-    q = torch.empty(1, 1, 12, 96, dtype=torch.float16, device="meta")
-    kv = torch.empty(1, 2, 4097, 96, dtype=torch.float16, device="meta")
+    q = torch.empty(1, 1, 12, 96, dtype=torch.float32, device="meta")
+    kv = torch.empty(1, 2, 4097, 96, dtype=torch.float32, device="meta")
     reasons = micro_prefill_shape_reasons(q, kv, kv)
     assert set(reasons) == {"query_len", "gqa", "head_dim", "kv_len", "dtype"}
 

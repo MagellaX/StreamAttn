@@ -141,7 +141,7 @@ Not yet implemented:
 - measured basis-operation adapter kernels and counter artifacts;
 - critical-path resource DAG calibrated from those measurements;
 - fastest-exact-baseline resolution for the micro-prefill matrix;
-- FP16, paged/ragged, causal/sliding, and additive-mask micro-prefill lowering;
+- paged/ragged, sliding, and additive-mask micro-prefill lowering;
 - a competitive `M=64`/short-K physical family;
 - mixed-ragged macro-plan timing and dispatch;
 - a no-external-fallback H100 phase database.
@@ -174,7 +174,21 @@ after provenance and workspace repairs. At M64/D128, standalone FA3 took
 stronger competitive target than Flash SDPA alone, not a complete shape-matrix
 or holdout result.
 
-Expand the same semantic family to paged/ragged storage and masks independently
+The retained R64 and transposed families now support native FP16/BF16 and
+explicit int64 causal Q/K positions. The full 84-case Lightning H100 matrix
+and independent 24-case Modal H100 replay passed all output/LSE checks,
+including in-place graph input changes and empty visibility. This removes the
+BF16/noncausal-only functional boundary for contiguous micro-prefill; it does
+not claim whole-matrix performance promotion. See
+[semantics and hardware evidence](sm90_micro_prefill_semantics.md).
+
+A source-minimal R64 denominator-reduction ablation measured paired speedups
+of 1.013x, 1.100x and 0.987x at three concurrency/depth anchors. Its mixed result
+does not justify a universal switch. The retained producer remains unchanged;
+[kernel research](sm90_kernel_research_20260905.md) records the math, upstream
+sources, and the dynamic-counter question left open.
+
+Expand the same semantic family to paged/ragged storage and further masks independently
 of the producer research, then measure mixed batches and holdout routing regret.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.
