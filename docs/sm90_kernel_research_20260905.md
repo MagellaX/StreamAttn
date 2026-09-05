@@ -110,6 +110,52 @@ separate profile to explain it. Record actual SM count and residency limits
 rather than inferring CTA waves from the generic H100 name.
 [Nsight Compute profiling guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html).
 
+## Measured Follow-Up: R64 Counters
+
+The bounded counter probe now completed all six control/candidate launches on
+an H100 with 132 SMs, CUDA 12.8 and Nsight Compute 2025.1. Each profiled producer
+was isolated by its kernel name and an NVTX range after three warmup calls.
+Both variants also passed FP32 output/LSE checks in the profiling workers.
+
+The first attempt failed because the host denied GPU clock locking. Retrying
+with `--clock-control none` collected counters successfully. These are
+instrumented, unmanaged-clock profiles, not replacements for the earlier
+uninstrumented paired latency measurements.
+
+| B / N | Control instructions | Deferred instructions | Reduction | No eligible warp, control / deferred |
+| --- | ---: | ---: | ---: | ---: |
+| 1 / 4K | 7,163,904 | 7,139,328 | 0.34% | 76.21% / 76.49% |
+| 1 / 16K | 12,306,432 | 12,183,552 | 1.00% | 72.64% / 73.13% |
+| 2 / 4K | 14,327,808 | 14,278,656 | 0.34% | 71.74% / 72.09% |
+
+All six launches used **164 registers/thread** and **65,536 dynamic shared
+bytes/block**. Average eligible warps per scheduler remained only 0.27-0.36.
+DRAM throughput was 3.92-11.44% of peak in these profiles. Nsight's stall-rule
+report attributed roughly 37-41% of average warp cycles between issued
+instructions to L1TEX long-scoreboard dependencies. This is an aggregate
+diagnostic, not a source-PC attribution or a percentage of wall-clock runtime.
+
+There is a useful arithmetic cross-check. Each four-lane row sum uses two
+shuffle/add pairs. With two row fragments per lane and four warps per CTA,
+deferring it from every tile to once per split removes approximately
+`8 * (tiles_per_split - 1) * 4 * producer_CTAs` warp instructions. At these
+three anchors this predicts 24,576, 122,880 and 49,152 fewer instructions,
+exactly matching the measured total-count deltas. The resource allocation did
+not change. This supports the intended operation removal, but it does not
+explain the earlier 10% warm-graph gain or the B2 regression by itself.
+
+**Next research question:** which instructions create those dependencies?
+Collect source-correlated stalls before changing the producer. Distinguish the
+synchronous scalar Q-staging loop from K/V load waits and the output epilogue.
+If Q staging dominates, a bounded vectorized asynchronous Q-load replacement
+is a smaller test than another whole-pipeline rewrite. If it does not, reject
+that hypothesis. The present counters do not justify another R128 family,
+register cap, split sweep or automatic promotion of deferred reduction.
+
+- [Completed counter evidence](../artifacts/gate0/sm90_micro_counters_modal_h100_20260905_v2.json)
+- [Clock-lock failure, retained](../artifacts/gate0/sm90_micro_counters_modal_h100_20260905.json)
+- [Profiler command/source correlation options](https://docs.nvidia.com/nsight-compute/NsightComputeCli/index.html)
+
 ## Global Sources: Useful Leads, Not New Claims
 
 Zhejiang University's supercomputing-team lab material explains WGMMA
@@ -127,11 +173,13 @@ a promotion or a reason to change architecture now.
 
 ## Where Deeper Work Is Still Needed
 
-1. **Dynamic bottleneck attribution:** distinguish memory latency, register
-   bandwidth, compiler serialization, softmax instructions and launch/merge
-   costs on the same completed request. Static SASS is not a stall measurement.
+1. **Source-correlated latency attribution:** the first dynamic profiles point
+   to low eligible-warp supply and long-scoreboard dependencies, with unchanged
+   register/shared-memory allocation. Locate the responsible load instructions
+   before replacing a pipeline. Static SASS alone is not a stall measurement.
 2. **Exact mask lowering:** retain arbitrary logical positions as the oracle,
-   then prove cheaper affine, paged and ragged specializations equivalent.
+   then prove cheaper affine and further mask specializations equivalent.
+   Direct paged/ragged FP16/BF16 execution now has independent H100 evidence.
 3. **Whole-batch scheduling:** determine when one persistent mixed launch beats
    phase-separated launches after metadata and merge costs. Use frozen serving
    traces and holdouts, not an oracle's per-cell family choice.

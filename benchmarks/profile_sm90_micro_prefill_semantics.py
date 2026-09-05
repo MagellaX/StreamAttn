@@ -98,9 +98,9 @@ def reconstructed_lse(plan):
             .permute(0, 2, 1, 3).reshape(b, m, h))
 
 
-def check_output(plan, expected, expected_lse):
+def check_output(plan, expected, expected_lse, *, observed_lse=None):
     out = plan.output.float()
-    lse = reconstructed_lse(plan)
+    lse = reconstructed_lse(plan) if observed_lse is None else observed_lse
     finite = torch.isfinite(expected_lse)
     err = float((out - expected).abs().max())
     lse_err = float((lse[finite] - expected_lse[finite]).abs().max()) if finite.any() else 0.0

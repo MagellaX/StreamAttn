@@ -140,8 +140,8 @@ Not yet implemented:
 - real serving trace capture and boundary generators;
 - measured basis-operation adapter kernels and counter artifacts;
 - critical-path resource DAG calibrated from those measurements;
-- fastest-exact-baseline resolution for the micro-prefill matrix;
-- paged/ragged, sliding, and additive-mask micro-prefill lowering;
+- full-matrix fastest-exact-baseline measurements, beyond the isolated adapter audit;
+- sliding and additive-mask micro-prefill lowering;
 - a competitive `M=64`/short-K physical family;
 - mixed-ragged macro-plan timing and dispatch;
 - a no-external-fallback H100 phase database.
@@ -186,9 +186,20 @@ A source-minimal R64 denominator-reduction ablation measured paired speedups
 of 1.013x, 1.100x and 0.987x at three concurrency/depth anchors. Its mixed result
 does not justify a universal switch. The retained producer remains unchanged;
 [kernel research](sm90_kernel_research_20260905.md) records the math, upstream
-sources, and the dynamic-counter question left open.
+sources, and the completed six-launch counter follow-up. Resource allocation
+was unchanged, instruction savings were 0.34-1.00%, and eligible-warp supply
+remained low. Source-correlated load/stall attribution is the next producer
+question, rather than another blind tile or split sweep.
 
-Expand the same semantic family to paged/ragged storage and further masks independently
-of the producer research, then measure mixed batches and holdout routing regret.
+Direct page-16 micro-prefill now extends both retained families to HND/NHD,
+FP16/BF16, independent query/KV lengths and mutable device page tables. The
+corrected Lightning H100 matrix passed 144/144 cases and the independent Modal
+replay passed 48/48, including poisoned tails, shared prefixes and empty rows.
+The experiment is documented in [paged micro-prefill](sm90_micro_prefill_paged.md).
+It adds no KV gather/repack and does not register a new public dispatcher route.
+
+Next, compare complete mixed-ragged plans with compatible exact paged baselines,
+then measure holdout routing regret. Further masks and bounded M64 producer
+research remain independent of that integration.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

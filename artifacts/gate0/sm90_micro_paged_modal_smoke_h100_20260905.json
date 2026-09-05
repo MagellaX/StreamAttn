@@ -1,0 +1,198 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_paged.v1",
+  "complete": true,
+  "provider": "modal",
+  "seed": 9613,
+  "torch_version": "2.7.1+cu128",
+  "cuda_version": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "planned_cases": 2,
+  "rows": [
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019592642784118652,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.23199959595998,
+            11.146666606267292,
+            11.110400160153707
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007723093032836914,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019592642784118652,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.422932545344036,
+            21.270400285720825,
+            21.255467335383095
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007723093032836914,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0016742348670959473,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.301333705584208,
+            11.215999722480774,
+            11.20853324731191
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0075571537017822266,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0016742348670959473,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.69706622759501,
+            21.60533269246419,
+            21.58720095952352
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0075571537017822266,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    }
+  ],
+  "source_sha256": {
+    "stream_attention/paged.py": "e9d5451aeb4c2e7f5624851fbb6bfbf9f9cc18baa67207e686a46a2d27ccb91b",
+    "stream_attention/backends/sm90/micro_prefill_paged.py": "2dee9d25c9aad574cc6dc513517158f5b45e305cf7637e7f338bbdf101559aed",
+    "stream_attention/backends/sm90/micro_prefill_paged_sources.py": "74b9235ee123f909fa9357d25896b603165dfb1772cb9e9127b445408a08a90f",
+    "stream_attention/backends/sm90/micro_prefill_semantics.py": "aa1707201ae71c41b0198f28f75673dc18389fb6d19e0ba8e3558cf02cac70f3",
+    "stream_attention/backends/sm90/micro_prefill_semantics_sources.py": "deb54cc90027b3fedc65cb2afb4c3ea5bd7a0bd4745308d58a10fecdd1feb04f",
+    "stream_attention/backends/sm90/transposed_gqa_exact_sources.py": "318224b7c8f01edc81fcb8f27e575a81ea600aaf2ad526df1af1766b4b77681a",
+    "benchmarks/profile_sm90_micro_prefill_paged.py": "d0dcc1aaba3f3592c581f6b268111020c702be25d802a47acf7f2327209efcc2",
+    "benchmarks/profile_sm90_micro_prefill_semantics.py": "8a61470adac580e241492ae9087478f20b81d6c838ae4a4401c53f65efdff1d0"
+  },
+  "passed_cases": 2,
+  "subprocess_exit_code": 0
+}

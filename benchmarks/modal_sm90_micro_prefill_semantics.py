@@ -16,6 +16,14 @@ if modal.is_local():
         "benchmarks/profile_sm90_micro_prefill_deferred_sum.py",
         "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_deferred_sum.py", copy=True,
     )
+    image = image.add_local_file(
+        "benchmarks/profile_sm90_micro_prefill_paged.py",
+        "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_paged.py", copy=True,
+    )
+    image = image.add_local_file(
+        "benchmarks/profile_sm90_micro_prefill_counters.py",
+        "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_counters.py", copy=True,
+    )
 else:
     image = None
 
@@ -26,9 +34,8 @@ app = modal.App("streamattn-sm90-micro-semantics")
 def run(suite: str, experiment: str) -> dict:
     import subprocess
 
-    script = ("profile_sm90_micro_prefill_semantics.py" if experiment == "semantics"
-              else "profile_sm90_micro_prefill_deferred_sum.py")
-    options = ["--suite", suite, "--provider", "modal", "--seed", "9613"] if experiment == "semantics" else []
+    script = f"profile_sm90_micro_prefill_{experiment}.py"
+    options = ["--suite", suite, "--provider", "modal", "--seed", "9613"] if experiment in ("semantics", "paged") else []
     proc = subprocess.run([
         "python", "-u", "benchmarks/" + script, *options,
         "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
@@ -43,8 +50,8 @@ def run(suite: str, experiment: str) -> dict:
 @app.local_entrypoint()
 def main(suite: str = "smoke", experiment: str = "semantics",
          output_json: str = "artifacts/gate0/sm90_micro_semantics_modal_h100_20260905.json"):
-    if experiment not in ("semantics", "deferred_sum"):
-        raise ValueError("experiment must be semantics or deferred_sum")
+    if experiment not in ("semantics", "deferred_sum", "paged", "counters"):
+        raise ValueError("experiment must be semantics, deferred_sum, paged or counters")
     path = Path(output_json)
     if path.exists():
         raise FileExistsError("preserve existing evidence")

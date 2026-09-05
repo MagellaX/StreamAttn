@@ -249,6 +249,19 @@ class PagedKVCache:
 
         if query.dim() != 4 or query.shape[1] != 1:
             raise ValueError("paged exact decode query must be [batch, 1, heads, dim]")
+        self._validate(query, validate_metadata=validate_metadata, allow_empty=False)
+
+    def validate_prefill(
+        self, query: torch.Tensor, *, validate_metadata: bool = True,
+    ) -> None:
+        """Validate a padded multi-query cache contract, permitting empty KV rows."""
+        if query.dim() != 4 or query.shape[0] <= 0 or query.shape[1] <= 0:
+            raise ValueError("paged prefill query must be [batch, query_capacity, heads, dim]")
+        self._validate(query, validate_metadata=validate_metadata, allow_empty=True)
+
+    def _validate(
+        self, query: torch.Tensor, *, validate_metadata: bool, allow_empty: bool,
+    ) -> None:
         if self.key.dim() != 4 or self.value.dim() != 4:
             raise ValueError("paged key/value caches must be rank 4")
         if self.key.shape != self.value.shape:
@@ -300,8 +313,11 @@ class PagedKVCache:
         if not validate_metadata:
             return
         lengths = self.sequence_lengths.detach().to(device="cpu", dtype=torch.int64)
-        if bool(torch.any(lengths <= 0)):
-            raise ValueError("sequence_lengths must be positive")
+        if bool(torch.any(lengths < (0 if allow_empty else 1))):
+            raise ValueError(
+                "sequence_lengths must be nonnegative" if allow_empty
+                else "sequence_lengths must be positive"
+            )
         if bool(torch.any(lengths > self.max_sequence_length)):
             raise ValueError("sequence_lengths exceed page_table capacity")
         table = self.page_table.detach().to(device="cpu", dtype=torch.int64)

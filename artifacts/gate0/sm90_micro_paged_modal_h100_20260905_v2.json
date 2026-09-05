@@ -1,0 +1,4200 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_paged.v1",
+  "complete": true,
+  "provider": "modal",
+  "seed": 9613,
+  "torch_version": "2.7.1+cu128",
+  "cuda_version": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "planned_cases": 48,
+  "rows": [
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020937323570251465,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            8.798933029174805,
+            8.693333466847736,
+            8.673066894213358
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007569551467895508,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020937323570251465,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            15.594666202863058,
+            15.518933534622192,
+            15.520000457763672
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007569551467895508,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0018985867500305176,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            8.821333448092142,
+            8.760533730189005,
+            8.693333466847736
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007569551467895508,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0018985867500305176,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            15.896532932917276,
+            15.819733341534931,
+            15.795200069745382
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007569551467895508,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019240379333496094,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            8.868267138799032,
+            8.76800020535787,
+            8.77333382765452
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007657766342163086,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019240379333496094,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.780800461769104,
+            12.69546647866567,
+            12.661332885424295
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007657766342163086,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            9.282132983207703,
+            9.11466677983602,
+            9.11466677983602
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076084136962890625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            16.051200032234192,
+            15.949866175651549,
+            15.966932972272238
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076084136962890625,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            9.2138667901357,
+            9.097599983215332,
+            9.100799759229025
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076084136962890625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            16.1653329928716,
+            16.0778671503067,
+            16.08213285605113
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076084136962890625,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            8.843732873598736,
+            8.74133308728536,
+            8.717866738637287
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007734775543212891,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0020774006843566895,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.749866644541422,
+            12.673067053159077,
+            12.688000003496807
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007734775543212891,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010713040828704834,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.754133343696594,
+            12.665599584579468,
+            12.632532914479574
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.006534576416015625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010713040828704834,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.059199174245197,
+            20.96853256225586,
+            20.971733331680298
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.006534576416015625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010493695735931396,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.708266576131185,
+            12.63146698474884,
+            12.63573368390401
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.006534576416015625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0011085569858551025,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            20.963199933369957,
+            20.886399348576866,
+            20.87786595026652
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.006534576416015625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010265707969665527,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.442666292190552,
+            12.349866827329,
+            12.339199582735697
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007565975189208984,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010801255702972412,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            16.591999928156532,
+            16.53439998626709,
+            16.506666938463848
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007565975189208984,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010190010070800781,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.667733430862427,
+            12.58133351802826,
+            12.534399827321371
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010844767093658447,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.07200026512146,
+            20.952532688776653,
+            20.936532815297443
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.001164853572845459,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.899200121561686,
+            12.808533509572346,
+            12.819199760754904
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.001164853572845459,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.124267578125,
+            21.012266476949055,
+            21.003733078638714
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653236389160156,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.001033484935760498,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            12.552533547083538,
+            12.457600235939026,
+            12.449066837628681
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007736921310424805,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.001033484935760498,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            16.918400923411053,
+            16.807466745376587,
+            16.836265722910564
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007736921310424805,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00027430057525634766,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            9.240532914797464,
+            9.111467003822327,
+            9.120000402132671
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0008983612060546875,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00027430057525634766,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            15.134933590888977,
+            15.0026669104894,
+            14.95786706606547
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0008983612060546875,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00025010108947753906,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            9.199999769528707,
+            9.099733829498291,
+            9.121066331863403
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0008983612060546875,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00025010108947753906,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            15.239466230074566,
+            15.175466736157736,
+            15.148799618085224
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0008983612060546875,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0003261566162109375,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            8.602666854858398,
+            8.513066172599792,
+            8.480000495910645
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009622573852539062,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0003261566162109375,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.60533328851064,
+            11.482666929562885,
+            11.4847997824351
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009622573852539062,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00024384260177612305,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            9.05386706193288,
+            8.961066603660583,
+            8.966400225957235
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00024384260177612305,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            14.936533570289612,
+            14.878933628400167,
+            14.879999558130901
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00024384260177612305,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            9.015466769536335,
+            8.955732981363932,
+            8.903466661771139
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00024384260177612305,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            15.153066317240397,
+            15.081600348154703,
+            15.079466501871746
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002854466438293457,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            8.531199892361958,
+            8.387200037638346,
+            8.392533659934998
+          ],
+          "workspace_bytes": 199680,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002854466438293457,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.915733416875204,
+            11.795199910799662,
+            11.754666765530905
+          ],
+          "workspace_bytes": 532480,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0001354217529296875,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            13.026133179664612,
+            12.937600413958231,
+            12.928000092506409
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013050436973571777,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            19.303466876347862,
+            19.202133019765217,
+            19.172267119089764
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012743473052978516,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            12.97599971294403,
+            12.869333227475485,
+            12.874666849772137
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013884902000427246,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            19.270400206247967,
+            19.199999173482258,
+            19.1594660282135
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013893842697143555,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            12.708266576131185,
+            12.63146698474884,
+            12.589866916338602
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013524293899536133,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            14.988799889882406,
+            14.866133530934652,
+            14.83626663684845
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009694099426269531,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013437867164611816,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            12.938666343688965,
+            12.841600179672241,
+            12.825600306193033
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00013437867164611816,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            19.473065932591755,
+            19.36639944712321,
+            19.352533419926964
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0001328587532043457,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            12.76586651802063,
+            12.675199906031292,
+            12.618666887283325
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0001322031021118164,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            19.13386583328247,
+            19.00800069173177,
+            19.004799922307335
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 64,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012123584747314453,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            12.330666184425354,
+            12.227200468381247,
+            12.18346655368805
+          ],
+          "workspace_bytes": 990080,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012123584747314453,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            14.935466647148132,
+            14.775466918945312,
+            14.754133423169453
+          ],
+          "workspace_bytes": 1397760,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.000980377197265625,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.002400338649749756,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.45919958750407,
+            11.39520009358724,
+            11.380267143249512
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.002400338649749756,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.4357336362203,
+            21.32800022761027,
+            21.333332856496177
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019592642784118652,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.505066355069479,
+            11.436800161997477,
+            11.430399616559345
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0019592642784118652,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.58079942067464,
+            21.51040037473043,
+            21.507199605305992
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0023170113563537598,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            10.901332894961039,
+            10.789333780606588,
+            10.81813375155131
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0023170113563537598,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            18.401066462198894,
+            18.32746664683024,
+            18.309332927068077
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0076446533203125,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0021015405654907227,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.62559986114502,
+            11.445333560307821,
+            11.452800035476685
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007148861885070801,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0021015405654907227,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.613866090774536,
+            21.51253422101339,
+            21.501866976420086
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007148861885070801,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0016742348670959473,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            11.782399813334147,
+            11.680000027020773,
+            11.627733707427979
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007148861885070801,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0016742348670959473,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            21.84853355089823,
+            21.769599119822185,
+            21.751467386881508
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007148861885070801,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.002329230308532715,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            10.886399944623312,
+            10.8106662829717,
+            10.773332913716633
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0077707767486572266,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.002329230308532715,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            18.594133853912354,
+            18.487467368443806,
+            18.473599354426064
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0077707767486572266,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010617375373840332,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            17.593600352605186,
+            17.58400003115336,
+            17.465599377950035
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653713226318359,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010709762573242188,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            28.867199023564655,
+            28.712532917658486,
+            28.717867533365883
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653713226318359,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0014089345932006836,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            19.100799163182575,
+            19.061332941055298,
+            18.987733125686646
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653713226318359,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0014089345932006836,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            28.761599461237587,
+            28.662399450937908,
+            28.649600346883137
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007653713226318359,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010540485382080078,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            16.597333550453186,
+            16.523733735084534,
+            16.5312002102534
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007750272750854492,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.001103818416595459,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            24.654932816823326,
+            24.578134218851726,
+            24.60053364435832
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.007750272750854492,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0009971261024475098,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            17.871999740600586,
+            17.771732807159424,
+            17.72800087928772
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010427534580230713,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            29.028266668319702,
+            28.933332363764446,
+            28.91520063082377
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0011396706104278564,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            18.39466691017151,
+            18.270933628082275,
+            18.22719971338908
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 1.430511474609375e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0011396706104278564,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            28.742400805155437,
+            28.66026759147644,
+            28.662399450937908
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "bf16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010730624198913574,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            17.86880095799764,
+            17.79093345006307,
+            17.81439979871114
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0010730624198913574,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "complete_graph_us": [
+            24.566400051116943,
+            24.461867411931355,
+            24.43199952443441
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.008022069931030273,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.02,
+            "rtol": 0.02
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002525448799133301,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.401599645614624,
+            11.317333579063416,
+            11.29813293615977
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002525448799133301,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            21.38986587524414,
+            21.242666244506836,
+            21.24906579653422
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002525448799133301,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.851732929547628,
+            11.434666315714518,
+            11.442133784294128
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002525448799133301,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            21.490132808685303,
+            21.42080068588257,
+            21.413334210713707
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002726316452026367,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            10.950400431950888,
+            10.781866312026978,
+            10.806399583816528
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002726316452026367,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            18.53226621945699,
+            18.330667416254677,
+            18.36586594581604
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009944438934326172,
+            "lse_max_abs": 2.86102294921875e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0003160238265991211,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.6458664337794,
+            11.547733346621197,
+            11.4954670270284
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0003160238265991211,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            21.721599499384563,
+            21.57973249753316,
+            21.566933393478394
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002600550651550293,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.725866794586182,
+            11.621333161989847,
+            11.583999792734781
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.0002600550651550293,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            21.821866432825725,
+            21.707733472188313,
+            21.681066354115806
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 4,
+        "m": 3,
+        "pages": 5,
+        "hq": 16,
+        "g": 4,
+        "splits": 2,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00026494264602661133,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            11.059199770291647,
+            10.988799730936687,
+            10.957866907119751
+          ],
+          "workspace_bytes": 396288,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00026494264602661133,
+            "lse_max_abs": 4.76837158203125e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            18.47893397013346,
+            18.359466393788654,
+            18.362667163213096
+          ],
+          "workspace_bytes": 1056768,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009739398956298828,
+            "lse_max_abs": 3.814697265625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00018984079360961914,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            18.542933464050293,
+            18.44266653060913,
+            18.458666404088337
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00018984079360961914,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            28.934399286905926,
+            28.810666004816692,
+            28.83519927660624
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00023156404495239258,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            18.450133005777992,
+            18.300799528757732,
+            18.297600746154785
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00023156404495239258,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            28.60586643218994,
+            28.54400078455607,
+            28.51626674334208
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009768009185791016,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "HND"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012758374214172363,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            17.34079917271932,
+            17.230933904647827,
+            17.25013256072998
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009882450103759766,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012758374214172363,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            24.60800011952718,
+            24.50559933980306,
+            24.48319991429647
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009882450103759766,
+            "lse_max_abs": 2.384185791015625e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "append",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00021821260452270508,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            18.430932362874348,
+            18.283732732137047,
+            18.300799528757732
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00021821260452270508,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            28.53866616884867,
+            28.48746577898661,
+            28.489599625269573
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "permuted",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012513995170593262,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            17.81866749127706,
+            17.72693395614624,
+            17.7184005578359
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00012513995170593262,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            28.93120050430298,
+            28.844799598058067,
+            28.85226607322693
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 1.9073486328125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    },
+    {
+      "case": {
+        "batch": 2,
+        "m": 17,
+        "pages": 29,
+        "hq": 16,
+        "g": 8,
+        "splits": 7,
+        "d": 128,
+        "dtype": "fp16",
+        "mask": "noncausal",
+        "layout": "NHD"
+      },
+      "families": {
+        "transposed": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00021821260452270508,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            16.76906744639079,
+            16.355199615160625,
+            16.33386711279551
+          ],
+          "workspace_bytes": 1964928,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 4.76837158203125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        },
+        "natural": {
+          "eager": {
+            "passed": true,
+            "max_abs": 0.00021821260452270508,
+            "lse_max_abs": 9.5367431640625e-07,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "complete_graph_us": [
+            24.826665719350178,
+            24.746666351954143,
+            24.708267052968345
+          ],
+          "workspace_bytes": 2774016,
+          "mutated_graph": {
+            "passed": true,
+            "max_abs": 0.0009603500366210938,
+            "lse_max_abs": 4.76837158203125e-06,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          },
+          "empty_graph": {
+            "passed": true,
+            "max_abs": 0.0,
+            "lse_max_abs": 0.0,
+            "empty_lse_match": true,
+            "empty_output_zero": true,
+            "atol": 0.003,
+            "rtol": 0.003
+          }
+        }
+      },
+      "passed": true
+    }
+  ],
+  "source_sha256": {
+    "stream_attention/paged.py": "e9d5451aeb4c2e7f5624851fbb6bfbf9f9cc18baa67207e686a46a2d27ccb91b",
+    "stream_attention/backends/sm90/micro_prefill_paged.py": "2dee9d25c9aad574cc6dc513517158f5b45e305cf7637e7f338bbdf101559aed",
+    "stream_attention/backends/sm90/micro_prefill_paged_sources.py": "46c1489583cf804716313970ddae7ee077e8f909a158bf012edeadbb677d8572",
+    "stream_attention/backends/sm90/micro_prefill_semantics.py": "aa1707201ae71c41b0198f28f75673dc18389fb6d19e0ba8e3558cf02cac70f3",
+    "stream_attention/backends/sm90/micro_prefill_semantics_sources.py": "deb54cc90027b3fedc65cb2afb4c3ea5bd7a0bd4745308d58a10fecdd1feb04f",
+    "stream_attention/backends/sm90/transposed_gqa_exact_sources.py": "318224b7c8f01edc81fcb8f27e575a81ea600aaf2ad526df1af1766b4b77681a",
+    "benchmarks/profile_sm90_micro_prefill_paged.py": "8ddeec7fe317c5984de51818523809f6516551dcee0b9bbae6c3226a584cb31b",
+    "benchmarks/profile_sm90_micro_prefill_semantics.py": "8a61470adac580e241492ae9087478f20b81d6c838ae4a4401c53f65efdff1d0"
+  },
+  "passed_cases": 48,
+  "subprocess_exit_code": 0
+}

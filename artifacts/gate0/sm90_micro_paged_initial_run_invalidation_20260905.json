@@ -1,0 +1,13 @@
+{
+  "schema": "streamattn.evidence_invalidation.v1",
+  "accepted": false,
+  "reason": "The initial B4 graph-mutation fixture could set query_lengths[0] to M+1. It violated the plan contract. Initial smoke passes and interrupted broader runs are excluded from correctness or performance claims.",
+  "excluded_artifacts": [
+    "sm90_micro_paged_modal_smoke_h100_20260905.json",
+    "sm90_micro_paged_lightning_h100_20260905.log"
+  ],
+  "stopped_modal_app": "ap-ARxVNQswLdOenCpsE99ioR",
+  "stopped_lightning_job": "job_01m1s0zx3ny331ys0kzs88fn8e",
+  "stopped_lightning_reported_cost": 0.3329111,
+  "repair": "Clamp mutated query lengths to M, validate all metadata before each graph replay, and add a B4 fixture regression test. Rerun under new v2 artifact names."
+}

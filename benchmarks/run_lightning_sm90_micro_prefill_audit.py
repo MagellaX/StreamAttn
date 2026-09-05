@@ -50,6 +50,14 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
             paths += (
                 "benchmarks/profile_sm90_micro_prefill_semantics.py",
             )
+        if experiment == "paged":
+            paths += (
+                "stream_attention/paged.py",
+                "stream_attention/backends/sm90/micro_prefill_paged.py",
+                "stream_attention/backends/sm90/micro_prefill_paged_sources.py",
+                "benchmarks/profile_sm90_micro_prefill_semantics.py",
+                "benchmarks/profile_sm90_micro_prefill_paged.py",
+            )
         for path in paths:
             archive.add(ROOT / path, arcname=path)
     payload = base64.b64encode(buffer.getvalue()).decode()
@@ -57,7 +65,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
         "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
         f"--provider lightning --cohort {cohort} --baseline {baseline} "
         if experiment == "audit" else
-        "python -u benchmarks/profile_sm90_micro_prefill_semantics.py "
+        f"python -u benchmarks/profile_sm90_micro_prefill_{experiment}.py "
         f"--provider lightning --suite {'smoke' if cohort == 'smoke' else 'full'} "
     )
     return "\n".join(
@@ -76,9 +84,9 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
             "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
             "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
             "PY",
-            "python -m pip install -q ninja pyyaml" if experiment == "semantics" else
+            "python -m pip install -q ninja pyyaml" if experiment != "audit" else
             "python -m pip install -q ninja pyyaml flashinfer-python==0.6.13 flashinfer-cubin==0.6.13",
-            "true" if experiment == "semantics" else
+            "true" if experiment != "audit" else
             "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128",
             "cd /root/StreamAttn",
             profile_command + "--cutlass-root /tmp/flashmla-etap/csrc/cutlass "
@@ -89,7 +97,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=("audit", "semantics"), default="audit")
+    p.add_argument("--experiment", choices=("audit", "semantics", "paged"), default="audit")
     p.add_argument("--cohort", choices=("lightning", "smoke"), default="lightning")
     p.add_argument(
         "--baseline",
@@ -185,7 +193,7 @@ def main():
         )
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.with_suffix(".log").write_text(logs, encoding="utf-8")
-        schema = ("streamattn.sm90_micro_prefill_semantics.v1" if args.experiment == "semantics"
+        schema = (f"streamattn.sm90_micro_prefill_{args.experiment}.v1" if args.experiment != "audit"
                   else "streamattn.sm90_micro_prefill_audit.v2")
         result = result_from_logs(logs, schema=schema)
         if not result:

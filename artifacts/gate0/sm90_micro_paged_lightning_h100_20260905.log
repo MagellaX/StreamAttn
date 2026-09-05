@@ -1,0 +1,205 @@
+[33mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.[0m[33m
+[0m{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+Detected CUDA files, patching ldflags
+Emitting ninja build file /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_0f5ad68b19b31593/build.ninja...
+Building extension module streamattn_sm90_micro_semantics_0f5ad68b19b31593...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+[1/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=streamattn_sm90_micro_semantics_0f5ad68b19b31593 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1016\" -I/tmp/flashmla-etap/csrc/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -fPIC -std=c++17 -O3 -std=c++17 -c /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_0f5ad68b19b31593/main.cpp -o main.o 
+[2/3] /usr/local/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output cuda.cuda.o.d -DTORCH_EXTENSION_NAME=streamattn_sm90_micro_semantics_0f5ad68b19b31593 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1016\" -I/tmp/flashmla-etap/csrc/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_90a,code=sm_90a --compiler-options '-fPIC' -O3 -std=c++17 --use_fast_math --expt-relaxed-constexpr --expt-extended-lambda --ptxas-options=-v,--warn-on-spills -lineinfo --keep --keep-dir=. -gencode=arch=compute_90a,code=sm_90a -c /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_0f5ad68b19b31593/cuda.cu -o cuda.cuda.o 
+/tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_0f5ad68b19b31593/cuda.cu(55): warning #177-D: variable "kPrefillRows" was declared but never referenced
+  static constexpr int kPrefillRows =
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15819 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15882 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15924 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 16293 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 16357 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 16395 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10773 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10837 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10879 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8099 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8162 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8204 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8573 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8637 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8675 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3068 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3132 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3174 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : 13 bytes gmem
+ptxas info    : Compiling entry function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_' for 'sm_90a'
+ptxas info    : Function properties for _Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 60 registers, used 1 barriers, 35072 bytes smem
+ptxas info    : Compile time = 79.595 ms
+ptxas info    : Compiling entry function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i' for 'sm_90a'
+ptxas info    : Function properties for _Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 101.831 ms
+ptxas info    : Compiling entry function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_' for 'sm_90a'
+ptxas info    : Function properties for _Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 1 barriers, 35072 bytes smem
+ptxas info    : Compile time = 72.920 ms
+ptxas info    : Compiling entry function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i' for 'sm_90a'
+ptxas info    : Function properties for _Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 107.749 ms
+ptxas info    : Compiling entry function '_Z51streamattn_transposed_wgmma_exact_merge_warp_kernelPKfS0_PN7cutlass10bfloat16_tEiii' for 'sm_90a'
+ptxas info    : Function properties for _Z51streamattn_transposed_wgmma_exact_merge_warp_kernelPKfS0_PN7cutlass10bfloat16_tEiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 0 barriers, 2048 bytes smem
+ptxas info    : Compile time = 35.606 ms
+ptxas info    : Compiling entry function '_Z51streamattn_natural_wgmma_micro_prefill_merge_kernelPKfS0_PN7cutlass10bfloat16_tEiiiiii' for 'sm_90a'
+ptxas info    : Function properties for _Z51streamattn_natural_wgmma_micro_prefill_merge_kernelPKfS0_PN7cutlass10bfloat16_tEiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 2176 bytes smem
+ptxas info    : Compile time = 30.595 ms
+[3/3] c++ main.o cuda.cuda.o -shared -L/opt/conda/lib/python3.11/site-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o streamattn_sm90_micro_semantics_0f5ad68b19b31593.so
+Loading extension module streamattn_sm90_micro_semantics_0f5ad68b19b31593...
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+Detected CUDA files, patching ldflags
+Emitting ninja build file /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_2cd6f25ab1c75383/build.ninja...
+Building extension module streamattn_sm90_micro_semantics_2cd6f25ab1c75383...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+[1/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=streamattn_sm90_micro_semantics_2cd6f25ab1c75383 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1016\" -I/tmp/flashmla-etap/csrc/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -fPIC -std=c++17 -O3 -std=c++17 -c /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_2cd6f25ab1c75383/main.cpp -o main.o 
+[2/3] /usr/local/cuda/bin/nvcc --generate-dependencies-with-compile --dependency-output cuda.cuda.o.d -DTORCH_EXTENSION_NAME=streamattn_sm90_micro_semantics_2cd6f25ab1c75383 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1016\" -I/tmp/flashmla-etap/csrc/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_90a,code=sm_90a --compiler-options '-fPIC' -O3 -std=c++17 --use_fast_math --expt-relaxed-constexpr --expt-extended-lambda --ptxas-options=-v,--warn-on-spills -lineinfo --keep --keep-dir=. -gencode=arch=compute_90a,code=sm_90a -c /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_2cd6f25ab1c75383/cuda.cu -o cuda.cuda.o 
+/tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_2cd6f25ab1c75383/cuda.cu(55): warning #177-D: variable "kPrefillRows" was declared but never referenced
+  static constexpr int kPrefillRows =
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 14891 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 14954 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15294 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15358 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 15396 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7520) Potential Performance Loss: wgmma.mma_async instructions are serialized due to program dependence on compiler-inserted WG.AR in divergent path in the function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10270 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10334 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 10376 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 7673 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 7736 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8076 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8140 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 8178 by compiler to allow use of registers in GMMA in function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7520) Potential Performance Loss: wgmma.mma_async instructions are serialized due to program dependence on compiler-inserted WG.AR in divergent path in the function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3067 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3131 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : (C7519) warpgroup.arrive is injected in around line 3173 by compiler to allow use of registers in GMMA in function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i'
+ptxas info    : 13 bytes gmem
+ptxas info    : Compiling entry function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_' for 'sm_90a'
+ptxas info    : Function properties for _Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 1 barriers, 35072 bytes smem
+ptxas info    : Compile time = 73.042 ms
+ptxas info    : Compiling entry function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i' for 'sm_90a'
+ptxas info    : Function properties for _Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 91.087 ms
+ptxas info    : Compiling entry function '_Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_' for 'sm_90a'
+ptxas info    : Function properties for _Z48streamattn_transposed_wgmma_exact_partial_kernelILi16ELb1ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiPKiiiS6_S6_S6_S6_S6_S6_iPKlS8_S6_
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 35072 bytes smem
+ptxas info    : Compile time = 67.771 ms
+ptxas info    : Compiling entry function '_Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i' for 'sm_90a'
+ptxas info    : Function properties for _Z53streamattn_natural_wgmma_micro_prefill_partial_kernelILb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_iiiiiiiPKlS6_PKiS8_S8_i
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 1 barriers
+ptxas info    : Compile time = 90.520 ms
+ptxas info    : Compiling entry function '_Z51streamattn_transposed_wgmma_exact_merge_warp_kernelPKfS0_PN7cutlass10bfloat16_tEiii' for 'sm_90a'
+ptxas info    : Function properties for _Z51streamattn_transposed_wgmma_exact_merge_warp_kernelPKfS0_PN7cutlass10bfloat16_tEiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 0 barriers, 2048 bytes smem
+ptxas info    : Compile time = 32.255 ms
+ptxas info    : Compiling entry function '_Z51streamattn_natural_wgmma_micro_prefill_merge_kernelPKfS0_PN7cutlass10bfloat16_tEiiiiii' for 'sm_90a'
+ptxas info    : Function properties for _Z51streamattn_natural_wgmma_micro_prefill_merge_kernelPKfS0_PN7cutlass10bfloat16_tEiiiiii
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 32 registers, used 1 barriers, 2176 bytes smem
+ptxas info    : Compile time = 28.451 ms
+[3/3] c++ main.o cuda.cuda.o -shared -L/opt/conda/lib/python3.11/site-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o streamattn_sm90_micro_semantics_2cd6f25ab1c75383.so
+Loading extension module streamattn_sm90_micro_semantics_2cd6f25ab1c75383...
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 17, "pages": 29, "hq": 16, "g": 8, "splits": 7, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 2, "pages": 1, "hq": 16, "g": 8, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 2, "m": 64, "pages": 256, "hq": 16, "g": 8, "splits": 16, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 4, "m": 9, "pages": 1025, "hq": 32, "g": 4, "splits": 32, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "HND"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "append", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "permuted", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}}
+{"stage": "checked", "case": {"batch": 1, "m": 32, "pages": 3, "hq": 32, "g": 4, "splits": 1, "d": 64, "dtype": "bf16", "mask": "noncausal", "layout": "NHD"}, "passed": true}
+{"stage": "case", "case": {"batch": 4, "m": 3, "pages": 5, "hq": 16, "g": 4, "splits": 2, "d": 64, "dtype": "fp16", "mask": "append", "layout": "HND"}}
+Detected CUDA files, patching ldflags
+Emitting ninja build file /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_7695f4cceaf7d4f3/build.ninja...
+Building extension module streamattn_sm90_micro_semantics_7695f4cceaf7d4f3...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+[1/3] c++ -MMD -MF main.o.d -DTORCH_EXTENSION_NAME=streamattn_sm90_micro_semantics_7695f4cceaf7d4f3 -DTORCH_API_INCLUDE_EXTENSION_H -DPYBIND11_COMPILER_TYPE=\"_gcc\" -DPYBIND11_STDLIB=\"_libstdcpp\" -DPYBIND11_BUILD_ABI=\"_cxxabi1016\" -I/tmp/flashmla-etap/csrc/cutlass/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include -isystem /opt/conda/lib/python3.11/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /opt/conda/include/python3.11 -D_GLIBCXX_USE_CXX11_ABI=1 -fPIC -std=c++17 -O3 -std=c++17 -c /tmp/streamattn-audit-build/streamattn_sm90_micro_semantics_7695f4cceaf7d4f3/main.cpp -o main.o 

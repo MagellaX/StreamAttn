@@ -716,12 +716,23 @@ graph-buffer mutations. This includes reordered keys, large logical positions,
 empty visibility rows, B1/B2, and both D64/D128. It is a functional expansion,
 not another speedup claim. See the [contract and evidence](docs/sm90_micro_prefill_semantics.md).
 
+The same two families now read **paged, ragged KV directly**, in either HND or
+NHD page-16 layout. Query lengths and KV lengths vary independently within a
+batch; graph replay can change page IDs, lengths and logical positions without
+gathering or repacking KV. The corrected H100 matrix passed **144/144 cases**,
+plus **48/48** in an independent replay, including poisoned padding, shared
+prefix pages and empty requests. This closes a storage/semantics gap, not the
+M64 performance gap. Public dispatch is unchanged. See the
+[paged plan and verification record](docs/sm90_micro_prefill_paged.md).
+
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
 `1.100x`, but regressed B2/M64/N4K to `0.987x` versus its paired native control.
 It remains experimental, with no dispatcher change. The
 [research notes](docs/sm90_kernel_research_20260905.md) connect this result to
-upstream code and identify the remaining profiling questions.
+upstream code and the completed six-launch hardware-counter probe. That probe
+found unchanged register/shared-memory allocation and too few ready warps,
+pointing the next M64 investigation toward source-level load dependencies.
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build

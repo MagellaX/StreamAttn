@@ -25,6 +25,7 @@ def validate_positions(
     causal: bool,
     query_positions: torch.Tensor | None,
     key_positions: torch.Tensor | None,
+    key_capacity: int | None = None,
 ) -> None:
     """Do not infer top-left or bottom-right alignment from tensor lengths.
 
@@ -40,7 +41,9 @@ def validate_positions(
         return
     for name, tensor, shape in (
         ("query_positions", query_positions, query.shape[:2]),
-        ("key_positions", key_positions, (key.shape[0], key.shape[2])),
+        ("key_positions", key_positions,
+         (key.shape[0], key.shape[2]) if key_capacity is None
+         else (query.shape[0], key_capacity)),
     ):
         if not isinstance(tensor, torch.Tensor):
             raise ValueError(f"causal=True requires explicit {name}")
@@ -53,13 +56,17 @@ def validate_positions(
 def compile_semantic_extension(
     *, head_dim: int, dtype: torch.dtype, causal: bool,
     cutlass_root: Path | None = None, build_dir: Path | None = None,
-    verbose: bool = False,
+    verbose: bool = False, paged: bool = False,
 ) -> Any:
     from torch.utils.cpp_extension import get_default_build_root, load_inline
 
     if dtype not in (torch.bfloat16, torch.float16):
         raise ValueError("micro-prefill supports BF16 and FP16")
-    source = semantic_cuda_source(
+    cpp_source, source_builder = CPP_SOURCE, semantic_cuda_source
+    if paged:
+        from .micro_prefill_paged_sources import CPP_SOURCE as paged_cpp, paged_cuda_source
+        cpp_source, source_builder = paged_cpp, paged_cuda_source
+    source = source_builder(
         head_dim, "bf16" if dtype == torch.bfloat16 else "fp16", causal
     )
     root = resolve_cutlass_root(cutlass_root)
@@ -70,7 +77,7 @@ def compile_semantic_extension(
         "-gencode=arch=compute_90a,code=sm_90a",
     ]
     identity = hashlib.sha256(
-        (CPP_SOURCE + source + str(root) + repr(flags)).encode()
+        (cpp_source + source + str(root) + repr(flags)).encode()
     ).hexdigest()[:16]
     name = "streamattn_sm90_micro_semantics_" + identity
     directory = (Path(build_dir) if build_dir else Path(get_default_build_root())) / name
@@ -84,7 +91,7 @@ def compile_semantic_extension(
         os.environ["TORCH_CUDA_ARCH_LIST"] = "9.0a"
         try:
             extension = load_inline(
-                name=name, cpp_sources=CPP_SOURCE, cuda_sources=source,
+                name=name, cpp_sources=cpp_source, cuda_sources=source,
                 build_directory=str(directory),
                 extra_include_paths=[str(root / "include")],
                 extra_cflags=["-O3", "-std=c++17"], extra_cuda_cflags=flags,
