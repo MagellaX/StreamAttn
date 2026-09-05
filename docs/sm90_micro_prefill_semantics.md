@@ -108,6 +108,26 @@ rejected it. The artifact was recovered by joining exactly those chunks;
 the original log is retained and the collector has regression tests. No GPU
 result was recomputed, guessed, or silently dropped during recovery.
 
+## Reproduce on H100
+
+Use a CUDA development environment with PyTorch, ninja, and the CUTLASS headers
+resolved by `resolve_cutlass_root`. The measured build used CUDA 12.8; the
+CPU-only source-build workflow separately checks CUDA 12.4 compatibility.
+
+```bash
+python benchmarks/profile_sm90_micro_prefill_semantics.py \
+  --suite full --provider local --seed 6107 \
+  --cutlass-root /path/to/cutlass \
+  --build-dir /tmp/streamattn-micro-semantics \
+  --output-json artifacts/gate0/micro_semantics_local.json
+```
+
+Use `--suite smoke` for the 24-case replay. The output path must be new so a
+rerun cannot overwrite earlier evidence. The profiler raises on a correctness
+failure and retains the partial artifact. Compilation and plan construction
+are outside the recorded graph timings; these timings do not measure request
+setup cost or establish a speedup against an external backend.
+
 ## Boundaries and Next Integration
 
 This is a contiguous-cache, fixed-shape inference plan. Direct paged/ragged KV,

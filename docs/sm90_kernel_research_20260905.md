@@ -101,6 +101,15 @@ not collected in this run. The next attribution should compare shuffle issue,
 register occupancy, barrier stalls and complete producer/merge latency at all
 three anchors. Fewer source reductions alone do not explain the B2 regression.
 
+For that follow-up, collect launch resources, scheduler issue/eligible-warps,
+instruction mix and memory traffic before interpreting sampled stall reasons.
+NVIDIA cautions that stalls matter for throughput when schedulers fail to issue;
+counter replay can also change cache state and serialize launches. Keep the
+uninstrumented paired graph measurements as the latency result, and use a
+separate profile to explain it. Record actual SM count and residency limits
+rather than inferring CTA waves from the generic H100 name.
+[Nsight Compute profiling guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html).
+
 ## Global Sources: Useful Leads, Not New Claims
 
 Zhejiang University's supercomputing-team lab material explains WGMMA
