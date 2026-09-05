@@ -1,0 +1,10 @@
+{
+  "schema": "streamattn.gpu_launch_failure.v1",
+  "provider": "lightning",
+  "job_id": "job_01m1rc2cbfjj4sk48p54fvazbq",
+  "state": "failed",
+  "message": "[ERROR]: job reconciliation failed",
+  "cloud_account": "lightning-nebius-prod",
+  "machine": "nb-h100-1gpu-16vcpu-200gb",
+  "reported_cost": 0.0
+}

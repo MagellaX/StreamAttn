@@ -149,12 +149,32 @@ Not yet implemented:
 The cross-provider [micro-prefill audit](sm90_micro_prefill_audit.md) now implements
 FP32 reference checks, forced FA2/FA3 comparisons and isolated natural-family
 producer/merge timing. It includes irregular lengths and larger batches/head
-counts. Its GPU execution is still pending after launch/connectivity failures;
-the harness itself is not timing evidence or a phase-database registration.
+counts. A fresh-process worker for each external backend avoids standalone and
+vendored FA3 namespace collisions. Loaded binaries and interfaces are bound to
+each worker's resolver revision; paired ratios remain within that worker.
 
-Next, use those measured stages to decide whether a 128-row asynchronous
-producer/consumer family addresses the actual bottleneck. The previous canary
-alone did not establish that split/merge costs were negligible or that a wider
-producer would win. Once that physical boundary is understood, expand the same
-semantic family to paged/ragged storage and masks, then measure mixed batches
-and holdout routing regret. The goal remains the complete H100 vertical slice.
+The initial 128-row H100 smoke passed sampled output/LSE, split composition,
+and mutable-input graph checks but lost on latency. At B1/M64/N4K/G8/D128/C16,
+R128 serial was 49.46 us, overlap 51.99 us, retained R64 31.22 us, and Flash
+SDPA 19.94 us. D128 R128 used 254 registers/thread. A wider tile is therefore
+not the default answer to M64. [Detailed R128 experiment](sm90_micro_prefill_128.md).
+
+The [R64 temporal experiment](sm90_micro_prefill_temporal.md) retained one output
+state with separate pipeline-length and concurrency anchors. It passed the
+sampled numerical/replay checks but lost at all three anchors: temporal
+36.82/63.51/68.80 us versus control 31.13/52.41/55.43 us. A separate R128
+footer-drain diagnostic removed exact-symbol C7514 serialization and recovered
+its smaller overlap regression, but did not beat serial R128 or original R64.
+Neither experiment registers a new public route. Compiler-visible overlap is
+not sufficient evidence of a profitable schedule.
+
+The isolated four-case baseline audit now resolves all six external adapters
+after provenance and workspace repairs. At M64/D128, standalone FA3 took
+15.37 us versus 31.10 us for original R64 in its paired worker. This is a
+stronger competitive target than Flash SDPA alone, not a complete shape-matrix
+or holdout result.
+
+Expand the same semantic family to paged/ragged storage and masks independently
+of the producer research, then measure mixed batches and holdout routing regret.
+The goal remains the complete H100 vertical slice, not another per-shape
+whitelist or an approximate seed route.

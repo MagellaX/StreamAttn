@@ -1,0 +1,2095 @@
+{
+  "configuration": {
+    "baselines": "flash",
+    "binary_diagnostics": true,
+    "build_dir": "/tmp/streamattn-micro128-build",
+    "compile_verbose": true,
+    "component": "all",
+    "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+    "iterations": 40,
+    "matches_splits": true,
+    "mode": "benchmark",
+    "output": "/tmp/result.json",
+    "protocol": "all",
+    "repeats": 7,
+    "splits": [
+      1,
+      8,
+      16,
+      32
+    ],
+    "suite": "dependency",
+    "warmup": 4
+  },
+  "cuda": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "evidence_kind": "calibration_canary_not_public_promotion",
+  "gpu_uuid": "5cdc6dc0-b4f8-875e-2048-194b342425b2",
+  "passed": true,
+  "protocol_files": {
+    "benchmarks/profile_sm90_micro_prefill.py": "46599a8fd14cf1b60573d493fed1bab7a53db0ed36c6ea2c7101e19527486efb",
+    "benchmarks/profile_sm90_micro_prefill_128.py": "a559c2ed1c253cee80f33c3a9dcfcae8ed8b8c52b91756f56e6191a0c3bd676e",
+    "stream_attention/backends/sm90/micro_prefill.py": "8ee8b04633373d24a51c32dc217551c31cc4b50b32ec53530b432ee67a3bd817",
+    "stream_attention/backends/sm90/micro_prefill_128.py": "cb817294e83c22d3a9e2660ae0c4dfe4a2b716e42d8d38fb9f0506a0b64aa99d"
+  },
+  "python": "3.11.13",
+  "rows": [
+    {
+      "accuracy": {
+        "m128_overlap_drained_partial": {
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.002154105808585882
+          },
+          "reconstructed_lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          }
+        },
+        "m128_overlap_partial": {
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.002154105808585882
+          },
+          "reconstructed_lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          }
+        },
+        "m128_serial_partial": {
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.002154105808585882
+          },
+          "reconstructed_lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          }
+        },
+        "natural64": {
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.0021538136061280966
+          }
+        }
+      },
+      "baseline_accuracy": {
+        "torch_flash": {
+          "max_abs": 0.0005160719156265259,
+          "passed": true,
+          "relative_l2": 0.0021762812975794077
+        }
+      },
+      "baseline_mutation": {
+        "torch_flash": {
+          "max_abs": 0.007493019104003906,
+          "passed": true,
+          "relative_l2": 0.0016744639724493027
+        }
+      },
+      "baseline_scope": "flash",
+      "binary_diagnostics": {
+        "m128_overlap_drained_partial": {
+          "archive": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898.tar.gz",
+            "sha256": "8493fa8e87869bbccf664782482bdb1efb5283fb8ddb1ce026b9c45cf1fbd1bd",
+            "size_bytes": 1630381
+          },
+          "archived_binary": {
+            "archive_member": "binary_09938cdca290e295_09db590de898/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "artifacts": {
+            "build_0_build.ninja": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/build_0_build.ninja",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/build_0_build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            "build_1_cuda.cu": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/build_1_cuda.cu",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/build_1_cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            "build_2_main.cpp": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/build_2_main.cpp",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/build_2_main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            },
+            "build_3_cuda.cubin": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/build_3_cuda.cubin",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/build_3_cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            },
+            "kernel_0.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0.resources.txt",
+              "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+              "size_bytes": 81
+            },
+            "kernel_0.sass": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0.sass",
+              "sha256": "de2f208ea04c4d1d64b26a54579ac6789fa9e5f07d238fc00a5c2179bfa512f9",
+              "size_bytes": 626303
+            },
+            "kernel_0_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0_0.entry.ptx",
+              "sha256": "4a6ff723eda44fe1335afef4d5cc86e57ca5bbc5f7fd5c1df4a7d069e2793ee0",
+              "size_bytes": 235541
+            },
+            "kernel_0_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "kernel_1.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1.resources.txt",
+              "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+              "size_bytes": 80
+            },
+            "kernel_1.sass": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1.sass",
+              "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+              "size_bytes": 197543
+            },
+            "kernel_1_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1_0.entry.ptx",
+              "sha256": "0f396b80a4198b55e5e1e93d654fc35ee0a651659168869c6a0ba6c7b1471c87",
+              "size_bytes": 17292
+            },
+            "kernel_1_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "streamattn_sm90_micro128_3478408e57c9cb44.so": {
+              "archive_member": "binary_09938cdca290e295_09db590de898/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+              "size_bytes": 2607584
+            }
+          },
+          "binary": {
+            "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "build_files": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            }
+          ],
+          "build_metadata": {
+            "build_directory": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44",
+            "cuda_home": "/usr/local/cuda",
+            "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+            "diagnostic_build": true,
+            "extension_name": "streamattn_sm90_micro128_3478408e57c9cb44",
+            "extra_cflags": [
+              "-O3",
+              "-std=c++17"
+            ],
+            "extra_cuda_cflags": [
+              "-O3",
+              "-std=c++17",
+              "--use_fast_math",
+              "--expt-relaxed-constexpr",
+              "--expt-extended-lambda",
+              "--ptxas-options=-v,--warn-on-spills",
+              "-gencode=arch=compute_90a,code=sm_90a",
+              "-lineinfo",
+              "--keep",
+              "--keep-dir",
+              "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates"
+            ],
+            "head_dim": 128,
+            "intermediates_dir": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates",
+            "keep_intermediates": true,
+            "lineinfo": true,
+            "loaded_binary": {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0"
+            },
+            "source_sha256": "1c361ed4c3e995443beccbbc5d826fb73b36228839619acd0cbbec451dfb17e3",
+            "torch_cuda_version": "12.8",
+            "torch_version": "2.7.1+cu128"
+          },
+          "cutlass_git": {
+            "revision": "39e616041ae6fb1243a0f6ac891e72d576b640e5",
+            "status": "",
+            "toplevel": "/opt/flashmla-etap"
+          },
+          "kernels": {
+            "merge": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:33 STACK:0 SHARED:3200 LOCAL:0 CONSTANT[0]:580 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 580,
+                "LOCAL": 0,
+                "REG": 33,
+                "SAMPLER": 0,
+                "SHARED": 3200,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "streamattn_micro128_merge_kernel(const float *, const float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 0,
+                "ptx_wgmma_mma_async": 0,
+                "ptx_wgmma_wait_group": {},
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "BRA": 40,
+                  "BRA.DIV": 2,
+                  "BSSY": 11,
+                  "BSYNC": 11,
+                  "ENDCOLLECTIVE": 10,
+                  "EXIT": 2,
+                  "F2FP.BF16.F32.PACK_AB": 1,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 4,
+                  "FADD.FTZ": 68,
+                  "FFMA.FTZ": 29,
+                  "FMNMX.FTZ": 38,
+                  "FMUL.FTZ": 2,
+                  "FSETP.GT.FTZ.AND": 2,
+                  "FSETP.NEU.FTZ.AND": 1,
+                  "HFMA2.MMA": 6,
+                  "I2F.RP": 4,
+                  "IABS": 10,
+                  "IADD3": 53,
+                  "IADD3.X": 9,
+                  "IMAD": 29,
+                  "IMAD.HI.U32": 10,
+                  "IMAD.IADD": 16,
+                  "IMAD.MOV": 12,
+                  "IMAD.MOV.U32": 31,
+                  "IMAD.SHL.U32": 2,
+                  "IMAD.WIDE": 2,
+                  "IMAD.WIDE.U32": 6,
+                  "IMAD.X": 5,
+                  "ISETP.GE.AND": 12,
+                  "ISETP.GE.U32.AND": 10,
+                  "ISETP.GT.AND": 11,
+                  "ISETP.GT.U32.AND": 7,
+                  "ISETP.LT.OR": 3,
+                  "ISETP.NE.AND": 14,
+                  "ISETP.NE.OR": 1,
+                  "LDC": 7,
+                  "LDC.64": 1,
+                  "LDG.E.CONSTANT": 87,
+                  "LDS": 4,
+                  "LDS.128": 7,
+                  "LEA": 19,
+                  "LEA.HI": 2,
+                  "LEA.HI.X": 13,
+                  "LOP3.LUT": 19,
+                  "MOV": 17,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5,
+                  "NOP": 16,
+                  "PLOP3.LUT": 12,
+                  "S2R": 5,
+                  "S2UR": 3,
+                  "SEL": 4,
+                  "SHF.L.U32": 2,
+                  "SHF.L.U64.HI": 2,
+                  "SHF.R.S32.HI": 11,
+                  "SHFL.BFLY": 20,
+                  "STG.E": 1,
+                  "STG.E.U16": 1,
+                  "STS": 60,
+                  "UIADD3": 3,
+                  "ULDC": 1,
+                  "ULDC.64": 8,
+                  "ULEA": 3,
+                  "UMOV": 5,
+                  "VIADD": 24,
+                  "WARPSYNC.ALL": 2,
+                  "WARPSYNC.COLLECTIVE": 10
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5
+                }
+              },
+              "mangled_symbol": "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_merge_kernel",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1.resources.txt",
+                "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+                "size_bytes": 80
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 12,
+                "dynamic_shared_bytes": 0,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 33,
+                "static_shared_bytes": 2176
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_09db590de898/kernel_1.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_1.sass",
+                "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+                "size_bytes": 197543
+              }
+            },
+            "producer": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:604 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 604,
+                "LOCAL": 0,
+                "REG": 254,
+                "SAMPLER": 0,
+                "SHARED": 1024,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "void streamattn_micro128_kernel<(int)8, (bool)1, (bool)0, (bool)1>(const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, float *, float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 4,
+                "ptx_wgmma_mma_async": 40,
+                "ptx_wgmma_wait_group": {
+                  "0": 3,
+                  "1": 2
+                },
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "BRA": 31,
+                  "BSSY": 14,
+                  "BSYNC": 14,
+                  "CALL.REL.NOINC": 2,
+                  "CS2R": 103,
+                  "DEPBAR.LE": 2,
+                  "EXIT": 1,
+                  "F2FP.BF16.F32.PACK_AB": 32,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 5,
+                  "F2I.U64.TRUNC": 1,
+                  "FADD.FTZ": 140,
+                  "FENCE.VIEW.ASYNC.S": 1,
+                  "FFMA.FTZ": 8,
+                  "FMNMX.FTZ": 76,
+                  "FMUL.FTZ": 324,
+                  "FSETP.GT.FTZ.AND": 4,
+                  "FSETP.NEU.FTZ.AND": 4,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "I2F.RP": 3,
+                  "I2F.U32.RP": 2,
+                  "I2F.U64.RP": 1,
+                  "IABS": 7,
+                  "IADD3": 88,
+                  "IADD3.X": 17,
+                  "IMAD": 50,
+                  "IMAD.HI.U32": 19,
+                  "IMAD.IADD": 34,
+                  "IMAD.MOV": 15,
+                  "IMAD.MOV.U32": 120,
+                  "IMAD.SHL.U32": 15,
+                  "IMAD.U32": 1,
+                  "IMAD.WIDE": 17,
+                  "IMAD.WIDE.U32": 17,
+                  "IMAD.X": 45,
+                  "ISETP.GE.AND": 17,
+                  "ISETP.GE.U32.AND": 9,
+                  "ISETP.GE.U32.AND.EX": 2,
+                  "ISETP.GT.AND": 1,
+                  "ISETP.GT.U32.AND": 3,
+                  "ISETP.LT.AND": 4,
+                  "ISETP.NE.AND": 8,
+                  "ISETP.NE.AND.EX": 1,
+                  "ISETP.NE.U32.AND": 7,
+                  "LDC": 11,
+                  "LDG.E.U16.CONSTANT": 6,
+                  "LDGDEPBAR": 5,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "LDS": 13,
+                  "LEA": 35,
+                  "LEA.HI": 37,
+                  "LEA.HI.SX32": 3,
+                  "LEA.HI.X": 26,
+                  "LOP3.LUT": 129,
+                  "MEMBAR.ALL.CTA": 1,
+                  "MOV": 91,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "NOP": 12,
+                  "PRMT": 6,
+                  "RET.REL.NODEC": 1,
+                  "S2R": 14,
+                  "S2UR": 2,
+                  "SEL": 12,
+                  "SHF.L.U32": 2,
+                  "SHF.L.U64.HI": 4,
+                  "SHF.R.S32.HI": 65,
+                  "SHF.R.U32.HI": 2,
+                  "SHF.R.U64": 38,
+                  "SHFL.BFLY": 16,
+                  "ST.E.U16": 6,
+                  "STG.E": 132,
+                  "UIADD3": 38,
+                  "UIADD3.64": 31,
+                  "UIADD3.X": 31,
+                  "ULDC": 7,
+                  "ULDC.64": 13,
+                  "ULEA": 1,
+                  "ULOP3.LUT": 19,
+                  "UMOV": 63,
+                  "USHF.R.U32.HI": 9,
+                  "VIADD": 22,
+                  "VIMNMX": 1,
+                  "WARPGROUP.ARRIVE": 9,
+                  "WARPGROUP.DEPBAR.LE": 5
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "DEPBAR.LE": 2,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "WARPGROUP.ARRIVE": 9,
+                  "WARPGROUP.DEPBAR.LE": 5
+                }
+              },
+              "mangled_symbol": "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_kernel<8, true, false, true>",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0.resources.txt",
+                "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+                "size_bytes": 81
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 2,
+                "dynamic_shared_bytes": 81920,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 254,
+                "static_shared_bytes": 0
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_09db590de898/kernel_0.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/kernel_0.sass",
+                "sha256": "de2f208ea04c4d1d64b26a54579ac6789fa9e5f07d238fc00a5c2179bfa512f9",
+                "size_bytes": 626303
+              }
+            }
+          },
+          "manifest": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_09db590de898/manifest.json",
+            "sha256": "62ca4893accb066e5859cd8344a02c20dc80beb347edf987681db712b0976a57",
+            "size_bytes": 23171
+          },
+          "retained_cubins": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            }
+          ],
+          "schema": "streamattn.sm90_binary_diagnostics.v1",
+          "selection": "exact_kernel_names",
+          "tools": {
+            "cu++filt": {
+              "path": "/usr/local/cuda/bin/cu++filt",
+              "version": "cu++filt: NVIDIA (R) Cuda C++ demangler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55"
+            },
+            "cuobjdump": {
+              "path": "/usr/local/cuda/bin/cuobjdump",
+              "version": "cuobjdump: NVIDIA (R) fat binary listing tool\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55\nBuild cuda_12.8.r12.8/compiler.35351055_0"
+            },
+            "nvcc": {
+              "path": "/usr/local/cuda/bin/nvcc",
+              "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:20:09_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            },
+            "ptxas": {
+              "path": "/usr/local/cuda/bin/ptxas",
+              "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:17:38_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            }
+          }
+        },
+        "m128_overlap_partial": {
+          "archive": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1.tar.gz",
+            "sha256": "ff50d20dc7e2a8bb29731d43f2363682287d1bc766621a9d56cc7049b665aa5d",
+            "size_bytes": 1630758
+          },
+          "archived_binary": {
+            "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "artifacts": {
+            "build_0_build.ninja": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/build_0_build.ninja",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/build_0_build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            "build_1_cuda.cu": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/build_1_cuda.cu",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/build_1_cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            "build_2_main.cpp": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/build_2_main.cpp",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/build_2_main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            },
+            "build_3_cuda.cubin": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/build_3_cuda.cubin",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/build_3_cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            },
+            "kernel_0.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.resources.txt",
+              "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+              "size_bytes": 81
+            },
+            "kernel_0.sass": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.sass",
+              "sha256": "4569e2fe88586869534435839f46be10b95ddc7b7f0b6c773868d267388275b1",
+              "size_bytes": 647615
+            },
+            "kernel_0_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.entry.ptx",
+              "sha256": "d2a4ff3f88b984e3f8b75e8d796c5827979cf7b64d84bc7b43b8345b407691ba",
+              "size_bytes": 228838
+            },
+            "kernel_0_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "kernel_1.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.resources.txt",
+              "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+              "size_bytes": 80
+            },
+            "kernel_1.sass": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.sass",
+              "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+              "size_bytes": 197543
+            },
+            "kernel_1_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.entry.ptx",
+              "sha256": "0f396b80a4198b55e5e1e93d654fc35ee0a651659168869c6a0ba6c7b1471c87",
+              "size_bytes": 17292
+            },
+            "kernel_1_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "streamattn_sm90_micro128_3478408e57c9cb44.so": {
+              "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+              "size_bytes": 2607584
+            }
+          },
+          "binary": {
+            "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "build_files": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            }
+          ],
+          "build_metadata": {
+            "build_directory": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44",
+            "cuda_home": "/usr/local/cuda",
+            "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+            "diagnostic_build": true,
+            "extension_name": "streamattn_sm90_micro128_3478408e57c9cb44",
+            "extra_cflags": [
+              "-O3",
+              "-std=c++17"
+            ],
+            "extra_cuda_cflags": [
+              "-O3",
+              "-std=c++17",
+              "--use_fast_math",
+              "--expt-relaxed-constexpr",
+              "--expt-extended-lambda",
+              "--ptxas-options=-v,--warn-on-spills",
+              "-gencode=arch=compute_90a,code=sm_90a",
+              "-lineinfo",
+              "--keep",
+              "--keep-dir",
+              "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates"
+            ],
+            "head_dim": 128,
+            "intermediates_dir": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates",
+            "keep_intermediates": true,
+            "lineinfo": true,
+            "loaded_binary": {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0"
+            },
+            "source_sha256": "1c361ed4c3e995443beccbbc5d826fb73b36228839619acd0cbbec451dfb17e3",
+            "torch_cuda_version": "12.8",
+            "torch_version": "2.7.1+cu128"
+          },
+          "cutlass_git": {
+            "revision": "39e616041ae6fb1243a0f6ac891e72d576b640e5",
+            "status": "",
+            "toplevel": "/opt/flashmla-etap"
+          },
+          "kernels": {
+            "merge": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:33 STACK:0 SHARED:3200 LOCAL:0 CONSTANT[0]:580 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 580,
+                "LOCAL": 0,
+                "REG": 33,
+                "SAMPLER": 0,
+                "SHARED": 3200,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "streamattn_micro128_merge_kernel(const float *, const float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 0,
+                "ptx_wgmma_mma_async": 0,
+                "ptx_wgmma_wait_group": {},
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "BRA": 40,
+                  "BRA.DIV": 2,
+                  "BSSY": 11,
+                  "BSYNC": 11,
+                  "ENDCOLLECTIVE": 10,
+                  "EXIT": 2,
+                  "F2FP.BF16.F32.PACK_AB": 1,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 4,
+                  "FADD.FTZ": 68,
+                  "FFMA.FTZ": 29,
+                  "FMNMX.FTZ": 38,
+                  "FMUL.FTZ": 2,
+                  "FSETP.GT.FTZ.AND": 2,
+                  "FSETP.NEU.FTZ.AND": 1,
+                  "HFMA2.MMA": 6,
+                  "I2F.RP": 4,
+                  "IABS": 10,
+                  "IADD3": 53,
+                  "IADD3.X": 9,
+                  "IMAD": 29,
+                  "IMAD.HI.U32": 10,
+                  "IMAD.IADD": 16,
+                  "IMAD.MOV": 12,
+                  "IMAD.MOV.U32": 31,
+                  "IMAD.SHL.U32": 2,
+                  "IMAD.WIDE": 2,
+                  "IMAD.WIDE.U32": 6,
+                  "IMAD.X": 5,
+                  "ISETP.GE.AND": 12,
+                  "ISETP.GE.U32.AND": 10,
+                  "ISETP.GT.AND": 11,
+                  "ISETP.GT.U32.AND": 7,
+                  "ISETP.LT.OR": 3,
+                  "ISETP.NE.AND": 14,
+                  "ISETP.NE.OR": 1,
+                  "LDC": 7,
+                  "LDC.64": 1,
+                  "LDG.E.CONSTANT": 87,
+                  "LDS": 4,
+                  "LDS.128": 7,
+                  "LEA": 19,
+                  "LEA.HI": 2,
+                  "LEA.HI.X": 13,
+                  "LOP3.LUT": 19,
+                  "MOV": 17,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5,
+                  "NOP": 16,
+                  "PLOP3.LUT": 12,
+                  "S2R": 5,
+                  "S2UR": 3,
+                  "SEL": 4,
+                  "SHF.L.U32": 2,
+                  "SHF.L.U64.HI": 2,
+                  "SHF.R.S32.HI": 11,
+                  "SHFL.BFLY": 20,
+                  "STG.E": 1,
+                  "STG.E.U16": 1,
+                  "STS": 60,
+                  "UIADD3": 3,
+                  "ULDC": 1,
+                  "ULDC.64": 8,
+                  "ULEA": 3,
+                  "UMOV": 5,
+                  "VIADD": 24,
+                  "WARPSYNC.ALL": 2,
+                  "WARPSYNC.COLLECTIVE": 10
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5
+                }
+              },
+              "mangled_symbol": "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_merge_kernel",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.resources.txt",
+                "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+                "size_bytes": 80
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 12,
+                "dynamic_shared_bytes": 0,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 33,
+                "static_shared_bytes": 2176
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_1.sass",
+                "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+                "size_bytes": 197543
+              }
+            },
+            "producer": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:604 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 604,
+                "LOCAL": 0,
+                "REG": 254,
+                "SAMPLER": 0,
+                "SHARED": 1024,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "void streamattn_micro128_kernel<(int)8, (bool)1, (bool)0, (bool)0>(const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, float *, float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 4,
+                "ptx_wgmma_mma_async": 40,
+                "ptx_wgmma_wait_group": {
+                  "0": 2,
+                  "1": 2
+                },
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "BRA": 31,
+                  "BSSY": 14,
+                  "BSYNC": 14,
+                  "CALL.REL.NOINC": 2,
+                  "CS2R": 106,
+                  "DEPBAR.LE": 2,
+                  "EXIT": 1,
+                  "F2FP.BF16.F32.PACK_AB": 32,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 5,
+                  "F2I.U64.TRUNC": 1,
+                  "FADD.FTZ": 140,
+                  "FENCE.VIEW.ASYNC.S": 1,
+                  "FFMA.FTZ": 8,
+                  "FMNMX.FTZ": 76,
+                  "FMUL.FTZ": 324,
+                  "FSETP.GT.FTZ.AND": 4,
+                  "FSETP.NEU.FTZ.AND": 4,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "I2F.RP": 3,
+                  "I2F.U32.RP": 2,
+                  "I2F.U64.RP": 1,
+                  "IABS": 7,
+                  "IADD3": 83,
+                  "IADD3.X": 18,
+                  "IMAD": 47,
+                  "IMAD.HI.U32": 19,
+                  "IMAD.IADD": 38,
+                  "IMAD.MOV": 12,
+                  "IMAD.MOV.U32": 117,
+                  "IMAD.SHL.U32": 14,
+                  "IMAD.U32": 2,
+                  "IMAD.WIDE": 17,
+                  "IMAD.WIDE.U32": 17,
+                  "IMAD.X": 44,
+                  "ISETP.GE.AND": 17,
+                  "ISETP.GE.U32.AND": 9,
+                  "ISETP.GE.U32.AND.EX": 2,
+                  "ISETP.GT.AND": 1,
+                  "ISETP.GT.U32.AND": 3,
+                  "ISETP.LT.AND": 4,
+                  "ISETP.NE.AND": 8,
+                  "ISETP.NE.AND.EX": 1,
+                  "ISETP.NE.U32.AND": 7,
+                  "LDC": 11,
+                  "LDG.E.U16.CONSTANT": 6,
+                  "LDGDEPBAR": 5,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "LDS": 13,
+                  "LEA": 38,
+                  "LEA.HI": 37,
+                  "LEA.HI.SX32": 3,
+                  "LEA.HI.X": 26,
+                  "LOP3.LUT": 129,
+                  "MEMBAR.ALL.CTA": 1,
+                  "MOV": 85,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "NOP": 11,
+                  "PRMT": 6,
+                  "RET.REL.NODEC": 1,
+                  "S2R": 14,
+                  "S2UR": 2,
+                  "SEL": 12,
+                  "SHF.L.U32": 3,
+                  "SHF.L.U64.HI": 4,
+                  "SHF.R.S32.HI": 65,
+                  "SHF.R.U32.HI": 2,
+                  "SHF.R.U64": 38,
+                  "SHFL.BFLY": 16,
+                  "ST.E.U16": 6,
+                  "STG.E": 132,
+                  "UIADD3": 38,
+                  "UIADD3.64": 31,
+                  "UIADD3.X": 31,
+                  "ULDC": 7,
+                  "ULDC.64": 13,
+                  "ULEA": 1,
+                  "ULOP3.LUT": 19,
+                  "UMOV": 63,
+                  "USHF.R.U32.HI": 9,
+                  "VIADD": 26,
+                  "VIMNMX": 1,
+                  "WARPGROUP.ARRIVE": 42,
+                  "WARPGROUP.DEPBAR.LE": 42
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "DEPBAR.LE": 2,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "WARPGROUP.ARRIVE": 42,
+                  "WARPGROUP.DEPBAR.LE": 42
+                }
+              },
+              "mangled_symbol": "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_kernel<8, true, false, false>",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.resources.txt",
+                "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+                "size_bytes": 81
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 2,
+                "dynamic_shared_bytes": 81920,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 254,
+                "static_shared_bytes": 0
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/kernel_0.sass",
+                "sha256": "4569e2fe88586869534435839f46be10b95ddc7b7f0b6c773868d267388275b1",
+                "size_bytes": 647615
+              }
+            }
+          },
+          "manifest": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_a1c71ffcd5b1/manifest.json",
+            "sha256": "adcb532e23a1c06084a5715b19edb8bb89b8de64c8856ab04d9a59d52b105ef9",
+            "size_bytes": 23176
+          },
+          "retained_cubins": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            }
+          ],
+          "schema": "streamattn.sm90_binary_diagnostics.v1",
+          "selection": "exact_kernel_names",
+          "tools": {
+            "cu++filt": {
+              "path": "/usr/local/cuda/bin/cu++filt",
+              "version": "cu++filt: NVIDIA (R) Cuda C++ demangler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55"
+            },
+            "cuobjdump": {
+              "path": "/usr/local/cuda/bin/cuobjdump",
+              "version": "cuobjdump: NVIDIA (R) fat binary listing tool\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55\nBuild cuda_12.8.r12.8/compiler.35351055_0"
+            },
+            "nvcc": {
+              "path": "/usr/local/cuda/bin/nvcc",
+              "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:20:09_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            },
+            "ptxas": {
+              "path": "/usr/local/cuda/bin/ptxas",
+              "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:17:38_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            }
+          }
+        },
+        "m128_serial_partial": {
+          "archive": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965.tar.gz",
+            "sha256": "0e7b23efd11327d2df3bcffa74a4ac9e309754dbafebc1656274e4eda8ce0b58",
+            "size_bytes": 1630325
+          },
+          "archived_binary": {
+            "archive_member": "binary_09938cdca290e295_570ec7c8e965/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "artifacts": {
+            "build_0_build.ninja": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/build_0_build.ninja",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/build_0_build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            "build_1_cuda.cu": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/build_1_cuda.cu",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/build_1_cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            "build_2_main.cpp": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/build_2_main.cpp",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/build_2_main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            },
+            "build_3_cuda.cubin": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/build_3_cuda.cubin",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/build_3_cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            },
+            "kernel_0.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0.resources.txt",
+              "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+              "size_bytes": 81
+            },
+            "kernel_0.sass": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0.sass",
+              "sha256": "bbb506e804730c41f59f78cd1bd75eb5e5d7923999f92d64e9bfb547a38494a3",
+              "size_bytes": 626303
+            },
+            "kernel_0_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0_0.entry.ptx",
+              "sha256": "90c48c6ca9def9eb3a2e0887398ab2aeba72274bbc64146f8df66d8978a283d9",
+              "size_bytes": 229496
+            },
+            "kernel_0_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "kernel_1.resources.txt": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1.resources.txt",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1.resources.txt",
+              "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+              "size_bytes": 80
+            },
+            "kernel_1.sass": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1.sass",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1.sass",
+              "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+              "size_bytes": 197543
+            },
+            "kernel_1_0.entry.ptx": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1_0.entry.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1_0.entry.ptx",
+              "sha256": "0f396b80a4198b55e5e1e93d654fc35ee0a651659168869c6a0ba6c7b1471c87",
+              "size_bytes": 17292
+            },
+            "kernel_1_0.ptx": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1_0.ptx",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1_0.ptx",
+              "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+              "size_bytes": 3097258
+            },
+            "streamattn_sm90_micro128_3478408e57c9cb44.so": {
+              "archive_member": "binary_09938cdca290e295_570ec7c8e965/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+              "size_bytes": 2607584
+            }
+          },
+          "binary": {
+            "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+            "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+            "size_bytes": 2607584
+          },
+          "build_files": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/build.ninja",
+              "sha256": "fe78c98f9a8598938616de8738cf9aa684f6c6f7f65f538e30b80df7b249f584",
+              "size_bytes": 2552
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/cuda.cu",
+              "sha256": "f6f55dda39980e74d6729e54ba9efc13f8192800fbe117f82c2f391ffe6c82ad",
+              "size_bytes": 33169
+            },
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/main.cpp",
+              "sha256": "a1bfdd4e3c75e65b726049fb17323d8681b2c331e6a21f65b67774de52d7144b",
+              "size_bytes": 607
+            }
+          ],
+          "build_metadata": {
+            "build_directory": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44",
+            "cuda_home": "/usr/local/cuda",
+            "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+            "diagnostic_build": true,
+            "extension_name": "streamattn_sm90_micro128_3478408e57c9cb44",
+            "extra_cflags": [
+              "-O3",
+              "-std=c++17"
+            ],
+            "extra_cuda_cflags": [
+              "-O3",
+              "-std=c++17",
+              "--use_fast_math",
+              "--expt-relaxed-constexpr",
+              "--expt-extended-lambda",
+              "--ptxas-options=-v,--warn-on-spills",
+              "-gencode=arch=compute_90a,code=sm_90a",
+              "-lineinfo",
+              "--keep",
+              "--keep-dir",
+              "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates"
+            ],
+            "head_dim": 128,
+            "intermediates_dir": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates",
+            "keep_intermediates": true,
+            "lineinfo": true,
+            "loaded_binary": {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+              "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0"
+            },
+            "source_sha256": "1c361ed4c3e995443beccbbc5d826fb73b36228839619acd0cbbec451dfb17e3",
+            "torch_cuda_version": "12.8",
+            "torch_version": "2.7.1+cu128"
+          },
+          "cutlass_git": {
+            "revision": "39e616041ae6fb1243a0f6ac891e72d576b640e5",
+            "status": "",
+            "toplevel": "/opt/flashmla-etap"
+          },
+          "kernels": {
+            "merge": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:33 STACK:0 SHARED:3200 LOCAL:0 CONSTANT[0]:580 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 580,
+                "LOCAL": 0,
+                "REG": 33,
+                "SAMPLER": 0,
+                "SHARED": 3200,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "streamattn_micro128_merge_kernel(const float *, const float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 0,
+                "ptx_wgmma_mma_async": 0,
+                "ptx_wgmma_wait_group": {},
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "BRA": 40,
+                  "BRA.DIV": 2,
+                  "BSSY": 11,
+                  "BSYNC": 11,
+                  "ENDCOLLECTIVE": 10,
+                  "EXIT": 2,
+                  "F2FP.BF16.F32.PACK_AB": 1,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 4,
+                  "FADD.FTZ": 68,
+                  "FFMA.FTZ": 29,
+                  "FMNMX.FTZ": 38,
+                  "FMUL.FTZ": 2,
+                  "FSETP.GT.FTZ.AND": 2,
+                  "FSETP.NEU.FTZ.AND": 1,
+                  "HFMA2.MMA": 6,
+                  "I2F.RP": 4,
+                  "IABS": 10,
+                  "IADD3": 53,
+                  "IADD3.X": 9,
+                  "IMAD": 29,
+                  "IMAD.HI.U32": 10,
+                  "IMAD.IADD": 16,
+                  "IMAD.MOV": 12,
+                  "IMAD.MOV.U32": 31,
+                  "IMAD.SHL.U32": 2,
+                  "IMAD.WIDE": 2,
+                  "IMAD.WIDE.U32": 6,
+                  "IMAD.X": 5,
+                  "ISETP.GE.AND": 12,
+                  "ISETP.GE.U32.AND": 10,
+                  "ISETP.GT.AND": 11,
+                  "ISETP.GT.U32.AND": 7,
+                  "ISETP.LT.OR": 3,
+                  "ISETP.NE.AND": 14,
+                  "ISETP.NE.OR": 1,
+                  "LDC": 7,
+                  "LDC.64": 1,
+                  "LDG.E.CONSTANT": 87,
+                  "LDS": 4,
+                  "LDS.128": 7,
+                  "LEA": 19,
+                  "LEA.HI": 2,
+                  "LEA.HI.X": 13,
+                  "LOP3.LUT": 19,
+                  "MOV": 17,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5,
+                  "NOP": 16,
+                  "PLOP3.LUT": 12,
+                  "S2R": 5,
+                  "S2UR": 3,
+                  "SEL": 4,
+                  "SHF.L.U32": 2,
+                  "SHF.L.U64.HI": 2,
+                  "SHF.R.S32.HI": 11,
+                  "SHFL.BFLY": 20,
+                  "STG.E": 1,
+                  "STG.E.U16": 1,
+                  "STS": 60,
+                  "UIADD3": 3,
+                  "ULDC": 1,
+                  "ULDC.64": 8,
+                  "ULEA": 3,
+                  "UMOV": 5,
+                  "VIADD": 24,
+                  "WARPSYNC.ALL": 2,
+                  "WARPSYNC.COLLECTIVE": 10
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 2,
+                  "MUFU.EX2": 29,
+                  "MUFU.LG2": 1,
+                  "MUFU.RCP": 5
+                }
+              },
+              "mangled_symbol": "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_merge_kernel",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1.resources.txt",
+                "sha256": "cc201b7101eeba5b8f809a8e35d6bc60559e4344d10b0fe5d8348b5c935f3c26",
+                "size_bytes": 80
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 12,
+                "dynamic_shared_bytes": 0,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 33,
+                "static_shared_bytes": 2176
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_1.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_1.sass",
+                "sha256": "71308faa0fb57cc108ecfc7797c0f9566b10f95b18d6b883b874f7dd0784f37a",
+                "size_bytes": 197543
+              }
+            },
+            "producer": {
+              "binary": {
+                "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so",
+                "sha256": "09938cdca290e2959bb8a6de1a7d0aa68b11c507d87dbd4f23f4fbdf2dc58dc0",
+                "size_bytes": 2607584
+              },
+              "binary_resource_text": "REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:604 TEXTURE:0 SURFACE:0 SAMPLER:0",
+              "binary_resources": {
+                "CONSTANT[0]": 604,
+                "LOCAL": 0,
+                "REG": 254,
+                "SAMPLER": 0,
+                "SHARED": 1024,
+                "STACK": 0,
+                "SURFACE": 0,
+                "TEXTURE": 0
+              },
+              "demangled_symbol": "void streamattn_micro128_kernel<(int)8, (bool)0, (bool)0, (bool)0>(const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, const cutlass::bfloat16_t *, float *, float *, cutlass::bfloat16_t *, float *, int, int, int, int, int)",
+              "instruction_counts": {
+                "kind": "static_instructions",
+                "ptx_available": true,
+                "ptx_wgmma_commit_group": 4,
+                "ptx_wgmma_mma_async": 40,
+                "ptx_wgmma_wait_group": {
+                  "0": 6
+                },
+                "sass_opcodes": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "BRA": 31,
+                  "BSSY": 14,
+                  "BSYNC": 14,
+                  "CALL.REL.NOINC": 2,
+                  "CS2R": 103,
+                  "DEPBAR.LE": 2,
+                  "EXIT": 1,
+                  "F2FP.BF16.F32.PACK_AB": 32,
+                  "F2I.FTZ.U32.TRUNC.NTZ": 5,
+                  "F2I.U64.TRUNC": 1,
+                  "FADD.FTZ": 140,
+                  "FENCE.VIEW.ASYNC.S": 1,
+                  "FFMA.FTZ": 8,
+                  "FMNMX.FTZ": 76,
+                  "FMUL.FTZ": 324,
+                  "FSETP.GT.FTZ.AND": 4,
+                  "FSETP.NEU.FTZ.AND": 4,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "I2F.RP": 3,
+                  "I2F.U32.RP": 2,
+                  "I2F.U64.RP": 1,
+                  "IABS": 7,
+                  "IADD3": 88,
+                  "IADD3.X": 17,
+                  "IMAD": 50,
+                  "IMAD.HI.U32": 19,
+                  "IMAD.IADD": 34,
+                  "IMAD.MOV": 15,
+                  "IMAD.MOV.U32": 120,
+                  "IMAD.SHL.U32": 15,
+                  "IMAD.U32": 1,
+                  "IMAD.WIDE": 17,
+                  "IMAD.WIDE.U32": 17,
+                  "IMAD.X": 45,
+                  "ISETP.GE.AND": 17,
+                  "ISETP.GE.U32.AND": 9,
+                  "ISETP.GE.U32.AND.EX": 2,
+                  "ISETP.GT.AND": 1,
+                  "ISETP.GT.U32.AND": 3,
+                  "ISETP.LT.AND": 4,
+                  "ISETP.NE.AND": 8,
+                  "ISETP.NE.AND.EX": 1,
+                  "ISETP.NE.U32.AND": 7,
+                  "LDC": 11,
+                  "LDG.E.U16.CONSTANT": 6,
+                  "LDGDEPBAR": 5,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "LDS": 13,
+                  "LEA": 35,
+                  "LEA.HI": 37,
+                  "LEA.HI.SX32": 3,
+                  "LEA.HI.X": 26,
+                  "LOP3.LUT": 129,
+                  "MEMBAR.ALL.CTA": 1,
+                  "MOV": 91,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "NOP": 11,
+                  "PRMT": 6,
+                  "RET.REL.NODEC": 1,
+                  "S2R": 14,
+                  "S2UR": 2,
+                  "SEL": 12,
+                  "SHF.L.U32": 2,
+                  "SHF.L.U64.HI": 4,
+                  "SHF.R.S32.HI": 65,
+                  "SHF.R.U32.HI": 2,
+                  "SHF.R.U64": 38,
+                  "SHFL.BFLY": 16,
+                  "ST.E.U16": 6,
+                  "STG.E": 132,
+                  "UIADD3": 38,
+                  "UIADD3.64": 31,
+                  "UIADD3.X": 31,
+                  "ULDC": 7,
+                  "ULDC.64": 13,
+                  "ULEA": 1,
+                  "ULOP3.LUT": 19,
+                  "UMOV": 63,
+                  "USHF.R.U32.HI": 9,
+                  "VIADD": 22,
+                  "VIMNMX": 1,
+                  "WARPGROUP.ARRIVE": 9,
+                  "WARPGROUP.DEPBAR.LE": 6
+                },
+                "sass_relevant": {
+                  "BAR.SYNC.DEFER_BLOCKING": 3,
+                  "DEPBAR.LE": 2,
+                  "HGMMA.64x128x16.F32.BF16": 8,
+                  "HGMMA.64x64x16.F32.BF16": 32,
+                  "HGMMA.64x8x16.F16": 2,
+                  "LDGSTS.E.BYPASS.LTC128B.128": 32,
+                  "MUFU.EX2": 68,
+                  "MUFU.LG2": 4,
+                  "MUFU.RCP": 132,
+                  "WARPGROUP.ARRIVE": 9,
+                  "WARPGROUP.DEPBAR.LE": 6
+                }
+              },
+              "mangled_symbol": "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+              "ptx": [
+                {
+                  "entry_symbols": [
+                    "_Z32streamattn_micro128_merge_kernelPKfS0_PN7cutlass10bfloat16_tEPfiiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi4ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb1ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb1ELb0ELb1EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb1ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                    "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii"
+                  ],
+                  "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "ptx_files": [
+                {
+                  "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0_0.ptx",
+                  "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0_0.ptx",
+                  "sha256": "4d536218269dd58f68e3701050dd31d4c1c503953effde5cbae1dec59269dbe0",
+                  "size_bytes": 3097258
+                }
+              ],
+              "requested_kernel": "streamattn_micro128_kernel<8, false, false, false>",
+              "resource_file": {
+                "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0.resources.txt",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0.resources.txt",
+                "sha256": "ca1a674ec6ef9a2efc6bde192d3ff70392d6f9c160d2a4c9a0c43bacd98fc792",
+                "size_bytes": 81
+              },
+              "runtime_resources": {
+                "blocks_per_sm": 2,
+                "dynamic_shared_bytes": 81920,
+                "local_bytes_per_thread": 0,
+                "max_threads_per_block": 128,
+                "registers_per_thread": 254,
+                "static_shared_bytes": 0
+              },
+              "sass_command": [
+                "/usr/local/cuda/bin/cuobjdump",
+                "--dump-sass",
+                "--function",
+                "_Z26streamattn_micro128_kernelILi8ELb0ELb0ELb0EEvPKN7cutlass10bfloat16_tES3_S3_PfS4_PS1_S4_iiiii",
+                "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/streamattn_sm90_micro128_3478408e57c9cb44.so"
+              ],
+              "sass_file": {
+                "archive_member": "binary_09938cdca290e295_570ec7c8e965/kernel_0.sass",
+                "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/kernel_0.sass",
+                "sha256": "bbb506e804730c41f59f78cd1bd75eb5e5d7923999f92d64e9bfb547a38494a3",
+                "size_bytes": 626303
+              }
+            }
+          },
+          "manifest": {
+            "path": "/tmp/streamattn-micro128-build/diagnostics/binary_09938cdca290e295_570ec7c8e965/manifest.json",
+            "sha256": "9f3ea0dbe303b95775e672a816c6f74e10df8c72a05be43e978110bb46a48234",
+            "size_bytes": 23155
+          },
+          "retained_cubins": [
+            {
+              "path": "/tmp/streamattn-micro128-build/streamattn_sm90_micro128_3478408e57c9cb44/nvcc_intermediates/cuda.cubin",
+              "sha256": "35e8fd1b67dfe48b89912991b83ee445a13fb05ec430dc8a891d00bb1f41a2c7",
+              "size_bytes": 2296744
+            }
+          ],
+          "schema": "streamattn.sm90_binary_diagnostics.v1",
+          "selection": "exact_kernel_names",
+          "tools": {
+            "cu++filt": {
+              "path": "/usr/local/cuda/bin/cu++filt",
+              "version": "cu++filt: NVIDIA (R) Cuda C++ demangler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55"
+            },
+            "cuobjdump": {
+              "path": "/usr/local/cuda/bin/cuobjdump",
+              "version": "cuobjdump: NVIDIA (R) fat binary listing tool\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Jan__3_19:19:51_PST_2025\nCuda compilation tools, release 12.8, V12.8.55\nBuild cuda_12.8.r12.8/compiler.35351055_0"
+            },
+            "nvcc": {
+              "path": "/usr/local/cuda/bin/nvcc",
+              "version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:20:09_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            },
+            "ptxas": {
+              "path": "/usr/local/cuda/bin/ptxas",
+              "version": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Jan_15_19:17:38_PST_2025\nCuda compilation tools, release 12.8, V12.8.61\nBuild cuda_12.8.r12.8/compiler.35404655_0"
+            }
+          }
+        }
+      },
+      "case": {
+        "batch": 1,
+        "d": 128,
+        "g": 8,
+        "hq": 16,
+        "m": 64,
+        "n": 4096,
+        "splits": 16
+      },
+      "composition": {
+        "m128_overlap_drained_partial": true,
+        "m128_overlap_partial": true,
+        "m128_serial_partial": true
+      },
+      "exact_pass": true,
+      "fastest_measured_baseline": "torch_flash",
+      "matches_splits": true,
+      "median_ms": {
+        "m128_overlap_drained_partial": 0.049386399984359744,
+        "m128_overlap_drained_partial:merge": 0.004943199828267098,
+        "m128_overlap_drained_partial:producer": 0.045256000757217404,
+        "m128_overlap_partial": 0.05180400013923645,
+        "m128_overlap_partial:merge": 0.004952000081539154,
+        "m128_overlap_partial:producer": 0.04768399894237518,
+        "m128_serial_partial": 0.04933359920978546,
+        "m128_serial_partial:merge": 0.004947999864816666,
+        "m128_serial_partial:producer": 0.045310398936271666,
+        "natural64": 0.03123599886894226,
+        "torch_flash": 0.01982000023126602
+      },
+      "mutation": {
+        "m128_overlap_drained_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 2.86102294921875e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719804843887687
+          }
+        },
+        "m128_overlap_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 2.86102294921875e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719804843887687
+          }
+        },
+        "m128_serial_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 2.86102294921875e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719804843887687
+          }
+        },
+        "natural64": {
+          "allocated_bytes_delta": 0,
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719853738322854
+          }
+        }
+      },
+      "natural64": {
+        "splits": 16,
+        "workspace_bytes": 8454144
+      },
+      "plans": {
+        "m128_overlap_drained_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "overlap_drained",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        },
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "overlap",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "serial",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_drained_partial": {
+          "merge_resident": true,
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_overlap_partial": {
+          "merge_resident": true,
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "merge_resident": true,
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_drained_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "serial_over_overlap": {
+        "partial": 0.9523125449229565
+      },
+      "source_sha256": "1c361ed4c3e995443beccbbc5d826fb73b36228839619acd0cbbec451dfb17e3",
+      "speedup_vs_baseline": {
+        "m128_overlap_drained_partial": 0.401325065960322,
+        "m128_overlap_partial": 0.38259594197349084,
+        "m128_serial_partial": 0.4017545962333652
+      },
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "passed_canary",
+      "tile_intervals": [
+        [
+          0,
+          4
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          8,
+          12
+        ],
+        [
+          12,
+          16
+        ],
+        [
+          16,
+          20
+        ],
+        [
+          20,
+          24
+        ],
+        [
+          24,
+          28
+        ],
+        [
+          28,
+          32
+        ],
+        [
+          32,
+          36
+        ],
+        [
+          36,
+          40
+        ],
+        [
+          40,
+          44
+        ],
+        [
+          44,
+          48
+        ],
+        [
+          48,
+          52
+        ],
+        [
+          52,
+          56
+        ],
+        [
+          56,
+          60
+        ],
+        [
+          60,
+          64
+        ]
+      ],
+      "trials_ms": [
+        {
+          "m128_overlap_drained_partial": 0.049451199173927304,
+          "m128_overlap_drained_partial:merge": 0.004941599816083908,
+          "m128_overlap_drained_partial:producer": 0.04527440071105957,
+          "m128_overlap_partial": 0.051937597990036014,
+          "m128_overlap_partial:merge": 0.004993600025773049,
+          "m128_overlap_partial:producer": 0.047779199481010434,
+          "m128_serial_partial": 0.04937280118465424,
+          "m128_serial_partial:merge": 0.004947999864816666,
+          "m128_serial_partial:producer": 0.045310398936271666,
+          "natural64": 0.03129040002822876,
+          "torch_flash": 0.019858400523662566
+        },
+        {
+          "m128_overlap_drained_partial": 0.04944559931755066,
+          "m128_overlap_drained_partial:merge": 0.00493520013988018,
+          "m128_overlap_drained_partial:producer": 0.04526959955692291,
+          "m128_overlap_partial": 0.05175600051879883,
+          "m128_overlap_partial:merge": 0.004946399852633477,
+          "m128_overlap_partial:producer": 0.04763599932193756,
+          "m128_serial_partial": 0.04930160045623779,
+          "m128_serial_partial:merge": 0.0049552001059055325,
+          "m128_serial_partial:producer": 0.045491200685501096,
+          "natural64": 0.031224000453948974,
+          "torch_flash": 0.019814400374889372
+        },
+        {
+          "m128_overlap_drained_partial": 0.049360799789428714,
+          "m128_overlap_drained_partial:merge": 0.0049552001059055325,
+          "m128_overlap_drained_partial:producer": 0.04524640142917633,
+          "m128_overlap_partial": 0.05178319811820984,
+          "m128_overlap_partial:merge": 0.00493520013988018,
+          "m128_overlap_partial:producer": 0.04773679971694946,
+          "m128_serial_partial": 0.04937120079994202,
+          "m128_serial_partial:merge": 0.004948800057172775,
+          "m128_serial_partial:producer": 0.04529919922351837,
+          "natural64": 0.03125520050525665,
+          "torch_flash": 0.01982000023126602
+        },
+        {
+          "m128_overlap_drained_partial": 0.04935440123081207,
+          "m128_overlap_drained_partial:merge": 0.004969599843025208,
+          "m128_overlap_drained_partial:producer": 0.045256000757217404,
+          "m128_overlap_partial": 0.05182480216026306,
+          "m128_overlap_partial:merge": 0.004987199977040291,
+          "m128_overlap_partial:producer": 0.047628799080848695,
+          "m128_serial_partial": 0.049296000599861146,
+          "m128_serial_partial:merge": 0.004940000176429748,
+          "m128_serial_partial:producer": 0.045604801177978514,
+          "natural64": 0.03123599886894226,
+          "torch_flash": 0.019849599897861482
+        },
+        {
+          "m128_overlap_drained_partial": 0.04935039877891541,
+          "m128_overlap_drained_partial:merge": 0.004939199984073639,
+          "m128_overlap_drained_partial:producer": 0.04523360133171082,
+          "m128_overlap_partial": 0.05172880291938782,
+          "m128_overlap_partial:merge": 0.004937599971890449,
+          "m128_overlap_partial:producer": 0.047740000486373904,
+          "m128_serial_partial": 0.04933359920978546,
+          "m128_serial_partial:merge": 0.004931199923157692,
+          "m128_serial_partial:producer": 0.04526000022888184,
+          "natural64": 0.031227201223373413,
+          "torch_flash": 0.019812799990177155
+        },
+        {
+          "m128_overlap_drained_partial": 0.04945040047168732,
+          "m128_overlap_drained_partial:merge": 0.004953600093722343,
+          "m128_overlap_drained_partial:producer": 0.045266398787498476,
+          "m128_overlap_partial": 0.051811200380325315,
+          "m128_overlap_partial:merge": 0.004956800118088722,
+          "m128_overlap_partial:producer": 0.04768399894237518,
+          "m128_serial_partial": 0.0494271993637085,
+          "m128_serial_partial:merge": 0.004972000047564507,
+          "m128_serial_partial:producer": 0.04562720060348511,
+          "natural64": 0.031188800930976868,
+          "torch_flash": 0.019823999702930452
+        },
+        {
+          "m128_overlap_drained_partial": 0.049386399984359744,
+          "m128_overlap_drained_partial:merge": 0.004943199828267098,
+          "m128_overlap_drained_partial:producer": 0.04525440037250519,
+          "m128_overlap_partial": 0.05180400013923645,
+          "m128_overlap_partial:merge": 0.004952000081539154,
+          "m128_overlap_partial:producer": 0.04724799990653992,
+          "m128_serial_partial": 0.04925679862499237,
+          "m128_serial_partial:merge": 0.004927999898791313,
+          "m128_serial_partial:producer": 0.0452455997467041,
+          "natural64": 0.031253600120544435,
+          "torch_flash": 0.01961120069026947
+        }
+      ],
+      "unavailable_baselines": {}
+    }
+  ],
+  "schema": "streamattn.sm90_micro_prefill_128_canary.v1",
+  "sm_count": 132,
+  "torch": "2.7.1+cu128",
+  "provider": "modal",
+  "subprocess_exit_code": 0
+}

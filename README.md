@@ -688,13 +688,26 @@ as KV reuse matters. `M=64` remains below parity, and the fastest eligible
 baseline portfolio has not yet been resolved, so this is directional kernel and
 compiler evidence rather than a promoted universal route.
 
-The next micro-prefill audit adds irregular query/KV lengths, larger batches
-and head counts, independent FP32 output/LSE checks, mutable-input CUDA graph
-replay, forced FlashInfer FA2/FA3 baselines, and separate producer/merge timing.
-It also fixes a trailing-split out-of-bounds preload in the experimental natural
-family. The audit is implemented; its GPU replay is pending. The `1.342x` figure
-above remains an oracle choice against Flash SDPA, not a measured public
-dispatcher result. See the [audit notes](docs/sm90_micro_prefill_audit.md).
+The micro-prefill audit adds irregular query/KV lengths, larger batches and
+head counts, independent FP32 output/LSE checks, mutable-input CUDA graph replay,
+and separate producer/merge timing. External backends run in isolated workers
+with paired native controls, so conflicting FA3 imports cannot remove a
+competitor from the comparison. Balanced split intervals also fix a trailing
+out-of-bounds preload in the experimental natural family.
+
+A wider 128-row candidate passed its first H100 numerical checks but was slower:
+at `B1/M64/N4K/G8/D128/C16`, it took `49.46 us` serial or `51.99 us` with overlap,
+versus `31.22 us` for R64 and `19.94 us` for Flash SDPA. It is not promoted.
+The follow-up **single-output-state R64 temporal schedule** also passed its
+sampled checks but lost at all three pipeline-depth/concurrency anchors. The
+original R64 remains the control. The R128 dependency diagnostic recovered its
+extra overlap penalty without fixing the larger widening loss. See the
+[experiment and evidence](docs/sm90_micro_prefill_temporal.md).
+The isolated four-case baseline audit also resolves a stronger target:
+standalone FA3 took `15.37 us` at M64/D128 versus `31.10 us` for the retained
+R64 control in that worker. See the [baseline audit](docs/sm90_micro_prefill_audit.md).
+The earlier `1.342x` figure remains a per-cell oracle choice against Flash SDPA,
+not a measured public dispatcher result or a win over every exact backend.
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build

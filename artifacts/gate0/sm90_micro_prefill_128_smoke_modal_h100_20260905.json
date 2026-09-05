@@ -1,0 +1,1075 @@
+{
+  "configuration": {
+    "baselines": "flash",
+    "build_dir": "/tmp/streamattn-micro128-build",
+    "compile_verbose": true,
+    "component": "all",
+    "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+    "iterations": 40,
+    "matches_splits": true,
+    "mode": "benchmark",
+    "output": "/tmp/result.json",
+    "protocol": "both",
+    "repeats": 7,
+    "splits": [
+      1,
+      8,
+      16,
+      32
+    ],
+    "suite": "smoke",
+    "warmup": 4
+  },
+  "cuda": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "evidence_kind": "calibration_canary_not_public_promotion",
+  "gpu_uuid": "d8ba7941-08ab-1ea8-36a7-279d1eee0cce",
+  "passed": true,
+  "protocol_files": {
+    "benchmarks/profile_sm90_micro_prefill.py": "46599a8fd14cf1b60573d493fed1bab7a53db0ed36c6ea2c7101e19527486efb",
+    "benchmarks/profile_sm90_micro_prefill_128.py": "0ece341e12907cefbb3f633f46ac6f8bfc2650abb5e7d682076f41e065bb2474",
+    "stream_attention/backends/sm90/micro_prefill.py": "8ee8b04633373d24a51c32dc217551c31cc4b50b32ec53530b432ee67a3bd817",
+    "stream_attention/backends/sm90/micro_prefill_128.py": "27c364fb1077baaa29f526dcb1230b01acdf41208a3cb4a31d0d87f7fb9dd3d2"
+  },
+  "python": "3.11.13",
+  "rows": [
+    {
+      "accuracy": {
+        "m128_overlap_partial": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0010922253131866455,
+            "passed": true,
+            "relative_l2": 0.0021009158808737993
+          },
+          "reconstructed_lse": {
+            "max_abs": 4.76837158203125e-07,
+            "passed": true
+          }
+        },
+        "m128_serial_partial": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0010922253131866455,
+            "passed": true,
+            "relative_l2": 0.0021009158808737993
+          },
+          "reconstructed_lse": {
+            "max_abs": 4.76837158203125e-07,
+            "passed": true
+          }
+        },
+        "natural64": {
+          "output": {
+            "max_abs": 0.0010922253131866455,
+            "passed": true,
+            "relative_l2": 0.0021011673379689455
+          }
+        }
+      },
+      "baseline_accuracy": {
+        "torch_flash": {
+          "max_abs": 0.001268237829208374,
+          "passed": true,
+          "relative_l2": 0.0021864972077310085
+        }
+      },
+      "baseline_mutation": {
+        "torch_flash": {
+          "max_abs": 0.006816864013671875,
+          "passed": true,
+          "relative_l2": 0.0017290926771238446
+        }
+      },
+      "baseline_scope": "flash",
+      "case": {
+        "batch": 1,
+        "d": 64,
+        "g": 4,
+        "hq": 16,
+        "m": 17,
+        "n": 320,
+        "splits": 4
+      },
+      "composition": {
+        "m128_overlap_partial": true,
+        "m128_serial_partial": true
+      },
+      "exact_pass": true,
+      "fastest_measured_baseline": "torch_flash",
+      "matches_splits": true,
+      "median_ms": {
+        "m128_overlap_partial": 0.019364799559116363,
+        "m128_overlap_partial:merge": 0.003460000082850456,
+        "m128_overlap_partial:producer": 0.01650319993495941,
+        "m128_serial_partial": 0.019052000343799592,
+        "m128_serial_partial:merge": 0.0034775998443365096,
+        "m128_serial_partial:producer": 0.016176000237464905,
+        "natural64": 0.012858399748802185,
+        "torch_flash": 0.010857599973678588
+      },
+      "mutation": {
+        "m128_overlap_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.006816864013671875,
+            "passed": true,
+            "relative_l2": 0.0016878145979717374
+          }
+        },
+        "m128_serial_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.006816864013671875,
+            "passed": true,
+            "relative_l2": 0.0016878145979717374
+          }
+        },
+        "natural64": {
+          "allocated_bytes_delta": 0,
+          "output": {
+            "max_abs": 0.006816864013671875,
+            "passed": true,
+            "relative_l2": 0.001687784562818706
+          }
+        }
+      },
+      "natural64": {
+        "splits": 4,
+        "workspace_bytes": 532480
+      },
+      "plans": {
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 16,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 4,
+          "workspace_bytes": 532480
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 16,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 4,
+          "workspace_bytes": 532480
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 3,
+            "dynamic_shared_bytes": 40960,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 166,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 3,
+            "dynamic_shared_bytes": 40960,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 168,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "serial_over_overlap": {
+        "partial": 0.9838470202409343
+      },
+      "source_sha256": "68f2cf15a0eab95247f748d15b664f82e66ae82398752651879d148aa2188d20",
+      "speedup_vs_baseline": {
+        "m128_overlap_partial": 0.5606874442739666,
+        "m128_serial_partial": 0.5698929129618747
+      },
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "passed_canary",
+      "tile_intervals": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "trials_ms": [
+        {
+          "m128_overlap_partial": 0.019596800208091736,
+          "m128_overlap_partial:merge": 0.003511999920010567,
+          "m128_overlap_partial:producer": 0.016545599699020384,
+          "m128_serial_partial": 0.019111199676990508,
+          "m128_serial_partial:merge": 0.003479199856519699,
+          "m128_serial_partial:producer": 0.016199199855327605,
+          "natural64": 0.012902399897575379,
+          "torch_flash": 0.01088479980826378
+        },
+        {
+          "m128_overlap_partial": 0.019367200136184693,
+          "m128_overlap_partial:merge": 0.003460799902677536,
+          "m128_overlap_partial:producer": 0.01650319993495941,
+          "m128_serial_partial": 0.019052000343799592,
+          "m128_serial_partial:merge": 0.0034584000706672667,
+          "m128_serial_partial:producer": 0.016176000237464905,
+          "natural64": 0.012860800325870513,
+          "torch_flash": 0.01083120033144951
+        },
+        {
+          "m128_overlap_partial": 0.019363999366760254,
+          "m128_overlap_partial:merge": 0.003460000082850456,
+          "m128_overlap_partial:producer": 0.016499200463294984,
+          "m128_serial_partial": 0.01903039962053299,
+          "m128_serial_partial:merge": 0.0034703999757766725,
+          "m128_serial_partial:producer": 0.0161408007144928,
+          "natural64": 0.012855200469493866,
+          "torch_flash": 0.010858400166034699
+        },
+        {
+          "m128_overlap_partial": 0.019363999366760254,
+          "m128_overlap_partial:merge": 0.0034464001655578613,
+          "m128_overlap_partial:producer": 0.016493600606918336,
+          "m128_serial_partial": 0.019048799574375153,
+          "m128_serial_partial:merge": 0.003474399819970131,
+          "m128_serial_partial:producer": 0.016198399662971496,
+          "natural64": 0.012868799269199371,
+          "torch_flash": 0.010859999805688858
+        },
+        {
+          "m128_overlap_partial": 0.019359199702739714,
+          "m128_overlap_partial:merge": 0.0034504000097513197,
+          "m128_overlap_partial:producer": 0.01650959998369217,
+          "m128_serial_partial": 0.019037599861621856,
+          "m128_serial_partial:merge": 0.0034775998443365096,
+          "m128_serial_partial:producer": 0.01616799980401993,
+          "natural64": 0.012858399748802185,
+          "torch_flash": 0.010857599973678588
+        },
+        {
+          "m128_overlap_partial": 0.01937520056962967,
+          "m128_overlap_partial:merge": 0.0034703999757766725,
+          "m128_overlap_partial:producer": 0.016513599455356597,
+          "m128_serial_partial": 0.019054399430751802,
+          "m128_serial_partial:merge": 0.0034864000976085664,
+          "m128_serial_partial:producer": 0.01618320047855377,
+          "natural64": 0.012851199507713318,
+          "torch_flash": 0.010850399732589722
+        },
+        {
+          "m128_overlap_partial": 0.019364799559116363,
+          "m128_overlap_partial:merge": 0.003439199924468994,
+          "m128_overlap_partial:producer": 0.01645199954509735,
+          "m128_serial_partial": 0.019066399335861205,
+          "m128_serial_partial:merge": 0.0034880001097917558,
+          "m128_serial_partial:producer": 0.016159200668334962,
+          "natural64": 0.012745599448680877,
+          "torch_flash": 0.010741599649190903
+        }
+      ],
+      "unavailable_baselines": {}
+    },
+    {
+      "accuracy": {
+        "m128_overlap_partial": {
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.002154105808585882
+          },
+          "reconstructed_lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          }
+        },
+        "m128_serial_partial": {
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.002154105808585882
+          },
+          "reconstructed_lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          }
+        },
+        "natural64": {
+          "output": {
+            "max_abs": 0.0004604905843734741,
+            "passed": true,
+            "relative_l2": 0.0021538136061280966
+          }
+        }
+      },
+      "baseline_accuracy": {
+        "torch_flash": {
+          "max_abs": 0.0005160719156265259,
+          "passed": true,
+          "relative_l2": 0.0021762812975794077
+        }
+      },
+      "baseline_mutation": {
+        "torch_flash": {
+          "max_abs": 0.007493019104003906,
+          "passed": true,
+          "relative_l2": 0.0016744639724493027
+        }
+      },
+      "baseline_scope": "flash",
+      "case": {
+        "batch": 1,
+        "d": 128,
+        "g": 8,
+        "hq": 16,
+        "m": 64,
+        "n": 4096,
+        "splits": 16
+      },
+      "composition": {
+        "m128_overlap_partial": true,
+        "m128_serial_partial": true
+      },
+      "exact_pass": true,
+      "fastest_measured_baseline": "torch_flash",
+      "matches_splits": true,
+      "median_ms": {
+        "m128_overlap_partial": 0.05198720097541809,
+        "m128_overlap_partial:merge": 0.004966399818658829,
+        "m128_overlap_partial:producer": 0.047644799947738646,
+        "m128_serial_partial": 0.04946399927139282,
+        "m128_serial_partial:merge": 0.004945600032806396,
+        "m128_serial_partial:producer": 0.04521520137786865,
+        "natural64": 0.031216800212860107,
+        "torch_flash": 0.019938400387763976
+      },
+      "mutation": {
+        "m128_overlap_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 2.86102294921875e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719804843887687
+          }
+        },
+        "m128_serial_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 2.86102294921875e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719804843887687
+          }
+        },
+        "natural64": {
+          "allocated_bytes_delta": 0,
+          "output": {
+            "max_abs": 0.007493019104003906,
+            "passed": true,
+            "relative_l2": 0.0016719853738322854
+          }
+        }
+      },
+      "natural64": {
+        "splits": 16,
+        "workspace_bytes": 8454144
+      },
+      "plans": {
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "overlap",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "serial",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "serial_over_overlap": {
+        "partial": 0.9514649441269524
+      },
+      "source_sha256": "680179246b2dff43d323acc0e231ec579a5aa12ab2ff18b5aba6ba1e930b92ea",
+      "speedup_vs_baseline": {
+        "m128_overlap_partial": 0.3835251756906812,
+        "m128_serial_partial": 0.40308912909302946
+      },
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "passed_canary",
+      "tile_intervals": [
+        [
+          0,
+          4
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          8,
+          12
+        ],
+        [
+          12,
+          16
+        ],
+        [
+          16,
+          20
+        ],
+        [
+          20,
+          24
+        ],
+        [
+          24,
+          28
+        ],
+        [
+          28,
+          32
+        ],
+        [
+          32,
+          36
+        ],
+        [
+          36,
+          40
+        ],
+        [
+          40,
+          44
+        ],
+        [
+          44,
+          48
+        ],
+        [
+          48,
+          52
+        ],
+        [
+          52,
+          56
+        ],
+        [
+          56,
+          60
+        ],
+        [
+          60,
+          64
+        ]
+      ],
+      "trials_ms": [
+        {
+          "m128_overlap_partial": 0.05213760137557984,
+          "m128_overlap_partial:merge": 0.005002399906516075,
+          "m128_overlap_partial:producer": 0.04769920110702515,
+          "m128_serial_partial": 0.049509599804878235,
+          "m128_serial_partial:merge": 0.004983999952673912,
+          "m128_serial_partial:producer": 0.04524320065975189,
+          "natural64": 0.03133600056171417,
+          "torch_flash": 0.020187999308109283
+        },
+        {
+          "m128_overlap_partial": 0.05198720097541809,
+          "m128_overlap_partial:merge": 0.004952799901366234,
+          "m128_overlap_partial:producer": 0.04758720099925995,
+          "m128_serial_partial": 0.04953680038452148,
+          "m128_serial_partial:merge": 0.004919999837875366,
+          "m128_serial_partial:producer": 0.04516080021858215,
+          "natural64": 0.031178399920463562,
+          "torch_flash": 0.019939999282360076
+        },
+        {
+          "m128_overlap_partial": 0.051969599723815915,
+          "m128_overlap_partial:merge": 0.004974399879574776,
+          "m128_overlap_partial:producer": 0.047654399275779726,
+          "m128_serial_partial": 0.049463200569152835,
+          "m128_serial_partial:merge": 0.00496160015463829,
+          "m128_serial_partial:producer": 0.04521119892597199,
+          "natural64": 0.031223198771476744,
+          "torch_flash": 0.019942399859428406
+        },
+        {
+          "m128_overlap_partial": 0.052007997035980226,
+          "m128_overlap_partial:merge": 0.004946399852633477,
+          "m128_overlap_partial:producer": 0.0475951999425888,
+          "m128_serial_partial": 0.049458399415016174,
+          "m128_serial_partial:merge": 0.004939199984073639,
+          "m128_serial_partial:producer": 0.04521520137786865,
+          "natural64": 0.03126800060272217,
+          "torch_flash": 0.019923199713230134
+        },
+        {
+          "m128_overlap_partial": 0.05196160078048706,
+          "m128_overlap_partial:merge": 0.004958400130271911,
+          "m128_overlap_partial:producer": 0.04763039946556091,
+          "m128_serial_partial": 0.04946399927139282,
+          "m128_serial_partial:merge": 0.004959199950098992,
+          "m128_serial_partial:producer": 0.045272800326347354,
+          "natural64": 0.03118959963321686,
+          "torch_flash": 0.019938400387763976
+        },
+        {
+          "m128_overlap_partial": 0.05200080275535583,
+          "m128_overlap_partial:merge": 0.004966399818658829,
+          "m128_overlap_partial:producer": 0.047644799947738646,
+          "m128_serial_partial": 0.04949600100517273,
+          "m128_serial_partial:merge": 0.004945600032806396,
+          "m128_serial_partial:producer": 0.04522480070590973,
+          "natural64": 0.031164801120758055,
+          "torch_flash": 0.019911199808120728
+        },
+        {
+          "m128_overlap_partial": 0.051930397748947144,
+          "m128_overlap_partial:merge": 0.004980000108480454,
+          "m128_overlap_partial:producer": 0.04765680134296417,
+          "m128_serial_partial": 0.04945279955863953,
+          "m128_serial_partial:merge": 0.004945600032806396,
+          "m128_serial_partial:producer": 0.04520640075206757,
+          "natural64": 0.031216800212860107,
+          "torch_flash": 0.019934399425983428
+        }
+      ],
+      "unavailable_baselines": {}
+    },
+    {
+      "accuracy": {
+        "m128_overlap_direct": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0036427974700927734,
+            "passed": true,
+            "relative_l2": 0.0020912191830575466
+          }
+        },
+        "m128_overlap_partial": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0036427974700927734,
+            "passed": true,
+            "relative_l2": 0.0020912191830575466
+          },
+          "reconstructed_lse": {
+            "max_abs": 0.0,
+            "passed": true
+          }
+        },
+        "m128_serial_direct": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0036427974700927734,
+            "passed": true,
+            "relative_l2": 0.0020912191830575466
+          }
+        },
+        "m128_serial_partial": {
+          "lse": {
+            "max_abs": 9.5367431640625e-07,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.0036427974700927734,
+            "passed": true,
+            "relative_l2": 0.0020912191830575466
+          },
+          "reconstructed_lse": {
+            "max_abs": 0.0,
+            "passed": true
+          }
+        },
+        "natural64": {
+          "output": {
+            "max_abs": 0.0036427974700927734,
+            "passed": true,
+            "relative_l2": 0.0020912287291139364
+          }
+        }
+      },
+      "baseline_accuracy": {
+        "torch_flash": {
+          "max_abs": 0.0036427974700927734,
+          "passed": true,
+          "relative_l2": 0.0020912287291139364
+        }
+      },
+      "baseline_mutation": {
+        "torch_flash": {
+          "max_abs": 0.007911920547485352,
+          "passed": true,
+          "relative_l2": 0.0018042799783870578
+        }
+      },
+      "baseline_scope": "flash",
+      "case": {
+        "batch": 1,
+        "d": 128,
+        "g": 4,
+        "hq": 16,
+        "m": 17,
+        "n": 64,
+        "splits": 1
+      },
+      "composition": {
+        "m128_overlap_partial": true,
+        "m128_serial_partial": true
+      },
+      "exact_pass": true,
+      "fastest_measured_baseline": "torch_flash",
+      "matches_splits": true,
+      "median_ms": {
+        "m128_overlap_direct": 0.025488001108169556,
+        "m128_overlap_partial": 0.02956640124320984,
+        "m128_overlap_partial:merge": 0.0033711999654769897,
+        "m128_overlap_partial:producer": 0.026944801211357117,
+        "m128_serial_direct": 0.025023201107978822,
+        "m128_serial_partial": 0.02871359884738922,
+        "m128_serial_partial:merge": 0.0033879999071359636,
+        "m128_serial_partial:producer": 0.0261896014213562,
+        "natural64": 0.018381600081920624,
+        "torch_flash": 0.006298399716615677
+      },
+      "mutation": {
+        "m128_overlap_direct": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007911920547485352,
+            "passed": true,
+            "relative_l2": 0.001804176950827241
+          }
+        },
+        "m128_overlap_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007911920547485352,
+            "passed": true,
+            "relative_l2": 0.001804176950827241
+          }
+        },
+        "m128_serial_direct": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007911920547485352,
+            "passed": true,
+            "relative_l2": 0.001804176950827241
+          }
+        },
+        "m128_serial_partial": {
+          "allocated_bytes_delta": 0,
+          "lse": {
+            "max_abs": 1.9073486328125e-06,
+            "passed": true
+          },
+          "output": {
+            "max_abs": 0.007911920547485352,
+            "passed": true,
+            "relative_l2": 0.001804176950827241
+          }
+        },
+        "natural64": {
+          "allocated_bytes_delta": 0,
+          "output": {
+            "max_abs": 0.007911920547485352,
+            "passed": true,
+            "relative_l2": 0.0018042799783870578
+          }
+        }
+      },
+      "natural64": {
+        "splits": 1,
+        "workspace_bytes": 264192
+      },
+      "plans": {
+        "m128_overlap_direct": {
+          "direct": true,
+          "producer_ctas": 4,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 0
+        },
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 4,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 264192
+        },
+        "m128_serial_direct": {
+          "direct": true,
+          "producer_ctas": 4,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 0
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 4,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 264192
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_direct": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_direct": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_direct": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 240,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_direct": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 247,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "serial_over_overlap": {
+        "direct": 0.9817639681425723,
+        "partial": 0.9711563680406836
+      },
+      "source_sha256": "680179246b2dff43d323acc0e231ec579a5aa12ab2ff18b5aba6ba1e930b92ea",
+      "speedup_vs_baseline": {
+        "m128_overlap_direct": 0.24711234474157642,
+        "m128_overlap_partial": 0.21302557808120645,
+        "m128_serial_direct": 0.251702397684339,
+        "m128_serial_partial": 0.21935250088612135
+      },
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "passed_canary",
+      "tile_intervals": [
+        [
+          0,
+          1
+        ]
+      ],
+      "trials_ms": [
+        {
+          "m128_overlap_direct": 0.025536000728607178,
+          "m128_overlap_partial": 0.029719200730323792,
+          "m128_overlap_partial:merge": 0.0034120000898838045,
+          "m128_overlap_partial:producer": 0.026982399821281432,
+          "m128_serial_direct": 0.025093600153923035,
+          "m128_serial_partial": 0.028776800632476805,
+          "m128_serial_partial:merge": 0.0033984001725912093,
+          "m128_serial_partial:producer": 0.026207199692726134,
+          "natural64": 0.018450400233268736,
+          "torch_flash": 0.006312800198793411
+        },
+        {
+          "m128_overlap_direct": 0.025488001108169556,
+          "m128_overlap_partial": 0.029553601145744325,
+          "m128_overlap_partial:merge": 0.003381599858403206,
+          "m128_overlap_partial:producer": 0.02696000039577484,
+          "m128_serial_direct": 0.025032800436019898,
+          "m128_serial_partial": 0.02871040105819702,
+          "m128_serial_partial:merge": 0.003910399973392487,
+          "m128_serial_partial:producer": 0.026205599308013916,
+          "natural64": 0.018372799456119537,
+          "torch_flash": 0.006298399716615677
+        },
+        {
+          "m128_overlap_direct": 0.025482401251792908,
+          "m128_overlap_partial": 0.029577600955963134,
+          "m128_overlap_partial:merge": 0.0033615998923778533,
+          "m128_overlap_partial:producer": 0.02693839967250824,
+          "m128_serial_direct": 0.025036001205444337,
+          "m128_serial_partial": 0.02872239947319031,
+          "m128_serial_partial:merge": 0.0033991999924182894,
+          "m128_serial_partial:producer": 0.026197600364685058,
+          "natural64": 0.018381600081920624,
+          "torch_flash": 0.006313599646091461
+        },
+        {
+          "m128_overlap_direct": 0.025483998656272887,
+          "m128_overlap_partial": 0.02956799864768982,
+          "m128_overlap_partial:merge": 0.0033711999654769897,
+          "m128_overlap_partial:producer": 0.0269679993391037,
+          "m128_serial_direct": 0.02500160038471222,
+          "m128_serial_partial": 0.028709599375724794,
+          "m128_serial_partial:merge": 0.003376000002026558,
+          "m128_serial_partial:producer": 0.0261896014213562,
+          "natural64": 0.018344800174236297,
+          "torch_flash": 0.006291200220584869
+        },
+        {
+          "m128_overlap_direct": 0.025461599230766296,
+          "m128_overlap_partial": 0.029526400566101074,
+          "m128_overlap_partial:merge": 0.003365600109100342,
+          "m128_overlap_partial:producer": 0.026944801211357117,
+          "m128_serial_direct": 0.025007200241088868,
+          "m128_serial_partial": 0.028702399134635924,
+          "m128_serial_partial:merge": 0.0033879999071359636,
+          "m128_serial_partial:producer": 0.026165598630905153,
+          "natural64": 0.018383200466632842,
+          "torch_flash": 0.006293600052595138
+        },
+        {
+          "m128_overlap_direct": 0.025490400195121766,
+          "m128_overlap_partial": 0.029548001289367676,
+          "m128_overlap_partial:merge": 0.003332800045609474,
+          "m128_overlap_partial:producer": 0.026930400729179384,
+          "m128_serial_direct": 0.025023201107978822,
+          "m128_serial_partial": 0.02871519923210144,
+          "m128_serial_partial:merge": 0.0033608000725507737,
+          "m128_serial_partial:producer": 0.026183998584747313,
+          "natural64": 0.018374399840831758,
+          "torch_flash": 0.006298399716615677
+        },
+        {
+          "m128_overlap_direct": 0.025492799282073975,
+          "m128_overlap_partial": 0.02956640124320984,
+          "m128_overlap_partial:merge": 0.0033879999071359636,
+          "m128_overlap_partial:producer": 0.026929599046707154,
+          "m128_serial_direct": 0.025012001395225525,
+          "m128_serial_partial": 0.02871359884738922,
+          "m128_serial_partial:merge": 0.0033640000969171525,
+          "m128_serial_partial:producer": 0.026188799738883974,
+          "natural64": 0.0183896005153656,
+          "torch_flash": 0.006293600052595138
+        }
+      ],
+      "unavailable_baselines": {}
+    }
+  ],
+  "schema": "streamattn.sm90_micro_prefill_128_canary.v1",
+  "sm_count": 132,
+  "torch": "2.7.1+cu128",
+  "provider": "modal",
+  "subprocess_exit_code": 0
+}

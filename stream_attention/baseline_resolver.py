@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping
 
 import yaml
@@ -102,12 +104,27 @@ class ExactBaselineMeasurement:
     graph_replay: bool
 
     def __post_init__(self) -> None:
-        if self.latency_us <= 0:
-            raise ValueError("baseline latency must be positive")
+        if not math.isfinite(self.latency_us) or self.latency_us <= 0:
+            raise ValueError("baseline latency must be finite and positive")
+        if not self.baseline_id:
+            raise ValueError("baseline_id must be non-empty")
         if not self.backend_revision:
             raise ValueError("backend_revision must be non-empty")
-        if len(self.environment_sha256) != 64:
-            raise ValueError("environment_sha256 must be a 64-character digest")
+        _validate_sha256(self.workload_sha256, "workload_sha256")
+        _validate_sha256(self.environment_sha256, "environment_sha256")
+
+
+def _validate_sha256(value: str, name: str) -> None:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-fA-F]{64}", value) is None:
+        raise ValueError(f"{name} must be a 64-character hexadecimal digest")
+
+
+def _validate_unique_descriptor_ids(
+    descriptors: tuple[ExactBaselineDescriptor, ...],
+) -> None:
+    ids = [descriptor.baseline_id for descriptor in descriptors]
+    if len(set(ids)) != len(ids):
+        raise ValueError("exact-baseline descriptor IDs must be unique")
 
 
 def _unsupported(value: object, supported: frozenset[object], reason: str) -> str | None:
@@ -175,9 +192,11 @@ def resolve_direct_exact_baselines(
     workload: AttentionBatchV2,
     descriptors: Iterable[ExactBaselineDescriptor],
 ) -> tuple[BaselineEligibility, ...]:
+    descriptor_rows = tuple(descriptors)
+    _validate_unique_descriptor_ids(descriptor_rows)
     return tuple(
         resolve_direct_exact_baseline(workload, descriptor)
-        for descriptor in descriptors
+        for descriptor in descriptor_rows
     )
 
 
@@ -185,26 +204,47 @@ def fastest_measured_exact_baseline(
     workload: AttentionBatchV2,
     descriptors: Iterable[ExactBaselineDescriptor],
     measurements: Iterable[ExactBaselineMeasurement],
+    *,
+    expected_environment_sha256: str | None = None,
 ) -> ExactBaselineMeasurement | None:
-    """Select only among semantically eligible, correct, matching measurements."""
+    """Select eligible, correct measurements from a single environment.
 
+    An expected environment filters measurements to that digest. Without one,
+    otherwise eligible candidates must agree on their environment. Descriptor
+    IDs must be unique, including across revisions; repeated measurements of
+    the declared revision are allowed.
+    """
+
+    if expected_environment_sha256 is not None:
+        _validate_sha256(expected_environment_sha256, "expected_environment_sha256")
+        expected_environment_sha256 = expected_environment_sha256.lower()
     descriptor_rows = tuple(descriptors)
     eligibility = {
         row.baseline_id: row.eligible
         for row in resolve_direct_exact_baselines(workload, descriptor_rows)
     }
     revisions = {descriptor.baseline_id: descriptor.revision for descriptor in descriptor_rows}
+    workload_sha256 = workload.fingerprint
     candidates = [
         measurement
         for measurement in measurements
-        if measurement.workload_sha256 == workload.fingerprint
+        if measurement.workload_sha256.lower() == workload_sha256
         and measurement.correctness_passed
         and eligibility.get(measurement.baseline_id, False)
         and measurement.backend_revision == revisions.get(measurement.baseline_id)
         and (
             workload.execution_mode.value != "cuda_graph" or measurement.graph_replay
         )
+        and (
+            expected_environment_sha256 is None
+            or measurement.environment_sha256.lower() == expected_environment_sha256
+        )
     ]
+    if len({measurement.environment_sha256.lower() for measurement in candidates}) > 1:
+        raise ValueError(
+            "eligible baseline measurements span multiple environments; "
+            "provide expected_environment_sha256"
+        )
     return min(candidates, key=lambda measurement: measurement.latency_us, default=None)
 
 
@@ -218,9 +258,7 @@ def load_exact_baseline_descriptors(
     descriptors = tuple(
         ExactBaselineDescriptor.from_dict(row) for row in raw.get("baselines", ())
     )
-    ids = [descriptor.baseline_id for descriptor in descriptors]
-    if len(set(ids)) != len(ids):
-        raise ValueError("exact-baseline descriptor IDs must be unique")
+    _validate_unique_descriptor_ids(descriptors)
     if not descriptors:
         raise ValueError("exact-baseline manifest must contain at least one descriptor")
     return descriptors

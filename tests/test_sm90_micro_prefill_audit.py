@@ -86,3 +86,73 @@ def test_contract_rejects_zero_batches_and_mixed_devices():
     k = torch.empty(0, 2, 64, 64, dtype=torch.bfloat16)
     assert "batch" in micro_prefill_shape_reasons(q, k, k)
     assert "device" in micro_prefill_shape_reasons(q.to("meta"), k, k)
+
+
+@pytest.mark.parametrize("baseline", ["torch_flash", "flashattention3", "cutlass_xformers"])
+def test_single_baseline_measurement_always_keeps_both_native_controls(monkeypatch, baseline):
+    from benchmarks import profile_sm90_micro_prefill_audit as audit
+    from benchmarks.micro_prefill_baselines import BASELINE_IDS
+    from tests.test_sm90_micro_prefill_isolated_audit import loaded_evidence
+
+    original_randn, original_generator = torch.randn, torch.Generator
+    monkeypatch.setattr(torch, "Generator", lambda **kwargs: original_generator(device="cpu"))
+    monkeypatch.setattr(torch, "randn", lambda *shape, **kwargs:
+                        original_randn(*shape, **dict(kwargs, device="cpu")))
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda: None)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda: 0)
+    monkeypatch.setattr(audit, "fp32_reference", lambda q, k, v: (q.float().clone(), torch.zeros(q.shape[:-1])))
+    monkeypatch.setattr(audit, "natural_lse", lambda plan: torch.zeros(plan.query.shape[:-1]))
+    seen, plans = [], []
+
+    class Plan:
+        @classmethod
+        def build(cls, q, k, v, **kwargs):
+            plan = cls()
+            plan.query, plan.output = q, q.clone()
+            plan.num_splits, plan.workspace_bytes = 1, 16
+            plan.partial_output = q.clone()
+            plan.extension = SimpleNamespace(__file__="/native.so")
+            plans.append(plan)
+            return plan
+
+        def run(self):
+            self.output.copy_(self.query)
+            return self.output
+
+    def prepare(q, k, v, requested):
+        seen.extend(requested)
+        return {baseline: lambda: q.clone()}, {}
+
+    def capture(run, **kwargs):
+        run()
+        return SimpleNamespace(replay=run)
+
+    monkeypatch.setattr(audit, "NaturalMicroPrefillPlan", Plan)
+    monkeypatch.setattr(audit, "MicroPrefillPlan", Plan)
+    monkeypatch.setattr(audit, "prepare_baselines", prepare)
+    monkeypatch.setattr(audit, "component", lambda plan, which: plan.run())
+    monkeypatch.setattr(audit, "_capture", capture)
+    monkeypatch.setattr(audit, "_elapsed_graph_ms", lambda *args, **kwargs: 1.0)
+    monkeypatch.setattr(audit, "loaded_binary_provenance", lambda name, **kwargs: loaded_evidence([name])[name])
+    args = SimpleNamespace(cutlass_root=None, build_dir=None, warmup=1, iterations=1, repeats=2,
+                           requested_baselines=[baseline], baseline_versions=dict.fromkeys(BASELINE_IDS, "v1"),
+                           environment_sha256="a" * 64, binary_hash_cache={})
+    row = audit.measure_case(dict(batch=1, m=2, n=64, hq=8, g=4, d=64, splits=1), args)
+    assert seen == [baseline]
+    assert len(plans) == 2
+    assert set(row["median_ms"]) == {baseline, "natural", "transposed", "natural_producer", "natural_merge"}
+    assert set(row["mutation"]) == {baseline, "natural", "transposed"}
+    assert row["exact_pass"] and row["requested_baseline_set_complete"]
+    assert not row["baseline_set_complete"]
+
+
+def test_worker_refuses_to_overwrite_before_gpu_access(monkeypatch, tmp_path):
+    from benchmarks import profile_sm90_micro_prefill_audit as audit
+    output = tmp_path / "existing.json"
+    output.write_text("preserve")
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: pytest.fail("GPU must not be touched"))
+    with pytest.raises(FileExistsError):
+        audit.main(["--provider", "test", "--cohort", "smoke", "--baseline", "torch_flash",
+                    "--cutlass-root", str(tmp_path), "--build-dir", str(tmp_path),
+                    "--output-json", str(output)])
+    assert output.read_text() == "preserve"

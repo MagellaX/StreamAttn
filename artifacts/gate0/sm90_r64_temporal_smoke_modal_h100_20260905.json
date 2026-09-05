@@ -1,0 +1,34 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_temporal.v1",
+  "device": "NVIDIA H100 80GB HBM3",
+  "sm_count": 132,
+  "gpu_uuid": "36d38186-cdde-99ef-7ec8-3bcf055300af",
+  "torch": "2.7.1+cu128",
+  "cuda": "12.8",
+  "source_files": {
+    "benchmarks/profile_sm90_micro_prefill_temporal.py": "7d1ac07731a1c0697780d5cc4bc17120c83012ec7b6b15a19679aaa6c7c9196e",
+    "benchmarks/profile_sm90_micro_prefill_128.py": "3a6fa9cf3a87f92813d2c1561602906f41bd468cb0b5f6a1e4ea977f5f09445f",
+    "benchmarks/profile_sm90_micro_prefill.py": "46599a8fd14cf1b60573d493fed1bab7a53db0ed36c6ea2c7101e19527486efb",
+    "stream_attention/backends/sm90/micro_prefill_temporal.py": "45aefaa04cf793f32268ad194c7d7936104796ab5696922ccc5c6452ea1ae394",
+    "stream_attention/backends/sm90/micro_prefill_temporal_sources.py": "293653b8b61569617757fec6b09215ae5d0771eaf54e2560512b16fcd6f12931",
+    "stream_attention/backends/sm90/transposed_gqa_exact_sources.py": "318224b7c8f01edc81fcb8f27e575a81ea600aaf2ad526df1af1766b4b77681a"
+  },
+  "timing_regime": "warm_fixed_buffer_cuda_graph_replay_no_profiler",
+  "evidence_kind": "causal_schedule_experiment_not_public_promotion",
+  "rows": [],
+  "complete": false,
+  "configuration": {
+    "suite": "smoke",
+    "mode": "benchmark",
+    "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+    "build_dir": "/tmp/streamattn-temporal",
+    "output": "/tmp/temporal.json",
+    "binary_diagnostics": true,
+    "seed": 7309,
+    "warmup": 4,
+    "iterations": 40,
+    "repeats": 7
+  },
+  "provider": "modal",
+  "subprocess_exit_code": 1
+}

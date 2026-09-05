@@ -31,10 +31,13 @@ OVERLAY = (
     "benchmarks/profile_sm90_micro_prefill.py",
     "stream_attention/backends/sm90/micro_prefill.py",
     "stream_attention/backends/sm90/transposed_gqa_exact_sources.py",
+    "stream_attention/baseline_resolver.py",
+    "benchmarks/micro_prefill_baselines.py",
+    "benchmarks/micro_prefill_optional_baselines.py",
 )
 
 
-def command(cohort):
+def command(cohort, baseline="torch_flash"):
     sha = subprocess.check_output(
         ["git", "rev-parse", "origin/main"], cwd=ROOT, text=True
     ).strip()
@@ -59,10 +62,11 @@ def command(cohort):
             "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
             "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
             "PY",
-            "python -m pip install -q ninja flashinfer-python==0.6.17 flashinfer-cubin==0.6.17",
+            "python -m pip install -q ninja pyyaml flashinfer-python==0.6.13 flashinfer-cubin==0.6.13",
+            "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128",
             "cd /root/StreamAttn",
             "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
-            f"--provider lightning --cohort {cohort} "
+            f"--provider lightning --cohort {cohort} --baseline {baseline} "
             "--cutlass-root /tmp/flashmla-etap/csrc/cutlass "
             "--build-dir /tmp/streamattn-audit-build --output-json /tmp/audit.json",
         ]
@@ -72,6 +76,17 @@ def command(cohort):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--cohort", choices=("lightning", "smoke"), default="lightning")
+    p.add_argument(
+        "--baseline",
+        choices=(
+            "torch_flash",
+            "flashinfer_fa2",
+            "flashinfer_fa3",
+            "cudnn",
+            "cutlass_xformers",
+        ),
+        default="torch_flash",
+    )
     p.add_argument(
         "--teamspace-id",
         default=os.getenv("LIGHTNING_TEAMSPACE_ID", "01jggw9j5v8ms266vgvgcs3q13"),
@@ -98,7 +113,7 @@ def main():
     try:
         job = api.submit_job(
             name=f"streamattn-micro-audit-{int(time.time())}",
-            command=command(args.cohort),
+            command=command(args.cohort, args.baseline),
             cloud_account=args.cloud_account,
             teamspace_id=args.teamspace_id,
             studio_id=None,
@@ -156,7 +171,7 @@ def main():
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.with_suffix(".log").write_text(logs, encoding="utf-8")
         result = _result_from_logs(
-            logs, schema="streamattn.sm90_micro_prefill_audit.v1"
+            logs, schema="streamattn.sm90_micro_prefill_audit.v2"
         )
         if not result or not result.get("complete"):
             raise RuntimeError(f"incomplete result, state={state}; see local log")

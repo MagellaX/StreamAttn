@@ -4,15 +4,28 @@ from pathlib import Path
 
 import modal
 
-from benchmarks.modal_sm90_micro_prefill import image as base_image
+if modal.is_local():
+    from benchmarks.modal_sm90_micro_prefill import image as base_image
 
-image = base_image.pip_install(
-    "flashinfer-python==0.6.17", "flashinfer-cubin==0.6.17"
-).add_local_file(
-    "benchmarks/profile_sm90_micro_prefill_audit.py",
-    "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_audit.py",
-    copy=True,
-)
+    image = (
+        base_image.pip_install(
+            "flashinfer-python==0.6.13", "flashinfer-cubin==0.6.13", "pyyaml"
+        )
+        .run_commands(
+            "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128"
+        )
+        .add_local_file(
+            "benchmarks/profile_sm90_micro_prefill_audit.py",
+            "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_audit.py",
+            copy=True,
+        )
+    )
+    for source in ("micro_prefill_baselines.py", "micro_prefill_optional_baselines.py"):
+        image = image.add_local_file(
+            f"benchmarks/{source}", f"/root/StreamAttn/benchmarks/{source}", copy=True
+        )
+else:
+    image = None
 app = modal.App("streamattn-sm90-micro-prefill-audit")
 
 

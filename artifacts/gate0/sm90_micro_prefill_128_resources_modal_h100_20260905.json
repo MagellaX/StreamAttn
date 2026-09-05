@@ -1,0 +1,446 @@
+{
+  "configuration": {
+    "baselines": "flash",
+    "build_dir": "/tmp/streamattn-micro128-build",
+    "compile_verbose": true,
+    "component": "all",
+    "cutlass_root": "/opt/flashmla-etap/csrc/cutlass",
+    "iterations": 40,
+    "matches_splits": true,
+    "mode": "resources",
+    "output": "/tmp/result.json",
+    "protocol": "both",
+    "repeats": 7,
+    "splits": [
+      1,
+      8,
+      16,
+      32
+    ],
+    "suite": "smoke",
+    "warmup": 4
+  },
+  "cuda": "12.8",
+  "device": "NVIDIA H100 80GB HBM3",
+  "evidence_kind": "calibration_canary_not_public_promotion",
+  "gpu_uuid": "7bf4d578-e491-4d2b-c463-1ff1e90fc799",
+  "passed": true,
+  "protocol_files": {
+    "benchmarks/profile_sm90_micro_prefill.py": "46599a8fd14cf1b60573d493fed1bab7a53db0ed36c6ea2c7101e19527486efb",
+    "benchmarks/profile_sm90_micro_prefill_128.py": "d3da57592220e23af2ea0ea795553f15dee4480f6e52f95bda955244a5ac7e7c",
+    "stream_attention/backends/sm90/micro_prefill.py": "8ee8b04633373d24a51c32dc217551c31cc4b50b32ec53530b432ee67a3bd817",
+    "stream_attention/backends/sm90/micro_prefill_128.py": "8ef3608cb66b6f2116c01b1fd91c231f5359e28e5846cd494de006c940a4f5c0"
+  },
+  "python": "3.11.13",
+  "rows": [
+    {
+      "case": {
+        "batch": 1,
+        "d": 64,
+        "g": 4,
+        "hq": 16,
+        "m": 17,
+        "n": 320,
+        "splits": 4
+      },
+      "matches_splits": true,
+      "plans": {
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 16,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 4,
+          "workspace_bytes": 532480
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 16,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 4,
+          "workspace_bytes": 532480
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 3,
+            "dynamic_shared_bytes": 40960,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 166,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 3,
+            "dynamic_shared_bytes": 40960,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 168,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "source_sha256": "68f2cf15a0eab95247f748d15b664f82e66ae82398752651879d148aa2188d20",
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "resources_only",
+      "tile_intervals": [
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          5
+        ]
+      ]
+    },
+    {
+      "case": {
+        "batch": 1,
+        "d": 128,
+        "g": 8,
+        "hq": 16,
+        "m": 64,
+        "n": 4096,
+        "splits": 16
+      },
+      "matches_splits": true,
+      "plans": {
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "overlap",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 128,
+          "protocol": "serial",
+          "query_tiles": 4,
+          "splits": 16,
+          "workspace_bytes": 8454144
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "source_sha256": "680179246b2dff43d323acc0e231ec579a5aa12ab2ff18b5aba6ba1e930b92ea",
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "resources_only",
+      "tile_intervals": [
+        [
+          0,
+          4
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          8,
+          12
+        ],
+        [
+          12,
+          16
+        ],
+        [
+          16,
+          20
+        ],
+        [
+          20,
+          24
+        ],
+        [
+          24,
+          28
+        ],
+        [
+          28,
+          32
+        ],
+        [
+          32,
+          36
+        ],
+        [
+          36,
+          40
+        ],
+        [
+          40,
+          44
+        ],
+        [
+          44,
+          48
+        ],
+        [
+          48,
+          52
+        ],
+        [
+          52,
+          56
+        ],
+        [
+          56,
+          60
+        ],
+        [
+          60,
+          64
+        ]
+      ]
+    },
+    {
+      "case": {
+        "batch": 1,
+        "d": 128,
+        "g": 4,
+        "hq": 16,
+        "m": 17,
+        "n": 64,
+        "splits": 1
+      },
+      "matches_splits": true,
+      "plans": {
+        "m128_overlap_direct": {
+          "direct": true,
+          "producer_ctas": 4,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 0
+        },
+        "m128_overlap_partial": {
+          "direct": false,
+          "producer_ctas": 4,
+          "protocol": "overlap",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 264192
+        },
+        "m128_serial_direct": {
+          "direct": true,
+          "producer_ctas": 4,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 0
+        },
+        "m128_serial_partial": {
+          "direct": false,
+          "producer_ctas": 4,
+          "protocol": "serial",
+          "query_tiles": 1,
+          "splits": 1,
+          "workspace_bytes": 264192
+        }
+      },
+      "resource_gates": {
+        "m128_overlap_direct": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_overlap_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_direct": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        },
+        "m128_serial_partial": {
+          "passed": true,
+          "two_resident_ctas": true,
+          "zero_local_bytes": true
+        }
+      },
+      "resource_pass": true,
+      "resources": {
+        "m128_overlap_direct": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 240,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_overlap_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_direct": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 247,
+            "static_shared_bytes": 0
+          }
+        },
+        "m128_serial_partial": {
+          "merge": {
+            "blocks_per_sm": 12,
+            "dynamic_shared_bytes": 0,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 33,
+            "static_shared_bytes": 2176
+          },
+          "producer": {
+            "blocks_per_sm": 2,
+            "dynamic_shared_bytes": 81920,
+            "local_bytes_per_thread": 0,
+            "max_threads_per_block": 128,
+            "registers_per_thread": 254,
+            "static_shared_bytes": 0
+          }
+        }
+      },
+      "source_sha256": "680179246b2dff43d323acc0e231ec579a5aa12ab2ff18b5aba6ba1e930b92ea",
+      "state_abi": "fp32_normalized_partial_output_and_log2_lse;public_lse_natural_log",
+      "status": "resources_only",
+      "tile_intervals": [
+        [
+          0,
+          1
+        ]
+      ]
+    }
+  ],
+  "schema": "streamattn.sm90_micro_prefill_128_canary.v1",
+  "sm_count": 132,
+  "torch": "2.7.1+cu128",
+  "provider": "modal",
+  "subprocess_exit_code": 0
+}

@@ -1,0 +1,189 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_isolated_audit_summary.v1",
+  "provider": "modal",
+  "cohort": "smoke",
+  "requested_baselines": [
+    "flashinfer_fa2"
+  ],
+  "finished": true,
+  "complete": true,
+  "evidence_kind": "isolated_calibration_not_public_promotion",
+  "comparison_scope": "within_worker_paired_native_only",
+  "global_promotion": false,
+  "workers": [
+    {
+      "baseline_id": "flashinfer_fa2",
+      "status": "complete",
+      "artifact_state": "complete",
+      "returncode": 0,
+      "timed_out": false,
+      "validation_error": null,
+      "environment_sha256": "be0c492d84c90688cef89f1866cfd6207aa47549222ad8a880141e2b7082f47f",
+      "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+      "protocol_sha256": "5eb8e4d4f030ba3784e67a16dfc588b7e5746197feb3cd7dc35827bca8f2435a",
+      "paired_native_ratios": [
+        {
+          "case": {
+            "batch": 1,
+            "m": 2,
+            "n": 16384,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "common"
+          },
+          "case_sha256": "a7ca0ddedff7c4e1a194bb6e36a6e08e6fc78a70d4396fa98d6e457c8f60f8b8",
+          "native": "transposed",
+          "baseline_to_native_ratio": 0.9763735753707559,
+          "trial_ratios": [
+            0.9795263191311158,
+            0.9778400935562881,
+            0.9736145461559732,
+            0.9747797237541408,
+            0.9757852038349708,
+            0.9763735753707559,
+            0.9731745996064014
+          ]
+        },
+        {
+          "case": {
+            "batch": 2,
+            "m": 3,
+            "n": 320,
+            "hq": 32,
+            "g": 4,
+            "d": 128,
+            "splits": 4,
+            "purpose": "boundary"
+          },
+          "case_sha256": "17d4a67c540faaf14fb110d049405fdcbd82bee9931b5a1bac79b86c215ee8bf",
+          "native": "transposed",
+          "baseline_to_native_ratio": 2.1490172213041485,
+          "trial_ratios": [
+            2.1597742554880366,
+            2.149305208968952,
+            2.148662965784986,
+            2.151493591698491,
+            2.1514049257641576,
+            2.1542695470486968,
+            2.1484201269529732
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 64,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "ddf45f77f9eac4c1c80765154d6c2a7642481722d58d6eac79ed9470997ea0c8",
+          "native": "natural",
+          "baseline_to_native_ratio": 0.7560263923145798,
+          "trial_ratios": [
+            0.7709336888810356,
+            0.7565551897784377,
+            0.7557022801423378,
+            0.756027369313881,
+            0.7568027827505722,
+            0.755560054443418,
+            0.7555978342724744
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "fd5ea66efb6b7df9eadf868b00d5f1282efe413b904aed5f4cb76641b8861910",
+          "native": "natural",
+          "baseline_to_native_ratio": 0.5718359750556204,
+          "trial_ratios": [
+            0.5748071515414275,
+            0.5713588483878805,
+            0.5713477976023266,
+            0.5717882302569519,
+            0.5728662855464063,
+            0.571762195524738,
+            0.5715533814032824
+          ]
+        }
+      ],
+      "v2_summary": {
+        "schema": "streamattn.sm90_micro_prefill_audit_summary.v2",
+        "evidence_kind": "calibration_oracle_not_holdout_or_public_promotion",
+        "provider": "modal",
+        "complete": true,
+        "requested_baselines": [
+          "flashinfer_fa2"
+        ],
+        "environment_sha256": "be0c492d84c90688cef89f1866cfd6207aa47549222ad8a880141e2b7082f47f",
+        "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+        "protocol_sha256": "5eb8e4d4f030ba3784e67a16dfc588b7e5746197feb3cd7dc35827bca8f2435a",
+        "cells": 4,
+        "groups": [
+          {
+            "m": 2,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 0.9763735753707559,
+            "paired_wins": 0,
+            "worst_paired_ratio": 0.9731745996064014,
+            "natural_producer_fraction_median": 0.6994413590746961
+          },
+          {
+            "m": 3,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 2.1490172213041485,
+            "paired_wins": 1,
+            "worst_paired_ratio": 2.1484201269529732,
+            "natural_producer_fraction_median": 0.8338325228313497
+          },
+          {
+            "m": 64,
+            "d": 64,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 0.7560263923145798,
+            "paired_wins": 0,
+            "worst_paired_ratio": 0.755560054443418,
+            "natural_producer_fraction_median": 0.7832515883948976
+          },
+          {
+            "m": 64,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 0.5718359750556204,
+            "paired_wins": 0,
+            "worst_paired_ratio": 0.5713477976023266,
+            "natural_producer_fraction_median": 0.8580494245574172
+          }
+        ],
+        "baseline_failures": {},
+        "caveat": "Per-cell family oracle; isolated stage ratios are diagnostics, not overlap bounds."
+      }
+    }
+  ]
+}

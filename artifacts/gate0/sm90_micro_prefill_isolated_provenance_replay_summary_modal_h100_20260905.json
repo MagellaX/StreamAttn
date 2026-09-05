@@ -1,0 +1,539 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_isolated_audit_summary.v1",
+  "provider": "modal",
+  "cohort": "smoke",
+  "requested_baselines": [
+    "torch_flash",
+    "cudnn",
+    "cutlass_xformers"
+  ],
+  "finished": true,
+  "complete": true,
+  "evidence_kind": "isolated_calibration_not_public_promotion",
+  "comparison_scope": "within_worker_paired_native_only",
+  "global_promotion": false,
+  "workers": [
+    {
+      "baseline_id": "torch_flash",
+      "status": "complete",
+      "artifact_state": "complete",
+      "returncode": 0,
+      "timed_out": false,
+      "validation_error": null,
+      "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+      "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+      "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+      "paired_native_ratios": [
+        {
+          "case": {
+            "batch": 1,
+            "m": 2,
+            "n": 16384,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "common"
+          },
+          "case_sha256": "a7ca0ddedff7c4e1a194bb6e36a6e08e6fc78a70d4396fa98d6e457c8f60f8b8",
+          "native": "transposed",
+          "baseline_to_native_ratio": 2.864304341327741,
+          "trial_ratios": [
+            2.8514292406371604,
+            2.8677433027268764,
+            2.865247180855069,
+            2.8599045729732384,
+            2.86298853381065,
+            2.86812153436704,
+            2.8428437932433894
+          ]
+        },
+        {
+          "case": {
+            "batch": 2,
+            "m": 3,
+            "n": 320,
+            "hq": 32,
+            "g": 4,
+            "d": 128,
+            "splits": 4,
+            "purpose": "boundary"
+          },
+          "case_sha256": "17d4a67c540faaf14fb110d049405fdcbd82bee9931b5a1bac79b86c215ee8bf",
+          "native": "transposed",
+          "baseline_to_native_ratio": 1.3246776462890932,
+          "trial_ratios": [
+            1.330083567717804,
+            1.3276603459447922,
+            1.3235345603538047,
+            1.3245660053862554,
+            1.3223118658111328,
+            1.3248155919164997,
+            1.32758922240218
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 64,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "ddf45f77f9eac4c1c80765154d6c2a7642481722d58d6eac79ed9470997ea0c8",
+          "native": "natural",
+          "baseline_to_native_ratio": 0.8274880443385038,
+          "trial_ratios": [
+            0.840614130926372,
+            0.8297975891263816,
+            0.828220355366753,
+            0.8275974161934887,
+            0.8285865594934224,
+            0.8268488212486184,
+            0.8269942683296992
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "fd5ea66efb6b7df9eadf868b00d5f1282efe413b904aed5f4cb76641b8861910",
+          "native": "natural",
+          "baseline_to_native_ratio": 0.6323836038709659,
+          "trial_ratios": [
+            0.6374256838954951,
+            0.6344283780453108,
+            0.630689436673522,
+            0.6328665814060789,
+            0.6313127669282464,
+            0.634012092691457,
+            0.6326634507805862
+          ]
+        }
+      ],
+      "v2_summary": {
+        "schema": "streamattn.sm90_micro_prefill_audit_summary.v2",
+        "evidence_kind": "calibration_oracle_not_holdout_or_public_promotion",
+        "provider": "modal",
+        "complete": true,
+        "requested_baselines": [
+          "torch_flash"
+        ],
+        "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+        "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+        "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+        "cells": 4,
+        "groups": [
+          {
+            "m": 2,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 2.864304341327741,
+            "paired_wins": 1,
+            "worst_paired_ratio": 2.8428437932433894,
+            "natural_producer_fraction_median": 0.6977948942558777
+          },
+          {
+            "m": 3,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 1.3246776462890932,
+            "paired_wins": 1,
+            "worst_paired_ratio": 1.3223118658111328,
+            "natural_producer_fraction_median": 0.8402791129575323
+          },
+          {
+            "m": 64,
+            "d": 64,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 0.8274880443385038,
+            "paired_wins": 0,
+            "worst_paired_ratio": 0.8268488212486184,
+            "natural_producer_fraction_median": 0.7933518011418231
+          },
+          {
+            "m": 64,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 0.6323836038709659,
+            "paired_wins": 0,
+            "worst_paired_ratio": 0.630689436673522,
+            "natural_producer_fraction_median": 0.8603663426330703
+          }
+        ],
+        "baseline_failures": {},
+        "caveat": "Per-cell family oracle; isolated stage ratios are diagnostics, not overlap bounds."
+      }
+    },
+    {
+      "baseline_id": "cudnn",
+      "status": "complete",
+      "artifact_state": "complete",
+      "returncode": 0,
+      "timed_out": false,
+      "validation_error": null,
+      "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+      "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+      "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+      "paired_native_ratios": [
+        {
+          "case": {
+            "batch": 1,
+            "m": 2,
+            "n": 16384,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "common"
+          },
+          "case_sha256": "a7ca0ddedff7c4e1a194bb6e36a6e08e6fc78a70d4396fa98d6e457c8f60f8b8",
+          "native": "transposed",
+          "baseline_to_native_ratio": 13.106945560430377,
+          "trial_ratios": [
+            13.01637436742536,
+            13.106945560430377,
+            13.086488274626678,
+            13.128281035727072,
+            13.10601926109971,
+            12.890173135898621,
+            12.98008529050898
+          ]
+        },
+        {
+          "case": {
+            "batch": 2,
+            "m": 3,
+            "n": 320,
+            "hq": 32,
+            "g": 4,
+            "d": 128,
+            "splits": 4,
+            "purpose": "boundary"
+          },
+          "case_sha256": "17d4a67c540faaf14fb110d049405fdcbd82bee9931b5a1bac79b86c215ee8bf",
+          "native": "transposed",
+          "baseline_to_native_ratio": 1.288421387194606,
+          "trial_ratios": [
+            1.3103030563991214,
+            1.2873043483612892,
+            1.291771645116666,
+            1.2874771954653244,
+            1.2867206065429724,
+            1.288421387194606,
+            1.2955039853139523
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 64,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "ddf45f77f9eac4c1c80765154d6c2a7642481722d58d6eac79ed9470997ea0c8",
+          "native": "natural",
+          "baseline_to_native_ratio": 1.8605144280784212,
+          "trial_ratios": [
+            1.8603509285202164,
+            1.8605627816614534,
+            1.8615597852806811,
+            1.861576728080247,
+            1.8572880868912096,
+            1.8592078043477038,
+            1.858720949743278
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "fd5ea66efb6b7df9eadf868b00d5f1282efe413b904aed5f4cb76641b8861910",
+          "native": "natural",
+          "baseline_to_native_ratio": 1.6578723554023265,
+          "trial_ratios": [
+            1.6599644028029645,
+            1.657341575292384,
+            1.6589977451180677,
+            1.6593625085414385,
+            1.653324750945491,
+            1.658676422051308,
+            1.6583826009318894
+          ]
+        }
+      ],
+      "v2_summary": {
+        "schema": "streamattn.sm90_micro_prefill_audit_summary.v2",
+        "evidence_kind": "calibration_oracle_not_holdout_or_public_promotion",
+        "provider": "modal",
+        "complete": true,
+        "requested_baselines": [
+          "cudnn"
+        ],
+        "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+        "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+        "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+        "cells": 4,
+        "groups": [
+          {
+            "m": 2,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 13.106945560430379,
+            "paired_wins": 1,
+            "worst_paired_ratio": 12.890173135898621,
+            "natural_producer_fraction_median": 0.6975956107867913
+          },
+          {
+            "m": 3,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 1.288421387194606,
+            "paired_wins": 1,
+            "worst_paired_ratio": 1.2867206065429724,
+            "natural_producer_fraction_median": 0.8419877341394294
+          },
+          {
+            "m": 64,
+            "d": 64,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 1.8605144280784212,
+            "paired_wins": 1,
+            "worst_paired_ratio": 1.8572880868912096,
+            "natural_producer_fraction_median": 0.7961929242716642
+          },
+          {
+            "m": 64,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 1.6578723554023265,
+            "paired_wins": 1,
+            "worst_paired_ratio": 1.653324750945491,
+            "natural_producer_fraction_median": 0.8506457900137356
+          }
+        ],
+        "baseline_failures": {},
+        "caveat": "Per-cell family oracle; isolated stage ratios are diagnostics, not overlap bounds."
+      }
+    },
+    {
+      "baseline_id": "cutlass_xformers",
+      "status": "complete",
+      "artifact_state": "complete",
+      "returncode": 0,
+      "timed_out": false,
+      "validation_error": null,
+      "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+      "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+      "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+      "paired_native_ratios": [
+        {
+          "case": {
+            "batch": 1,
+            "m": 2,
+            "n": 16384,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "common"
+          },
+          "case_sha256": "a7ca0ddedff7c4e1a194bb6e36a6e08e6fc78a70d4396fa98d6e457c8f60f8b8",
+          "native": "transposed",
+          "baseline_to_native_ratio": 67.20205261467189,
+          "trial_ratios": [
+            66.9763436253875,
+            68.52963826181406,
+            67.07434417168764,
+            67.22847434350537,
+            67.268764446132,
+            67.17350649190705,
+            67.39555604454154
+          ]
+        },
+        {
+          "case": {
+            "batch": 2,
+            "m": 3,
+            "n": 320,
+            "hq": 32,
+            "g": 4,
+            "d": 128,
+            "splits": 4,
+            "purpose": "boundary"
+          },
+          "case_sha256": "17d4a67c540faaf14fb110d049405fdcbd82bee9931b5a1bac79b86c215ee8bf",
+          "native": "transposed",
+          "baseline_to_native_ratio": 3.696694122518849,
+          "trial_ratios": [
+            2.9818013866968767,
+            3.6988625886905497,
+            3.6938077881830043,
+            3.6934640017037896,
+            3.6891255370466918,
+            3.697007003421914,
+            3.6986780567995066
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 64,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "ddf45f77f9eac4c1c80765154d6c2a7642481722d58d6eac79ed9470997ea0c8",
+          "native": "natural",
+          "baseline_to_native_ratio": 15.069236365078442,
+          "trial_ratios": [
+            15.05671790605418,
+            15.272382116774466,
+            15.09458310199022,
+            15.111338740992897,
+            15.016996540647392,
+            15.069485461329975,
+            15.030713312524236
+          ]
+        },
+        {
+          "case": {
+            "batch": 1,
+            "m": 64,
+            "n": 4096,
+            "hq": 16,
+            "g": 8,
+            "d": 128,
+            "splits": null,
+            "purpose": "m64_boundary"
+          },
+          "case_sha256": "fd5ea66efb6b7df9eadf868b00d5f1282efe413b904aed5f4cb76641b8861910",
+          "native": "natural",
+          "baseline_to_native_ratio": 8.709471797622284,
+          "trial_ratios": [
+            8.679273556565025,
+            8.707914429281434,
+            8.698755119850881,
+            8.71634462957684,
+            8.583346282576683,
+            8.615734363591164,
+            8.592875738642695
+          ]
+        }
+      ],
+      "v2_summary": {
+        "schema": "streamattn.sm90_micro_prefill_audit_summary.v2",
+        "evidence_kind": "calibration_oracle_not_holdout_or_public_promotion",
+        "provider": "modal",
+        "complete": true,
+        "requested_baselines": [
+          "cutlass_xformers"
+        ],
+        "environment_sha256": "4eb2362c3b95ee0c72f83828def45f0bb39cc6563660bdbd85020b9250b3ef1b",
+        "source_sha256": "5ce6919f6a479e8bde2558f67a523c9d7e8239c4c15aff779ff00299ba0e78da",
+        "protocol_sha256": "301e0056e54a4fc85d4508fcb33c8a37b06e257bdd8801ad30b2cd0e6272db5a",
+        "cells": 4,
+        "groups": [
+          {
+            "m": 2,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 67.20205261467189,
+            "paired_wins": 1,
+            "worst_paired_ratio": 66.9763436253875,
+            "natural_producer_fraction_median": 0.6961942420371837
+          },
+          {
+            "m": 3,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 3.696694122518849,
+            "paired_wins": 1,
+            "worst_paired_ratio": 2.9818013866968767,
+            "natural_producer_fraction_median": 0.8437457018591361
+          },
+          {
+            "m": 64,
+            "d": 64,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 15.069236365078444,
+            "paired_wins": 1,
+            "worst_paired_ratio": 15.016996540647392,
+            "natural_producer_fraction_median": 0.7943279792097577
+          },
+          {
+            "m": 64,
+            "d": 128,
+            "cells": 1,
+            "exact_cells": 1,
+            "resolved_cells": 1,
+            "complete_baseline_cells": 0,
+            "oracle_geomean": 8.709471797622285,
+            "paired_wins": 1,
+            "worst_paired_ratio": 8.583346282576683,
+            "natural_producer_fraction_median": 0.8442218688890804
+          }
+        ],
+        "baseline_failures": {},
+        "caveat": "Per-cell family oracle; isolated stage ratios are diagnostics, not overlap bounds."
+      }
+    }
+  ]
+}
