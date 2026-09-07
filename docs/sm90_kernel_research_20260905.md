@@ -144,13 +144,15 @@ exactly matching the measured total-count deltas. The resource allocation did
 not change. This supports the intended operation removal, but it does not
 explain the earlier 10% warm-graph gain or the B2 regression by itself.
 
-**Next research question:** which instructions create those dependencies?
-Collect source-correlated stalls before changing the producer. Distinguish the
-synchronous scalar Q-staging loop from K/V load waits and the output epilogue.
-If Q staging dominates, a bounded vectorized asynchronous Q-load replacement
-is a smaller test than another whole-pipeline rewrite. If it does not, reject
-that hypothesis. The present counters do not justify another R128 family,
-register cap, split sweep or automatic promotion of deferred reduction.
+**Source-correlated follow-up, September 7:** distinct-PC totals now match the
+kernel aggregate exactly in all three control captures. Scalar Q staging's
+`ST.E.U16` consumer accounts for 1,112/1,441, 1,112/2,094 and 1,740/2,294
+long-scoreboard samples at the three anchors. This supports a bounded
+vectorized asynchronous Q-load ablation. It does not establish a latency gain,
+and the longer-K capture also has substantial softmax-PC dependencies.
+The evidence does not justify another R128 family, register cap, split sweep
+or automatic promotion of deferred reduction. See
+[source attribution and its limits](sm90_micro_prefill_mixed.md#source-level-producer-evidence).
 
 - [Completed counter evidence](../artifacts/gate0/sm90_micro_counters_modal_h100_20260905_v2.json)
 - [Clock-lock failure, retained](../artifacts/gate0/sm90_micro_counters_modal_h100_20260905.json)
@@ -173,10 +175,10 @@ a promotion or a reason to change architecture now.
 
 ## Where Deeper Work Is Still Needed
 
-1. **Source-correlated latency attribution:** the first dynamic profiles point
-   to low eligible-warp supply and long-scoreboard dependencies, with unchanged
-   register/shared-memory allocation. Locate the responsible load instructions
-   before replacing a pipeline. Static SASS alone is not a stall measurement.
+1. **Q-staging ablation:** the source-correlated profiles now identify a scalar
+   Q-load dependency as the strongest short-K signal. Replace only this staging
+   path and test net producer-plus-merge latency. Sampling alone is not proof
+   of improvement; long-K softmax dependencies remain a separate question.
 2. **Exact mask lowering:** retain arbitrary logical positions as the oracle,
    then prove cheaper affine and further mask specializations equivalent.
    Direct paged/ragged FP16/BF16 execution now has independent H100 evidence.

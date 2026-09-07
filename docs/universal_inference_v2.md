@@ -138,7 +138,7 @@ compiler must learn their crossover rather than use a global query-length rule.
 Not yet implemented:
 
 - real serving trace capture and boundary generators;
-- measured basis-operation adapter kernels and counter artifacts;
+- measured basis-operation adapter kernels beyond the retained-producer counter captures;
 - critical-path resource DAG calibrated from those measurements;
 - full-matrix fastest-exact-baseline measurements, beyond the isolated adapter audit;
 - sliding and additive-mask micro-prefill lowering;
@@ -188,8 +188,10 @@ does not justify a universal switch. The retained producer remains unchanged;
 [kernel research](sm90_kernel_research_20260905.md) records the math, upstream
 sources, and the completed six-launch counter follow-up. Resource allocation
 was unchanged, instruction savings were 0.34-1.00%, and eligible-warp supply
-remained low. Source-correlated load/stall attribution is the next producer
-question, rather than another blind tile or split sweep.
+remained low. Source-correlated follow-up now identifies scalar Q staging as
+the strongest short-K load-dependency signal. The next producer experiment
+changes only that staging path, rather than another blind tile or split sweep.
+See [source attribution](sm90_micro_prefill_mixed.md#source-level-producer-evidence).
 
 Direct page-16 micro-prefill now extends both retained families to HND/NHD,
 FP16/BF16, independent query/KV lengths and mutable device page tables. The

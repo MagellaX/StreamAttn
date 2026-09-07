@@ -33,3 +33,29 @@ def test_counter_collection_never_promotes_missing_evidence(monkeypatch, tmp_pat
         assert "streamattn_counter/" in calls[0]
         assert "--launch-count" in calls[0]
         assert calls[0][calls[0].index("--clock-control") + 1] == "none"
+
+
+def test_source_counter_mode_exports_original_producer_only(monkeypatch, tmp_path):
+    monkeypatch.setattr(counters.torch.cuda, "get_device_name", lambda: "test H100")
+    monkeypatch.setattr(counters.shutil, "which", lambda _: "/ncu")
+    monkeypatch.setattr(counters.subprocess, "check_output", lambda *a, **kw: "test ncu")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if "--import" in command:
+            return SimpleNamespace(returncode=0, stdout="source metrics", stderr="")
+        Path(command[command.index("--log-file") + 1]).write_text(
+            '"Kernel Name","smsp__pcsamp_warps_issue_stalled_long_scoreboard"\n'
+            'streamattn_natural_wgmma_micro_prefill_partial_kernel,42\n')
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(counters.subprocess, "run", run)
+    result = counters.collect(SimpleNamespace(build_dir=tmp_path, cutlass_root=tmp_path,
+                                             source_correlated=True))
+    assert result["complete"] and result["source_correlated"]
+    assert len(calls) == 6
+    assert len(result["rows"]) == 3
+    assert all(r["variant"] == "control" and r["source_csv"] for r in result["rows"])
+    assert "SourceCounters" in calls[0] and "--import-source" in calls[0]
+    assert "cuda,sass" in calls[1]

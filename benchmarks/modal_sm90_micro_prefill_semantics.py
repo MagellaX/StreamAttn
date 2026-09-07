@@ -24,6 +24,10 @@ if modal.is_local():
         "benchmarks/profile_sm90_micro_prefill_counters.py",
         "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_counters.py", copy=True,
     )
+    image = image.pip_install("flashinfer-python==0.6.13", "flashinfer-cubin==0.6.13", "pyyaml")
+    for filename in ("profile_sm90_micro_prefill_mixed.py", "micro_prefill_baselines.py"):
+        image = image.add_local_file("benchmarks/" + filename,
+                                     "/root/StreamAttn/benchmarks/" + filename, copy=True)
 else:
     image = None
 
@@ -34,8 +38,10 @@ app = modal.App("streamattn-sm90-micro-semantics")
 def run(suite: str, experiment: str) -> dict:
     import subprocess
 
-    script = f"profile_sm90_micro_prefill_{experiment}.py"
-    options = ["--suite", suite, "--provider", "modal", "--seed", "9613"] if experiment in ("semantics", "paged") else []
+    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else experiment}.py"
+    options = ["--suite", suite, "--provider", "modal", "--seed", "9613"] if experiment in ("semantics", "paged", "mixed") else []
+    if experiment == "source_counters":
+        options = ["--source-correlated"]
     proc = subprocess.run([
         "python", "-u", "benchmarks/" + script, *options,
         "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
@@ -50,8 +56,8 @@ def run(suite: str, experiment: str) -> dict:
 @app.local_entrypoint()
 def main(suite: str = "smoke", experiment: str = "semantics",
          output_json: str = "artifacts/gate0/sm90_micro_semantics_modal_h100_20260905.json"):
-    if experiment not in ("semantics", "deferred_sum", "paged", "counters"):
-        raise ValueError("experiment must be semantics, deferred_sum, paged or counters")
+    if experiment not in ("semantics", "deferred_sum", "paged", "counters", "source_counters", "mixed"):
+        raise ValueError("unknown semantics experiment")
     path = Path(output_json)
     if path.exists():
         raise FileExistsError("preserve existing evidence")

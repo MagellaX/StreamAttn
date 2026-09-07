@@ -733,6 +733,13 @@ It remains experimental, with no dispatcher change. The
 upstream code and the completed six-launch hardware-counter probe. That probe
 found unchanged register/shared-memory allocation and too few ready warps,
 pointing the next M64 investigation toward source-level load dependencies.
+The source-correlated follow-up now locates the strongest short-K signal at
+scalar Q staging: one store waiting on its input accounts for **76-77% of
+long-scoreboard samples** in two short-K anchors, versus 53% at long K.
+These are sampled stalls, not runtime percentages or a promised speedup.
+The next bounded kernel test is vectorized Q-to-shared staging, keeping the
+retained online-softmax state and split schedule unchanged. See the
+[mixed-batch comparison and source attribution](docs/sm90_micro_prefill_mixed.md).
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build

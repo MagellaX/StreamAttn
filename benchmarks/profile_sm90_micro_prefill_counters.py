@@ -59,17 +59,19 @@ def launch_one(args):
 
 def collect(args):
     ncu = shutil.which("ncu")
+    source_correlated = getattr(args, "source_correlated", False)
     result = dict(schema=SCHEMA, complete=True, dynamic_counters_collected=False,
                   device=torch.cuda.get_device_name(), torch_version=torch.__version__,
                   cuda_version=torch.version.cuda, ncu_path=ncu, rows=[],
                   timing_contract="instrumented attribution; unmanaged clocks; not speedup evidence")
+    result["source_correlated"] = source_correlated
     if not ncu:
         result["status"] = "profiler_unavailable"
         return result
     result["ncu_version"] = subprocess.check_output([ncu, "--version"], text=True)
     args.build_dir.mkdir(parents=True, exist_ok=True)
     for b, n in ((1, 4096), (1, 16384), (2, 4096)):
-        for variant in ("control", "deferred"):
+        for variant in (("control",) if source_correlated else ("control", "deferred")):
             csv_path = args.build_dir / f"{variant}_b{b}_n{n}.csv"
             command = [
                 ncu, "--clock-control", "none", "--nvtx", "--nvtx-include", "streamattn_counter/",
@@ -79,6 +81,11 @@ def collect(args):
             ]
             for section in ("LaunchStats", "SchedulerStats", "WarpStateStats", "InstructionStats", "MemoryWorkloadAnalysis", "SpeedOfLight"):
                 command += ["--section", section]
+            report = args.build_dir / f"{variant}_b{b}_n{n}.ncu-rep"
+            if source_correlated:
+                command += ["--section", "SourceCounters", "--import-source", "yes",
+                            "--source-folders", str(args.build_dir), "--export", str(report),
+                            "--page", "raw"]
             command += [
                 sys.executable, "-u", str(Path(__file__).resolve()),
                 "--variant", variant, "--batch", str(b), "--kv-len", str(n),
@@ -97,10 +104,24 @@ def collect(args):
             if "ERR_NVGPUCTRPERM" in raw + proc.stdout + proc.stderr:
                 result["status"] = "counter_permission_denied"
                 return result
-            if (proc.returncode or '"Metric Name"' not in raw
+            header = '"Kernel Name"' if source_correlated else '"Metric Name"'
+            if (proc.returncode or header not in raw
                     or "streamattn_natural_wgmma_micro_prefill_partial_kernel" not in raw):
                 result.update(complete=False, status="counter_probe_failed")
                 return result
+            if source_correlated:
+                export_command = [ncu, "--import", str(report), "--page", "source",
+                                  "--print-source", "cuda,sass", "--csv"]
+                export = subprocess.run(export_command, text=True, capture_output=True, timeout=120)
+                row = result["rows"][-1]
+                row.update(source_export_command=export_command, source_csv=export.stdout,
+                           source_export_stderr=export.stderr,
+                           source_export_returncode=export.returncode)
+                source_path = args.build_dir / variant / "cuda.cu"
+                row["generated_cuda"] = source_path.read_text() if source_path.exists() else None
+                if export.returncode or not export.stdout.strip():
+                    result.update(complete=False, status="source_export_failed")
+                    return result
     result.update(dynamic_counters_collected=True, status="collected")
     return result
 
@@ -113,6 +134,7 @@ def main():
     parser.add_argument("--variant", choices=("control", "deferred"))
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--kv-len", type=int, default=4096)
+    parser.add_argument("--source-correlated", action="store_true")
     args = parser.parse_args()
     if args.variant:
         launch_one(args)
