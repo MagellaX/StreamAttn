@@ -87,6 +87,23 @@ def summarize(payload):
     return result
 
 
+def affine_mask_geometry(case):
+    """Count mask-free producer tiles; not a timing or attention-mass estimate."""
+    if not all(k in case for k in ("g", "hq", "query_lengths", "kv_lengths")):
+        return None
+    qpt, heads = 64 // case["g"], case["hq"] // case["g"]
+    total, interior = 0, 0
+    for m, n in zip(case["query_lengths"], case["kv_lengths"]):
+        tiles = (n + 63) // 64
+        for i0 in range(0, m, qpt):
+            total += tiles * heads
+            if i0 + qpt <= m:
+                interior += min(tiles, max(0, (n - m + i0 + 1) // 64)) * heads
+    return dict(total_tiles=total, interior_tiles=interior,
+                mask_free_fraction=interior / total if total else 0,
+                contract="derived producer tiles, not measured cycles or attention mass")
+
+
 def affine_ablations(rows, interface):
     result = {}
     for family in ("natural_compact_affine", "natural_compact_interior"):
@@ -109,7 +126,8 @@ def affine_ablations(rows, interface):
                 paired_baseline_speedups=br, control_speedup=statistics.median(cr),
                 baseline_speedup=statistics.median(br), control_all_pairs_win=all(x > 1 for x in cr),
                 baseline_all_pairs_win=all(x > 1 for x in br),
-                schedule=row.get("families", {}).get(candidate)))
+                schedule=row.get("families", {}).get(candidate),
+                mask_geometry=affine_mask_geometry(row["case"])))
             index = "natural_compact_affine/" + interface
             if (family == "natural_compact_interior" and index in graph["median_us"]
                     and binaries.get("natural_compact_affine", {}).get("resolved")):

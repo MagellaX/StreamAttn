@@ -170,3 +170,14 @@ def test_affine_ablations_keep_external_and_internal_wins_separate():
     assert result["natural_compact_interior"]["baseline_all_pair_wins"] == 0
     assert result["natural_compact_interior"]["index_geomean"] == pytest.approx(1.25)
     assert result["natural_compact_interior"]["index_all_pair_wins"] == 1
+
+
+def test_affine_mask_geometry_does_not_count_partial_query_tiles_as_interior():
+    from benchmarks.summarize_sm90_micro_prefill_mixed import affine_mask_geometry
+
+    c = dict(g=8, hq=16, query_lengths=[4, 16], kv_lengths=[128, 128])
+    result = affine_mask_geometry(c)
+    assert result["total_tiles"] == 12
+    assert result["interior_tiles"] == 4
+    assert result["mask_free_fraction"] == pytest.approx(1/3)
+    assert affine_mask_geometry(dict(g=4, hq=16, query_lengths=[0], kv_lengths=[0]))["total_tiles"] == 0

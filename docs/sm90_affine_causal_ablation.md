@@ -26,6 +26,12 @@ query's boundary; all later queries can see at least as much. The interior arm
 uses that sufficient condition to remove the entire per-score mask loop.
 Partial query tiles and boundary tiles retain explicit index masking.
 
+Derived geometry predicts a sharp difference between traces. The interior
+condition covers 96.7% (G4) / 98.9% (G8) of heterogeneous producer tiles and
+85.7% / 92.2% of long-tail tiles, but only 0% / 25.8% of short-trace tiles.
+These are tile counts, not measured cycle savings, occupancy or attention mass.
+The summary records them alongside timings so this hypothesis is testable.
+
 Neither arm omits visible tokens. Both retain the same WGMMA producer, exact
 online softmax, task partition, split-state merge and output allocation.
 This is not sparse attention or approximate early termination.
@@ -57,5 +63,44 @@ python benchmarks/summarize_sm90_micro_prefill_mixed.py /tmp/affine.json \
 Report each arm versus explicit compact control and versus the external
 baseline separately. A control improvement is not a FlashInfer victory.
 Compare interior directly with index to determine whether the extra branch
-earns its complexity. Until GPU results are collected, speedups are unknown.
+earns its complexity.
 No public dispatch or phase-database entry is changed by this experiment.
+
+## First complete H100 result
+
+All 24 cases passed both output and LSE checks before and after page/value
+mutation. Both FlashInfer backends resolved; FA2 was fastest in every cell.
+The captured source hashes match the tested implementation. Ratios below are
+geometric means of per-cell paired median speedups, not full-model speedups.
+
+| Arm | Padded vs compact | Padded vs FlashInfer | Packed vs compact | Packed vs FlashInfer |
+| --- | ---: | ---: | ---: | ---: |
+| Index mask | 1.705x | 0.644x | 1.659x | 0.433x |
+| Interior fast path | 1.861x | 0.703x | 1.804x | 0.471x |
+
+Both arms beat the compact control in every paired trial of all 24 cells, in
+both interfaces. The interior arm beats index in all trials in 22/24 padded
+and 23/24 packed cells, with 1.091x / 1.087x overall additional improvement.
+There are only 4/24 all-pair external wins for padded queries and none for
+packed queries. The general FlashInfer gap remains.
+
+The interior/index gain follows the geometry prediction: padded improvement is
+1.016x for short traces and 1.131x for both heterogeneous and long-tail traces.
+The added branch earns its place as an experimental candidate, but not as a
+universal default. Index arithmetic alone removes most of the observed cost.
+
+The interior packed wrapper is 1.147x slower than its padded interface.
+Comparing padded candidate time to the packed external baseline yields a
+0.539x diagnostic proxy. Separate graphs and buffers can change cache behavior;
+this is not a formal copy-removal bound. It still argues against expecting
+wrapper deletion alone to close the gap. Isolate the remaining producer and
+merge costs before changing the execution state machine or output scheduling.
+
+Lightning's parallel attempt stopped with `USER_STOP_WORKLOAD_REASON_OUT_OF_FUNDS`
+and returned no complete benchmark. The runner deleted that job; its reported
+cost was 0.41653332 (provider-reported units). It contributes no performance
+evidence. A second Modal H100 run with a different seed is pending.
+
+- [First run](../artifacts/gate0/sm90_micro_affine_modal_h100_20260908.json)
+- [First summary](../artifacts/gate0/sm90_micro_affine_modal_summary_h100_20260908.json)
+- [Lightning interruption](../artifacts/gate0/sm90_micro_affine_lightning_h100_20260908.failure.json)
