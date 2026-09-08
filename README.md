@@ -735,9 +735,10 @@ FA2/FA3 backend. These are losses, not speedups. One heterogeneous launch had
 [compact task scheduler](docs/sm90_compact_ragged_schedule.md) now assigns splits
 to real request lengths, retaining full exact attention. On the 48-case H100
 matrix it improves the natural control by **2.18x padded / 2.15x packed**, but
-still reaches only **0.486x / 0.334x against FlashInfer**. It is not a promoted
-route. Next is separating producer and merge costs: deleting query copies alone
-cannot close this gap. Packed output scheduling, exact mask specialization and
+still reaches only **0.486x / 0.334x against FlashInfer**. An independent 24-case
+replay passed and reproduced both the improvement and the remaining loss. It is
+not a promoted route. Next is separating producer and merge costs, rather than
+assuming query-copy removal closes the gap. Packed output scheduling, exact mask specialization and
 holdout routing remain integration work. Existing promoted decode routes are
 unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
 

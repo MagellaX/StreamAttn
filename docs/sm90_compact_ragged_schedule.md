@@ -99,8 +99,21 @@ explicit affine contract. Arbitrary or permuted positions must retain the
 general exact path. Do not infer affine positions from the word "causal" alone.
 
 The first independent Modal attempt was interrupted without returning its JSON;
-it is excluded from performance evidence. A detached retry is used for replay.
+it is excluded from performance evidence. The detached retry completed 24/24
+cases with matching source hashes and both baselines available. It reproduced
+2.183x padded / 2.140x packed over the natural control, but only 0.491x / 0.336x
+against FlashInfer. There were 22/24 all-pair control wins in each interface,
+3/24 external wins with padded queries and none with packed queries. Its wrapper
+ratio is 1.119x and copy-free timing proxy 0.375x, closely matching the full run.
+The replay has no matched-layout causal/noncausal pairs, so it cannot establish
+the isolated mask comparison by itself.
+
+Both H100 runs are complete and cleaned up. The implementation's CPU suite and
+offline CUDA build passed; the final local suite has 1,061 passes and 71 skips.
+The result remains experimental, with no phase-database or public-route change.
 
 - [Full raw evidence](../artifacts/gate0/sm90_micro_compact_lightning_h100_20260908.json)
 - [Full-run summary](../artifacts/gate0/sm90_micro_compact_lightning_summary_h100_20260908.json)
 - [Interrupted attempt record](../artifacts/gate0/sm90_micro_compact_modal_h100_20260908_interrupted.json)
+- [Independent replay](../artifacts/gate0/sm90_micro_compact_modal_h100_20260908_v2.json)
+- [Combined summary and diagnostics](../artifacts/gate0/sm90_micro_compact_summary_h100_20260908.json)
