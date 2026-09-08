@@ -725,6 +725,17 @@ prefix pages and empty requests. This closes a storage/semantics gap, not the
 M64 performance gap. Public dispatch is unchanged. See the
 [paged plan and verification record](docs/sm90_micro_prefill_paged.md).
 
+The next test measured **whole mixed-ragged batches**, including query-layout
+and page-metadata conversion. All **48 full-run cases and 24 independent replay
+cases** passed output/LSE checks, but performance did not generalize: even
+choosing the best native family per case reached only **0.23x with padded
+queries and 0.16x with packed queries** against the fastest tested FlashInfer
+FA2/FA3 backend. These are losses, not speedups. One heterogeneous launch had
+148 empty-work CTAs out of 256. The next integration work is work-proportional
+ragged scheduling and direct packed-query addressing, followed by exact mask
+specialization and holdout routing. Existing promoted decode routes are
+unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
+
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
 `1.100x`, but regressed B2/M64/N4K to `0.987x` versus its paired native control.

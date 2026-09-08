@@ -101,3 +101,15 @@ def test_summary_preserves_interface_boundary_and_requires_evidence(missing):
         assert report["comparable_cases"] == (1 if missing is None else 0)
         assert report["oracle_geomean"] == (ratio if missing is None else None)
     assert not result["promotion"]
+
+
+def test_rectangular_ragged_grid_counts_inactive_work_not_occupancy():
+    from benchmarks.summarize_sm90_micro_prefill_mixed import schedule_geometry
+
+    c = next(c for c in mixed.experiment_cases("full") if c["trace"] == "heterogeneous")
+    geometry = schedule_geometry(c, "natural", 2)
+    assert geometry["launched_ctas"] == 256
+    assert geometry["nonempty_ctas"] == 108
+    assert geometry["empty_cta_fraction"] == 148/256
+    assert geometry["nonempty_ctas_per_request"][-1] == 32
+    assert geometry["maximum_kv_tiles_per_cta"][-1] == 128

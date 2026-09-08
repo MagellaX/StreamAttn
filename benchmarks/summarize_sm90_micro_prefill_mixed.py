@@ -7,6 +7,22 @@ from pathlib import Path
 import statistics
 
 
+def schedule_geometry(case, family, splits):
+    """Derive empty CTA work from the retained rectangular launch, not counters."""
+    qs, ns = case["query_lengths"], case["kv_lengths"]
+    q_per_tile = 64 // case["g"] if family == "natural" else 1
+    kv_heads = case["hq"] // case["g"]
+    query_tiles = [(q + q_per_tile - 1) // q_per_tile for q in qs]
+    kv_tiles = [(n + 63) // 64 for n in ns]
+    launched = len(qs) * max(query_tiles) * kv_heads * splits
+    live_by_request = [qt * kv_heads * min(splits, kt) for qt, kt in zip(query_tiles, kv_tiles)]
+    live = sum(live_by_request)
+    return dict(launched_ctas=launched, nonempty_ctas=live, empty_cta_fraction=1-live/launched,
+                nonempty_ctas_per_request=live_by_request,
+                maximum_kv_tiles_per_cta=[(kt+splits-1)//splits for kt in kv_tiles],
+                contract="derived launch geometry, not measured SM occupancy")
+
+
 def summarize(payload):
     if payload.get("schema") != "streamattn.sm90_micro_prefill_mixed.v1":
         raise ValueError("wrong mixed benchmark schema")
@@ -31,7 +47,10 @@ def summarize(payload):
             comparisons.append(dict(case=row["case"], baseline=baseline["baseline_id"],
                 baseline_us=medians[bname], native_us=times, oracle_family=best,
                 paired_speedups=pairs, median_speedup=statistics.median(pairs),
-                all_pairs_win=all(p > 1 for p in pairs)))
+                all_pairs_win=all(p > 1 for p in pairs),
+                derived_schedule={n: schedule_geometry(row["case"], n, config["splits"])
+                                  for n in ("natural", "transposed")
+                                  if (config := row.get("families", {}).get(n + "/" + interface))}))
         result["interfaces"][interface] = dict(
             comparable_cases=len(comparisons),
             oracle_all_pair_winning_cases=sum(r["all_pairs_win"] for r in comparisons),
