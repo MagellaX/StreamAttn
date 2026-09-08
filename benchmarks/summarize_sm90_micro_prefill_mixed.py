@@ -82,7 +82,37 @@ def summarize(payload):
                 control_all_pair_wins=sum(r["control_all_pairs_win"] for r in compact), rows=compact),
         )
     result["selection_contract"] = "per-case best-family oracle, not held-out or public dispatch"
+    result["compact_diagnostics"] = compact_diagnostics(payload["rows"])
     return result
+
+
+def compact_diagnostics(rows):
+    """Matched shapes, not a component-timing claim or a counterfactual proof."""
+    valid = [r for r in rows if r.get("passed") and
+             r.get("loaded_binary_provenance", {}).get("natural_compact", {}).get("resolved")]
+    key = lambda r: json.dumps({k: v for k, v in r["case"].items() if k != "causal"}, sort_keys=True)
+    noncausal = {key(r): r for r in valid if not r["case"].get("causal")}
+    mask, wrapper, proxy = [], [], []
+    for r in valid:
+        padded = r.get("graphs", {}).get("padded", {}).get("median_us", {})
+        packed = r.get("graphs", {}).get("packed", {}).get("median_us", {})
+        if "natural_compact/padded" not in padded:
+            continue
+        if "natural_compact/packed" in packed:
+            wrapper.append(packed["natural_compact/packed"] / padded["natural_compact/padded"])
+        baseline = r.get("graphs", {}).get("packed", {}).get("fastest_tested_baseline")
+        if baseline and baseline["correctness_passed"]:
+            proxy.append(packed[baseline["baseline_id"] + "/packed"] / padded["natural_compact/padded"])
+        control = noncausal.get(key(r)) if r["case"].get("causal") else None
+        if control is not None:
+            times = control["graphs"]["padded"]["median_us"]
+            if "natural_compact/padded" in times:
+                mask.append(padded["natural_compact/padded"] / times["natural_compact/padded"])
+    gm = lambda xs: math.exp(statistics.mean(map(math.log, xs))) if xs else None
+    return dict(matched_mask_pairs=len(mask), causal_over_noncausal_latency=gm(mask),
+                wrapper_cases=len(wrapper), packed_over_padded_native_latency=gm(wrapper),
+                copy_free_proxy_cases=len(proxy), copy_free_baseline_speedup_proxy=gm(proxy),
+                contract="separate-graph timing proxies, not isolated component timings or formal bounds")
 
 
 def main():

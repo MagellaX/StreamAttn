@@ -206,8 +206,10 @@ and packed query contracts. It exposes a substantial performance gap and
 empty rectangular work; functional coverage is not macro-schedule promotion.
 An opt-in [compact work-proportional assignment](sm90_compact_ragged_schedule.md)
 now keeps fixed-length planned tasks separate from the mutable rectangular path.
-Evaluate it against that control, then add native packed-query addressing and
-measure holdout routing regret. Further
+The full 48-case run improves that control by about 2.15-2.18x but still loses
+to FlashInfer overall. Isolate producer and merge costs next; wrapper-copy
+removal alone is insufficient. Native packed output scheduling and holdout
+routing remain uncompleted work. Further
 masks and the bounded Q-staging ablation remain independent of that integration.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

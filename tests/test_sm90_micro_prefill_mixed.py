@@ -133,3 +133,20 @@ def test_compact_summary_separates_control_improvement_from_baseline_victory():
     assert candidate["baseline_geomean"] == pytest.approx(0.4)
     assert candidate["control_all_pair_wins"] == 1
     assert candidate["baseline_all_pair_wins"] == 0
+    assert result["compact_diagnostics"]["matched_mask_pairs"] == 0
+    assert result["compact_diagnostics"]["copy_free_baseline_speedup_proxy"] == pytest.approx(0.4)
+
+
+def test_mask_diagnostic_does_not_confuse_layout_with_causality():
+    from benchmarks.summarize_sm90_micro_prefill_mixed import compact_diagnostics
+
+    def row(layout, causal, time):
+        return dict(case=dict(layout=layout, causal=causal), passed=True,
+            loaded_binary_provenance=dict(natural_compact=dict(resolved=True)),
+            graphs=dict(padded=dict(median_us={"natural_compact/padded": time})))
+
+    unmatched = [row("HND", False, 2), row("NHD", True, 4)]
+    assert compact_diagnostics(unmatched)["matched_mask_pairs"] == 0
+    matched = compact_diagnostics(unmatched + [row("HND", True, 6)])
+    assert matched["matched_mask_pairs"] == 1
+    assert matched["causal_over_noncausal_latency"] == pytest.approx(3)

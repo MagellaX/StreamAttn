@@ -1,0 +1,12 @@
+{
+  "schema": "streamattn.gpu_launch_failure.v1",
+  "provider": "modal",
+  "app_id": "ap-Z1Zgcg7IyA6mu3o31hgU2h",
+  "complete": false,
+  "error": "RemoteError: Function call was cancelled by user or a failure.",
+  "cause": "Unresolved; the error does not identify who or what cancelled the call.",
+  "artifact_returned": false,
+  "usable_performance_evidence": false,
+  "cleanup": "Modal app list returned no active apps after failure.",
+  "retry_app_id": "ap-AFZsptKyO6ahMZ1UUmqcF0"
+}

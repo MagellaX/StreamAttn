@@ -733,9 +733,12 @@ queries and 0.16x with packed queries** against the fastest tested FlashInfer
 FA2/FA3 backend. These are losses, not speedups. One heterogeneous launch had
 148 empty-work CTAs out of 256. An experimental
 [compact task scheduler](docs/sm90_compact_ragged_schedule.md) now assigns splits
-to real request lengths, retaining full exact attention. It is not a promoted
-route. The next integration work includes direct packed-query addressing, followed by exact mask
-specialization and holdout routing. Existing promoted decode routes are
+to real request lengths, retaining full exact attention. On the 48-case H100
+matrix it improves the natural control by **2.18x padded / 2.15x packed**, but
+still reaches only **0.486x / 0.334x against FlashInfer**. It is not a promoted
+route. Next is separating producer and merge costs: deleting query copies alone
+cannot close this gap. Packed output scheduling, exact mask specialization and
+holdout routing remain integration work. Existing promoted decode routes are
 unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
 
 Kernel research also tested delaying softmax denominator reduction until the
