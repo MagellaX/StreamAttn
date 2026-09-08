@@ -1,0 +1,14 @@
+{
+  "schema": "streamattn.gpu_execution_failure.v1",
+  "provider": "lightning",
+  "job_id": "job_01m210eetkvq1dj8j8qp8cgzm1",
+  "state": "stop",
+  "message": "USER_STOP_WORKLOAD_REASON_OUT_OF_FUNDS",
+  "reported_cost": 0.41653332,
+  "complete": false,
+  "complete_benchmark_returned": false,
+  "job_deleted": true,
+  "performance_evidence": false,
+  "experiment": "SM90 exact compact affine causal 24-case ablation",
+  "implementation_commit": "0148b9309c226f6117fafc6c8600c527947af05f"
+}
