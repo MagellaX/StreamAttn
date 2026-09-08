@@ -99,8 +99,38 @@ merge costs before changing the execution state machine or output scheduling.
 Lightning's parallel attempt stopped with `USER_STOP_WORKLOAD_REASON_OUT_OF_FUNDS`
 and returned no complete benchmark. The runner deleted that job; its reported
 cost was 0.41653332 (provider-reported units). It contributes no performance
-evidence. A second Modal H100 run with a different seed is pending.
+evidence. A second Modal H100 run with a different seed completed all 24 cases.
+
+## Independent replay
+
+Both runs used matching kernel/profile source hashes and seeds 9613 and 17071.
+The replay again resolved both FlashInfer backends, selecting FA2 in every cell.
+
+| Arm | Padded vs compact | Padded vs FlashInfer | Packed vs compact | Packed vs FlashInfer |
+| --- | ---: | ---: | ---: | ---: |
+| Index mask | 1.712x | 0.644x | 1.661x | 0.434x |
+| Interior fast path | 1.867x | 0.701x | 1.807x | 0.472x |
+
+Every candidate/control paired comparison won again. Interior/index improvement
+was 1.090x padded and 1.087x packed, with 20/24 and 23/24 all-pair wins. Padded
+trace ratios were 1.012x short, 1.132x heterogeneous and 1.131x long-tail. The
+short-trace benefit is small and not consistently an all-pair win; do not
+interpret it as proof that branching helps when no tile can take the fast path.
+External all-pair wins remain four padded cells and zero packed cells.
+
+The retained candidate is justified by a repeated reduction in avoidable mask
+work, not a generalized external win. Keep the general explicit-position path
+and experimental opt-in contract. Next, measure producer versus merge time with
+the interior arm as the control, then choose the larger remaining cost for a
+native execution change. Do not resume seed sweeps or assume copy removal is
+sufficient. No broad literature search is required to obtain that measurement.
+
+Final verification: 1,074 CPU tests passed, 71 skipped; CI and offline CUDA
+compilation passed. Both GPU runs finished, and Lightning's failed job was
+deleted. No public route or phase-database promotion was made.
 
 - [First run](../artifacts/gate0/sm90_micro_affine_modal_h100_20260908.json)
 - [First summary](../artifacts/gate0/sm90_micro_affine_modal_summary_h100_20260908.json)
 - [Lightning interruption](../artifacts/gate0/sm90_micro_affine_lightning_h100_20260908.failure.json)
+- [Independent replay](../artifacts/gate0/sm90_micro_affine_modal_h100_20260908_replay.json)
+- [Combined summary](../artifacts/gate0/sm90_micro_affine_summary_h100_20260908.json)

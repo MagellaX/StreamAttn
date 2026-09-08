@@ -216,5 +216,9 @@ remaining loss. A [three-arm affine-causal ablation](sm90_affine_causal_ablation
 now tests index masking and a fully visible tile fast path. The motivating signal:
 matched-shape explicit-position causal latency is 1.70x noncausal in
 the full run. Preserve arbitrary-position support; do not assume affine masks.
+Both 24-case H100 runs passed and reproduced a 1.86-1.87x padded improvement
+over compact causal control, but only 0.70x versus FlashInfer. Interior masking
+adds about 9% beyond index masking. Retain this experimental candidate and
+isolate the remaining producer/merge costs; public dispatch is unchanged.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

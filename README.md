@@ -741,8 +741,9 @@ not a promoted route. The next [causal execution experiment](docs/sm90_affine_ca
 removes position loads and unnecessary interior-tile mask work under a validated
 append-position contract. All 24 H100 cases passed. The interior path improves
 the compact causal control by **1.86x padded / 1.80x packed**, but still reaches
-only **0.703x / 0.471x against FlashInfer**. It computes full exact attention;
-independent replay is pending. Producer/merge attribution, packed output scheduling
+only **0.703x / 0.471x against FlashInfer**. An independent 24-case H100 replay
+passed and reproduced **1.867x / 1.807x over control**, while still trailing
+FlashInfer overall. It computes full exact attention. Producer/merge attribution, packed output scheduling
 and holdout routing remain integration work. Existing promoted decode routes are
 unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
 
