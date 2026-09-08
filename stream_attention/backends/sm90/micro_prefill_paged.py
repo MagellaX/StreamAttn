@@ -56,6 +56,8 @@ class PagedMicroPrefillPlan:
 
     Experimental compact_schedule=True instead snapshots lengths at build time;
     changing lengths requires a new plan. Page IDs and Q/K/V remain mutable.
+    affine_mode='index'/'interior' also validates and snapshots bottom-right
+    affine positions. These opt-in plans do not observe later position changes.
     """
 
     query: torch.Tensor
@@ -71,6 +73,7 @@ class PagedMicroPrefillPlan:
     extension: Any
     tasks: torch.Tensor | None = None
     split_counts: torch.Tensor | None = None
+    affine_mode: str = "none"
 
     @classmethod
     def build(
@@ -83,11 +86,15 @@ class PagedMicroPrefillPlan:
         cutlass_root: Path | None = None, build_dir: Path | None = None,
         compile_verbose: bool = False,
         compact_schedule: bool = False,
+        affine_mode: str = "none",
     ) -> "PagedMicroPrefillPlan":
         validate_paged_micro_prefill(
             query, cache, query_lengths, causal=causal,
             query_positions=query_positions, key_positions=key_positions,
         )
+        if (affine_mode not in ("none", "index", "interior") or
+                (affine_mode != "none" and not (compact_schedule and causal))):
+            raise ValueError("affine modes require compact causal attention")
         if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
             raise ValueError("paged micro-prefill requires an SM90 CUDA device")
         if not isinstance(natural, bool) or target_producer_ctas <= 0:
@@ -114,6 +121,12 @@ class PagedMicroPrefillPlan:
             tasks = torch.tensor(schedule.tasks, device=query.device, dtype=torch.int32).reshape(-1, 4)
             split_counts = torch.tensor(schedule.splits, device=query.device, dtype=torch.int32)
             num_splits = max(1, max(schedule.splits))
+            if affine_mode != "none":
+                from .ragged_schedule import validate_affine_append_positions
+                query_positions, key_positions = query_positions.clone(), key_positions.clone()
+                validate_affine_append_positions(
+                    query_lengths.cpu().tolist(), cache.sequence_lengths.cpu().tolist(),
+                    query_positions.cpu().tolist(), key_positions.cpu().tolist())
         max_splits = min((cache.max_sequence_length + 63) // 64, 512)
         splits = num_splits if num_splits is not None else max(
             1, min(max_splits, (target_producer_ctas + groups - 1) // groups)
@@ -130,13 +143,14 @@ class PagedMicroPrefillPlan:
             key_positions = torch.empty(0, dtype=torch.int64, device=query.device)
         extension = compile_semantic_extension(
             head_dim=dim, dtype=query.dtype, causal=causal, paged=True, ragged=compact_schedule,
+            affine_mode=affine_mode,
             cutlass_root=cutlass_root, build_dir=build_dir, verbose=compile_verbose,
         )
         return cls(
             query, cache, query_lengths, output,
             torch.empty((groups, splits, rows, dim), device=query.device, dtype=torch.float32),
             torch.full((groups, splits, rows), -torch.inf, device=query.device, dtype=torch.float32),
-            query_positions, key_positions, splits, natural, extension, tasks, split_counts,
+            query_positions, key_positions, splits, natural, extension, tasks, split_counts, affine_mode,
         )
 
     @property

@@ -11,6 +11,20 @@ class RaggedSchedule:
     max_tiles_per_task: int
 
 
+def validate_affine_append_positions(query_lengths, kv_lengths, query_positions, key_positions):
+    """Planning-only exact integer check; never assume a causal mask is affine."""
+    if not (len(query_lengths) == len(kv_lengths) == len(query_positions) == len(key_positions)):
+        raise ValueError("affine position batch mismatch")
+    for q, n, qp, kp in zip(query_lengths, kv_lengths, query_positions, key_positions):
+        if not kp or q < 0 or n < 0 or len(qp) < q or len(kp) < n:
+            raise ValueError("invalid affine position lengths")
+        origin = kp[0]
+        if any(pos != origin + j for j, pos in enumerate(kp[:n])):
+            raise ValueError("key positions are not affine")
+        if any(pos != origin + n - q + i for i, pos in enumerate(qp[:q])):
+            raise ValueError("query positions are not bottom-right affine")
+
+
 def plan_ragged_schedule(query_lengths, kv_lengths, *, capacity, kv_heads,
                          group_size, target_ctas=256):
     """Minimize the largest KV interval within a soft CTA budget.

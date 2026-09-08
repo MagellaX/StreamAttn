@@ -737,8 +737,11 @@ to real request lengths, retaining full exact attention. On the 48-case H100
 matrix it improves the natural control by **2.18x padded / 2.15x packed**, but
 still reaches only **0.486x / 0.334x against FlashInfer**. An independent 24-case
 replay passed and reproduced both the improvement and the remaining loss. It is
-not a promoted route. Next is separating producer and merge costs, rather than
-assuming query-copy removal closes the gap. Packed output scheduling, exact mask specialization and
+not a promoted route. The next [causal execution experiment](docs/sm90_affine_causal_ablation.md)
+removes position loads and unnecessary interior-tile mask work under a validated
+append-position contract. It still computes full exact attention; GPU results
+are pending. Producer/merge attribution and packed output scheduling, rather than
+assuming query-copy removal closes the gap, remain necessary. Exact mask specialization and
 holdout routing remain integration work. Existing promoted decode routes are
 unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
 

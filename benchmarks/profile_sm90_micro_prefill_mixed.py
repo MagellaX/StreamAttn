@@ -65,6 +65,8 @@ def experiment_cases(suite):
         return [cases[0], cases[3]]
     if suite == "replay":
         return cases[::4] + cases[3::4]
+    if suite == "causal":
+        return [c for c in cases if c["causal"]]
     return cases
 
 
@@ -216,13 +218,17 @@ def profile_case(c, args, environment, provenance, binary_cache):
                graphs={}, correctness={}, unavailable={}, setup_including_jit_ms={}, loaded_binary_provenance={})
     runs, outputs, lses, plans = {}, {}, {}, {}
     for interface in INTERFACES:
-        for family in ("transposed", "natural", "natural_compact"):
+        families = ("transposed", "natural", "natural_compact")
+        if c["causal"]:
+            families += ("natural_compact_affine", "natural_compact_interior")
+        for family in families:
             name = f"{family}/{interface}"
             native_q = q if interface == "padded" else torch.empty_like(q)
             start = time.perf_counter()
             plan = PagedMicroPrefillPlan.build(
                 native_q, cache, ql, natural=family != "transposed", cutlass_root=args.cutlass_root,
-                compact_schedule=family == "natural_compact",
+                compact_schedule=family.startswith("natural_compact"),
+                affine_mode={"natural_compact_affine": "index", "natural_compact_interior": "interior"}.get(family, "none"),
                 build_dir=args.build_dir, causal=c["causal"], compile_verbose=True,
                 query_positions=qp if c["causal"] else None, key_positions=kp if c["causal"] else None,
             )
@@ -247,7 +253,7 @@ def profile_case(c, args, environment, provenance, binary_cache):
                 row["families"][name].update(
                     producer_ctas=plan.tasks.shape[0], split_counts=plan.split_counts.cpu().tolist(),
                     max_kv_tiles_per_cta=int((plan.tasks[:, 3] - plan.tasks[:, 2]).max().item()),
-                    lengths_frozen=True)
+                    lengths_frozen=True, affine_mode=plan.affine_mode)
             if family not in row["loaded_binary_provenance"]:
                 row["loaded_binary_provenance"][family] = loaded_binary_provenance(
                     family, extension=plan.extension, cache=binary_cache)
@@ -328,7 +334,7 @@ def profile_case(c, args, environment, provenance, binary_cache):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=("smoke", "replay", "full"), default="full")
+    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal"), default="full")
     parser.add_argument("--provider", default="local")
     parser.add_argument("--seed", type=int, default=17071)
     parser.add_argument("--iterations", type=int, default=100)

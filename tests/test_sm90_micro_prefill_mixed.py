@@ -15,6 +15,8 @@ def test_mixed_matrix_covers_both_query_contracts_and_storage_orders():
     assert {len(c["query_lengths"]) for c in cases} == {4, 8}
     assert {c["causal"] for c in cases} == {True, False}
     assert mixed.INTERFACES == ("padded", "packed")
+    assert len(mixed.experiment_cases("causal")) == 24
+    assert all(c["causal"] for c in mixed.experiment_cases("causal"))
 
 
 @pytest.mark.parametrize("c", mixed.experiment_cases("full"))
@@ -150,3 +152,21 @@ def test_mask_diagnostic_does_not_confuse_layout_with_causality():
     matched = compact_diagnostics(unmatched + [row("HND", True, 6)])
     assert matched["matched_mask_pairs"] == 1
     assert matched["causal_over_noncausal_latency"] == pytest.approx(3)
+
+
+def test_affine_ablations_keep_external_and_internal_wins_separate():
+    from benchmarks.summarize_sm90_micro_prefill_mixed import affine_ablations
+
+    families = ("natural_compact", "natural_compact_affine", "natural_compact_interior")
+    times = dict(zip([f + "/packed" for f in families], [10, 5, 4]))
+    times["flashinfer_fa2/packed"] = 2
+    row = dict(case={}, passed=True,
+        loaded_binary_provenance={f: dict(resolved=True) for f in families},
+        graphs=dict(packed=dict(median_us=times, paired_trials=[dict(us=times)],
+            fastest_tested_baseline=dict(baseline_id="flashinfer_fa2", correctness_passed=True))))
+    result = affine_ablations([row], "packed")
+    assert result["natural_compact_affine"]["control_geomean"] == pytest.approx(2)
+    assert result["natural_compact_interior"]["control_geomean"] == pytest.approx(2.5)
+    assert result["natural_compact_interior"]["baseline_all_pair_wins"] == 0
+    assert result["natural_compact_interior"]["index_geomean"] == pytest.approx(1.25)
+    assert result["natural_compact_interior"]["index_all_pair_wins"] == 1

@@ -212,8 +212,9 @@ removal alone is insufficient. Native packed output scheduling and holdout
 routing remain uncompleted work. Further
 masks and the bounded Q-staging ablation remain independent of that integration.
 The independent 24-case replay now reproduces the compact scheduling gain and
-remaining loss. An affine-causal specialization is a concrete next producer
-ablation: matched-shape explicit-position causal latency is 1.70x noncausal in
+remaining loss. A [three-arm affine-causal ablation](sm90_affine_causal_ablation.md)
+now tests index masking and a fully visible tile fast path. The motivating signal:
+matched-shape explicit-position causal latency is 1.70x noncausal in
 the full run. Preserve arbitrary-position support; do not assume affine masks.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

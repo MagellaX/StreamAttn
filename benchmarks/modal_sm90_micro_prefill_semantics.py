@@ -34,7 +34,7 @@ else:
 app = modal.App("streamattn-sm90-micro-semantics")
 
 
-@app.function(image=image, gpu="H100", timeout=2700)
+@app.function(image=image, gpu="H100", cpu=8, timeout=2700)
 def run(suite: str, experiment: str) -> dict:
     import subprocess
 

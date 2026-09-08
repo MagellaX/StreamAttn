@@ -3,6 +3,7 @@ import math
 import pytest
 
 from stream_attention.backends.sm90.ragged_schedule import plan_ragged_schedule
+from stream_attention.backends.sm90.ragged_schedule import validate_affine_append_positions
 from stream_attention.backends.sm90.micro_prefill_ragged_sources import ragged_cuda_source
 
 
@@ -68,3 +69,39 @@ def test_compact_source_contract(dim, dtype, causal):
     assert "if (tasks.size(0)>0)" in source
     assert "query_position >= query_lengths[batch] || active_splits == 0" in source
     assert "work_group * num_splits + split" in source
+
+
+@pytest.mark.parametrize("mode", ["index", "interior"])
+@pytest.mark.parametrize("dim,dtype", [(64, "bf16"), (128, "bf16"), (64, "fp16"), (128, "fp16")])
+def test_affine_source_removes_position_loads_from_natural_producer(mode, dim, dtype):
+    source = ragged_cuda_source(dim, dtype, True, mode)
+    producer = source.split("void streamattn_natural_wgmma_micro_prefill_partial_kernel(")[1].split(
+        "void streamattn_natural_wgmma_micro_prefill_merge_kernel(")[0]
+    assert "key_positions[" not in producer and "query_positions[" not in producer
+    assert "ki > sequence_length - valid_queries + qi" in producer
+    assert ("query_begin + query_positions_per_tile <= valid_queries" in producer) == (mode == "interior")
+
+
+def test_affine_position_validation_preserves_large_and_negative_origins():
+    for origin in (-(1 << 40), 1 << 40):
+        validate_affine_append_positions([2], [5], [[origin + 3, origin + 4]],
+                                         [[origin + i for i in range(5)]])
+    with pytest.raises(ValueError):
+        validate_affine_append_positions([2], [3], [[1, 2]], [[0, 2, 1]])
+    with pytest.raises(ValueError):
+        validate_affine_append_positions([2], [3], [[0, 1]], [[0, 1, 2]])
+    with pytest.raises(ValueError):
+        validate_affine_append_positions([1], [2], [[-(1 << 63)]], [[(1 << 63)-1, -(1 << 63)]])
+
+
+@pytest.mark.parametrize("g", [4, 8])
+def test_interior_predicate_only_skips_fully_visible_tiles(g):
+    qpt = 64 // g
+    for q in (1, 7, 8, 9, 16, 31, 64):
+        for n in (1, 63, 64, 65, 127, 257):
+            for begin in range(0, q, qpt):
+                for tile in range(math.ceil(n / 64)):
+                    if begin + qpt <= q and tile * 64 + 63 <= n - q + begin:
+                        assert all(k < n and k <= n - q + i
+                                   for i in range(begin, begin + qpt)
+                                   for k in range(tile * 64, tile * 64 + 64))

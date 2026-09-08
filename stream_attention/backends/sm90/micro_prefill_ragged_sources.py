@@ -8,7 +8,9 @@ _NEW = "int64_t splits, bool natural, bool nhd, torch::Tensor tasks, torch::Tens
 CPP_SOURCE = _once(PAGED_CPP, _OLD, _NEW)
 
 
-def ragged_cuda_source(head_dim, dtype, causal):
+def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none"):
+    if affine_mode not in ("none", "index", "interior") or (affine_mode != "none" and not causal):
+        raise ValueError("affine modes require causal attention")
     source = paged_cuda_source(head_dim, dtype, causal)
     begin = "\ntemplate <bool kNHD>\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_partial_kernel("
     end = "\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_merge_kernel("
@@ -28,6 +30,18 @@ def ragged_cuda_source(head_dim, dtype, causal):
     producer = _once(producer,
         "const int tile_end = static_cast<int64_t>(split + 1) * num_kv_tiles / num_splits;",
         "const int tile_end = task[3];")
+    if affine_mode != "none":
+        producer = _once(producer,
+            "(kPositionCausal &&\n"
+            "               key_positions[static_cast<int64_t>(batch) * kv_length + ki] >\n"
+            "               query_positions[static_cast<int64_t>(batch) * query_length + qi])",
+            "ki > sequence_length - valid_queries + qi")
+    if affine_mode == "interior":
+        producer = _once(producer,
+            "      {\n        CUTE_UNROLL\n        for (int col = 0; col < size<1>(score_rows); ++col)",
+            "      if (!(query_begin + query_positions_per_tile <= valid_queries &&\n"
+            "            tile * kBlockM + kBlockM - 1 <= sequence_length - valid_queries + query_begin)) {\n"
+            "        CUTE_UNROLL\n        for (int col = 0; col < size<1>(score_rows); ++col)")
     source = _once(source, old, producer)
     merge = _between(source, end, "\ntemplate <int kPagedPageSize>\n")
     old = merge

@@ -80,9 +80,52 @@ def summarize(payload):
                     for r in compact)) if compact else None,
                 baseline_all_pair_wins=sum(r["baseline_all_pairs_win"] for r in compact),
                 control_all_pair_wins=sum(r["control_all_pairs_win"] for r in compact), rows=compact),
+            affine_ablations=affine_ablations(payload["rows"], interface),
         )
     result["selection_contract"] = "per-case best-family oracle, not held-out or public dispatch"
     result["compact_diagnostics"] = compact_diagnostics(payload["rows"])
+    return result
+
+
+def affine_ablations(rows, interface):
+    result = {}
+    for family in ("natural_compact_affine", "natural_compact_interior"):
+        comparisons = []
+        for row in rows:
+            graph = row.get("graphs", {}).get(interface, {})
+            baseline = graph.get("fastest_tested_baseline")
+            binaries = row.get("loaded_binary_provenance", {})
+            if (not row.get("passed") or not baseline or not baseline["correctness_passed"]
+                    or not all(binaries.get(n, {}).get("resolved") for n in (family, "natural_compact"))):
+                continue
+            candidate, control = family + "/" + interface, "natural_compact/" + interface
+            if candidate not in graph.get("median_us", {}):
+                continue
+            external = baseline["baseline_id"] + "/" + interface
+            pairs = graph["paired_trials"]
+            cr = [p["us"][control] / p["us"][candidate] for p in pairs]
+            br = [p["us"][external] / p["us"][candidate] for p in pairs]
+            comparisons.append(dict(case=row["case"], paired_control_speedups=cr,
+                paired_baseline_speedups=br, control_speedup=statistics.median(cr),
+                baseline_speedup=statistics.median(br), control_all_pairs_win=all(x > 1 for x in cr),
+                baseline_all_pairs_win=all(x > 1 for x in br),
+                schedule=row.get("families", {}).get(candidate)))
+            index = "natural_compact_affine/" + interface
+            if (family == "natural_compact_interior" and index in graph["median_us"]
+                    and binaries.get("natural_compact_affine", {}).get("resolved")):
+                ir = [p["us"][index] / p["us"][candidate] for p in pairs]
+                comparisons[-1].update(paired_index_speedups=ir,
+                    index_speedup=statistics.median(ir), index_all_pairs_win=all(x > 1 for x in ir))
+        gm = lambda k: math.exp(statistics.mean(math.log(r[k]) for r in comparisons)) if comparisons else None
+        result[family] = dict(cases=len(comparisons), control_geomean=gm("control_speedup"),
+            baseline_geomean=gm("baseline_speedup"),
+            control_all_pair_wins=sum(r["control_all_pairs_win"] for r in comparisons),
+            baseline_all_pair_wins=sum(r["baseline_all_pairs_win"] for r in comparisons), rows=comparisons)
+        index_rows = [r for r in comparisons if "index_speedup" in r]
+        if index_rows:
+            result[family].update(index_comparable_cases=len(index_rows),
+                index_geomean=math.exp(statistics.mean(math.log(r["index_speedup"]) for r in index_rows)),
+                index_all_pair_wins=sum(r["index_all_pairs_win"] for r in index_rows))
     return result
 
 
@@ -137,6 +180,11 @@ def main():
                 print(f"  compact: {compact['control_geomean']:.3f}x vs natural; "
                       f"{compact['baseline_geomean']:.3f}x vs baseline; "
                       f"{compact['baseline_all_pair_wins']}/{compact['cases']} baseline all-pair wins")
+            for family, ablation in row["affine_ablations"].items():
+                if ablation["cases"]:
+                    print(f"  {family}: {ablation['control_geomean']:.3f}x vs compact; "
+                          f"{ablation['baseline_geomean']:.3f}x vs baseline; "
+                          f"{ablation['baseline_all_pair_wins']}/{ablation['cases']} baseline all-pair wins")
     if args.output_json:
         if args.output_json.exists():
             raise FileExistsError("preserve existing summaries")

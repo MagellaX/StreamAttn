@@ -70,7 +70,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
         f"--provider lightning --cohort {cohort} --baseline {baseline} "
         if experiment == "audit" else
         f"python -u benchmarks/profile_sm90_micro_prefill_{experiment}.py "
-        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else 'full'} "
+        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else 'causal' if cohort == 'causal' else 'full'} "
     )
     return "\n".join(
         [
@@ -102,7 +102,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--experiment", choices=("audit", "semantics", "paged", "mixed"), default="audit")
-    p.add_argument("--cohort", choices=("lightning", "smoke"), default="lightning")
+    p.add_argument("--cohort", choices=("lightning", "smoke", "causal"), default="lightning")
     p.add_argument(
         "--baseline",
         choices=(
@@ -132,6 +132,8 @@ def main():
         / "artifacts/gate0/sm90_micro_prefill_audit_lightning_h100_20260905.json",
     )
     args = p.parse_args()
+    if args.cohort == "causal" and args.experiment != "mixed":
+        p.error("causal cohort requires the mixed experiment")
     if args.output_json.exists():
         raise FileExistsError(
             f"preserve existing evidence; choose another output: {args.output_json}"
