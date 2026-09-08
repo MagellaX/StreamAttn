@@ -53,6 +53,9 @@ class PagedMicroPrefillPlan:
     Page IDs and lengths may be updated in place between graph replays, within
     the validated buffer capacities. Callers must keep active IDs in bounds
     and synchronize metadata updates. No replay-time host readback is used.
+
+    Experimental compact_schedule=True instead snapshots lengths at build time;
+    changing lengths requires a new plan. Page IDs and Q/K/V remain mutable.
     """
 
     query: torch.Tensor
@@ -66,6 +69,8 @@ class PagedMicroPrefillPlan:
     num_splits: int
     natural: bool
     extension: Any
+    tasks: torch.Tensor | None = None
+    split_counts: torch.Tensor | None = None
 
     @classmethod
     def build(
@@ -77,6 +82,7 @@ class PagedMicroPrefillPlan:
         key_positions: torch.Tensor | None = None,
         cutlass_root: Path | None = None, build_dir: Path | None = None,
         compile_verbose: bool = False,
+        compact_schedule: bool = False,
     ) -> "PagedMicroPrefillPlan":
         validate_paged_micro_prefill(
             query, cache, query_lengths, causal=causal,
@@ -91,6 +97,23 @@ class PagedMicroPrefillPlan:
             query_len=capacity, group_size=heads // cache.kv_heads,
         ) if natural else capacity
         groups, rows = batch * cache.kv_heads * tiles, 64 if natural else 8
+        tasks, split_counts = None, None
+        if compact_schedule:
+            if not natural or num_splits is not None:
+                raise ValueError("compact scheduling requires natural=True and automatic splits")
+            from .ragged_schedule import plan_ragged_schedule
+            # This experimental plan freezes lengths, unlike the rectangular path.
+            query_lengths = query_lengths.clone()
+            cache = PagedKVCache(cache.key, cache.value, cache.page_table,
+                                 cache.sequence_lengths.clone(), cache.layout)
+            schedule = plan_ragged_schedule(
+                query_lengths.cpu().tolist(), cache.sequence_lengths.cpu().tolist(),
+                capacity=capacity, kv_heads=cache.kv_heads,
+                group_size=heads // cache.kv_heads, target_ctas=target_producer_ctas,
+            )
+            tasks = torch.tensor(schedule.tasks, device=query.device, dtype=torch.int32).reshape(-1, 4)
+            split_counts = torch.tensor(schedule.splits, device=query.device, dtype=torch.int32)
+            num_splits = max(1, max(schedule.splits))
         max_splits = min((cache.max_sequence_length + 63) // 64, 512)
         splits = num_splits if num_splits is not None else max(
             1, min(max_splits, (target_producer_ctas + groups - 1) // groups)
@@ -106,19 +129,20 @@ class PagedMicroPrefillPlan:
             query_positions = torch.empty(0, dtype=torch.int64, device=query.device)
             key_positions = torch.empty(0, dtype=torch.int64, device=query.device)
         extension = compile_semantic_extension(
-            head_dim=dim, dtype=query.dtype, causal=causal, paged=True,
+            head_dim=dim, dtype=query.dtype, causal=causal, paged=True, ragged=compact_schedule,
             cutlass_root=cutlass_root, build_dir=build_dir, verbose=compile_verbose,
         )
         return cls(
             query, cache, query_lengths, output,
             torch.empty((groups, splits, rows, dim), device=query.device, dtype=torch.float32),
-            torch.empty((groups, splits, rows), device=query.device, dtype=torch.float32),
-            query_positions, key_positions, splits, natural, extension,
+            torch.full((groups, splits, rows), -torch.inf, device=query.device, dtype=torch.float32),
+            query_positions, key_positions, splits, natural, extension, tasks, split_counts,
         )
 
     @property
     def workspace_bytes(self) -> int:
-        return 4 * (self.partial_output.numel() + self.partial_lse.numel())
+        metadata = 0 if self.tasks is None else self.tasks.numel() + self.split_counts.numel()
+        return 4 * (self.partial_output.numel() + self.partial_lse.numel() + metadata)
 
     @property
     def backend(self) -> str:
@@ -126,11 +150,13 @@ class PagedMicroPrefillPlan:
         return f"sm90_{family}_wgmma_paged_micro_prefill"
 
     def run(self) -> torch.Tensor:
+        schedule_args = () if self.tasks is None else (self.tasks, self.split_counts)
         self.extension.out(
             self.query, self.cache.key, self.cache.value,
             self.partial_output, self.partial_lse, self.output,
             self.query_positions, self.key_positions,
             self.cache.page_table, self.cache.sequence_lengths, self.query_lengths,
             self.num_splits, self.natural, self.cache.normalized_layout == "NHD",
+            *schedule_args,
         )
         return self.output

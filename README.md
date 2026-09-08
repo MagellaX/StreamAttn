@@ -731,8 +731,10 @@ cases** passed output/LSE checks, but performance did not generalize: even
 choosing the best native family per case reached only **0.23x with padded
 queries and 0.16x with packed queries** against the fastest tested FlashInfer
 FA2/FA3 backend. These are losses, not speedups. One heterogeneous launch had
-148 empty-work CTAs out of 256. The next integration work is work-proportional
-ragged scheduling and direct packed-query addressing, followed by exact mask
+148 empty-work CTAs out of 256. An experimental
+[compact task scheduler](docs/sm90_compact_ragged_schedule.md) now assigns splits
+to real request lengths, retaining full exact attention. It is not a promoted
+route. The next integration work includes direct packed-query addressing, followed by exact mask
 specialization and holdout routing. Existing promoted decode routes are
 unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
 

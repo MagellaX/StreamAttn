@@ -56,7 +56,7 @@ def validate_positions(
 def compile_semantic_extension(
     *, head_dim: int, dtype: torch.dtype, causal: bool,
     cutlass_root: Path | None = None, build_dir: Path | None = None,
-    verbose: bool = False, paged: bool = False,
+    verbose: bool = False, paged: bool = False, ragged: bool = False,
 ) -> Any:
     from torch.utils.cpp_extension import get_default_build_root, load_inline
 
@@ -66,6 +66,11 @@ def compile_semantic_extension(
     if paged:
         from .micro_prefill_paged_sources import CPP_SOURCE as paged_cpp, paged_cuda_source
         cpp_source, source_builder = paged_cpp, paged_cuda_source
+    if ragged:
+        if not paged:
+            raise ValueError("compact ragged scheduling requires paged KV")
+        from .micro_prefill_ragged_sources import CPP_SOURCE as ragged_cpp, ragged_cuda_source
+        cpp_source, source_builder = ragged_cpp, ragged_cuda_source
     source = source_builder(
         head_dim, "bf16" if dtype == torch.bfloat16 else "fp16", causal
     )

@@ -216,12 +216,13 @@ def profile_case(c, args, environment, provenance, binary_cache):
                graphs={}, correctness={}, unavailable={}, setup_including_jit_ms={}, loaded_binary_provenance={})
     runs, outputs, lses, plans = {}, {}, {}, {}
     for interface in INTERFACES:
-        for family in ("transposed", "natural"):
+        for family in ("transposed", "natural", "natural_compact"):
             name = f"{family}/{interface}"
             native_q = q if interface == "padded" else torch.empty_like(q)
             start = time.perf_counter()
             plan = PagedMicroPrefillPlan.build(
-                native_q, cache, ql, natural=family == "natural", cutlass_root=args.cutlass_root,
+                native_q, cache, ql, natural=family != "transposed", cutlass_root=args.cutlass_root,
+                compact_schedule=family == "natural_compact",
                 build_dir=args.build_dir, causal=c["causal"], compile_verbose=True,
                 query_positions=qp if c["causal"] else None, key_positions=kp if c["causal"] else None,
             )
@@ -242,6 +243,11 @@ def profile_case(c, args, environment, provenance, binary_cache):
                 runs[name], outputs[name] = packed_run, out
                 lses[name] = lambda plan=plan: reconstructed_lse(plan).view(-1, h).index_select(0, qslots)
             row["families"][name] = dict(splits=plan.num_splits, workspace_bytes=plan.workspace_bytes)
+            if plan.tasks is not None:
+                row["families"][name].update(
+                    producer_ctas=plan.tasks.shape[0], split_counts=plan.split_counts.cpu().tolist(),
+                    max_kv_tiles_per_cta=int((plan.tasks[:, 3] - plan.tasks[:, 2]).max().item()),
+                    lengths_frozen=True)
             if family not in row["loaded_binary_provenance"]:
                 row["loaded_binary_provenance"][family] = loaded_binary_provenance(
                     family, extension=plan.extension, cache=binary_cache)
@@ -339,7 +345,8 @@ def main():
     provenance = runtime_provenance()
     environment = dict(device=torch.cuda.get_device_name(), torch_version=torch.__version__,
                        cuda_version=torch.version.cuda, provider=args.provider)
-    paths = SOURCE_PATHS + ("benchmarks/profile_sm90_micro_prefill_mixed.py", "benchmarks/micro_prefill_baselines.py")
+    paths = SOURCE_PATHS + ("benchmarks/profile_sm90_micro_prefill_mixed.py", "benchmarks/micro_prefill_baselines.py",
+        "stream_attention/backends/sm90/ragged_schedule.py", "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
     result = dict(schema=SCHEMA, complete=False, environment=environment, seed=args.seed,
         source_sha256={p: hashlib.sha256((ROOT/p).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for p in paths},
         provenance=provenance, rows=[], planned_cases=len(experiment_cases(args.suite)),

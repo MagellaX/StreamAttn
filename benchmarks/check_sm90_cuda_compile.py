@@ -70,6 +70,16 @@ def compile_sm90_sources(*, cutlass_root: Path, build_root: Path) -> dict[str, o
                 raise RuntimeError("unexpected paged micro-prefill compile result")
             components.append(f"micro_paged_d{head_dim}_{dtype}_causal")
 
+        for head_dim, dtype in ((64, torch.float16), (128, torch.bfloat16)):
+            extension = micro_prefill_semantics.compile_semantic_extension(
+                head_dim=head_dim, dtype=dtype, causal=True, paged=True, ragged=True,
+                cutlass_root=cutlass_root, build_dir=build_root / "micro-compact",
+                verbose=True,
+            )
+            if extension is not sentinel:
+                raise RuntimeError("unexpected compact micro-prefill compile result")
+            components.append(f"micro_compact_d{head_dim}_{dtype}_causal")
+
         tma_pipeline_floor._EXTENSIONS.clear()
         extension = tma_pipeline_floor.compile_tma_pipeline_floor_extension(
             cutlass_root=cutlass_root,

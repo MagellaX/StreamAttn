@@ -204,8 +204,10 @@ The [mixed-ragged comparison](sm90_micro_prefill_mixed.md) now times the retaine
 rectangular plan against compatible exact paged FA2/FA3, with separate padded
 and packed query contracts. It exposes a substantial performance gap and
 empty rectangular work; functional coverage is not macro-schedule promotion.
-Next, test compact work-proportional assignments and native packed-query
-addressing against that control, then measure holdout routing regret. Further
+An opt-in [compact work-proportional assignment](sm90_compact_ragged_schedule.md)
+now keeps fixed-length planned tasks separate from the mutable rectangular path.
+Evaluate it against that control, then add native packed-query addressing and
+measure holdout routing regret. Further
 masks and the bounded Q-staging ablation remain independent of that integration.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

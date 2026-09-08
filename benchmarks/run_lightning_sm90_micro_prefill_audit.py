@@ -59,7 +59,9 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
                 "benchmarks/profile_sm90_micro_prefill_paged.py",
             )
         if experiment == "mixed":
-            paths += ("benchmarks/profile_sm90_micro_prefill_mixed.py",)
+            paths += ("benchmarks/profile_sm90_micro_prefill_mixed.py",
+                      "stream_attention/backends/sm90/ragged_schedule.py",
+                      "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
         for path in paths:
             archive.add(ROOT / path, arcname=path)
     payload = base64.b64encode(buffer.getvalue()).decode()

@@ -113,3 +113,23 @@ def test_rectangular_ragged_grid_counts_inactive_work_not_occupancy():
     assert geometry["empty_cta_fraction"] == 148/256
     assert geometry["nonempty_ctas_per_request"][-1] == 32
     assert geometry["maximum_kv_tiles_per_cta"][-1] == 128
+
+
+def test_compact_summary_separates_control_improvement_from_baseline_victory():
+    from benchmarks.summarize_sm90_micro_prefill_mixed import summarize
+
+    graphs, families = {}, {}
+    for interface in mixed.INTERFACES:
+        times = {n + "/" + interface: t for n, t in
+                 (("natural", 10), ("transposed", 12), ("natural_compact", 5), ("flashinfer_fa2", 2))}
+        graphs[interface] = dict(median_us=times, paired_trials=[dict(us=times)],
+            fastest_tested_baseline=dict(baseline_id="flashinfer_fa2", correctness_passed=True))
+        families["natural_compact/" + interface] = dict(producer_ctas=256)
+    row = dict(case={}, passed=True, graphs=graphs, families=families,
+        loaded_binary_provenance={n: dict(resolved=True) for n in ("natural", "transposed", "natural_compact")})
+    result = summarize(dict(schema=mixed.SCHEMA, complete=True, environment={}, rows=[row]))
+    candidate = result["interfaces"]["packed"]["compact_candidate"]
+    assert candidate["control_geomean"] == pytest.approx(2)
+    assert candidate["baseline_geomean"] == pytest.approx(0.4)
+    assert candidate["control_all_pair_wins"] == 1
+    assert candidate["baseline_all_pair_wins"] == 0
