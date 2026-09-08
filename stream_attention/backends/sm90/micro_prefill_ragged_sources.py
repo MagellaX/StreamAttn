@@ -6,6 +6,14 @@ from .micro_prefill_semantics_sources import _once, _between
 _OLD = "int64_t splits, bool natural, bool nhd"
 _NEW = "int64_t splits, bool natural, bool nhd, torch::Tensor tasks, torch::Tensor counts"
 CPP_SOURCE = _once(PAGED_CPP, _OLD, _NEW)
+_DECL = CPP_SOURCE.split("void micro_semantics_out(")[1].split(");", 1)[0]
+CPP_SOURCE = _once(CPP_SOURCE, "PYBIND11_MODULE",
+    "void micro_components_out(" + _DECL + ", int64_t component);\n"
+    "std::vector<int64_t> micro_attributes(torch::Tensor q, bool nhd);\nPYBIND11_MODULE")
+CPP_SOURCE = _once(CPP_SOURCE, '  m.def("out", &micro_semantics_out);',
+    '  m.def("out", &micro_semantics_out);\n'
+    '  m.def("components", &micro_components_out);\n'
+    '  m.def("attributes", &micro_attributes);')
 
 
 def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none"):
@@ -75,4 +83,36 @@ def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none"):
                   "ql.data_ptr<int>(),pt.size(1),tasks.data_ptr<int>());")
     source = _once(source, "optr,B,M,H,HK,G,splits);",
                   "optr,B,M,H,HK,G,splits,counts.data_ptr<int>(),ql.data_ptr<int>());")
+    # Separate host launches without changing either device kernel or its math.
+    source = _once(source, "void micro_semantics_out(", "void micro_components_out(")
+    source = _once(source, _NEW + ") {", _NEW + ", int64_t component) {\n"
+                   '  TORCH_CHECK(component >= 0 && component <= 2, "invalid component");')
+    source = _once(source, "if (tasks.size(0)>0)", "if (component != 2 && tasks.size(0)>0)")
+    source = _once(source,
+        "    streamattn_natural_wgmma_micro_prefill_merge_kernel<<<",
+        "    if (component != 1) streamattn_natural_wgmma_micro_prefill_merge_kernel<<<")
+    source += "\nvoid micro_semantics_out(" + _DECL + r''') {
+  micro_components_out(q,k,v,po,pl,o,qp,kp,pt,sl,ql,splits,natural,nhd,tasks,counts,0);
+}
+
+std::vector<int64_t> micro_attributes(torch::Tensor q, bool nhd) {
+  TORCH_CHECK(q.is_cuda(), "query must be CUDA");
+  c10::cuda::CUDAGuard guard(q.device());
+  std::vector<int64_t> result;
+  auto collect = [&](auto kernel, int shared) {
+    if (shared) C10_CUDA_CHECK(cudaFuncSetAttribute(
+        kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, shared));
+    cudaFuncAttributes attr;
+    C10_CUDA_CHECK(cudaFuncGetAttributes(&attr, kernel));
+    int resident = 0;
+    C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&resident, kernel, 128, shared));
+    result.insert(result.end(), {attr.numRegs, static_cast<int64_t>(attr.localSizeBytes),
+        static_cast<int64_t>(attr.sharedSizeBytes), shared, resident});
+  };
+  if (nhd) collect(streamattn_natural_wgmma_micro_prefill_partial_kernel<true>, sizeof(GroupedRSPrefillSharedStorage));
+  else collect(streamattn_natural_wgmma_micro_prefill_partial_kernel<false>, sizeof(GroupedRSPrefillSharedStorage));
+  collect(streamattn_natural_wgmma_micro_prefill_merge_kernel, 0);
+  return result;
+}
+'''
     return source

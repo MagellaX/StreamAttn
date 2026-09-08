@@ -188,9 +188,10 @@ does not justify a universal switch. The retained producer remains unchanged;
 [kernel research](sm90_kernel_research_20260905.md) records the math, upstream
 sources, and the completed six-launch counter follow-up. Resource allocation
 was unchanged, instruction savings were 0.34-1.00%, and eligible-warp supply
-remained low. Source-correlated follow-up now identifies scalar Q staging as
-the strongest short-K load-dependency signal. The next producer experiment
-changes only that staging path, rather than another blind tile or split sweep.
+remained low. Source-correlated follow-up identifies scalar Q staging as
+the strongest short-K load-dependency signal in that contiguous kernel.
+It motivates a bounded staging test, but does not establish the bottleneck
+inside the later paged producer.
 See [source attribution](sm90_micro_prefill_mixed.md#source-level-producer-evidence).
 
 Direct page-16 micro-prefill now extends both retained families to HND/NHD,
@@ -207,10 +208,9 @@ empty rectangular work; functional coverage is not macro-schedule promotion.
 An opt-in [compact work-proportional assignment](sm90_compact_ragged_schedule.md)
 now keeps fixed-length planned tasks separate from the mutable rectangular path.
 The full 48-case run improves that control by about 2.15-2.18x but still loses
-to FlashInfer overall. Isolate producer and merge costs next; wrapper-copy
-removal alone is insufficient. Native packed output scheduling and holdout
-routing remain uncompleted work. Further
-masks and the bounded Q-staging ablation remain independent of that integration.
+to FlashInfer overall. Native packed output scheduling and holdout routing
+remain uncompleted work. Further masks and the bounded Q-staging ablation
+remain independent of that integration.
 The independent 24-case replay now reproduces the compact scheduling gain and
 remaining loss. A [three-arm affine-causal ablation](sm90_affine_causal_ablation.md)
 now tests index masking and a fully visible tile fast path. The motivating signal:
@@ -218,7 +218,25 @@ matched-shape explicit-position causal latency is 1.70x noncausal in
 the full run. Preserve arbitrary-position support; do not assume affine masks.
 Both 24-case H100 runs passed and reproduced a 1.86-1.87x padded improvement
 over compact causal control, but only 0.70x versus FlashInfer. Interior masking
-adds about 9% beyond index masking. Retain this experimental candidate and
-isolate the remaining producer/merge costs; public dispatch is unchanged.
+adds about 9% beyond index masking. Retain this experimental candidate;
+public dispatch is unchanged.
+
+The [post-affine attribution](sm90_post_affine_attribution.md) now separates
+producer, merge and interface costs on 24 discovery and 24 independent holdout
+cases, all passing output/LSE and component checks. Separate Nsight captures
+cover 27 actual launches. KV-major task order gives no general gain; a two-tile
+floor's roughly 1% discovery improvement disappears on holdout. Neither is
+promoted and default schedules are unchanged.
+
+Large D128 traces reproduce a producer-only cost roughly twice the complete
+packed FlashInfer call. Merge and copy deletion cannot plausibly be the sole
+repair under that measured cost structure; isolated timings are not additive.
+The next primary experiment must attribute the current paged producer's Q/K/V
+staging, address work and QK/softmax/PV dependencies against the actual winning
+FA2 kernel, then test the smallest justified reduction. Low eligible-warps
+counts alone do not distinguish the two producers and do not justify another
+R128 or persistent-kernel rewrite. Native packed offsets and live-row merge
+ownership remain secondary simplifications, not a claimed solution to the
+large-trace gap.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.

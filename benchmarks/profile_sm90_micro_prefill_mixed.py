@@ -55,6 +55,13 @@ def experiment_cases(suite):
          [63, 257, 1023, 2047, 4093, 8191, 12287, 16381]),
         ("long_tail", [64, 1, 2, 3], [32765, 1021, 4093, 16381]),
     )
+    if suite == "holdout":
+        shapes = (
+            ("short_holdout", [1, 3, 5, 7, 9], [769, 1151, 1537, 2303, 3073]),
+            ("heterogeneous_holdout", [1, 6, 11, 23, 39, 63],
+             [257, 769, 2053, 6151, 10243, 24571]),
+            ("long_tail_holdout", [47, 5, 2, 9, 1], [28669, 2053, 521, 12301, 97]),
+        )
     configs = ((64, 4, 16, "bf16"), (128, 8, 16, "bf16"),
                (64, 8, 32, "fp16"), (128, 4, 32, "fp16"))
     cases = [dict(trace=name, query_lengths=q, kv_lengths=k, d=d, g=g, hq=h,
@@ -65,7 +72,7 @@ def experiment_cases(suite):
         return [cases[0], cases[3]]
     if suite == "replay":
         return cases[::4] + cases[3::4]
-    if suite == "causal":
+    if suite in ("causal", "holdout"):
         return [c for c in cases if c["causal"]]
     return cases
 
@@ -153,6 +160,9 @@ def prepare_flashinfer(c, q, cache, meta, slots, packed_q, name):
 
     def run():
         refresh_pages()
+        return attention()
+
+    def attention():
         wrapper.run(packed_q, (cache.key, cache.value), out=out)
         return out
 
@@ -162,7 +172,8 @@ def prepare_flashinfer(c, q, cache, meta, slots, packed_q, name):
         # FlashInfer 0.6.13 emits log2 LSE; the independent oracle uses ln.
         return lse * math.log(2)
 
-    return SimpleNamespace(run=run, lse=check_lse, output=out, workspace=ws, wrapper=wrapper)
+    return SimpleNamespace(run=run, attention=attention, refresh_pages=refresh_pages,
+                           lse=check_lse, output=out, workspace=ws, wrapper=wrapper)
 
 
 def initialize(c, q, cache, table, scale=1):
@@ -216,19 +227,24 @@ def profile_case(c, args, environment, provenance, binary_cache):
     initialize(c, q, cache, table)
     row = dict(case=c, workload=workload(c, table).as_dict(), families={}, baselines={},
                graphs={}, correctness={}, unavailable={}, setup_including_jit_ms={}, loaded_binary_provenance={})
-    runs, outputs, lses, plans = {}, {}, {}, {}
+    runs, outputs, lses, plans, flashinfer_plans = {}, {}, {}, {}, {}
+    attribution = getattr(args, "attribution", False)
     for interface in INTERFACES:
         families = ("transposed", "natural", "natural_compact")
         if c["causal"]:
             families += ("natural_compact_affine", "natural_compact_interior")
+        if attribution:
+            from benchmarks.sm90_mixed_attribution import VARIANTS
+            families = tuple(VARIANTS)
         for family in families:
             name = f"{family}/{interface}"
             native_q = q if interface == "padded" else torch.empty_like(q)
             start = time.perf_counter()
             plan = PagedMicroPrefillPlan.build(
                 native_q, cache, ql, natural=family != "transposed", cutlass_root=args.cutlass_root,
-                compact_schedule=family.startswith("natural_compact"),
-                affine_mode={"natural_compact_affine": "index", "natural_compact_interior": "interior"}.get(family, "none"),
+                compact_schedule=attribution or family.startswith("natural_compact"),
+                affine_mode="interior" if attribution else {"natural_compact_affine": "index", "natural_compact_interior": "interior"}.get(family, "none"),
+                **(VARIANTS[family] if attribution else {}),
                 build_dir=args.build_dir, causal=c["causal"], compile_verbose=True,
                 query_positions=qp if c["causal"] else None, key_positions=kp if c["causal"] else None,
             )
@@ -262,6 +278,7 @@ def profile_case(c, args, environment, provenance, binary_cache):
         try:
             start = time.perf_counter()
             fi = prepare_flashinfer(c, q, cache, meta, pslots, packed_q, backend)
+            flashinfer_plans[backend] = fi
             row["setup_including_jit_ms"][backend] = 1000*(time.perf_counter()-start)
             fi.run()
             row["baselines"][backend] = dict(workspace_bytes=FLASHINFER_WORKSPACE_BYTES)
@@ -308,6 +325,19 @@ def profile_case(c, args, environment, provenance, binary_cache):
             if not check["passed"]:
                 row["passed"] = False
                 return row
+    if getattr(args, "counter_target", None):
+        name = args.counter_target
+        if name not in runs:
+            raise RuntimeError(f"counter target unavailable: {name}")
+        for _ in range(3):
+            runs[name]()
+        torch.cuda.synchronize()
+        torch.cuda.nvtx.range_push("streamattn_mixed_counter")
+        runs[name]()
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.synchronize()
+        row.update(passed=True, counter_target=name)
+        return row
     for interface in INTERFACES:
         selected = {k: v for k, v in graphs.items() if k.endswith("/" + interface)}
         trials = paired_timings(selected, args.iterations, args.repeats)
@@ -328,13 +358,22 @@ def profile_case(c, args, environment, provenance, binary_cache):
         row["graphs"][interface] = dict(paired_trials=trials, median_us=medians,
             workload_sha256=wl.fingerprint, measured_baselines=[asdict(x) for x in measurements],
             fastest_tested_baseline=asdict(winner) if winner else None)
+    if attribution:
+        from benchmarks.sm90_mixed_attribution import attribute_case, perturbed_timings
+        row["cache_perturbed"] = {interface: perturbed_timings(
+            {k: v for k, v in graphs.items() if k.endswith("/"+interface)}) for interface in INTERFACES}
+        row["attribution"] = attribute_case(c, args, plans, flashinfer_plans, row,
+            qslots, packed_q, ref, ref_lse)
     row["passed"] = True
     return row
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal"), default="full")
+    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout"), default="full")
+    parser.add_argument("--attribution", action="store_true")
+    parser.add_argument("--counter-target")
+    parser.add_argument("--case-index", type=int)
     parser.add_argument("--provider", default="local")
     parser.add_argument("--seed", type=int, default=17071)
     parser.add_argument("--iterations", type=int, default=100)
@@ -347,15 +386,28 @@ def main():
         raise FileExistsError("preserve existing evidence")
     if min(args.iterations, args.repeats) <= 0:
         raise ValueError("positive timing counts required")
+    if args.attribution and args.suite not in ("causal", "holdout"):
+        raise ValueError("attribution requires causal or holdout suite")
+    if args.counter_target and (not args.attribution or args.case_index is None):
+        raise ValueError("counter capture requires attribution and a case index")
     torch.backends.cuda.matmul.allow_tf32 = False
     provenance = runtime_provenance()
     environment = dict(device=torch.cuda.get_device_name(), torch_version=torch.__version__,
                        cuda_version=torch.version.cuda, provider=args.provider)
     paths = SOURCE_PATHS + ("benchmarks/profile_sm90_micro_prefill_mixed.py", "benchmarks/micro_prefill_baselines.py",
         "stream_attention/backends/sm90/ragged_schedule.py", "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
+    if args.attribution:
+        paths += ("benchmarks/sm90_mixed_attribution.py",)
+    cases = experiment_cases(args.suite)
+    if args.case_index is not None:
+        if not 0 <= args.case_index < len(cases):
+            raise ValueError("case index out of range")
+        cases = [cases[args.case_index]]
     result = dict(schema=SCHEMA, complete=False, environment=environment, seed=args.seed,
         source_sha256={p: hashlib.sha256((ROOT/p).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for p in paths},
-        provenance=provenance, rows=[], planned_cases=len(experiment_cases(args.suite)),
+        provenance=provenance, rows=[], planned_cases=len(cases),
+        experiment="post_affine_attribution" if args.attribution else "mixed",
+        suite=args.suite,
         contract=dict(source="synthetic boundaries, not serving trace", kv="page16, no gather/repack",
                       timing="warm CUDA graph; complete producer+merge+interface conversion; output only",
                       metadata="lengths/CSR indptr planned once; page-ID compaction included each replay",
@@ -363,7 +415,7 @@ def main():
                       promotion=False, external_baselines=list(BACKENDS)))
     try:
         binary_cache = {}
-        for c in experiment_cases(args.suite):
+        for c in cases:
             print(json.dumps(dict(stage="case", case=c)), flush=True)
             row = profile_case(c, args, environment, provenance, binary_cache)
             result["rows"].append(row)

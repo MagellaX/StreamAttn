@@ -1,0 +1,98 @@
+{
+  "schema": "streamattn.sm90_micro_prefill_mixed.v1",
+  "complete": false,
+  "environment": {
+    "device": "NVIDIA H100 80GB HBM3",
+    "torch_version": "2.7.1+cu128",
+    "cuda_version": "12.8",
+    "provider": "modal"
+  },
+  "seed": 19073,
+  "source_sha256": {
+    "stream_attention/paged.py": "e9d5451aeb4c2e7f5624851fbb6bfbf9f9cc18baa67207e686a46a2d27ccb91b",
+    "stream_attention/backends/sm90/micro_prefill_paged.py": "8a0cc3d127589dcc0566fbc81c1f8dfebb9e9af149722a8caf36896c17dc475f",
+    "stream_attention/backends/sm90/micro_prefill_paged_sources.py": "46c1489583cf804716313970ddae7ee077e8f909a158bf012edeadbb677d8572",
+    "stream_attention/backends/sm90/micro_prefill_semantics.py": "54f9de8d71b3aad53b8ed05f98f53c80e1bd24d969da7c4093ecd9abb293cfcc",
+    "stream_attention/backends/sm90/micro_prefill_semantics_sources.py": "deb54cc90027b3fedc65cb2afb4c3ea5bd7a0bd4745308d58a10fecdd1feb04f",
+    "stream_attention/backends/sm90/transposed_gqa_exact_sources.py": "318224b7c8f01edc81fcb8f27e575a81ea600aaf2ad526df1af1766b4b77681a",
+    "benchmarks/profile_sm90_micro_prefill_paged.py": "8ddeec7fe317c5984de51818523809f6516551dcee0b9bbae6c3226a584cb31b",
+    "benchmarks/profile_sm90_micro_prefill_semantics.py": "8a61470adac580e241492ae9087478f20b81d6c838ae4a4401c53f65efdff1d0",
+    "benchmarks/profile_sm90_micro_prefill_mixed.py": "0c2096dc113927c469916ca064562abbafc25b7881a9a80e7048db473d2b06b0",
+    "benchmarks/micro_prefill_baselines.py": "9281a9b1607d790ea04968b97bfc04512244157c888f000bab22868efee09c1b",
+    "stream_attention/backends/sm90/ragged_schedule.py": "90e28f04d775b5fd5db104609015d01e8615bf1e755e7048c9c4da28240f9415",
+    "stream_attention/backends/sm90/micro_prefill_ragged_sources.py": "ed1cac7dfae335085a65aeab1437b61de3074ba36d1a387cdd32b1e089fde2b8",
+    "benchmarks/sm90_mixed_attribution.py": "f36d0957f2b14e443f57573c42def2eddbd55c4d513ca761728297d338f3584c"
+  },
+  "provenance": {
+    "versions": {
+      "torch_flash": "2.7.1+cu128;installation=34185f8681f7f04ee2e2fb5cfa55a2f6bb20c723afbcb017ff62bc4d26025e0e",
+      "cudnn": "torch=2.7.1+cu128;cudnn=90701;installation=34185f8681f7f04ee2e2fb5cfa55a2f6bb20c723afbcb017ff62bc4d26025e0e",
+      "flashinfer_fa2": "0.6.13;installation=b0f306db90bccad3840fae7efcf309440647b6c861cb270663fff97daf22e1bb",
+      "flashinfer_fa3": "0.6.13;installation=b0f306db90bccad3840fae7efcf309440647b6c861cb270663fff97daf22e1bb",
+      "flashattention3": "unresolved",
+      "cutlass_xformers": "unresolved"
+    },
+    "package_versions": {
+      "torch_flash": "2.7.1+cu128",
+      "flashinfer_fa2": "0.6.13",
+      "flashinfer_fa3": "0.6.13",
+      "flashattention3": "not_installed",
+      "cudnn": "torch=2.7.1+cu128;cudnn=90701",
+      "cutlass_xformers": "not_installed"
+    },
+    "packages": {
+      "torch": {
+        "version": "2.7.1+cu128",
+        "record_sha256": "86fc538a133f1f35ae816fdbefe9395ef1c6c7e85e83eb1a67acdfb828f98bb8",
+        "interfaces": {
+          "torch/nn/attention/__init__.py": "99dde03cdaa6342b26546f7282a8f61c9a1d000b941eb801052096949406bdb9"
+        }
+      },
+      "flashinfer-python": {
+        "version": "0.6.13",
+        "record_sha256": "2d8758efe5d0b680c6ea073fa0a84d6a14ecc4c73ff18d92da6cac16b3f7e74e",
+        "interfaces": {
+          "flashinfer/prefill.py": "82ca90a2e7c9bf3d02af784b203c0c48e1a0eb1f57b1601c5df8fd1ac32fa1bc"
+        }
+      },
+      "flashinfer-cubin": {
+        "version": "0.6.13",
+        "record_sha256": "4f23ded7bb09d0928391b181cdfef07f3ff1b1f76f16505df54b0d6336ebbd68",
+        "interfaces": {}
+      },
+      "flash_attn_3": {
+        "version": "not_installed",
+        "record_sha256": null,
+        "interfaces": {}
+      },
+      "xformers": {
+        "version": "not_installed",
+        "record_sha256": null,
+        "interfaces": {}
+      }
+    },
+    "adapter_settings": {
+      "flashinfer_workspace_bytes": 268435456,
+      "flashinfer_workspace_allocation": "prepare_only_shared_by_sequential_requests"
+    },
+    "adapter_sha256": "9281a9b1607d790ea04968b97bfc04512244157c888f000bab22868efee09c1b"
+  },
+  "rows": [],
+  "planned_cases": 24,
+  "experiment": "post_affine_attribution",
+  "suite": "causal",
+  "contract": {
+    "source": "synthetic boundaries, not serving trace",
+    "kv": "page16, no gather/repack",
+    "timing": "warm CUDA graph; complete producer+merge+interface conversion; output only",
+    "metadata": "lengths/CSR indptr planned once; page-ID compaction included each replay",
+    "excludes": "JIT, host planning, changed-length replan, request scheduling, KV append",
+    "promotion": false,
+    "external_baselines": [
+      "flashinfer_fa2",
+      "flashinfer_fa3"
+    ]
+  },
+  "error": "Traceback (most recent call last):\n  File \"/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_mixed.py\", line 420, in main\n    row = profile_case(c, args, environment, provenance, binary_cache)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_mixed.py\", line 365, in profile_case\n    row[\"attribution\"] = attribute_case(c, args, plans, flashinfer_plans, row,\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/StreamAttn/benchmarks/sm90_mixed_attribution.py\", line 137, in attribute_case\n    raise AssertionError(\"separate producer/real-state merge failed output or LSE\")\nAssertionError: separate producer/real-state merge failed output or LSE\n",
+  "subprocess_exit_code": 1
+}

@@ -39,7 +39,7 @@ OVERLAY = (
 )
 
 
-def command(cohort, baseline="torch_flash", experiment="audit"):
+def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
     sha = subprocess.check_output(
         ["git", "rev-parse", "origin/main"], cwd=ROOT, text=True
     ).strip()
@@ -50,7 +50,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
             paths += (
                 "benchmarks/profile_sm90_micro_prefill_semantics.py",
             )
-        if experiment in ("paged", "mixed"):
+        if experiment in ("paged", "mixed", "attribution"):
             paths += (
                 "stream_attention/paged.py",
                 "stream_attention/backends/sm90/micro_prefill_paged.py",
@@ -58,10 +58,12 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
                 "benchmarks/profile_sm90_micro_prefill_semantics.py",
                 "benchmarks/profile_sm90_micro_prefill_paged.py",
             )
-        if experiment == "mixed":
+        if experiment in ("mixed", "attribution"):
             paths += ("benchmarks/profile_sm90_micro_prefill_mixed.py",
                       "stream_attention/backends/sm90/ragged_schedule.py",
                       "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
+        if experiment == "attribution":
+            paths += ("benchmarks/sm90_mixed_attribution.py",)
         for path in paths:
             archive.add(ROOT / path, arcname=path)
     payload = base64.b64encode(buffer.getvalue()).decode()
@@ -69,9 +71,11 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
         "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
         f"--provider lightning --cohort {cohort} --baseline {baseline} "
         if experiment == "audit" else
-        f"python -u benchmarks/profile_sm90_micro_prefill_{experiment}.py "
-        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else 'causal' if cohort == 'causal' else 'full'} "
+        f"python -u benchmarks/profile_sm90_micro_prefill_{'mixed' if experiment == 'attribution' else experiment}.py "
+        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else cohort if cohort in ('causal', 'holdout') else 'full'} "
     )
+    if experiment == "attribution":
+        profile_command += f"--attribution --seed {int(seed)} "
     return "\n".join(
         [
             "set -eu",
@@ -88,7 +92,7 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
             "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
             "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
             "PY",
-            "python -m pip install -q ninja pyyaml" if experiment not in ("audit", "mixed") else
+            "python -m pip install -q ninja pyyaml" if experiment not in ("audit", "mixed", "attribution") else
             "python -m pip install -q ninja pyyaml flashinfer-python==0.6.13 flashinfer-cubin==0.6.13",
             "true" if experiment != "audit" else
             "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128",
@@ -101,8 +105,9 @@ def command(cohort, baseline="torch_flash", experiment="audit"):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=("audit", "semantics", "paged", "mixed"), default="audit")
-    p.add_argument("--cohort", choices=("lightning", "smoke", "causal"), default="lightning")
+    p.add_argument("--experiment", choices=("audit", "semantics", "paged", "mixed", "attribution"), default="audit")
+    p.add_argument("--cohort", choices=("lightning", "smoke", "causal", "holdout"), default="lightning")
+    p.add_argument("--seed", type=int, default=17071)
     p.add_argument(
         "--baseline",
         choices=(
@@ -132,8 +137,10 @@ def main():
         / "artifacts/gate0/sm90_micro_prefill_audit_lightning_h100_20260905.json",
     )
     args = p.parse_args()
-    if args.cohort == "causal" and args.experiment != "mixed":
+    if args.cohort in ("causal", "holdout") and args.experiment not in ("mixed", "attribution"):
         p.error("causal cohort requires the mixed experiment")
+    if args.experiment == "attribution" and args.cohort not in ("causal", "holdout"):
+        p.error("attribution requires causal or holdout cohort")
     if args.output_json.exists():
         raise FileExistsError(
             f"preserve existing evidence; choose another output: {args.output_json}"
@@ -142,7 +149,7 @@ def main():
     try:
         job = api.submit_job(
             name=f"streamattn-micro-audit-{int(time.time())}",
-            command=command(args.cohort, args.baseline, args.experiment),
+            command=command(args.cohort, args.baseline, args.experiment, args.seed),
             cloud_account=args.cloud_account,
             teamspace_id=args.teamspace_id,
             studio_id=None,
@@ -199,7 +206,7 @@ def main():
         )
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.with_suffix(".log").write_text(logs, encoding="utf-8")
-        schema = (f"streamattn.sm90_micro_prefill_{args.experiment}.v1" if args.experiment != "audit"
+        schema = (f"streamattn.sm90_micro_prefill_{'mixed' if args.experiment == 'attribution' else args.experiment}.v1" if args.experiment != "audit"
                   else "streamattn.sm90_micro_prefill_audit.v2")
         result = result_from_logs(logs, schema=schema)
         if not result:

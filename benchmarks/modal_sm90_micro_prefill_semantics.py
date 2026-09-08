@@ -25,7 +25,8 @@ if modal.is_local():
         "/root/StreamAttn/benchmarks/profile_sm90_micro_prefill_counters.py", copy=True,
     )
     image = image.pip_install("flashinfer-python==0.6.13", "flashinfer-cubin==0.6.13", "pyyaml")
-    for filename in ("profile_sm90_micro_prefill_mixed.py", "micro_prefill_baselines.py"):
+    for filename in ("profile_sm90_micro_prefill_mixed.py", "micro_prefill_baselines.py",
+                     "sm90_mixed_attribution.py", "profile_sm90_mixed_attribution_counters.py"):
         image = image.add_local_file("benchmarks/" + filename,
                                      "/root/StreamAttn/benchmarks/" + filename, copy=True)
 else:
@@ -38,10 +39,14 @@ app = modal.App("streamattn-sm90-micro-semantics")
 def run(suite: str, experiment: str, seed: int = 9613) -> dict:
     import subprocess
 
-    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else experiment}.py"
+    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else 'mixed' if experiment == 'attribution' else experiment}.py"
     options = ["--suite", suite, "--provider", "modal", "--seed", str(seed)] if experiment in ("semantics", "paged", "mixed") else []
     if experiment == "source_counters":
         options = ["--source-correlated"]
+    if experiment == "attribution":
+        options = ["--suite", suite, "--provider", "modal", "--seed", str(seed), "--attribution"]
+    if experiment == "attribution_counters":
+        script, options = "profile_sm90_mixed_attribution_counters.py", []
     proc = subprocess.run([
         "python", "-u", "benchmarks/" + script, *options,
         "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
@@ -57,7 +62,8 @@ def run(suite: str, experiment: str, seed: int = 9613) -> dict:
 def main(suite: str = "smoke", experiment: str = "semantics",
          output_json: str = "artifacts/gate0/sm90_micro_semantics_modal_h100_20260905.json",
          seed: int = 9613):
-    if experiment not in ("semantics", "deferred_sum", "paged", "counters", "source_counters", "mixed"):
+    if experiment not in ("semantics", "deferred_sum", "paged", "counters", "source_counters", "mixed",
+                           "attribution", "attribution_counters"):
         raise ValueError("unknown semantics experiment")
     path = Path(output_json)
     if path.exists():

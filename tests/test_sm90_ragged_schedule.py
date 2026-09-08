@@ -66,7 +66,8 @@ def test_compact_source_contract(dim, dtype, causal):
     source = ragged_cuda_source(dim, dtype, causal)
     assert "const int tile_begin = task[2]" in source
     assert "split < active_splits" in source
-    assert "if (tasks.size(0)>0)" in source
+    assert "if (component != 2 && tasks.size(0)>0)" in source
+    assert "if (component != 1) streamattn_natural_wgmma_micro_prefill_merge_kernel" in source
     assert "query_position >= query_lengths[batch] || active_splits == 0" in source
     assert "work_group * num_splits + split" in source
 
@@ -105,3 +106,42 @@ def test_interior_predicate_only_skips_fully_visible_tiles(g):
                         assert all(k < n and k <= n - q + i
                                    for i in range(begin, begin + qpt)
                                    for k in range(tile * 64, tile * 64 + 64))
+
+
+@pytest.mark.parametrize("floor", [1, 2, 3, 16])
+@pytest.mark.parametrize("order", ["query", "kv"])
+def test_floor_and_order_preserve_exact_partition(floor, order):
+    qs, ns = [0, 1, 7, 19, 63], [0, 1, 63, 577, 32765]
+    options = dict(capacity=64, kv_heads=2, group_size=8, min_kv_tiles=floor)
+    schedule = plan_ragged_schedule(qs, ns, task_order=order, **options)
+    control = plan_ragged_schedule(qs, ns, task_order="query", **options)
+    assert sorted(schedule.tasks) == sorted(control.tasks)
+    assert schedule.splits == control.splits
+    for group in {task[0] for task in schedule.tasks}:
+        batch = group // 16
+        parts = sorted(task[2:] for task in schedule.tasks if task[0] == group)
+        assert parts[0][0] == 0 and parts[-1][1] == math.ceil(ns[batch]/64)
+        assert all(a[1] == b[0] for a, b in zip(parts, parts[1:]))
+        assert all(end-begin >= min(floor, math.ceil(ns[batch]/64)) for begin, end in parts)
+
+
+def test_two_tile_short_geometry_and_invalid_controls():
+    options = dict(capacity=8, kv_heads=2, group_size=8)
+    schedule = plan_ragged_schedule([1, 2, 4, 8], [4093, 1021, 511, 2047],
+                                   min_kv_tiles=2, **options)
+    assert schedule.splits == (32, 8, 4, 16)
+    assert len(schedule.tasks) == 120
+    for kwargs in (dict(min_kv_tiles=0), dict(min_kv_tiles=True),
+                   dict(min_kv_tiles=1.5), dict(task_order="unknown")):
+        with pytest.raises(ValueError):
+            plan_ragged_schedule([1], [64], **options, **kwargs)
+
+
+def test_component_selection_is_host_only_and_keeps_complete_entrypoint():
+    from stream_attention.backends.sm90.micro_prefill_ragged_sources import CPP_SOURCE
+    source = ragged_cuda_source(128, "bf16", True, "interior")
+    kernels = source.split("void micro_components_out(")[0]
+    assert "component" not in kernels
+    assert 'm.def("out", &micro_semantics_out)' in CPP_SOURCE
+    assert 'm.def("components", &micro_components_out)' in CPP_SOURCE
+    assert "nhd,tasks,counts,0);" in source

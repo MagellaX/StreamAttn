@@ -87,6 +87,7 @@ class PagedMicroPrefillPlan:
         compile_verbose: bool = False,
         compact_schedule: bool = False,
         affine_mode: str = "none",
+        min_kv_tiles: int = 1, task_order: str = "query",
     ) -> "PagedMicroPrefillPlan":
         validate_paged_micro_prefill(
             query, cache, query_lengths, causal=causal,
@@ -95,6 +96,8 @@ class PagedMicroPrefillPlan:
         if (affine_mode not in ("none", "index", "interior") or
                 (affine_mode != "none" and not (compact_schedule and causal))):
             raise ValueError("affine modes require compact causal attention")
+        if not compact_schedule and (min_kv_tiles != 1 or task_order != "query"):
+            raise ValueError("schedule experiments require compact scheduling")
         if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
             raise ValueError("paged micro-prefill requires an SM90 CUDA device")
         if not isinstance(natural, bool) or target_producer_ctas <= 0:
@@ -117,6 +120,7 @@ class PagedMicroPrefillPlan:
                 query_lengths.cpu().tolist(), cache.sequence_lengths.cpu().tolist(),
                 capacity=capacity, kv_heads=cache.kv_heads,
                 group_size=heads // cache.kv_heads, target_ctas=target_producer_ctas,
+                min_kv_tiles=min_kv_tiles, task_order=task_order,
             )
             tasks = torch.tensor(schedule.tasks, device=query.device, dtype=torch.int32).reshape(-1, 4)
             split_counts = torch.tensor(schedule.splits, device=query.device, dtype=torch.int32)
@@ -163,9 +167,9 @@ class PagedMicroPrefillPlan:
         family = "natural" if self.natural else "transposed"
         return f"sm90_{family}_wgmma_paged_micro_prefill"
 
-    def run(self) -> torch.Tensor:
+    def _arguments(self):
         schedule_args = () if self.tasks is None else (self.tasks, self.split_counts)
-        self.extension.out(
+        return (
             self.query, self.cache.key, self.cache.value,
             self.partial_output, self.partial_lse, self.output,
             self.query_positions, self.key_positions,
@@ -173,4 +177,13 @@ class PagedMicroPrefillPlan:
             self.num_splits, self.natural, self.cache.normalized_layout == "NHD",
             *schedule_args,
         )
+
+    def run(self) -> torch.Tensor:
+        self.extension.out(*self._arguments())
         return self.output
+
+    def run_component(self, component: str) -> None:
+        """Profiling only. Merge requires partial states from the same live plan."""
+        if self.tasks is None or component not in ("producer", "merge"):
+            raise ValueError("component profiling requires a compact producer or merge")
+        self.extension.components(*self._arguments(), 1 if component == "producer" else 2)

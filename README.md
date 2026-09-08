@@ -743,9 +743,20 @@ append-position contract. All 24 H100 cases passed. The interior path improves
 the compact causal control by **1.86x padded / 1.80x packed**, but still reaches
 only **0.703x / 0.471x against FlashInfer**. An independent 24-case H100 replay
 passed and reproduced **1.867x / 1.807x over control**, while still trailing
-FlashInfer overall. It computes full exact attention. Producer/merge attribution, packed output scheduling
-and holdout routing remain integration work. Existing promoted decode routes are
-unchanged. See the [complete comparison](docs/sm90_micro_prefill_mixed.md).
+FlashInfer overall. It computes full exact attention. See the
+[complete comparison](docs/sm90_micro_prefill_mixed.md).
+
+The [cost-attribution follow-up](docs/sm90_post_affine_attribution.md) passed
+24 discovery and 24 new holdout cases. It separates the producer, split-state
+merge and interface costs, with checked hardware-counter captures. Task
+reordering did not help generally; a two-tile work floor gained about 1% in
+discovery but lost that gain on holdout. The larger D128 traces identify the
+producer as the main remaining cost: its isolated latency is already about
+twice the complete packed FlashInfer call. This is a bottleneck diagnosis,
+not a speed breakthrough or an additive timing model. The next work targets
+staging and dependencies inside the current exact paged producer. Native packed
+output scheduling and holdout routing remain unfinished; existing promoted
+decode routes and default schedules are unchanged.
 
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
@@ -759,8 +770,10 @@ The source-correlated follow-up now locates the strongest short-K signal at
 scalar Q staging: one store waiting on its input accounts for **76-77% of
 long-scoreboard samples** in two short-K anchors, versus 53% at long K.
 These are sampled stalls, not runtime percentages or a promised speedup.
-The next bounded kernel test is vectorized Q-to-shared staging, keeping the
-retained online-softmax state and split schedule unchanged. See the
+That earlier contiguous-kernel result motivates a Q-staging experiment, but
+its stall percentages cannot be transferred to the current paged producer.
+The paged path needs its own source-correlated attribution before selecting
+the load/dependency change. Keep the retained online-softmax state. See the
 [mixed-batch comparison and source attribution](docs/sm90_micro_prefill_mixed.md).
 
 The architecture-basis harness now expands six H100 serving anchors into 84

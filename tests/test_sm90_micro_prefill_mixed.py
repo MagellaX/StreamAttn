@@ -19,7 +19,7 @@ def test_mixed_matrix_covers_both_query_contracts_and_storage_orders():
     assert all(c["causal"] for c in mixed.experiment_cases("causal"))
 
 
-@pytest.mark.parametrize("c", mixed.experiment_cases("full"))
+@pytest.mark.parametrize("c", mixed.experiment_cases("full") + mixed.experiment_cases("holdout"))
 def test_mixed_metadata_exactly_matches_the_workload(c):
     meta = mixed.metadata(c)
     table = mixed.page_table(c, 17)
