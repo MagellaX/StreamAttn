@@ -101,15 +101,18 @@ def compile_sm90_sources(*, cutlass_root: Path, build_root: Path) -> dict[str, o
             components.append(f"micro_vector_q_d{head_dim}")
 
         for dtype in (torch.float16, torch.bfloat16):
-            extension = micro_prefill_semantics.compile_semantic_extension(
-                head_dim=128, dtype=dtype, causal=True, paged=True, ragged=True,
-                affine_mode="interior", q_vector_copy=True, page_pair_reuse=True,
-                cutlass_root=cutlass_root, build_dir=build_root / "micro-page-pair",
-                verbose=True,
-            )
-            if extension is not sentinel:
-                raise RuntimeError("unexpected page-pair compile result")
-            components.append(f"micro_page_pair_d128_{dtype}")
+            for unsigned_address in (False, True):
+                extension = micro_prefill_semantics.compile_semantic_extension(
+                    head_dim=128, dtype=dtype, causal=True, paged=True, ragged=True,
+                    affine_mode="interior", q_vector_copy=True, page_pair_reuse=True,
+                    unsigned_page_address=unsigned_address,
+                    cutlass_root=cutlass_root, build_dir=build_root / "micro-page-pair",
+                    verbose=True,
+                )
+                if extension is not sentinel:
+                    raise RuntimeError("unexpected page-pair compile result")
+                label = "page_address" if unsigned_address else "page_pair"
+                components.append(f"micro_{label}_d128_{dtype}")
 
         tma_pipeline_floor._EXTENSIONS.clear()
         extension = tma_pipeline_floor.compile_tma_pipeline_floor_extension(

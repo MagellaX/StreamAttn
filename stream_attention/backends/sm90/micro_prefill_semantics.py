@@ -60,6 +60,7 @@ def compile_semantic_extension(
     affine_mode: str = "none",
     q_vector_copy: bool = False,
     page_pair_reuse: bool = False,
+    unsigned_page_address: bool = False,
 ) -> Any:
     from torch.utils.cpp_extension import get_default_build_root, load_inline
 
@@ -71,6 +72,8 @@ def compile_semantic_extension(
         raise ValueError("vector Q experiment requires compact ragged scheduling")
     if not isinstance(page_pair_reuse, bool) or (page_pair_reuse and not (ragged and q_vector_copy)):
         raise ValueError("page-pair experiment requires compact vector Q control")
+    if not isinstance(unsigned_page_address, bool) or (unsigned_page_address and not page_pair_reuse):
+        raise ValueError("unsigned page-address experiment requires page-pair control")
     cpp_source, source_builder = CPP_SOURCE, semantic_cuda_source
     if paged:
         from .micro_prefill_paged_sources import CPP_SOURCE as paged_cpp, paged_cuda_source
@@ -81,7 +84,7 @@ def compile_semantic_extension(
         from .micro_prefill_ragged_sources import CPP_SOURCE as ragged_cpp, ragged_cuda_source
         cpp_source = ragged_cpp
         source_builder = lambda dim, kind, mask: ragged_cuda_source(
-            dim, kind, mask, affine_mode, q_vector_copy, page_pair_reuse)
+            dim, kind, mask, affine_mode, q_vector_copy, page_pair_reuse, unsigned_page_address)
     source = source_builder(
         head_dim, "bf16" if dtype == torch.bfloat16 else "fp16", causal
     )

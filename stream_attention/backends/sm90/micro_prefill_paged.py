@@ -90,6 +90,7 @@ class PagedMicroPrefillPlan:
         min_kv_tiles: int = 1, task_order: str = "query",
         q_vector_copy: bool = False,
         page_pair_reuse: bool = False,
+        unsigned_page_address: bool = False,
     ) -> "PagedMicroPrefillPlan":
         validate_paged_micro_prefill(
             query, cache, query_lengths, causal=causal,
@@ -107,6 +108,8 @@ class PagedMicroPrefillPlan:
         if not isinstance(page_pair_reuse, bool) or (page_pair_reuse and not (
                 compact_schedule and natural and q_vector_copy)):
             raise ValueError("page-pair experiment requires compact natural vector Q control")
+        if not isinstance(unsigned_page_address, bool) or (unsigned_page_address and not page_pair_reuse):
+            raise ValueError("unsigned page-address experiment requires page-pair control")
         if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
             raise ValueError("paged micro-prefill requires an SM90 CUDA device")
         if not isinstance(natural, bool) or target_producer_ctas <= 0:
@@ -157,6 +160,7 @@ class PagedMicroPrefillPlan:
         extension = compile_semantic_extension(
             head_dim=dim, dtype=query.dtype, causal=causal, paged=True, ragged=compact_schedule,
             affine_mode=affine_mode, q_vector_copy=q_vector_copy, page_pair_reuse=page_pair_reuse,
+            unsigned_page_address=unsigned_page_address,
             cutlass_root=cutlass_root, build_dir=build_dir, verbose=compile_verbose,
         )
         return cls(

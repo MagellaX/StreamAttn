@@ -1,0 +1,21 @@
+{
+  "schema": "streamattn.experiment_execution.v1",
+  "provider": "lightning",
+  "job_id": "job_01m23g6a3cwrjdjv7wnatgpmph",
+  "benchmark_complete_before_stop": true,
+  "correct_cases": 4,
+  "planned_cases": 4,
+  "platform_state_when_result_saved": "running",
+  "platform_state_observed_by_runner": "stop",
+  "last_observed_platform_state": "absent_from_job_list",
+  "reported_cost": 1.4894222,
+  "runner_exit_code": 1,
+  "runner_exit_reason": "Platform state was stop rather than completed after explicit cleanup of a benchmark with complete output.",
+  "result_persisted_before_stop": true,
+  "deletion_requested": true,
+  "active_jobs_after_cleanup": 0,
+  "modal_jobs": 0,
+  "broad_regression_run": false,
+  "independent_holdout_run": false,
+  "public_dispatch_changed": false
+}

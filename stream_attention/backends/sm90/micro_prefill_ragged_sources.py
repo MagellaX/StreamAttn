@@ -62,12 +62,14 @@ __forceinline__ __device__ void streamattn_micro_load_page16_pair(
 
 
 def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_copy=False,
-                       page_pair_reuse=False):
+                       page_pair_reuse=False, unsigned_page_address=False):
     if affine_mode not in ("none", "index", "interior") or (affine_mode != "none" and not causal):
         raise ValueError("affine modes require causal attention")
     source = paged_cuda_source(head_dim, dtype, causal)
     if not isinstance(page_pair_reuse, bool) or (page_pair_reuse and not q_vector_copy):
         raise ValueError("page-pair experiment requires vector Q control")
+    if not isinstance(unsigned_page_address, bool) or (unsigned_page_address and not page_pair_reuse):
+        raise ValueError("unsigned page-address experiment requires page-pair control")
     begin = "\ntemplate <bool kNHD>\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_partial_kernel("
     end = "\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_merge_kernel("
     producer = _between(source, begin, end)
@@ -138,7 +140,18 @@ def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_cop
             producer = _once(producer,
                 f"streamattn_micro_load_page16<kNHD, {transpose}, false>",
                 f"streamattn_micro_load_page16_pair<kNHD, {transpose}>")
-        producer = _PAGE_PAIR_LOADER + producer
+        loader = _PAGE_PAIR_LOADER
+        if unsigned_page_address:
+            loader = _once(loader, """      const int64_t row = kNHD
+          ? (static_cast<int64_t>(page) * 16 + row_in_half) * kv_heads + head
+          : (static_cast<int64_t>(page) * kv_heads + head) * 16 + row_in_half;""", """      // Active page IDs and head counts are nonnegative; widen BEFORE multiplication.
+      const uint64_t page_heads = static_cast<uint64_t>(static_cast<uint32_t>(page))
+          * static_cast<uint32_t>(kv_heads);
+      const uint64_t row = kNHD
+          ? page_heads * 16 + static_cast<uint64_t>(row_in_half)
+              * static_cast<uint32_t>(kv_heads) + static_cast<uint32_t>(head)
+          : (page_heads + static_cast<uint32_t>(head)) * 16 + row_in_half;""")
+        producer = loader + producer
     source = _once(source, old, producer)
     merge = _between(source, end, "\ntemplate <int kPagedPageSize>\n")
     old = merge

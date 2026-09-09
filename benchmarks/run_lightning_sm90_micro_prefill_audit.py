@@ -50,7 +50,7 @@ def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
             paths += (
                 "benchmarks/profile_sm90_micro_prefill_semantics.py",
             )
-        if experiment in ("paged", "mixed", "attribution", "producer_copy", "page_pair"):
+        if experiment in ("paged", "mixed", "attribution", "producer_copy", "page_pair", "page_address"):
             paths += (
                 "stream_attention/paged.py",
                 "stream_attention/backends/sm90/micro_prefill_paged.py",
@@ -58,12 +58,14 @@ def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
                 "benchmarks/profile_sm90_micro_prefill_semantics.py",
                 "benchmarks/profile_sm90_micro_prefill_paged.py",
             )
-        if experiment in ("mixed", "attribution", "producer_copy", "page_pair"):
+        if experiment in ("mixed", "attribution", "producer_copy", "page_pair", "page_address"):
             paths += ("benchmarks/profile_sm90_micro_prefill_mixed.py",
                       "stream_attention/backends/sm90/ragged_schedule.py",
                       "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
-        if experiment in ("attribution", "producer_copy", "page_pair"):
+        if experiment in ("attribution", "producer_copy", "page_pair", "page_address"):
             paths += ("benchmarks/sm90_mixed_attribution.py",)
+        if experiment == "page_address":
+            paths += ("benchmarks/sm90_static_sass.py",)
         for path in paths:
             archive.add(ROOT / path, arcname=path)
     payload = base64.b64encode(buffer.getvalue()).decode()
@@ -71,15 +73,17 @@ def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
         "python -u benchmarks/profile_sm90_micro_prefill_audit.py "
         f"--provider lightning --cohort {cohort} --baseline {baseline} "
         if experiment == "audit" else
-        f"python -u benchmarks/profile_sm90_micro_prefill_{'mixed' if experiment in ('attribution', 'producer_copy', 'page_pair') else experiment}.py "
-        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else cohort if cohort in ('causal', 'holdout', 'pair_holdout') else 'full'} "
+        f"python -u benchmarks/profile_sm90_micro_prefill_{'mixed' if experiment in ('attribution', 'producer_copy', 'page_pair', 'page_address') else experiment}.py "
+        f"--provider lightning --suite {'smoke' if cohort == 'smoke' else cohort if cohort in ('causal', 'holdout', 'pair_holdout', 'pair_regression', 'address_canary', 'address_holdout') else 'full'} "
     )
-    if experiment in ("attribution", "producer_copy", "page_pair"):
+    if experiment in ("attribution", "producer_copy", "page_pair", "page_address"):
         profile_command += f"--attribution --seed {int(seed)} "
         if experiment == "producer_copy":
             profile_command += "--producer-copy "
         if experiment == "page_pair":
             profile_command += "--page-pair "
+        if experiment == "page_address":
+            profile_command += "--page-address "
     return "\n".join(
         [
             "set -eu",
@@ -96,7 +100,7 @@ def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
             "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
             "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
             "PY",
-            "python -m pip install -q ninja pyyaml" if experiment not in ("audit", "mixed", "attribution", "producer_copy", "page_pair") else
+            "python -m pip install -q ninja pyyaml" if experiment not in ("audit", "mixed", "attribution", "producer_copy", "page_pair", "page_address") else
             "python -m pip install -q ninja pyyaml flashinfer-python==0.6.13 flashinfer-cubin==0.6.13",
             "true" if experiment != "audit" else
             "python -m pip install --no-deps xformers==0.0.31 --index-url https://download.pytorch.org/whl/cu128",
@@ -109,8 +113,8 @@ def command(cohort, baseline="torch_flash", experiment="audit", seed=17071):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=("audit", "semantics", "paged", "mixed", "attribution", "producer_copy", "page_pair"), default="audit")
-    p.add_argument("--cohort", choices=("lightning", "smoke", "causal", "holdout", "pair_holdout"), default="lightning")
+    p.add_argument("--experiment", choices=("audit", "semantics", "paged", "mixed", "attribution", "producer_copy", "page_pair", "page_address"), default="audit")
+    p.add_argument("--cohort", choices=("lightning", "smoke", "causal", "holdout", "pair_holdout", "pair_regression", "address_canary", "address_holdout"), default="lightning")
     p.add_argument("--seed", type=int, default=17071)
     p.add_argument(
         "--baseline",
@@ -141,12 +145,16 @@ def main():
         / "artifacts/gate0/sm90_micro_prefill_audit_lightning_h100_20260905.json",
     )
     args = p.parse_args()
-    if args.cohort in ("causal", "holdout", "pair_holdout") and args.experiment not in ("mixed", "attribution", "producer_copy", "page_pair"):
+    if args.cohort in ("causal", "holdout", "pair_holdout", "pair_regression", "address_canary", "address_holdout") and args.experiment not in ("mixed", "attribution", "producer_copy", "page_pair", "page_address"):
         p.error("causal cohort requires the mixed experiment")
     if args.experiment in ("attribution", "producer_copy") and args.cohort not in ("causal", "holdout"):
         p.error("attribution requires causal or holdout cohort")
     if args.experiment == "page_pair" and args.cohort not in ("causal", "pair_holdout"):
         p.error("page-pair requires causal or new pair_holdout cohort")
+    if args.experiment == "page_address" and args.cohort not in ("address_canary", "pair_regression", "address_holdout"):
+        p.error("page-address requires canary, regression, or address holdout cohort")
+    if args.cohort in ("address_canary", "address_holdout", "pair_regression") and args.experiment != "page_address":
+        p.error("address cohorts require page-address experiment")
     if args.output_json.exists():
         raise FileExistsError(
             f"preserve existing evidence; choose another output: {args.output_json}"
@@ -212,13 +220,14 @@ def main():
         )
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.with_suffix(".log").write_text(logs, encoding="utf-8")
-        schema = (f"streamattn.sm90_micro_prefill_{'mixed' if args.experiment in ('attribution', 'producer_copy', 'page_pair') else args.experiment}.v1" if args.experiment != "audit"
+        schema = (f"streamattn.sm90_micro_prefill_{'mixed' if args.experiment in ('attribution', 'producer_copy', 'page_pair', 'page_address') else args.experiment}.v1" if args.experiment != "audit"
                   else "streamattn.sm90_micro_prefill_audit.v2")
         result = result_from_logs(logs, schema=schema)
         if not result:
             raise RuntimeError(f"incomplete result, state={state}; see local log")
         result["lightning_job_id"] = job.id
         result["reported_cost"] = current.total_cost
+        result["platform_state"] = state
         args.output_json.write_text(
             json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )

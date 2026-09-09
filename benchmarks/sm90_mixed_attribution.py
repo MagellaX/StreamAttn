@@ -28,9 +28,16 @@ PAIR_VARIANTS = {
     "interior_q_vector": COPY_VARIANTS["interior_q_vector"],
     "interior_q_vector_page_pair": dict(COPY_VARIANTS["interior_q_vector"], page_pair_reuse=True),
 }
+ADDRESS_VARIANTS = {
+    "interior_q_vector_page_pair": PAIR_VARIANTS["interior_q_vector_page_pair"],
+    "interior_page_address_unsigned": dict(PAIR_VARIANTS["interior_q_vector_page_pair"],
+                                          unsigned_page_address=True),
+}
 
 
 def variants(args):
+    if getattr(args, "page_address", False):
+        return ADDRESS_VARIANTS
     if getattr(args, "page_pair", False):
         return PAIR_VARIANTS
     return COPY_VARIANTS if getattr(args, "producer_copy", False) else VARIANTS
@@ -49,7 +56,7 @@ def useful_work(c):
 
 def geometry(c, variant):
     qs, ns, g, h, d = (c[k] for k in ("query_lengths", "kv_lengths", "g", "hq", "d"))
-    config = PAIR_VARIANTS[variant] if variant in PAIR_VARIANTS else COPY_VARIANTS[variant] if variant in COPY_VARIANTS else VARIANTS[variant]
+    config = ADDRESS_VARIANTS[variant] if variant in ADDRESS_VARIANTS else PAIR_VARIANTS[variant] if variant in PAIR_VARIANTS else COPY_VARIANTS[variant] if variant in COPY_VARIANTS else VARIANTS[variant]
     schedule = plan_ragged_schedule(qs, ns, capacity=max(qs), kv_heads=h//g,
         group_size=g, **{k: config[k] for k in ("min_kv_tiles", "task_order")})
     repeated_rows = sum(q*h*s for q, s in zip(qs, schedule.splits))

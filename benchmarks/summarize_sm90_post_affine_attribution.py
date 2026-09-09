@@ -87,13 +87,16 @@ def aggregate(rows):
 def summarize(payload):
     experiment = payload.get("experiment")
     if (payload.get("schema") != "streamattn.sm90_micro_prefill_mixed.v1"
-            or experiment not in ("post_affine_attribution", "vector_q_copy", "page_pair_reuse")):
+            or experiment not in ("post_affine_attribution", "vector_q_copy", "page_pair_reuse", "unsigned_page_address")):
         raise ValueError("expected post-affine attribution artifact")
     variants = (CONTROL, "interior_q_vector") if experiment == "vector_q_copy" else VARIANTS
     control = CONTROL
     if experiment == "page_pair_reuse":
         control = "interior_q_vector"
         variants = (control, "interior_q_vector_page_pair")
+    if experiment == "unsigned_page_address":
+        control = "interior_q_vector_page_pair"
+        variants = (control, "interior_page_address_unsigned")
     rows = payload["rows"]
     complete = bool(payload.get("complete") and len(rows) == payload.get("planned_cases"))
     result = dict(schema="streamattn.sm90_post_affine_attribution_summary.v1", experiment=experiment,
@@ -117,7 +120,7 @@ def summarize(payload):
         data = row.get("attribution", {})
         if not row.get("passed"):
             continue
-        if experiment in ("vector_q_copy", "page_pair_reuse"):
+        if experiment in ("vector_q_copy", "page_pair_reuse", "unsigned_page_address"):
             native = data.get("native", {})
             if (control not in native or variants[1] not in native
                     or native[control]["geometry"] != native[variants[1]]["geometry"]):

@@ -781,6 +781,14 @@ The change is retained experimentally: packed D128 holdout calls still reach
 only **0.750x versus the fastest tested FlashInfer backend**. The remaining
 producer cost, not another split sweep, determines the next experiment.
 
+A follow-up [address-arithmetic canary](docs/sm90_page_address_arithmetic.md)
+found a further **1.128x padded / 1.110x packed** gain on the heterogeneous HND
+batch, with exact results and unchanged attention work. NHD was essentially
+flat and its padded tail cases regressed. All four cases were correct, but the
+cross-layout performance gate failed, so this remains a default-off research
+ablation. The HND packed call still loses to FlashInfer; there is no new dispatch
+promotion or broad holdout claim.
+
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
 `1.100x`, but regressed B2/M64/N4K to `0.987x` versus its paired native control.

@@ -282,3 +282,15 @@ Next reconcile the remaining producer address/layout and arithmetic dependencies
 with the actual FA2 binary before selecting another local reduction. Native
 packed offsets remain useful integration work, but cannot be treated as the
 entire producer repair. Keep the retained R64 state machine and fixed schedule.
+
+The first bounded follow-up is the [unsigned page-address
+ablation](sm90_page_address_arithmetic.md): expose nonnegative 32-bit page/head
+multiplicands while preserving the 64-bit product and pointer offset. This
+targets the source-correlated address chain without touching shared layout,
+predicates, copies or attention arithmetic. All four H100 canary cases are
+correct. Heterogeneous HND improves 1.128x padded / 1.110x packed, but NHD is flat,
+uses one more register, and regresses on padded tails. The uniform cross-layout
+gate fails; no broad holdout or public promotion follows. The page-pair
+implementation remains the retained control. Next independently test deleting
+the redundant second-half-page address branch while retaining its copy's
+zero-fill predicate, rather than combining changes or fitting a rescue route.

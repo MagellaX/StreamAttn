@@ -49,6 +49,10 @@ def digest(value):
 
 
 def experiment_cases(suite):
+    if suite == "address_canary":
+        # Long heterogeneous rows plus every tail; two layouts, BF16 D128 only.
+        return [experiment_cases("causal")[i] for i in (8, 9)] + [
+            experiment_cases("pair_edges")[i] for i in (4, 5)]
     if suite == "pair_regression":
         return experiment_cases("causal") + experiment_cases("pair_edges")
     shapes = (
@@ -72,6 +76,14 @@ def experiment_cases(suite):
              [135, 1032, 3081, 7176, 14351, 22520, 4097]),
             ("long_tail_pair_holdout", [61, 7, 1], [30728, 3079, 17425]),
         )
+    if suite == "address_holdout":
+        # Fixed before the address-arithmetic canary runs, distinct request shapes.
+        shapes = (
+            ("short_address_holdout", [1, 5, 9, 15, 6], [391, 1167, 2312, 4623, 1799]),
+            ("heterogeneous_address_holdout", [1, 11, 21, 35, 53, 8],
+             [143, 1551, 5137, 11273, 26631, 3097]),
+            ("long_tail_address_holdout", [59, 1, 6, 17], [31991, 215, 3855, 18313]),
+        )
     if suite == "pair_edges":
         # Every half-page and page tail, including complete tiles, with poisoned padding.
         shapes = (("page_pair_tails", [min(n, 9) for n in range(1, 65)], list(range(1, 65))),
@@ -86,7 +98,7 @@ def experiment_cases(suite):
         return [cases[0], cases[3]]
     if suite == "replay":
         return cases[::4] + cases[3::4]
-    if suite in ("causal", "holdout", "pair_holdout", "pair_edges"):
+    if suite in ("causal", "holdout", "pair_holdout", "pair_edges", "address_holdout"):
         return [c for c in cases if c["causal"]]
     return cases
 
@@ -289,6 +301,10 @@ def profile_case(c, args, environment, provenance, binary_cache):
             if family not in row["loaded_binary_provenance"]:
                 row["loaded_binary_provenance"][family] = loaded_binary_provenance(
                     family, extension=plan.extension, cache=binary_cache)
+                if getattr(args, "page_address", False):
+                    from benchmarks.sm90_static_sass import capture_producer_sass
+                    row.setdefault("static_producer_sass", {})[family] = capture_producer_sass(
+                        plan.extension, binary_cache.setdefault("static_sass", {}))["binary_sha256"]
     torch.index_select(q.view(-1, h, d), 0, qslots, out=packed_q)
     for backend in BACKENDS:
         try:
@@ -392,10 +408,11 @@ def profile_case(c, args, environment, provenance, binary_cache):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout", "pair_edges", "pair_holdout", "pair_regression"), default="full")
+    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout", "pair_edges", "pair_holdout", "pair_regression", "address_canary", "address_holdout"), default="full")
     parser.add_argument("--attribution", action="store_true")
     parser.add_argument("--producer-copy", action="store_true", help="control vs vector Q, unchanged schedule")
     parser.add_argument("--page-pair", action="store_true", help="vector Q control vs D128-local page-pair reuse")
+    parser.add_argument("--page-address", action="store_true", help="page-pair control vs widened unsigned address arithmetic")
     parser.add_argument("--counter-target")
     parser.add_argument("--case-index", type=int)
     parser.add_argument("--provider", default="local")
@@ -410,12 +427,14 @@ def main():
         raise FileExistsError("preserve existing evidence")
     if min(args.iterations, args.repeats) <= 0:
         raise ValueError("positive timing counts required")
-    if args.attribution and args.suite not in ("causal", "holdout", "pair_edges", "pair_holdout", "pair_regression"):
+    if args.attribution and args.suite not in ("causal", "holdout", "pair_edges", "pair_holdout", "pair_regression", "address_canary", "address_holdout"):
         raise ValueError("attribution requires causal or holdout suite")
     if args.producer_copy and not args.attribution:
         raise ValueError("producer-copy requires attribution")
     if args.page_pair and (not args.attribution or args.producer_copy):
         raise ValueError("page-pair requires attribution and a fixed vector Q control")
+    if args.page_address and (not args.attribution or args.page_pair or args.producer_copy):
+        raise ValueError("page-address requires attribution and a fixed page-pair control")
     if args.counter_target and (not args.attribution or args.case_index is None):
         raise ValueError("counter capture requires attribution and a case index")
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -426,6 +445,8 @@ def main():
         "stream_attention/backends/sm90/ragged_schedule.py", "stream_attention/backends/sm90/micro_prefill_ragged_sources.py")
     if args.attribution:
         paths += ("benchmarks/sm90_mixed_attribution.py",)
+    if args.page_address:
+        paths += ("benchmarks/sm90_static_sass.py",)
     cases = experiment_cases(args.suite)
     if args.case_index is not None:
         if not 0 <= args.case_index < len(cases):
@@ -434,7 +455,7 @@ def main():
     result = dict(schema=SCHEMA, complete=False, environment=environment, seed=args.seed,
         source_sha256={p: hashlib.sha256((ROOT/p).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for p in paths},
         provenance=provenance, rows=[], planned_cases=len(cases),
-        experiment="page_pair_reuse" if args.page_pair else "vector_q_copy" if args.producer_copy else "post_affine_attribution" if args.attribution else "mixed",
+        experiment="unsigned_page_address" if args.page_address else "page_pair_reuse" if args.page_pair else "vector_q_copy" if args.producer_copy else "post_affine_attribution" if args.attribution else "mixed",
         suite=args.suite,
         contract=dict(source="synthetic boundaries, not serving trace", kv="page16, no gather/repack",
                       timing="warm CUDA graph; complete producer+merge+interface conversion; output only",
@@ -455,6 +476,8 @@ def main():
         result["error"] = traceback.format_exc()
         raise
     finally:
+        if args.page_address:
+            result["static_producer_sass"] = list(binary_cache.get("static_sass", {}).values())
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         print(json.dumps(result, allow_nan=False), flush=True)
