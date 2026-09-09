@@ -1,5 +1,13 @@
 # Universal Inference v2
 
+> **Scope clarification, 2026-09-09:** this document records the exact-execution
+> and compiler infrastructure track. The project's main objective is adaptive
+> work avoidance inside native attention, not exact coverage alone. Further
+> exact-only optimization is paused while the [adaptive kernel
+> contract](adaptive_kernel_contract.md) is repaired and tested. The historical
+> measurements and uncompleted exact-work proposals below are retained; they
+> are not the active adaptive roadmap.
+
 ## Purpose
 
 Universal Inference v2 changes the compiler's unit of work from one rectangular

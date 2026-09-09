@@ -160,6 +160,74 @@ def test_certified_attention_post_qk_gate_skips_when_summary_gate_disabled():
     assert torch.all(err <= result.stats.row_error_bound + 1e-5)
 
 
+@pytest.mark.parametrize("gates", [(True, False), (False, True), (True, True)])
+def test_budget_is_cumulative_across_many_small_omissions(gates):
+    # Each tail block costs about .002 alone, but dropping all 127 costs .225.
+    q = torch.zeros(1, 1, 1, 4)
+    k = torch.zeros(1, 512, 1, 4)
+    v = torch.zeros_like(k)
+    q[..., 0] = 2.0
+    k[:, 4:, :, 0] = math.log(1e-3)
+    v[:, :4, :, 0] = -1.0
+    v[:, 4:, :, 0] = 1.0
+    result = certified_attention(
+        q, k, v, causal=False, block_size=4, error_budget=0.01,
+        enable_summary_gate=gates[0], enable_post_qk_gate=gates[1],
+        return_stats=True,
+    )
+    ref = _sdpa_reference(q, k, v, causal=False)
+    error = torch.linalg.vector_norm(result.output - ref, dim=-1)
+    assert 0 < result.stats.skipped_row_blocks < 127
+    assert result.stats.max_error_bound <= 0.01 + 1e-6
+    assert torch.all(error <= result.stats.row_error_bound + 2e-6)
+
+
+@pytest.mark.parametrize("groups", [1, 4, 8])
+@pytest.mark.parametrize("causal", [False, True])
+def test_compact_gqa_matches_expanded_reference(groups, causal):
+    torch.manual_seed(91)
+    q = torch.randn(2, 7, 2 * groups, 16)
+    k = torch.randn(2, 19, 2, 16)
+    v = torch.randn_like(k)
+    result = certified_attention(q, k, v, causal=causal, error_budget=0,
+                                 block_size=4, return_stats=True)
+    ref = _sdpa_reference(q, k.repeat_interleave(groups, dim=2),
+                          v.repeat_interleave(groups, dim=2), causal=causal)
+    torch.testing.assert_close(result.output, ref, atol=2e-6, rtol=2e-5)
+    assert result.stats.row_error_bound.shape == q.shape[:-1]
+    assert result.stats.max_error_bound == 0.0
+
+
+@pytest.mark.parametrize("order", ["sequential", "reverse", "summary_desc"])
+@pytest.mark.parametrize("predicate", ["value_bound", "mass"])
+def test_cumulative_bound_survives_rescaling_and_reordering(order, predicate):
+    torch.manual_seed(92)
+    q = torch.zeros(1, 3, 4, 4)
+    q[..., 0] = 2.0
+    k = torch.zeros(1, 65, 1, 4)
+    k[..., 0] = -6.0
+    k[:, :4, :, 0] = 0.0
+    k[:, 32:36, :, 0] = 3.0
+    v = torch.randn_like(k)
+    result = certified_attention(q, k, v, causal=False, block_size=4,
+                                 error_budget=0.02, skip_predicate=predicate,
+                                 block_order=order, return_stats=True)
+    ref = _sdpa_reference(q, k.repeat_interleave(4, dim=2),
+                          v.repeat_interleave(4, dim=2), causal=False)
+    error = torch.linalg.vector_norm(result.output - ref, dim=-1)
+    assert result.stats.skipped_row_blocks > 0
+    assert torch.all(error <= result.stats.row_error_bound + 2e-6)
+    if predicate == "value_bound":
+        assert result.stats.max_error_bound <= 0.02 + 1e-6
+
+
+@pytest.mark.parametrize("budget", [-1.0, float("nan"), float("inf")])
+def test_invalid_omission_budget_rejected(budget):
+    x = torch.ones(1, 2, 1, 4)
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        certified_attention(x, x, x, error_budget=budget)
+
+
 def test_metadata_cache_builds_value_bounds():
     torch.manual_seed(6)
     v = torch.randn(2, 7, 3, 5)

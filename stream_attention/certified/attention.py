@@ -43,35 +43,33 @@ def _validate_inputs(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
         raise ValueError("key and value must have the same shape")
     if query.shape[0] != key.shape[0]:
         raise ValueError("query and key must have the same batch size")
-    if query.shape[2] != key.shape[2]:
-        raise ValueError("certified_attention currently requires Q/K/V to have the same head count")
+    if key.shape[2] <= 0 or query.shape[2] <= 0 or query.shape[2] % key.shape[2]:
+        raise ValueError("query head count must be a positive multiple of KV head count")
     if query.shape[3] != key.shape[3]:
         raise ValueError("query and key must have the same head dimension")
+    if key.shape[1] == 0:
+        raise ValueError("key sequence must be nonempty")
 
 
 def _safe_div(num: torch.Tensor, den: torch.Tensor) -> torch.Tensor:
     return torch.where(den > 0, num / den, torch.zeros_like(num))
 
 
-def _current_output_norm(acc_num: torch.Tensor, acc_den: torch.Tensor) -> torch.Tensor:
-    out = _safe_div(acc_num, acc_den[..., None])
-    return torch.linalg.vector_norm(out, dim=-1)
-
-
 def _skip_from_den_bound(
     den_bound: torch.Tensor,
-    value_bound: torch.Tensor,
-    acc_num: torch.Tensor,
+    skipped_den_bound: torch.Tensor,
+    global_value_bound: torch.Tensor,
     acc_den: torch.Tensor,
     error_budget: float,
     predicate: str,
 ) -> torch.Tensor:
+    total_bound = skipped_den_bound + den_bound
     if predicate == "mass":
-        return den_bound <= error_budget * acc_den
+        return total_bound <= error_budget * acc_den
     if predicate == "value_bound":
-        rho = _safe_div(den_bound, acc_den + den_bound)
-        out_norm = _current_output_norm(acc_num, acc_den)
-        return rho * (value_bound + out_norm) <= error_budget
+        # A global value radius remains valid even when later blocks change o_A.
+        rho = _safe_div(total_bound, acc_den + total_bound)
+        return 2.0 * global_value_bound * rho <= error_budget
     raise ValueError(f"unknown skip predicate: {predicate}")
 
 
@@ -97,8 +95,10 @@ def certified_attention(
 
     This is a PyTorch reference path for validating the certified-attention
     math. It streams K/V blocks, maintains online-softmax state, and skips a
-    row/block only when the selected predicate certifies the skipped block is
-    below ``error_budget``.
+    row/block only when the cumulative omission bound is below ``error_budget``.
+    ``value_bound`` bounds final row L2 omission error; ``mass`` bounds total
+    omitted/retained partition mass, not output error. Floating-point roundoff
+    and output casting are separate from this real-arithmetic omission bound.
 
     Gate 0 uses K/V summaries before full K/V loading. Gate 1 computes QK,
     then applies a BLASST-style local-max test before loading V/PV work.
@@ -108,12 +108,14 @@ def certified_attention(
     """
 
     _validate_inputs(query, key, value)
-    if error_budget < 0:
-        raise ValueError("error_budget must be non-negative")
+    if not math.isfinite(error_budget) or error_budget < 0:
+        raise ValueError("error_budget must be finite and non-negative")
     if block_size <= 0:
         raise ValueError("block_size must be positive")
 
     batch, seq_q, heads, dim = query.shape
+    kv_heads = key.shape[2]
+    groups = heads // kv_heads
     seq_k = key.shape[1]
     scale = 1.0 / math.sqrt(dim)
     out_dtype = query.dtype
@@ -132,6 +134,7 @@ def certified_attention(
         raise ValueError("summaries.seq_len must match key sequence length")
 
     q = query.permute(0, 2, 1, 3).contiguous().float()
+    q_grouped = q.reshape(batch, kv_heads, groups * seq_q, dim)
     k = key.permute(0, 2, 1, 3).contiguous().float()
     v = value.permute(0, 2, 1, 3).contiguous().float()
 
@@ -146,7 +149,9 @@ def certified_attention(
     skipped_post_qk_row_blocks = 0
     computed_row_blocks = 0
     masked_row_blocks = 0
-    order = resolve_block_order(block_order, q, summaries, scale=scale)
+    order = resolve_block_order(block_order, q_grouped, summaries, scale=scale)
+    global_value_bound = summaries.max_value_norm.amax(dim=-1)
+    global_value_bound = global_value_bound.repeat_interleave(groups, dim=1)[..., None]
 
     for block_idx in order:
         start = block_idx * block_size
@@ -166,8 +171,8 @@ def certified_attention(
             batch, heads, seq_q
         )
 
-        block_value_bound = summaries.max_value_norm[:, :, block_idx][:, :, None]
-        upper = block_score_upper_bound(q, summaries, block_idx, scale=scale)
+        upper = block_score_upper_bound(q_grouped, summaries, block_idx, scale=scale)
+        upper = upper.reshape(batch, heads, seq_q)
         has_state = torch.isfinite(running_max) & (acc_den > 0)
         if enable_summary_gate:
             can_skip = (
@@ -186,8 +191,8 @@ def certified_attention(
         )
         skip_pre = can_skip & _skip_from_den_bound(
             den_bound,
-            block_value_bound,
-            acc_num,
+            skipped_den_bound,
+            global_value_bound,
             acc_den,
             error_budget,
             skip_predicate,
@@ -205,7 +210,8 @@ def certified_attention(
             continue
 
         k_tile = k[:, :, start:end, :]
-        scores = torch.einsum("bhsd,bhkd->bhsk", q, k_tile) * scale
+        scores = torch.einsum("bhsd,bhkd->bhsk", q_grouped, k_tile) * scale
+        scores = scores.reshape(batch, heads, seq_q, block_len)
 
         if causal:
             causal_mask = key_pos.view(1, 1, 1, block_len) <= query_pos.view(
@@ -231,8 +237,8 @@ def certified_attention(
         )
         skip_post = can_skip_post & _skip_from_den_bound(
             post_den_bound,
-            block_value_bound,
-            acc_num,
+            skipped_den_bound,
+            global_value_bound,
             acc_den,
             error_budget,
             skip_predicate,
@@ -267,9 +273,12 @@ def certified_attention(
         exp_scores = torch.exp(scores - safe_new_max[..., None])
         exp_scores = torch.where(torch.isfinite(scores), exp_scores, torch.zeros_like(exp_scores))
 
-        acc_num = acc_num * correction[..., None] + torch.einsum(
-            "bhsk,bhkd->bhsd", exp_scores, v_tile
-        )
+        tile_num = torch.einsum(
+            "bhsk,bhkd->bhsd",
+            exp_scores.reshape(batch, kv_heads, groups * seq_q, block_len),
+            v_tile,
+        ).reshape(batch, heads, seq_q, dim)
+        acc_num = acc_num * correction[..., None] + tile_num
         acc_den = acc_den * correction + exp_scores.sum(dim=-1)
         skipped_den_bound = skipped_den_bound * correction
         running_max = torch.where(new_valid, new_max, running_max)
@@ -281,10 +290,8 @@ def certified_attention(
         torch.full_like(acc_den, -float("inf")),
     )
 
-    max_value_norm = summaries.max_value_norm.amax(dim=-1)
-    max_value_norm = max_value_norm[:, :, None].expand(batch, heads, seq_q)
     skipped_mass_fraction = _safe_div(skipped_den_bound, acc_den + skipped_den_bound)
-    row_error_bound_bh = 2.0 * max_value_norm * skipped_mass_fraction
+    row_error_bound_bh = 2.0 * global_value_bound * skipped_mass_fraction
 
     output_bshd = output.permute(0, 2, 1, 3).contiguous().to(out_dtype)
     row_error_bound = row_error_bound_bh.permute(0, 2, 1).contiguous()

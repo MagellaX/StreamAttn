@@ -1,0 +1,82 @@
+{
+  "schema": "streamattn.adaptive_two_gate_precision.v1",
+  "complete": true,
+  "diagnostic_only": true,
+  "performance_promotion": false,
+  "cases": [
+    {
+      "dtype": "torch.float16",
+      "original_row_l2_limit": 0.001,
+      "adaptive": {
+        "max_row_l2": 0.0018648772966116667,
+        "max_abs": 0.0009558200836181641,
+        "counters": [
+          0,
+          0,
+          792,
+          72,
+          72,
+          72
+        ]
+      },
+      "zero_budget": {
+        "max_row_l2": 0.0018648772966116667,
+        "max_abs": 0.0009558200836181641,
+        "counters": [
+          0,
+          0,
+          792,
+          72,
+          72,
+          72
+        ]
+      },
+      "flash_max_row_l2": 0.0018648772966116667,
+      "cast_only_max_row_l2": 0.0018605272052809596,
+      "adaptive_equals_zero_budget": true,
+      "adaptive_passes_original_limit": false
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "original_row_l2_limit": 0.006,
+      "adaptive": {
+        "max_row_l2": 0.016001272946596146,
+        "max_abs": 0.007206439971923828,
+        "counters": [
+          0,
+          0,
+          792,
+          72,
+          72,
+          72
+        ]
+      },
+      "zero_budget": {
+        "max_row_l2": 0.016001272946596146,
+        "max_abs": 0.007206439971923828,
+        "counters": [
+          0,
+          0,
+          792,
+          72,
+          72,
+          72
+        ]
+      },
+      "flash_max_row_l2": 0.016001272946596146,
+      "cast_only_max_row_l2": 0.015959877520799637,
+      "adaptive_equals_zero_budget": true,
+      "adaptive_passes_original_limit": false
+    }
+  ],
+  "device": "NVIDIA H100 80GB HBM3",
+  "torch": "2.7.1+cu128",
+  "sources": {
+    "stream_attention/certified/attention.py": "cd7590c71f4583d812a647d09251e935cd67c4ca06d6e1bf54b1e97431bcf612",
+    "stream_attention/certified/summaries.py": "5c57b7256e5f9163397afb22e60764c545255eb2d7ad8b4afe71cfbe1c05e797",
+    "stream_attention/kernels/certified_fwd_triton.py": "ba3923948c6962f583e44c9ce175f412f5e7edd3a4b00d72a9af9b32a762b7cb",
+    "benchmarks/profile_adaptive_two_gate.py": "749b5a9d14b2ec9e1133d8703929527f16665fba4d4f46a0d8b78b3c530201ab"
+  },
+  "provider": "modal",
+  "process_returncode": 0
+}

@@ -3,18 +3,26 @@
 [![CI](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/ci.yml)
 [![CUDA Source Build](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml/badge.svg)](https://github.com/MagellaX/StreamAttn/actions/workflows/gpu-source.yml)
 
-**A native exact-attention engine built around streaming online softmax and a
-trace-driven hierarchical compiler.**
+**Adaptive attention research, built on streaming online softmax and native
+Triton/CUDA kernels.**
 
-StreamAttn owns its attention kernels. Its main serving goal is exact inference
-over the full logical KV cache; FlashInfer and FlashAttention are comparison
-baselines, not dependencies of the native path. Reduced-work routes remain a
-separate, explicitly calibrated research branch and fail closed to exact
-attention when their policy contract does not match.
+StreamAttn's goal is to make LLM inference faster by deciding which attention
+work a query actually needs. The intended kernel avoids K/V reads and matrix
+products when their contribution can be bounded within an output-error budget,
+and computes more when the query needs it. Decisions must cost less than the
+work they remove.
 
-The common foundation is single-pass streaming attention with online softmax:
-K/V tiles are consumed once, numerically stable running statistics are updated
-on the fly, and the full attention matrix is never materialized.
+The generalized adaptive kernel is **not yet demonstrated**. Exact kernels,
+page-native execution, and the compiler are supporting infrastructure and the
+no-skipping reference path. Their measured wins are real, but do not establish
+adaptive work avoidance. Fixed seed policies are separate calibrated
+experiments, not the final algorithm. FlashInfer and FlashAttention remain
+performance baselines; unsupported serving cases keep their existing fallbacks.
+
+The shared foundation streams K/V tiles, maintains numerically stable online
+softmax state, and avoids materializing the full attention matrix. The research
+question is what additional work can be omitted without losing the information
+the model needs.
 
 > **Project status:** research engine with promoted H100 routes, guarded
 > contiguous A100 D64 routes plus one cross-provider D128 cell, a complete A100
@@ -33,13 +41,19 @@ Fast exact kernels answer this question:
 How efficiently can the GPU compute all requested attention work?
 ```
 
-StreamAttn also asks:
+StreamAttn's central research question is:
 
 ```text
-What is the cheapest native attention route that is valid for this request?
+How much attention work does this query need, and can we avoid the rest cheaply?
 ```
 
-That produces three serving modes plus an explicit adaptive research route:
+The intended two-gate path first checks block summaries before loading full K/V.
+If that check cannot justify skipping, it computes QK and checks whether V/PV
+work is needed. Omitted contributions share a cumulative budget; a per-block
+threshold is not a total-error guarantee. See the [adaptive kernel contract and
+current experiment](docs/adaptive_kernel_contract.md).
+
+Existing public modes remain unchanged while that research proceeds:
 
 | Mode | Work performed | Semantics | Current use |
 |---|---|---|---|
@@ -89,6 +103,17 @@ planner](docs/universal_attention_tile_planner.md) and [the selected paged
 route ABI](docs/selected_paged_route_abi.md).
 
 ## What Is Proven Today
+
+### Adaptive accounting and physical skipping
+
+The two-gate research path now accumulates one omission budget per query row
+and can skip actual K/V load and matrix-product regions. An H100 synthetic
+canary reduced executed QK/PV regions from 2,048 to 8 on peaked inputs; mixed
+rows showed why logical skip counts need not save physical work. This is a
+mechanism result, **not a competitive adaptive kernel yet**: it lost to Flash
+SDPA, and two causal cases failed the original numerical allowance even though
+the no-skip control and Flash SDPA had the same maximum errors. See the
+[full result and remaining research questions](docs/adaptive_kernel_contract.md).
 
 ### Exact native decode
 

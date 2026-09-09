@@ -1,0 +1,12 @@
+{
+  "provider": "lightning",
+  "job_id": "job_01m23nqskwgn6k382cpd5ww7w6",
+  "platform_state": "failed",
+  "reported_cost": 0.0,
+  "source": {
+    "base_sha": "247430968f8f13dbad878444799dcec8d89b98a0",
+    "overlay_sha256": "78b59c5eb23c38b9b8ec05ea7284ff3811bf48d34aba2d713b89dc95c7684f8c"
+  },
+  "machine": "nb-h100-1gpu-16vcpu-200gb",
+  "platform_message": "[ERROR]: job reconciliation failed"
+}
