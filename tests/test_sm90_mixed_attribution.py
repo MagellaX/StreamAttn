@@ -41,6 +41,40 @@ def test_geometry_separates_reordering_from_repartitioning():
     assert widened["partial_state_written_logical_bytes"] * 2 == base["partial_state_written_logical_bytes"]
 
 
+def test_useful_work_counts_visible_pairs_not_padded_query_tiles():
+    c = dict(causal=True, query_lengths=[0, 1, 3], kv_lengths=[0, 7, 5], hq=16, d=128)
+    work = attribution.useful_work(c)
+    assert work["visible_pairs_per_head"] == 7 + 3 + 4 + 5
+    assert work["useful_qk_pv_flops"] == 4*16*128*19
+    c["kv_lengths"][-1] = 2
+    with pytest.raises(ValueError):
+        attribution.useful_work(c)
+
+
+def test_vector_q_candidate_cannot_change_schedule():
+    args = SimpleNamespace(producer_copy=True)
+    assert set(attribution.variants(args)) == {attribution.CONTROL, "interior_q_vector"}
+    for c in experiment_cases("causal") + experiment_cases("holdout"):
+        assert attribution.geometry(c, attribution.CONTROL) == attribution.geometry(c, "interior_q_vector")
+
+
+@pytest.mark.parametrize("dim", [64, 128])
+@pytest.mark.parametrize("dtype", ["bf16", "fp16"])
+def test_vector_q_source_preserves_everything_outside_q_copy(dim, dtype):
+    from stream_attention.backends.sm90.micro_prefill_ragged_sources import ragged_cuda_source
+
+    scalar = ragged_cuda_source(dim, dtype, True, "interior")
+    vector = ragged_cuda_source(dim, dtype, True, "interior", True)
+    first, last = "  for (int idx = threadIdx.x;", "  cutlass::arch::fence_view_async_shared();"
+    begin = scalar.index(first)
+    stop = scalar.index(last, begin)
+    assert vector.startswith(scalar[:begin])
+    assert vector.endswith(scalar[stop:])
+    assert "if (query_position < valid_queries)" in vector
+    assert "make_uint4(0, 0, 0, 0)" in vector
+    assert 'static_assert([]() constexpr' in vector
+
+
 @pytest.mark.parametrize("version,backend", [("0.6.14", "flashinfer_fa2"), ("0.6.13", "flashinfer_fa3")])
 def test_telemetry_does_not_guess_unpinned_plan_layout(monkeypatch, version, backend):
     monkeypatch.setitem(sys.modules, "flashinfer", SimpleNamespace(__version__=version))
@@ -107,6 +141,24 @@ def test_unavailable_counters_are_not_reported_as_collected(monkeypatch, tmp_pat
     result = counters.collect(SimpleNamespace(build_dir=tmp_path))
     assert result["complete"] and not result["collected"]
     assert result["status"] == "profiler_unavailable"
+
+
+def test_counter_query_failure_retains_diagnostics(monkeypatch, tmp_path):
+    from benchmarks import profile_sm90_mixed_attribution_counters as counters
+
+    monkeypatch.setattr(counters.shutil, "which", lambda _: "/ncu")
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda: "test")
+    monkeypatch.setattr(counters.subprocess, "check_output", lambda *a, **kw: "test-version")
+
+    def query(command, **kwargs):
+        assert command[-1] == "all"
+        return SimpleNamespace(returncode=1, stderr="query rejected", stdout="details")
+
+    monkeypatch.setattr(counters.subprocess, "run", query)
+    result = counters.collect(SimpleNamespace(build_dir=tmp_path, source_correlated=True))
+    assert not result["complete"] and not result["collected"]
+    assert result["status"] == "metric_query_failed"
+    assert result["metric_query"]["stderr"] == "query rejected"
 
 
 def test_counter_summary_requires_checked_launch_and_excludes_instrumented_time():

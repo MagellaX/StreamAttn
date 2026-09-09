@@ -88,6 +88,7 @@ class PagedMicroPrefillPlan:
         compact_schedule: bool = False,
         affine_mode: str = "none",
         min_kv_tiles: int = 1, task_order: str = "query",
+        q_vector_copy: bool = False,
     ) -> "PagedMicroPrefillPlan":
         validate_paged_micro_prefill(
             query, cache, query_lengths, causal=causal,
@@ -98,6 +99,10 @@ class PagedMicroPrefillPlan:
             raise ValueError("affine modes require compact causal attention")
         if not compact_schedule and (min_kv_tiles != 1 or task_order != "query"):
             raise ValueError("schedule experiments require compact scheduling")
+        if not isinstance(q_vector_copy, bool) or (q_vector_copy and not compact_schedule):
+            raise ValueError("vector Q experiment requires compact scheduling")
+        if q_vector_copy and query.data_ptr() % 16:
+            raise ValueError("vector Q requires a 16-byte-aligned query pointer")
         if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
             raise ValueError("paged micro-prefill requires an SM90 CUDA device")
         if not isinstance(natural, bool) or target_producer_ctas <= 0:
@@ -147,7 +152,7 @@ class PagedMicroPrefillPlan:
             key_positions = torch.empty(0, dtype=torch.int64, device=query.device)
         extension = compile_semantic_extension(
             head_dim=dim, dtype=query.dtype, causal=causal, paged=True, ragged=compact_schedule,
-            affine_mode=affine_mode,
+            affine_mode=affine_mode, q_vector_copy=q_vector_copy,
             cutlass_root=cutlass_root, build_dir=build_dir, verbose=compile_verbose,
         )
         return cls(

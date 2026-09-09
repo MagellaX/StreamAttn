@@ -758,6 +758,13 @@ staging and dependencies inside the current exact paged producer. Native packed
 output scheduling and holdout routing remain unfinished; existing promoted
 decode routes and default schedules are unchanged.
 
+The [source-level follow-up](docs/sm90_paged_source_attribution.md) narrows that
+diagnosis: on the heterogeneous D128 trace, native and FA2 read almost the same
+DRAM bytes, while native executes **2.95x as many warp instructions**. The
+current experiment replaces scalar Q staging with aligned 16-byte copies,
+without changing attention math, tiles, or split scheduling. Page-address work
+is another measured suspect; a new pipeline architecture is not yet justified.
+
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
 `1.100x`, but regressed B2/M64/N4K to `0.987x` versus its paired native control.

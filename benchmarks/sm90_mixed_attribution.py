@@ -20,12 +20,32 @@ VARIANTS = {
     "interior_min2": dict(min_kv_tiles=2, task_order="query"),
     "interior_min2_kv_order": dict(min_kv_tiles=2, task_order="kv"),
 }
+COPY_VARIANTS = {
+    CONTROL: VARIANTS[CONTROL],
+    "interior_q_vector": dict(min_kv_tiles=1, task_order="query", q_vector_copy=True),
+}
+
+
+def variants(args):
+    return COPY_VARIANTS if getattr(args, "producer_copy", False) else VARIANTS
+
+
+def useful_work(c):
+    """Visible affine-causal work, not issued tile work or a latency model."""
+    qs, ns = c["query_lengths"], c["kv_lengths"]
+    if not c["causal"] or len(qs) != len(ns) or any(not 0 <= m <= n for m, n in zip(qs, ns)):
+        raise ValueError("useful-work accounting requires affine append lengths N >= M")
+    pairs = sum(m*n - m*(m-1)//2 for m, n in zip(qs, ns))
+    return dict(visible_pairs_per_head=pairs, visible_head_pairs=pairs*c["hq"],
+                useful_qk_pv_flops=4*c["hq"]*c["d"]*pairs,
+                convention="equal QK/V dimensions; FMA=2; excludes softmax; not issued/padded work")
 
 
 def geometry(c, variant):
     qs, ns, g, h, d = (c[k] for k in ("query_lengths", "kv_lengths", "g", "hq", "d"))
+    config = COPY_VARIANTS[variant] if variant in COPY_VARIANTS else VARIANTS[variant]
     schedule = plan_ragged_schedule(qs, ns, capacity=max(qs), kv_heads=h//g,
-                                   group_size=g, **VARIANTS[variant])
+        group_size=g, **{k: config[k] for k in ("min_kv_tiles", "task_order")})
     repeated_rows = sum(q*h*s for q, s in zip(qs, schedule.splits))
     return dict(producer_ctas=len(schedule.tasks), split_counts=schedule.splits,
         kv_tiles_per_task=[end-begin for _, _, begin, end in schedule.tasks],
@@ -132,7 +152,7 @@ def attribute_case(c, args, plans, baselines, row, qslots, packed_q, reference, 
     diagnostics = dict(native={}, baselines={}, isolated_timing_additive=False)
     names = ("registers_per_thread", "local_bytes_per_thread", "static_shared_bytes",
              "dynamic_shared_bytes", "resource_limited_ctas_per_sm")
-    for variant in VARIANTS:
+    for variant in variants(args):
         plan = plans[variant+"/padded"]
         poison_live_states(plan)
         plan.run_component("producer")

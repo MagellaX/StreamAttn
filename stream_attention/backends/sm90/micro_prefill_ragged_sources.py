@@ -16,7 +16,7 @@ CPP_SOURCE = _once(CPP_SOURCE, '  m.def("out", &micro_semantics_out);',
     '  m.def("attributes", &micro_attributes);')
 
 
-def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none"):
+def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_copy=False):
     if affine_mode not in ("none", "index", "interior") or (affine_mode != "none" and not causal):
         raise ValueError("affine modes require causal attention")
     source = paged_cuda_source(head_dim, dtype, causal)
@@ -50,6 +50,41 @@ def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none"):
             "      if (!(query_begin + query_positions_per_tile <= valid_queries &&\n"
             "            tile * kBlockM + kBlockM - 1 <= sequence_length - valid_queries + query_begin)) {\n"
             "        CUTE_UNROLL\n        for (int col = 0; col < size<1>(score_rows); ++col)")
+    if q_vector_copy:
+        first = "  for (int idx = threadIdx.x; idx < kQueryRows * kHeadDim; idx += 128) {"
+        last = "  cutlass::arch::fence_view_async_shared();"
+        scalar = _between(producer, first, last)
+        vector = r"""  // SW128 repeats after eight rows; tiling adds aligned atom offsets.
+  static_assert([]() constexpr {
+    constexpr auto layout = PrefillSmemLayoutQ{};
+    for (int row = 0; row < 8; ++row) {
+      for (int dim = 0; dim < kHeadDim; dim += 8) {
+        const int base = layout(make_coord(row, dim));
+        if (base % 8 != 0) return false;
+        for (int i = 1; i < 8; ++i)
+          if (layout(make_coord(row, dim + i)) != base + i) return false;
+      }
+    }
+    return true;
+  }(), "Q shared layout must preserve aligned 16-byte vectors");
+  for (int idx = threadIdx.x * 8; idx < kQueryRows * kHeadDim; idx += 128 * 8) {
+    const int local_query_row = idx / kHeadDim;
+    const int dim = idx - local_query_row * kHeadDim;
+    const int query_offset = local_query_row / group_size;
+    const int head_offset = local_query_row - query_offset * group_size;
+    const int query_position = query_begin + query_offset;
+    const int q_head = kv_head * group_size + head_offset;
+    uint4 item = make_uint4(0, 0, 0, 0);
+    if (query_position < valid_queries) {
+      const int64_t source =
+          ((static_cast<int64_t>(batch) * query_length + query_position) * q_heads + q_head)
+              * kHeadDim + dim;
+      item = *reinterpret_cast<const uint4*>(query + source);
+    }
+    *reinterpret_cast<uint4*>(&sQ(local_query_row, dim)) = item;
+  }
+"""
+        producer = _once(producer, scalar, vector)
     source = _once(source, old, producer)
     merge = _between(source, end, "\ntemplate <int kPagedPageSize>\n")
     old = merge

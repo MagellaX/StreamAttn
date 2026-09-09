@@ -240,3 +240,14 @@ ownership remain secondary simplifications, not a claimed solution to the
 large-trace gap.
 The goal remains the complete H100 vertical slice, not another per-shape
 whitelist or an approximate seed route.
+
+The [current paged-source capture](sm90_paged_source_attribution.md) now supplies
+useful/issued work, DRAM/L2 traffic, executed instructions and native CUDA/SASS
+correlation. The larger traces have similar DRAM reads and tensor tile work to
+FA2 but substantially more native instructions. Scalar Q staging is the largest
+individual long-scoreboard location; paged addressing/copy issue is the larger
+aggregate instruction region. Test vector Q copies first with the existing
+single-state producer and fixed schedule. The actual FA2 binary lacks CUDA
+lineinfo, so its aggregate measurements must not be presented as source-level
+stall attribution. Producer-attributed stalls are also unavailable in this
+export.

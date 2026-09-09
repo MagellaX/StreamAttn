@@ -80,12 +80,14 @@ def aggregate(rows):
 
 
 def summarize(payload):
+    experiment = payload.get("experiment")
     if (payload.get("schema") != "streamattn.sm90_micro_prefill_mixed.v1"
-            or payload.get("experiment") != "post_affine_attribution"):
+            or experiment not in ("post_affine_attribution", "vector_q_copy")):
         raise ValueError("expected post-affine attribution artifact")
+    variants = (CONTROL, "interior_q_vector") if experiment == "vector_q_copy" else VARIANTS
     rows = payload["rows"]
     complete = bool(payload.get("complete") and len(rows) == payload.get("planned_cases"))
-    result = dict(schema="streamattn.sm90_post_affine_attribution_summary.v1",
+    result = dict(schema="streamattn.sm90_post_affine_attribution_summary.v1", experiment=experiment,
         suite=payload["suite"], environment=payload["environment"], seed=payload["seed"],
         complete=complete, cases=len(rows), correctness_passed=sum(bool(r.get("passed")) for r in rows),
         promotion=False, interfaces={}, attribution=[],
@@ -94,7 +96,7 @@ def summarize(payload):
         result["interfaces"][interface] = {}
         for mode in ("warm", "perturbed"):
             reports = {}
-            for variant in VARIANTS:
+            for variant in variants:
                 measured = [r for row in rows if (r := comparison(row, interface, variant, mode))]
                 reports[variant] = dict(**aggregate(measured), rows=measured,
                     by_trace={trace: aggregate([r for r in measured if r["case"]["trace"] == trace])
@@ -104,11 +106,19 @@ def summarize(payload):
         data = row.get("attribution", {})
         if not row.get("passed"):
             continue
+        if experiment == "vector_q_copy":
+            native = data.get("native", {})
+            if (CONTROL not in native or "interior_q_vector" not in native
+                    or native[CONTROL]["geometry"] != native["interior_q_vector"]["geometry"]):
+                raise ValueError("vector-copy capture changed schedule geometry")
         result["attribution"].append(dict(case=row["case"],
             native={name: {k: entry[k] for k in ("geometry", "attributes", "workspace_allocated_bytes", "isolated_median_us")}
                     for name, entry in data.get("native", {}).items()},
             interface_median_us=data.get("interface_components", {}).get("median_us", {}),
             flashinfer=data.get("baselines", {}), launch_traces=data.get("launch_traces", {})))
+    if payload.get("source_counters"):
+        from benchmarks.summarize_sm90_paged_source import summarize as source_summary
+        result["source_counters"] = source_summary(payload["source_counters"])
     return result
 
 

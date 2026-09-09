@@ -234,8 +234,9 @@ def profile_case(c, args, environment, provenance, binary_cache):
         if c["causal"]:
             families += ("natural_compact_affine", "natural_compact_interior")
         if attribution:
-            from benchmarks.sm90_mixed_attribution import VARIANTS
-            families = tuple(VARIANTS)
+            from benchmarks.sm90_mixed_attribution import variants
+            configurations = variants(args)
+            families = tuple(configurations)
         for family in families:
             name = f"{family}/{interface}"
             native_q = q if interface == "padded" else torch.empty_like(q)
@@ -244,7 +245,7 @@ def profile_case(c, args, environment, provenance, binary_cache):
                 native_q, cache, ql, natural=family != "transposed", cutlass_root=args.cutlass_root,
                 compact_schedule=attribution or family.startswith("natural_compact"),
                 affine_mode="interior" if attribution else {"natural_compact_affine": "index", "natural_compact_interior": "interior"}.get(family, "none"),
-                **(VARIANTS[family] if attribution else {}),
+                **(configurations[family] if attribution else {}),
                 build_dir=args.build_dir, causal=c["causal"], compile_verbose=True,
                 query_positions=qp if c["causal"] else None, key_positions=kp if c["causal"] else None,
             )
@@ -326,6 +327,7 @@ def profile_case(c, args, environment, provenance, binary_cache):
                 row["passed"] = False
                 return row
     if getattr(args, "counter_target", None):
+        from benchmarks.sm90_mixed_attribution import CONTROL, flashinfer_telemetry, geometry, useful_work
         name = args.counter_target
         if name not in runs:
             raise RuntimeError(f"counter target unavailable: {name}")
@@ -336,6 +338,9 @@ def profile_case(c, args, environment, provenance, binary_cache):
         runs[name]()
         torch.cuda.nvtx.range_pop()
         torch.cuda.synchronize()
+        row["counter_work"] = dict(useful=useful_work(c), native=geometry(c, CONTROL),
+            baselines={backend: flashinfer_telemetry(fi, backend)
+                       for backend, fi in flashinfer_plans.items()})
         row.update(passed=True, counter_target=name)
         return row
     for interface in INTERFACES:
@@ -372,6 +377,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout"), default="full")
     parser.add_argument("--attribution", action="store_true")
+    parser.add_argument("--producer-copy", action="store_true", help="control vs vector Q, unchanged schedule")
     parser.add_argument("--counter-target")
     parser.add_argument("--case-index", type=int)
     parser.add_argument("--provider", default="local")
@@ -388,6 +394,8 @@ def main():
         raise ValueError("positive timing counts required")
     if args.attribution and args.suite not in ("causal", "holdout"):
         raise ValueError("attribution requires causal or holdout suite")
+    if args.producer_copy and not args.attribution:
+        raise ValueError("producer-copy requires attribution")
     if args.counter_target and (not args.attribution or args.case_index is None):
         raise ValueError("counter capture requires attribution and a case index")
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -406,7 +414,7 @@ def main():
     result = dict(schema=SCHEMA, complete=False, environment=environment, seed=args.seed,
         source_sha256={p: hashlib.sha256((ROOT/p).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for p in paths},
         provenance=provenance, rows=[], planned_cases=len(cases),
-        experiment="post_affine_attribution" if args.attribution else "mixed",
+        experiment="vector_q_copy" if args.producer_copy else "post_affine_attribution" if args.attribution else "mixed",
         suite=args.suite,
         contract=dict(source="synthetic boundaries, not serving trace", kv="page16, no gather/repack",
                       timing="warm CUDA graph; complete producer+merge+interface conversion; output only",

@@ -58,6 +58,7 @@ def compile_semantic_extension(
     cutlass_root: Path | None = None, build_dir: Path | None = None,
     verbose: bool = False, paged: bool = False, ragged: bool = False,
     affine_mode: str = "none",
+    q_vector_copy: bool = False,
 ) -> Any:
     from torch.utils.cpp_extension import get_default_build_root, load_inline
 
@@ -65,6 +66,8 @@ def compile_semantic_extension(
         raise ValueError("micro-prefill supports BF16 and FP16")
     if affine_mode != "none" and not ragged:
         raise ValueError("affine modes require compact ragged scheduling")
+    if not isinstance(q_vector_copy, bool) or (q_vector_copy and not ragged):
+        raise ValueError("vector Q experiment requires compact ragged scheduling")
     cpp_source, source_builder = CPP_SOURCE, semantic_cuda_source
     if paged:
         from .micro_prefill_paged_sources import CPP_SOURCE as paged_cpp, paged_cuda_source
@@ -74,7 +77,7 @@ def compile_semantic_extension(
             raise ValueError("compact ragged scheduling requires paged KV")
         from .micro_prefill_ragged_sources import CPP_SOURCE as ragged_cpp, ragged_cuda_source
         cpp_source = ragged_cpp
-        source_builder = lambda dim, kind, mask: ragged_cuda_source(dim, kind, mask, affine_mode)
+        source_builder = lambda dim, kind, mask: ragged_cuda_source(dim, kind, mask, affine_mode, q_vector_copy)
     source = source_builder(
         head_dim, "bf16" if dtype == torch.bfloat16 else "fp16", causal
     )

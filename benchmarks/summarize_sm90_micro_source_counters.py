@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 
-def source_pcs(text):
+def source_pcs(text, *, include_all_metrics=False):
     header, filename, function, source, line = None, None, None, None, None
     pcs = {}
     for fields in csv.reader(io.StringIO(text)):
@@ -30,7 +30,7 @@ def source_pcs(text):
             if not address.startswith("0x"):
                 continue
             metrics = {name: int(value.replace(",", "")) for name, value in zip(header[4:], fields[4:])
-                       if (name.startswith("stall_") or name == "# Samples")
+                       if (include_all_metrics or name.startswith("stall_") or name == "# Samples")
                        and value.replace(",", "").isdigit()}
             key = (function, address)
             correlation = dict(file=filename, line=line, source=source)

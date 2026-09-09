@@ -55,6 +55,17 @@ def test_logical_position_capacity_is_not_physical_pages():
         validate_paged_micro_prefill(q, cache, ql, query_positions=qp)
 
 
+def test_vector_q_rejects_contiguous_but_unaligned_storage():
+    from stream_attention.backends.sm90.micro_prefill_paged import PagedMicroPrefillPlan
+
+    q, cache, lengths = buffers()
+    unaligned = torch.empty(q.numel()+1, dtype=q.dtype)[1:].view_as(q)
+    assert unaligned.is_contiguous() and unaligned.data_ptr() % 16
+    with pytest.raises(ValueError, match="16-byte-aligned"):
+        PagedMicroPrefillPlan.build(unaligned, cache, lengths,
+            natural=True, compact_schedule=True, q_vector_copy=True)
+
+
 @pytest.mark.parametrize("d", [64, 128])
 @pytest.mark.parametrize("dtype", ["bf16", "fp16"])
 @pytest.mark.parametrize("causal", [False, True])

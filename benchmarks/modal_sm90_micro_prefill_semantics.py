@@ -39,14 +39,17 @@ app = modal.App("streamattn-sm90-micro-semantics")
 def run(suite: str, experiment: str, seed: int = 9613) -> dict:
     import subprocess
 
-    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else 'mixed' if experiment == 'attribution' else experiment}.py"
+    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else 'mixed' if experiment in ('attribution', 'producer_copy') else experiment}.py"
     options = ["--suite", suite, "--provider", "modal", "--seed", str(seed)] if experiment in ("semantics", "paged", "mixed") else []
     if experiment == "source_counters":
         options = ["--source-correlated"]
-    if experiment == "attribution":
+    if experiment in ("attribution", "producer_copy"):
         options = ["--suite", suite, "--provider", "modal", "--seed", str(seed), "--attribution"]
-    if experiment == "attribution_counters":
-        script, options = "profile_sm90_mixed_attribution_counters.py", []
+        if experiment == "producer_copy":
+            options += ["--producer-copy"]
+    if experiment in ("attribution_counters", "paged_source_counters"):
+        script = "profile_sm90_mixed_attribution_counters.py"
+        options = ["--source-correlated"] if experiment == "paged_source_counters" else []
     proc = subprocess.run([
         "python", "-u", "benchmarks/" + script, *options,
         "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
@@ -55,6 +58,16 @@ def run(suite: str, experiment: str, seed: int = 9613) -> dict:
     path = Path("/tmp/semantics.json")
     result = json.loads(path.read_text()) if path.exists() else dict(complete=False)
     result["subprocess_exit_code"] = proc.returncode
+    if experiment == "producer_copy" and result.get("complete") and not proc.returncode:
+        counters = subprocess.run([
+            "python", "-u", "benchmarks/profile_sm90_mixed_attribution_counters.py",
+            "--source-correlated", "--producer-copy",
+            "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
+            "--build-dir", "/tmp/micro-semantics", "--output-json", "/tmp/copy-counters.json",
+        ], cwd="/root/StreamAttn", check=False)
+        counter_path = Path("/tmp/copy-counters.json")
+        result["source_counters"] = json.loads(counter_path.read_text()) if counter_path.exists() else dict(complete=False)
+        result["counter_subprocess_exit_code"] = counters.returncode
     return result
 
 
@@ -63,7 +76,7 @@ def main(suite: str = "smoke", experiment: str = "semantics",
          output_json: str = "artifacts/gate0/sm90_micro_semantics_modal_h100_20260905.json",
          seed: int = 9613):
     if experiment not in ("semantics", "deferred_sum", "paged", "counters", "source_counters", "mixed",
-                           "attribution", "attribution_counters"):
+                           "attribution", "producer_copy", "attribution_counters", "paged_source_counters"):
         raise ValueError("unknown semantics experiment")
     path = Path(output_json)
     if path.exists():
@@ -72,5 +85,5 @@ def main(suite: str = "smoke", experiment: str = "semantics",
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {path}")
-    if not result.get("complete") or result["subprocess_exit_code"]:
+    if not result.get("complete") or result["subprocess_exit_code"] or result.get("counter_subprocess_exit_code"):
         raise RuntimeError("GPU matrix failed; partial evidence was retained")
