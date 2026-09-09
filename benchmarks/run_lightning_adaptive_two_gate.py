@@ -26,7 +26,7 @@ def job_command():
     sha = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=ROOT, text=True).strip()
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w:gz") as archive:
-        for name in SOURCE_FILES + ("tests/test_certified_attention.py",):
+        for name in SOURCE_FILES + ("tests/test_certified_attention.py", "tests/test_adaptive_two_gate_gpu.py"):
             archive.add(ROOT / name, arcname=name)
     payload = base64.b64encode(stream.getvalue()).decode("ascii")
     command = "\n".join([
@@ -41,6 +41,7 @@ def job_command():
         "PY",
         "python -m pip install -q pyyaml pytest",
         "cd /root/StreamAttn",
+        "python -m pytest -q tests/test_adaptive_two_gate_gpu.py tests/test_certified_attention.py",
         "python -u benchmarks/profile_adaptive_two_gate.py --provider lightning --output-json /tmp/adaptive.json",
     ])
     return command, dict(base_sha=sha, overlay_sha256=hashlib.sha256(stream.getvalue()).hexdigest())

@@ -34,14 +34,16 @@ if TRITON_AVAILABLE:
 
     @triton.jit
     def _certified_fwd_kernel(
-        Q, K, V, Centroid, Radius, MaxVNorm, Out, RawStats, ErrorBound,
+        Q, K, V, Centroid, Radius, MaxVNorm, Out, RawStats, ErrorBound, Retained,
         M: tl.constexpr, N: tl.constexpr, HQ: tl.constexpr, HKV: tl.constexpr,
         D: tl.constexpr, NUM_BLOCKS: tl.constexpr, SUMMARY_WIDTH: tl.constexpr,
         TILE_M: tl.constexpr, TILE_N: tl.constexpr, SCALE: tl.constexpr,
         EPS: tl.constexpr, IS_CAUSAL: tl.constexpr, VALUE_BOUND: tl.constexpr,
         ENABLE_PRE: tl.constexpr, ENABLE_POST: tl.constexpr,
+        ROWWISE_OMISSIONS: tl.constexpr,
         MATERIALIZE_SKIPPED: tl.constexpr, HAS_STATS: tl.constexpr,
         HAS_BOUND: tl.constexpr,
+        HAS_SUPPORT: tl.constexpr,
     ):
         qb, b, h = tl.program_id(0), tl.program_id(1), tl.program_id(2)
         kh = h // (HQ // HKV)
@@ -93,9 +95,13 @@ if TRITON_AVAILABLE:
                 mass = tl.where(eligible, block_len * tl.exp(upper - m), 0.0)
                 skip_pre = eligible & _within_budget(
                     omitted + mass, den, value_radius, EPS, VALUE_BOUND)
+                if not ROWWISE_OMISSIONS:
+                    unanimous = tl.sum((valid & ~skip_pre).to(tl.int32), 0) == 0
+                    skip_pre = skip_pre & unanimous
                 omitted += tl.where(skip_pre, mass, 0.0)
 
             needs_k = valid & ~skip_pre
+            retained = tl.full([TILE_M], False, tl.int1)
             if HAS_STATS:
                 pre_count += tl.sum(skip_pre.to(tl.int32), 0)
             # Predicate the whole load/MMA region, not just its resulting scores.
@@ -117,8 +123,12 @@ if TRITON_AVAILABLE:
                     mass = tl.where(eligible, block_len * tl.exp(tile_max - m), 0.0)
                     skip_post = eligible & _within_budget(
                         omitted + mass, den, value_radius, EPS, VALUE_BOUND)
+                    if not ROWWISE_OMISSIONS:
+                        unanimous = tl.sum((needs_k & ~skip_post).to(tl.int32), 0) == 0
+                        skip_post = skip_post & unanimous
                     omitted += tl.where(skip_post, mass, 0.0)
                 compute = needs_k & ~skip_post
+                retained = compute
                 if HAS_STATS:
                     post_count += tl.sum(skip_post.to(tl.int32), 0)
                     compute_count += tl.sum(compute.to(tl.int32), 0)
@@ -138,6 +148,9 @@ if TRITON_AVAILABLE:
                     m = new_m
                     if HAS_STATS:
                         pv_tiles += 1
+            if HAS_SUPPORT:
+                tl.store(Retained + ((b * HQ + h) * M + rows) * NUM_BLOCKS + block,
+                         retained, mask=row_mask)
 
         output = num / tl.maximum(den, 1.0e-30)[:, None]
         offset = (b * M + rows) * HQ + h
@@ -173,18 +186,23 @@ def certified_attention_triton_forward(
     raw_stats_out: Optional[torch.Tensor] = None,
     error_bound_out: Optional[torch.Tensor] = None,
     materialize_skipped_work: bool = False,
+    rowwise_omissions: bool = False,
+    retained_blocks_out: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """Run the two-gate experiment; supplied buffers allow fixed-address replay.
 
     Raw stats end in six fields: pre/post/computed row-blocks, valid CTA tiles,
     executed QK tiles, executed PV tiles. Mixed rows can force physical tile work
-    despite logical skips. Counters describe executed regions, not measured HBM
-    traffic. materialize_skipped_work is a mask-only diagnostic control.
+    despite logical skips in the legacy ``rowwise_omissions`` diagnostic. By
+    default omissions are charged only when every valid row permits region
+    bypass. Counters describe executed regions, not measured HBM traffic.
+    materialize_skipped_work is a same-support mask-only diagnostic control.
 
     value_bound uses a cumulative row-L2 omission budget; mass instead bounds
     omitted/retained partition mass. error_bound_out contains only the omission
     bound, excluding floating-point error. Cached summaries must match current
-    K/V contents, including after input mutation.
+    K/V contents, including after input mutation. Optional retained_blocks_out
+    records the actual [B, Hq, M, NB] support for untimed numerical diagnostics.
     """
     if not TRITON_AVAILABLE:
         raise RuntimeError("Triton is not available")
@@ -215,6 +233,9 @@ def certified_attention_triton_forward(
     blocks = triton.cdiv(seq_k, block_size)
     if summaries.outlier_keys is not None:
         raise ValueError("experimental Triton path does not support outlier summaries")
+    if (error_budget > 0 and (skip_predicate == "value_bound" or error_bound_out is not None)
+            and not summaries.has_value_bounds):
+        raise ValueError("value-bound metadata is missing; key-only summaries cannot certify V")
     if (summaries.block_size != block_size or summaries.seq_len != seq_k
             or summaries.centroid.shape != (batch, kv_heads, blocks, dim)
             or summaries.radius.shape != (batch, kv_heads, blocks)
@@ -237,15 +258,19 @@ def certified_attention_triton_forward(
     raw = buffer(raw_stats_out, stats_shape, torch.int32, "stats") if return_raw_stats else output
     bound = (buffer(error_bound_out, query.shape[:-1], torch.float32, "bound")
              if error_bound_out is not None else output)
+    support = (buffer(retained_blocks_out, (batch, heads, seq_q, blocks), torch.bool, "support")
+               if retained_blocks_out is not None else output)
     _certified_fwd_kernel[(triton.cdiv(seq_q, tile_size_q), batch, heads)](
         query, key, value, summaries.centroid.contiguous(), summaries.radius.contiguous(),
-        summaries.max_value_norm.contiguous(), output, raw, bound,
+        summaries.max_value_norm.contiguous(), output, raw, bound, support,
         M=seq_q, N=seq_k, HQ=heads, HKV=kv_heads, D=dim, NUM_BLOCKS=blocks,
         SUMMARY_WIDTH=triton.next_power_of_2(blocks), TILE_M=tile_size_q,
         TILE_N=block_size, SCALE=1.0 / math.sqrt(dim), EPS=float(error_budget),
         IS_CAUSAL=bool(causal), VALUE_BOUND=skip_predicate == "value_bound",
         ENABLE_PRE=enable_summary_gate, ENABLE_POST=enable_post_qk_gate,
+        ROWWISE_OMISSIONS=rowwise_omissions,
         MATERIALIZE_SKIPPED=materialize_skipped_work, HAS_STATS=return_raw_stats,
-        HAS_BOUND=error_bound_out is not None, num_warps=4, num_stages=1,
+        HAS_BOUND=error_bound_out is not None, HAS_SUPPORT=retained_blocks_out is not None,
+        num_warps=4, num_stages=1,
     )
     return output, raw if return_raw_stats else None

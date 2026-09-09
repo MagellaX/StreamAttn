@@ -22,12 +22,13 @@ import torch.nn.functional as F
 from stream_attention.certified import build_block_summaries
 from stream_attention.kernels.certified_fwd_triton import certified_attention_triton_forward
 
-SCHEMA = "streamattn.adaptive_two_gate.v1"
+SCHEMA = "streamattn.adaptive_two_gate.v2"
 SOURCE_FILES = (
     "stream_attention/certified/attention.py",
     "stream_attention/certified/summaries.py",
     "stream_attention/kernels/certified_fwd_triton.py",
     "benchmarks/profile_adaptive_two_gate.py",
+    "benchmarks/adaptive_known_support.py",
 )
 
 
@@ -67,7 +68,7 @@ def make_case(kind, dtype, device="cuda"):
     return q, k, v, dict(causal=causal, error_budget=budget, enable_summary_gate=pre)
 
 
-def reference(q, k, v, causal):
+def reference(q, k, v, causal, retained_blocks=None):
     groups = q.shape[2] // k.shape[2]
     qh = q.float().permute(0, 2, 1, 3)
     kh = k.float().repeat_interleave(groups, dim=2).permute(0, 2, 1, 3)
@@ -76,7 +77,17 @@ def reference(q, k, v, causal):
     if causal:
         mask = torch.arange(k.shape[1], device=q.device)[None, :] <= torch.arange(q.shape[1], device=q.device)[:, None]
         scores.masked_fill_(~mask, -float("inf"))
+    if retained_blocks is not None:
+        keep = retained_blocks.repeat_interleave(32, dim=-1)[..., :k.shape[1]]
+        scores.masked_fill_(~keep, -float("inf"))
     return (scores.softmax(-1) @ vh).permute(0, 2, 1, 3)
+
+
+def numerical_allowance(selected, dtype):
+    # Predeclared v2 diagnostic allowance, separate from the omission budget.
+    cast_error = torch.linalg.vector_norm(selected.to(dtype).float() - selected, dim=-1)
+    arithmetic = 4 * torch.finfo(dtype).eps * torch.linalg.vector_norm(selected, dim=-1)
+    return cast_error + arithmetic + 1e-5 * math.sqrt(selected.shape[-1])
 
 
 def capture(call):
@@ -144,20 +155,23 @@ def run_case(kind, dtype):
     torch.cuda.synchronize()
     build_ms = (time.perf_counter() - start) * 1000
     variants = {}
-    for name, budget, materialize in (
-        ("adaptive", options["error_budget"], False),
-        ("mask_only_control", options["error_budget"], True),
-        ("zero_budget_control", 0.0, False),
+    for name, budget, materialize, rowwise in (
+        ("adaptive", options["error_budget"], False, False),
+        ("mask_only_control", options["error_budget"], True, False),
+        ("zero_budget_control", 0.0, False, False),
+        ("rowwise_diagnostic", options["error_budget"], False, True),
     ):
         output, bound = torch.empty_like(q), torch.empty(q.shape[:-1], device=q.device)
         stats = torch.empty(q.shape[0], q.shape[2], math.ceil(q.shape[1] / 16), 6,
                             device=q.device, dtype=torch.int32)
+        support = torch.empty(q.shape[0], q.shape[2], q.shape[1], math.ceil(k.shape[1] / 32),
+                              device=q.device, dtype=torch.bool)
         kwargs = dict(options, error_budget=budget, block_size=32, tile_size_q=16,
                       summaries=summaries, materialize_skipped_work=materialize,
                       out=output, raw_stats_out=stats, error_bound_out=bound,
-                      return_raw_stats=True)
+                      return_raw_stats=True, rowwise_omissions=rowwise, retained_blocks_out=support)
         certified_attention_triton_forward(q, k, v, **kwargs)
-        variants[name] = dict(output=output, bound=bound, stats=stats, kwargs=kwargs)
+        variants[name] = dict(output=output, bound=bound, stats=stats, support=support, kwargs=kwargs)
     torch.cuda.synchronize()
     ref = reference(q, k, v, options["causal"])
     roundoff = 0.006 if dtype == torch.bfloat16 else 0.001
@@ -165,11 +179,21 @@ def run_case(kind, dtype):
     for name, data in variants.items():
         error = torch.linalg.vector_norm(data["output"].float() - ref, dim=-1)
         bound = data["bound"]
+        selected = reference(q, k, v, options["causal"], data["support"])
+        execution_error = torch.linalg.vector_norm(data["output"].float() - selected, dim=-1)
+        omission_error = torch.linalg.vector_norm(selected - ref, dim=-1)
+        allowance = numerical_allowance(selected, dtype)
+        omission_slack = 2e-5 * (1 + torch.linalg.vector_norm(ref, dim=-1))
         assert torch.isfinite(error).all() and torch.isfinite(bound).all()
-        assert torch.all(error <= bound + roundoff), (name, error.max().item(), bound.max().item())
+        assert torch.all(execution_error <= allowance), (name, "execution", execution_error.max().item())
+        assert torch.all(omission_error <= bound + omission_slack), (name, "omission", omission_error.max().item())
         assert bound.max().item() <= data["kwargs"]["error_budget"] + 2e-6
         correctness[name] = dict(max_row_l2=error.max().item(),
                                  max_omission_bound=bound.max().item(),
+                                 max_omission_error=omission_error.max().item(),
+                                 max_execution_error=execution_error.max().item(),
+                                 max_numerical_allowance=allowance.max().item(),
+                                 original_v1_limit_passed=bool(torch.all(error <= bound + roundoff)),
                                  counters=data["stats"].sum(dim=(0, 1, 2)).tolist())
     torch.testing.assert_close(variants["adaptive"]["output"],
                                variants["mask_only_control"]["output"], rtol=0, atol=0)
@@ -182,12 +206,15 @@ def run_case(kind, dtype):
     if kind == "cumulative":
         assert 0 < counters[0] + counters[1] < (4096 // 32 - 1) * q.shape[2]
     if kind == "mixed_rows":
-        assert counters[0] > 0 and counters[4] == counters[3] and counters[5] == counters[3]
+        assert counters[0] == counters[1] == 0 and counters[4] == counters[3] and counters[5] == counters[3]
+        assert correctness["rowwise_diagnostic"]["counters"][0] > 0
+        assert correctness["adaptive"]["max_omission_bound"] == 0
+        torch.testing.assert_close(variants["adaptive"]["output"], variants["zero_budget_control"]["output"], atol=0, rtol=0)
 
     # Diagnostic counters and error-bound stores are absent from timed kernels.
     graphs = {}
     for name, data in variants.items():
-        kwargs = dict(data["kwargs"], return_raw_stats=False, error_bound_out=None)
+        kwargs = dict(data["kwargs"], return_raw_stats=False, error_bound_out=None, retained_blocks_out=None)
         graphs[name] = capture(lambda kwargs=kwargs: certified_attention_triton_forward(q, k, v, **kwargs))
     baseline_error = None
     try:
@@ -198,10 +225,30 @@ def run_case(kind, dtype):
                     k.permute(0, 2, 1, 3), v.permute(0, 2, 1, 3),
                     is_causal=options["causal"], enable_gqa=True)
         flash_out = flash().permute(0, 2, 1, 3)
-        assert torch.linalg.vector_norm(flash_out.float() - ref, dim=-1).max() <= roundoff
+        assert torch.all(torch.linalg.vector_norm(flash_out.float() - ref, dim=-1) <= numerical_allowance(ref, dtype))
         graphs["torch_flash_sdpa"] = capture(flash)
     except Exception as exc:
         baseline_error = f"{type(exc).__name__}: {exc}"
+    oracle = None
+    oracle_buffers = []
+    if kind in ("peaked", "post_only"):
+        from benchmarks.adaptive_known_support import execute_known_support
+        support = variants["adaptive"]["support"]
+        assert support[..., 0].all() and not support[..., 1:].any()
+        selected_ref = reference(q, k[:, :32], v[:, :32], False)
+        oracle = dict(shared_retained_blocks=[0], diagnostic_only=True,
+                      valid_after_arbitrary_query_mutation=False, errors={})
+        for name, count in (("known_support_traversal", k.shape[1] // 32), ("known_support_compact", 1)):
+            ids = torch.full((count,), -1, device=q.device, dtype=torch.int32)
+            ids[0] = 0
+            out = torch.empty_like(q)
+            call = lambda ids=ids, out=out: execute_known_support(q, k, v, ids, out)
+            call()
+            error = torch.linalg.vector_norm(out.float() - selected_ref, dim=-1)
+            assert torch.all(error <= numerical_allowance(selected_ref, dtype))
+            oracle["errors"][name] = error.max().item()
+            oracle_buffers.append((ids, out))
+            graphs[name] = capture(call)
     timings = {name: [] for name in graphs}
     names = list(graphs)
     for repeat in range(7):
@@ -214,14 +261,20 @@ def run_case(kind, dtype):
     graphs["adaptive"].replay()
     ref2 = reference(q, k, v, options["causal"])
     mutation_error = torch.linalg.vector_norm(variants["adaptive"]["output"].float() - ref2, dim=-1).max().item()
-    assert mutation_error <= options["error_budget"] + roundoff
+    # Recapture actual support to separate numerical and omission error after Q changes.
+    replayed = variants["adaptive"]["output"].clone()
+    certified_attention_triton_forward(q, k, v, **variants["adaptive"]["kwargs"])
+    torch.testing.assert_close(replayed, variants["adaptive"]["output"], atol=0, rtol=0)
+    selected2 = reference(q, k, v, options["causal"], variants["adaptive"]["support"])
+    assert torch.all(torch.linalg.vector_norm(replayed.float() - selected2, dim=-1) <= numerical_allowance(selected2, dtype))
+    assert torch.all(torch.linalg.vector_norm(selected2 - ref2, dim=-1) <= variants["adaptive"]["bound"] + 2e-5 * (1 + torch.linalg.vector_norm(ref2, dim=-1)))
     assert not torch.equal(old, variants["adaptive"]["output"])
     return dict(kind=kind, dtype=str(dtype), q_shape=list(q.shape), kv_shape=list(k.shape),
                 options=options, block_size=32, query_tile=16, correctness=correctness,
                 roundoff_allowance_l2=roundoff, query_mutation_max_row_l2=mutation_error,
                 summary_build_wall_ms=build_ms, graph_ms=timings,
                 median_graph_ms={name: statistics.median(vals) for name, vals in timings.items()},
-                baseline_error=baseline_error)
+                baseline_error=baseline_error, known_support_oracle=oracle)
 
 
 def main():
@@ -241,6 +294,8 @@ def main():
         return 0
     result = dict(schema=SCHEMA, provider=args.provider, complete=False,
                   input_source="synthetic mechanism tests, not LLM activations",
+                  omission_commit_scope="query_tile_and_head",
+                  numerical_protocol="v2: cast L2 + 4*dtype_epsilon*selected_output_L2 + 1e-5*sqrt(D); omission measured separately",
                   performance_promotion=False, cases=[], failures=[],
                   torch=torch.__version__, cuda=torch.version.cuda, python=platform.python_version(),
                   device=torch.cuda.get_device_name(),

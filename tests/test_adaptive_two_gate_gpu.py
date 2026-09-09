@@ -42,7 +42,9 @@ def test_two_gate_native_mechanisms(kind, dtype):
         assert counts[0] == 0 and counts[1] > 0
         assert counts[4] == counts[3] and counts[5] < counts[3]
     elif kind == "mixed_rows":
-        assert counts[0] > 0 and counts[4] == counts[3] and counts[5] == counts[3]
+        assert counts[0] == counts[1] == 0
+        assert counts[4] == counts[3] and counts[5] == counts[3]
+        assert bound.max().item() == 0
     else:
         assert 0 < counts[0] + counts[1] < 127 * q.shape[2]
     expected = got.clone()
@@ -56,3 +58,10 @@ def test_two_gate_native_rejects_incompatible_buffers():
     with pytest.raises(ValueError, match="invalid output buffer"):
         certified_attention_triton_forward(q, k, v, summaries=summaries, block_size=32,
                                            out=torch.empty_like(q, dtype=torch.float32), **options)
+
+
+def test_two_gate_native_rejects_missing_value_evidence():
+    q, k, v, options = make_case("cumulative", torch.float16)
+    summaries = build_block_summaries(k, block_size=32)
+    with pytest.raises(ValueError, match="value-bound metadata is missing"):
+        certified_attention_triton_forward(q, k, v, summaries=summaries, block_size=32, **options)

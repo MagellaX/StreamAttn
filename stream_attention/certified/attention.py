@@ -55,6 +55,16 @@ def _safe_div(num: torch.Tensor, den: torch.Tensor) -> torch.Tensor:
     return torch.where(den > 0, num / den, torch.zeros_like(num))
 
 
+def _coherent_skip(proposed, valid, tile_size_q):
+    if tile_size_q is None:
+        return proposed
+    rows = proposed.shape[-1]
+    padding = (-rows) % tile_size_q
+    votes = torch.nn.functional.pad(proposed | ~valid, (0, padding), value=True)
+    agreed = votes.reshape(*votes.shape[:-1], -1, tile_size_q).all(dim=-1)
+    return agreed.repeat_interleave(tile_size_q, dim=-1)[..., :rows] & valid
+
+
 def _skip_from_den_bound(
     den_bound: torch.Tensor,
     skipped_den_bound: torch.Tensor,
@@ -89,6 +99,7 @@ def certified_attention(
     enable_post_qk_gate: bool = True,
     summary_threshold: float = 0.0,
     post_qk_threshold: float = 0.0,
+    tile_size_q: Optional[int] = None,
     return_stats: bool = False,
 ) -> Union[torch.Tensor, CertifiedAttentionOutput]:
     """Compute attention with certified K/V block skipping.
@@ -99,6 +110,8 @@ def certified_attention(
     ``value_bound`` bounds final row L2 omission error; ``mass`` bounds total
     omitted/retained partition mass, not output error. Floating-point roundoff
     and output casting are separate from this real-arithmetic omission bound.
+    ``tile_size_q`` commits only unanimous omissions within each query tile and
+    head, matching the native physical region. ``None`` is the rowwise oracle.
 
     Gate 0 uses K/V summaries before full K/V loading. Gate 1 computes QK,
     then applies a BLASST-style local-max test before loading V/PV work.
@@ -112,6 +125,8 @@ def certified_attention(
         raise ValueError("error_budget must be finite and non-negative")
     if block_size <= 0:
         raise ValueError("block_size must be positive")
+    if tile_size_q is not None and tile_size_q <= 0:
+        raise ValueError("tile_size_q must be positive")
 
     batch, seq_q, heads, dim = query.shape
     kv_heads = key.shape[2]
@@ -132,6 +147,9 @@ def certified_attention(
         raise ValueError("summaries.block_size must match block_size")
     elif summaries.seq_len != seq_k:
         raise ValueError("summaries.seq_len must match key sequence length")
+    if (error_budget > 0 and (skip_predicate == "value_bound" or return_stats)
+            and not summaries.has_value_bounds):
+        raise ValueError("value-bound metadata is missing; key-only summaries cannot certify V")
 
     q = query.permute(0, 2, 1, 3).contiguous().float()
     q_grouped = q.reshape(batch, kv_heads, groups * seq_q, dim)
@@ -197,6 +215,7 @@ def certified_attention(
             error_budget,
             skip_predicate,
         )
+        skip_pre = _coherent_skip(skip_pre, valid_row_bh, tile_size_q)
 
         skipped_den_bound = skipped_den_bound + torch.where(
             skip_pre, den_bound, torch.zeros_like(den_bound)
@@ -243,6 +262,7 @@ def certified_attention(
             error_budget,
             skip_predicate,
         )
+        skip_post = _coherent_skip(skip_post, compute_row, tile_size_q)
         skipped_den_bound = skipped_den_bound + torch.where(
             skip_post,
             post_den_bound,

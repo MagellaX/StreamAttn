@@ -8,7 +8,7 @@ import statistics
 
 
 def summarize(result):
-    if result.get("schema") != "streamattn.adaptive_two_gate.v1":
+    if result.get("schema") not in ("streamattn.adaptive_two_gate.v1", "streamattn.adaptive_two_gate.v2"):
         raise ValueError("expected adaptive two-gate canary artifact")
     rows = []
     for case in result["cases"]:
@@ -18,7 +18,8 @@ def summarize(result):
             if not samples or any(not math.isfinite(x) or x <= 0 for x in samples):
                 raise ValueError("timings must be nonempty, finite, and positive")
         ratios = {}
-        for name in ("mask_only_control", "zero_budget_control", "torch_flash_sdpa"):
+        for name in ("mask_only_control", "zero_budget_control", "torch_flash_sdpa",
+                     "rowwise_diagnostic", "known_support_traversal", "known_support_compact"):
             if name not in times:
                 continue
             if len(times[name]) != len(times["adaptive"]):
@@ -34,10 +35,14 @@ def summarize(result):
                          error=case["correctness"]["adaptive"]["max_row_l2"],
                          omission_bound=case["correctness"]["adaptive"]["max_omission_bound"],
                          median_graph_ms=case["median_graph_ms"], ratios=ratios,
-                         baseline_error=case.get("baseline_error")))
+                         baseline_error=case.get("baseline_error"),
+                         omission_error=case["correctness"]["adaptive"].get("max_omission_error"),
+                         execution_error=case["correctness"]["adaptive"].get("max_execution_error")))
     return dict(schema="streamattn.adaptive_two_gate_summary.v1", provider=result["provider"],
                 device=result["device"], input_complete=result["complete"],
                 performance_promotion=False, model_validation=False,
+                input_schema=result["schema"],
+                omission_commit_scope=result.get("omission_commit_scope", "legacy_rowwise"),
                 completed_cases=len(rows), failures=result["failures"], rows=rows)
 
 

@@ -55,3 +55,15 @@ def test_summary_rejects_other_schemas():
     source["schema"] = "different.v1"
     with pytest.raises(ValueError, match="expected adaptive"):
         summarize(source)
+
+
+def test_v2_summary_labels_physical_scope_and_oracle_control():
+    source = artifact()
+    source["schema"] = "streamattn.adaptive_two_gate.v2"
+    source["omission_commit_scope"] = "query_tile_and_head"
+    source["cases"][0]["graph_ms"]["known_support_compact"] = [1.0, 1.0]
+    result = summarize(source)
+    assert result["input_schema"] == source["schema"]
+    assert result["omission_commit_scope"] == "query_tile_and_head"
+    assert result["rows"][0]["ratios"]["known_support_compact_over_adaptive"]["median"] == 0.375
+    assert not result["performance_promotion"]

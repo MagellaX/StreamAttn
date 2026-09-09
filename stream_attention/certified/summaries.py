@@ -23,6 +23,7 @@ class BlockSummaries:
     seq_len: int
     outlier_keys: Optional[torch.Tensor] = None
     outlier_mask: Optional[torch.Tensor] = None
+    has_value_bounds: bool = False
 
     @property
     def num_blocks(self) -> int:
@@ -48,7 +49,8 @@ def build_block_summaries(
     Args:
         key: Tensor with shape ``[batch, seq_k, heads, dim]``.
         value: Optional tensor with the same shape as ``key``. When omitted,
-            ``max_value_norm`` is filled with zeros.
+            ``max_value_norm`` is filled with zeros and ``has_value_bounds`` is
+            false. Those placeholders are not evidence about a later V tensor.
         block_size: Number of K/V tokens represented by one summary block.
         num_outliers: Number of farthest-from-centroid keys to split out from
             each residual ball. ``0`` gives plain centroid/radius summaries.
@@ -150,4 +152,5 @@ def build_block_summaries(
         seq_len=seq_len,
         outlier_keys=outlier_keys,
         outlier_mask=outlier_mask,
+        has_value_bounds=value is not None,
     )

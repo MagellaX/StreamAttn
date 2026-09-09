@@ -1,5 +1,9 @@
 # Adaptive Kernel: Goal and First Repair
 
+> Follow-up, 2026-09-10: [physical omission and known-support diagnostics](adaptive_physical_omission.md)
+> couple native budget charging to a unanimous physical-region decision. The
+> 2026-09-09 results below are historical, not overwritten by the newer protocol.
+
 ## Objective
 
 StreamAttn aims to avoid unnecessary attention work inside a native Triton/CUDA
@@ -71,6 +75,16 @@ selector or a formal floating-point certificate. FP32 summaries, softmax
 arithmetic, FP16/BF16 PV and output rounding have separate numerical error.
 Cached summaries must match current K/V contents. The reported LSE in the
 reference is the retained-support normalizer, not full-context LSE after skips.
+`BlockSummaries.has_value_bounds` distinguishes real V evidence from key-only
+zero placeholders. Missing V evidence is rejected when a positive-budget call
+requests the value predicate or output-error telemetry. A zero-budget call, or
+mass-only call without output-error telemetry, does not need that evidence.
+
+The reference's `tile_size_q=16` emulates the native per-head query-tile vote;
+its default `None` remains an independent-row diagnostic. The native default
+requires physical agreement. `rowwise_omissions=True` is an explicit legacy
+diagnostic, not the physical-commit contract. Neither vote spans GQA heads in
+this kernel; grouped-head agreement is evaluated offline in the follow-up.
 
 ## Physical Work
 

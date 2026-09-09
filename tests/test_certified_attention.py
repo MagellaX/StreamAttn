@@ -228,6 +228,67 @@ def test_invalid_omission_budget_rejected(budget):
         certified_attention(x, x, x, error_budget=budget)
 
 
+@pytest.mark.parametrize("gates", [(True, False), (False, True), (True, True)])
+def test_physical_vote_retains_mixed_rows_without_charging_budget(gates):
+    q = torch.zeros(2, 3, 4, 4)
+    q[..., 0] = 8
+    q[:, -1, :, 0] = -8
+    k = torch.zeros(2, 8, 1, 4)
+    k[:, :4, :, 0] = 8
+    k[:, 4:, :, 0] = -8
+    v = torch.randn(k.shape, generator=torch.Generator().manual_seed(313))
+    options = dict(causal=False, block_size=4, error_budget=0.01, return_stats=True,
+                   enable_summary_gate=gates[0], enable_post_qk_gate=gates[1])
+    rowwise = certified_attention(q, k, v, **options)
+    physical = certified_attention(q, k, v, tile_size_q=4, **options)
+    assert rowwise.stats.skipped_row_blocks > 0
+    assert physical.stats.skipped_row_blocks == 0
+    assert physical.stats.max_error_bound == 0
+    ref = certified_attention(q, k, v, causal=False, block_size=4, error_budget=0)
+    torch.testing.assert_close(physical.output, ref, atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("gates", [(True, False), (False, True), (True, True)])
+def test_physical_vote_ignores_padding_and_preserves_cumulative_budget(gates):
+    q = torch.zeros(1, 3, 4, 4)
+    q[..., 0] = 2
+    k = torch.zeros(1, 512, 1, 4)
+    k[:, 4:, :, 0] = math.log(1e-3)
+    v = torch.ones_like(k)
+    v[..., 1:] = 0
+    v[:, :4, :, 0] = -1
+    result = certified_attention(q, k, v, causal=False, block_size=4, tile_size_q=4,
+                                 error_budget=0.01, return_stats=True,
+                                 enable_summary_gate=gates[0], enable_post_qk_gate=gates[1])
+    assert 0 < result.stats.skipped_row_blocks < 127 * 3 * 4
+    assert result.stats.max_error_bound <= 0.01 + 1e-6
+    ref = certified_attention(q, k, v, causal=False, error_budget=0, block_size=4)
+    assert torch.all(torch.linalg.vector_norm(result.output - ref, dim=-1) <= result.stats.row_error_bound + 2e-6)
+
+
+def test_physical_vote_excludes_mathematically_masked_rows():
+    from stream_attention.certified.attention import _coherent_skip
+    valid = torch.tensor([[[False, False, True, True, True]]])
+    proposed = torch.tensor([[[False, False, True, True, True]]])
+    assert torch.equal(_coherent_skip(proposed, valid, 4), valid)
+    proposed[..., 3] = False
+    assert torch.equal(_coherent_skip(proposed, valid, 4), torch.tensor([[[False, False, False, False, True]]]))
+
+
+@pytest.mark.parametrize("predicate,stats", [("value_bound", False), ("mass", True)])
+def test_missing_value_metadata_is_not_a_zero_value_certificate(predicate, stats):
+    q = torch.ones(1, 2, 1, 4)
+    k = torch.ones(1, 8, 1, 4)
+    v = torch.ones_like(k) * 100
+    key_only = build_block_summaries(k, block_size=4)
+    assert not key_only.has_value_bounds
+    with pytest.raises(ValueError, match="value-bound metadata is missing"):
+        certified_attention(q, k, v, summaries=key_only, block_size=4,
+                             skip_predicate=predicate, return_stats=stats)
+    certified_attention(q, k, v, summaries=key_only, block_size=4, error_budget=0)
+    assert build_block_summaries(k, torch.zeros_like(v), block_size=4).has_value_bounds
+
+
 def test_metadata_cache_builds_value_bounds():
     torch.manual_seed(6)
     v = torch.randn(2, 7, 3, 5)

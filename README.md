@@ -106,14 +106,19 @@ route ABI](docs/selected_paged_route_abi.md).
 
 ### Adaptive accounting and physical skipping
 
-The two-gate research path now accumulates one omission budget per query row
-and can skip actual K/V load and matrix-product regions. An H100 synthetic
-canary reduced executed QK/PV regions from 2,048 to 8 on peaked inputs; mixed
-rows showed why logical skip counts need not save physical work. This is a
-mechanism result, **not a competitive adaptive kernel yet**: it lost to Flash
-SDPA, and two causal cases failed the original numerical allowance even though
-the no-skip control and Flash SDPA had the same maximum errors. See the
-[full result and remaining research questions](docs/adaptive_kernel_contract.md).
+The two-gate research path accumulates one omission budget per query row and
+now commits omissions only when the shared physical region can be bypassed.
+Key-only summaries cannot stand in for value evidence. H100 tests confirm
+actual K/QK and V/PV bypass, but the complete prototype still loses to Flash
+SDPA. Supplying the retained support in advance makes execution much faster;
+that is an oracle diagnostic, not a usable selector or a serving speedup.
+
+A small real-activation check also exposes the harder problem: at the tested
+budget, no full G8 region was removable across ten Qwen3B captures, even with
+exact block-mass information under the same admission rule. That limited 2K
+result is not a universal impossibility claim. See the [physical-omission
+results and next research decision](docs/adaptive_physical_omission.md), and the
+[cumulative accounting contract](docs/adaptive_kernel_contract.md).
 
 ### Exact native decode
 
