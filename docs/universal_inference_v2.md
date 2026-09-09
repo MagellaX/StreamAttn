@@ -253,9 +253,32 @@ without extra registers or shared storage. Padded/packed complete-call gains
 over the native control are 1.100x/1.065x in discovery and 1.117x/1.081x on holdout.
 Every cell median improves, but three warm comparisons have losing individual
 pairs; no per-cell exceptions were fitted. Packed calls still lose to FA2, so
-this is a retained experimental improvement, not public promotion. Next isolate
-redundant page-address dependency work; do not widen the pipeline or refit splits.
+this is a retained experimental improvement, not public promotion.
 The actual FA2 binary lacks CUDA
 lineinfo, so its aggregate measurements must not be presented as source-level
 stall attribution. Producer-attributed stalls are also unavailable in this
 export.
+
+The [D128 page-pair ablation](sm90_page_pair_reuse.md) now passes its compiled-work
+and complete-call gates. It resolves one live page/address for two copies,
+preserving their individual predicates, destinations and completion ordering.
+No descriptor bank, new shared state, split change or approximate attention
+was introduced. Executed producer instructions fall from 49.00M to 24.68M;
+KV-copy and tensor-op counts and the register/shared allocation stay unchanged.
+
+The complete Modal H100 regression/boundary run passes 40/40 cases and the
+independent Lightning H100 holdout passes 24/24. D128's original regression
+cases improve 1.509x padded / 1.445x packed over vector Q; the new holdout improves
+1.554x / 1.503x. All 896 D128 paired comparisons across both interfaces and
+warm/perturbed modes improve; unchanged D64 controls remain near 1.0x.
+The report separately retains short boundary results and both initial harness
+failures. No new selector or public route is fitted from these results.
+
+This removes about two-thirds of the native-to-FA2 gap in the two representative
+heterogeneous packed cases, not across the whole engine. Packed D128 holdout
+still reaches only 0.750x versus FlashInfer. Its representative isolated producer
+is 100.17 us versus FA2's 81.30 us complete call; isolated timings are not additive.
+Next reconcile the remaining producer address/layout and arithmetic dependencies
+with the actual FA2 binary before selecting another local reduction. Native
+packed offsets remain useful integration work, but cannot be treated as the
+entire producer repair. Keep the retained R64 state machine and fixed schedule.

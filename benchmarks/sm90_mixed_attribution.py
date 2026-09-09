@@ -24,9 +24,15 @@ COPY_VARIANTS = {
     CONTROL: VARIANTS[CONTROL],
     "interior_q_vector": dict(min_kv_tiles=1, task_order="query", q_vector_copy=True),
 }
+PAIR_VARIANTS = {
+    "interior_q_vector": COPY_VARIANTS["interior_q_vector"],
+    "interior_q_vector_page_pair": dict(COPY_VARIANTS["interior_q_vector"], page_pair_reuse=True),
+}
 
 
 def variants(args):
+    if getattr(args, "page_pair", False):
+        return PAIR_VARIANTS
     return COPY_VARIANTS if getattr(args, "producer_copy", False) else VARIANTS
 
 
@@ -43,7 +49,7 @@ def useful_work(c):
 
 def geometry(c, variant):
     qs, ns, g, h, d = (c[k] for k in ("query_lengths", "kv_lengths", "g", "hq", "d"))
-    config = COPY_VARIANTS[variant] if variant in COPY_VARIANTS else VARIANTS[variant]
+    config = PAIR_VARIANTS[variant] if variant in PAIR_VARIANTS else COPY_VARIANTS[variant] if variant in COPY_VARIANTS else VARIANTS[variant]
     schedule = plan_ragged_schedule(qs, ns, capacity=max(qs), kv_heads=h//g,
         group_size=g, **{k: config[k] for k in ("min_kv_tiles", "task_order")})
     repeated_rows = sum(q*h*s for q, s in zip(qs, schedule.splits))
@@ -173,7 +179,8 @@ def attribute_case(c, args, plans, baselines, row, qslots, packed_q, reference, 
             workspace_allocated_bytes=plan.workspace_bytes, component_correctness=check,
             isolated_paired_trials=trials,
             isolated_median_us={name: statistics.median(t["us"][name] for t in trials) for name in graphs})
-    plan = plans[CONTROL+"/packed"]
+    control = next(iter(variants(args)))
+    plan = plans[control+"/packed"]
     _, _, h, d = plan.query.shape
     packed_out = torch.empty_like(packed_q)
 
@@ -189,7 +196,7 @@ def attribute_case(c, args, plans, baselines, row, qslots, packed_q, reference, 
     trials = paired_timings(graphs, args.iterations, args.repeats)
     diagnostics["interface_components"] = dict(paired_trials=trials,
         median_us={name: statistics.median(t["us"][name] for t in trials) for name in graphs})
-    diagnostics["launch_traces"] = {CONTROL: kernel_trace(plans[CONTROL+"/padded"].run)}
+    diagnostics["launch_traces"] = {control: kernel_trace(plans[control+"/padded"].run)}
     winner = row["graphs"]["packed"]["fastest_tested_baseline"]
     if winner:
         name = winner["baseline_id"]

@@ -67,6 +67,10 @@ def regions(source):
     loader = source.index("__forceinline__ __device__ void streamattn_micro_load_page16(")
     stop = source.index("\n}\n", loader)+3
     result.append(("paged_address_copy", source.count("\n", 0, loader)+1, source.count("\n", 0, stop)+1))
+    pair = source.find("__forceinline__ __device__ void streamattn_micro_load_page16_pair(")
+    if pair >= 0:
+        stop = source.index("\n}\n", pair)+3
+        result.append(("paged_address_copy", source.count("\n", 0, pair)+1, source.count("\n", 0, stop)+1))
     return result
 
 
@@ -89,6 +93,23 @@ def number(metrics, key):
     if not math.isfinite(result):
         raise ValueError("non-finite counter")
     return result
+
+
+def machine_instructions(pcs):
+    """Counts per warp, preserving opcode widths; never convert them into time."""
+    if not pcs or not all("Instructions Executed" in pc["metrics"] for pc in pcs):
+        return None
+    opcodes, page_loads = {}, 0
+    for pc in pcs:
+        parts = pc["instruction"].split()
+        opcode = parts[1] if parts[0].startswith("@") else parts[0]
+        counts = opcodes.setdefault(opcode, dict(static_sites=0, executed_warp_instructions=0))
+        counts["static_sites"] += 1
+        counts["executed_warp_instructions"] += pc["metrics"]["Instructions Executed"]
+        if opcode.startswith("LDG.") and any("const int page = table[" in (c["source"] or "") for c in pc["correlations"]):
+            page_loads += pc["metrics"]["Instructions Executed"]
+    return dict(opcodes=opcodes, source_correlated_page_load_warp_instructions=page_loads,
+                kv_copy_warp_instructions=sum(c["executed_warp_instructions"] for op, c in opcodes.items() if op.startswith("LDGSTS.")))
 
 
 def summarize(payload):
@@ -159,12 +180,16 @@ def summarize(payload):
             traffic_and_instruction_counters=counters, counters_per_visible_head_pair=normalized,
             totals=totals, regions=region_counts, unique_pcs=len(pcs), top_pcs=rankings,
             pc_instruction_total=instruction_total,
+            machine_instructions=machine_instructions(pcs),
+            counter_attributes=row.get("counter_attributes"),
             source_correlation_available=bool(pcs), aggregate_totals_match=True if pcs else None,
             source_limitation="loaded FA2 binary has no CUDA lineinfo" if missing_lineinfo else None,
             attributed_stalls_available=any("attributed" in k.lower() for pc in pcs for k in pc["metrics"])))
     expected = ({(8, target) for target in ("natural_compact_interior/padded", "interior_q_vector/padded")}
                 if payload.get("producer_copy") else {(i, target) for i in (6, 8, 10) for target in
                 ("natural_compact_interior/padded", "flashinfer_fa2/packed")})
+    if payload.get("page_pair"):
+        expected = {(8, target) for target in ("interior_q_vector/padded", "interior_q_vector_page_pair/padded")}
     return dict(schema="streamattn.sm90_paged_source_summary.v1",
         complete=bool(payload.get("complete") and payload.get("collected") and identities == expected), rows=rows,
         missing_metrics=payload.get("unavailable_metrics", []),

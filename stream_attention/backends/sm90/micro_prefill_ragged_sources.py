@@ -16,10 +16,58 @@ CPP_SOURCE = _once(CPP_SOURCE, '  m.def("out", &micro_semantics_out);',
     '  m.def("attributes", &micro_attributes);')
 
 
-def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_copy=False):
+_PAGE_PAIR_LOADER = r"""
+template <bool kNHD, bool kTranspose, class SmemTensor>
+__forceinline__ __device__ void streamattn_micro_load_page16_pair(
+    const Element* base, const int* table, int cache_group, int tile,
+    int max_pages, int kv_heads, int length, SmemTensor destination) {
+  static_assert(kHeadDim == 128, "page-pair reuse requires D128");
+  const int batch = cache_group / kv_heads, head = cache_group % kv_heads;
+  const int row_in_half = threadIdx.x / 16, dim = (threadIdx.x % 16) * 8;
+  const int64_t half_page_stride = static_cast<int64_t>(8) * kHeadDim * (kNHD ? kv_heads : 1);
+  CUTE_UNROLL
+  for (int fragment = 0; fragment < 4; ++fragment) {
+    const int token0 = fragment * 16 + row_in_half, token1 = token0 + 8;
+    const int logical0 = tile * 64 + token0;
+    const bool valid0 = logical0 < length, valid1 = logical0 + 8 < length;
+    const Element* source0 = base;
+    const Element* source1 = base;
+    // A valid second copy implies a valid first copy on this same live page.
+    if (valid0) {
+      const int page = table[static_cast<int64_t>(batch) * max_pages + tile * 4 + fragment];
+      const int64_t row = kNHD
+          ? (static_cast<int64_t>(page) * 16 + row_in_half) * kv_heads + head
+          : (static_cast<int64_t>(page) * kv_heads + head) * 16 + row_in_half;
+      source0 = base + row * kHeadDim + dim;
+      if (valid1) source1 = source0 + half_page_stride;
+    }
+    Element* target0;
+    Element* target1;
+    if constexpr (kTranspose) {
+      target0 = &destination(dim, token0);
+      target1 = &destination(dim, token1);
+    } else {
+      target0 = &destination(token0, dim);
+      target1 = &destination(token1, dim);
+    }
+    cute::SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<cute::uint128_t>::copy(
+        *reinterpret_cast<const cute::uint128_t*>(source0),
+        *reinterpret_cast<cute::uint128_t*>(target0), valid0);
+    cute::SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<cute::uint128_t>::copy(
+        *reinterpret_cast<const cute::uint128_t*>(source1),
+        *reinterpret_cast<cute::uint128_t*>(target1), valid1);
+  }
+}
+"""
+
+
+def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_copy=False,
+                       page_pair_reuse=False):
     if affine_mode not in ("none", "index", "interior") or (affine_mode != "none" and not causal):
         raise ValueError("affine modes require causal attention")
     source = paged_cuda_source(head_dim, dtype, causal)
+    if not isinstance(page_pair_reuse, bool) or (page_pair_reuse and not q_vector_copy):
+        raise ValueError("page-pair experiment requires vector Q control")
     begin = "\ntemplate <bool kNHD>\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_partial_kernel("
     end = "\n__global__ __launch_bounds__(128)\nvoid streamattn_natural_wgmma_micro_prefill_merge_kernel("
     producer = _between(source, begin, end)
@@ -85,6 +133,12 @@ def ragged_cuda_source(head_dim, dtype, causal, affine_mode="none", q_vector_cop
   }
 """
         producer = _once(producer, scalar, vector)
+    if page_pair_reuse and head_dim == 128:
+        for transpose in ("false", "true"):
+            producer = _once(producer,
+                f"streamattn_micro_load_page16<kNHD, {transpose}, false>",
+                f"streamattn_micro_load_page16_pair<kNHD, {transpose}>")
+        producer = _PAGE_PAIR_LOADER + producer
     source = _once(source, old, producer)
     merge = _between(source, end, "\ntemplate <int kPagedPageSize>\n")
     old = merge

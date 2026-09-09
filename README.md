@@ -767,8 +767,19 @@ All **48 discovery/holdout cases** passed correctness. Complete-call gains over
 the native control were **1.100x / 1.065x padded/packed** in discovery and
 **1.117x / 1.081x** on the independent holdout. Every cell's median improved,
 but some individual warm pairs regressed. Packed calls still trail FlashInfer;
-the Q-copy option stays experimental, not a new public route. The next target
-is repeated page-address work, with the same exact attention math and schedule.
+the Q-copy option stays experimental, not a new public route.
+
+The next [page-pair reuse experiment](docs/sm90_page_pair_reuse.md) removes
+duplicated D128 page-address work without skipping tokens or changing the
+pipeline. Producer instructions fell **49.6%**, with unchanged KV-copy counts,
+registers and shared memory. All **40 regression/boundary and 24 fresh holdout
+cases** passed. On D128, complete-call gains over vector Q were **1.509x padded /
+1.445x packed** across the original regression cases and **1.554x / 1.503x** on
+holdout; the separate short-tail cases improved more modestly. All D128 timing
+pairs improved, including cache-perturbed tests. D64 remains byte-identical.
+The change is retained experimentally: packed D128 holdout calls still reach
+only **0.750x versus the fastest tested FlashInfer backend**. The remaining
+producer cost, not another split sweep, determines the next experiment.
 
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by

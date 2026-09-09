@@ -62,6 +62,20 @@ def test_missing_external_lineinfo_is_explicit_not_a_native_source_failure():
         summarize(payload(row))
 
 
+def test_pair_source_gate_requires_exactly_its_two_checked_targets():
+    rows = []
+    for target in ("interior_q_vector/padded", "interior_q_vector_page_pair/padded"):
+        row = capture()
+        row.update(case_index=8, target=target)
+        row["checked_result"]["rows"][0]["case"] = experiment_cases("causal")[8]
+        rows.append(row)
+    data = payload(rows[0])
+    data.update(page_pair=True, rows=rows)
+    assert summarize(data)["complete"]
+    data["rows"] = rows[:1]
+    assert not summarize(data)["complete"]
+
+
 def test_fa2_work_uses_actual_tile_traits_and_live_plan():
     case = dict(query_lengths=[3], kv_lengths=[65], g=8, hq=16, d=128, causal=True)
     telemetry = dict(version="0.6.13", decoded=True, plan=dict(cta_tile_q=128, split_kv=1),

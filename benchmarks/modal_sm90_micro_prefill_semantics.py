@@ -39,17 +39,21 @@ app = modal.App("streamattn-sm90-micro-semantics")
 def run(suite: str, experiment: str, seed: int = 9613) -> dict:
     import subprocess
 
-    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else 'mixed' if experiment in ('attribution', 'producer_copy') else experiment}.py"
+    script = f"profile_sm90_micro_prefill_{'counters' if experiment == 'source_counters' else 'mixed' if experiment in ('attribution', 'producer_copy', 'page_pair') else experiment}.py"
     options = ["--suite", suite, "--provider", "modal", "--seed", str(seed)] if experiment in ("semantics", "paged", "mixed") else []
     if experiment == "source_counters":
         options = ["--source-correlated"]
-    if experiment in ("attribution", "producer_copy"):
+    if experiment in ("attribution", "producer_copy", "page_pair"):
         options = ["--suite", suite, "--provider", "modal", "--seed", str(seed), "--attribution"]
         if experiment == "producer_copy":
             options += ["--producer-copy"]
-    if experiment in ("attribution_counters", "paged_source_counters"):
+        if experiment == "page_pair":
+            options += ["--page-pair"]
+    if experiment in ("attribution_counters", "paged_source_counters", "page_pair_counters"):
         script = "profile_sm90_mixed_attribution_counters.py"
-        options = ["--source-correlated"] if experiment == "paged_source_counters" else []
+        options = ["--source-correlated"] if experiment != "attribution_counters" else []
+        if experiment == "page_pair_counters":
+            options += ["--page-pair"]
     proc = subprocess.run([
         "python", "-u", "benchmarks/" + script, *options,
         "--cutlass-root", "/opt/flashmla-etap/csrc/cutlass",
@@ -76,7 +80,7 @@ def main(suite: str = "smoke", experiment: str = "semantics",
          output_json: str = "artifacts/gate0/sm90_micro_semantics_modal_h100_20260905.json",
          seed: int = 9613):
     if experiment not in ("semantics", "deferred_sum", "paged", "counters", "source_counters", "mixed",
-                           "attribution", "producer_copy", "attribution_counters", "paged_source_counters"):
+                           "attribution", "producer_copy", "page_pair", "page_pair_counters", "attribution_counters", "paged_source_counters"):
         raise ValueError("unknown semantics experiment")
     path = Path(output_json)
     if path.exists():

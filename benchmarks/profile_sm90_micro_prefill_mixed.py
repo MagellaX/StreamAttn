@@ -49,6 +49,8 @@ def digest(value):
 
 
 def experiment_cases(suite):
+    if suite == "pair_regression":
+        return experiment_cases("causal") + experiment_cases("pair_edges")
     shapes = (
         ("short", [1, 2, 4, 8], [4093, 1021, 511, 2047]),
         ("heterogeneous", [1, 2, 4, 8, 16, 32, 48, 64],
@@ -62,6 +64,18 @@ def experiment_cases(suite):
              [257, 769, 2053, 6151, 10243, 24571]),
             ("long_tail_holdout", [47, 5, 2, 9, 1], [28669, 2053, 521, 12301, 97]),
         )
+    if suite == "pair_holdout":
+        # Predeclared before inspecting page-pair timing, not a new random seed on old shapes.
+        shapes = (
+            ("short_pair_holdout", [2, 4, 7, 10, 13, 3, 1], [519, 1032, 1545, 2568, 3599, 783, 1304]),
+            ("heterogeneous_pair_holdout", [1, 9, 17, 29, 41, 57, 8],
+             [135, 1032, 3081, 7176, 14351, 22520, 4097]),
+            ("long_tail_pair_holdout", [61, 7, 1], [30728, 3079, 17425]),
+        )
+    if suite == "pair_edges":
+        # Every half-page and page tail, including complete tiles, with poisoned padding.
+        shapes = (("page_pair_tails", [min(n, 9) for n in range(1, 65)], list(range(1, 65))),
+                  ("page_pair_later_tiles", [min(n, 9) for n in range(1, 65)], list(range(129, 193))))
     configs = ((64, 4, 16, "bf16"), (128, 8, 16, "bf16"),
                (64, 8, 32, "fp16"), (128, 4, 32, "fp16"))
     cases = [dict(trace=name, query_lengths=q, kv_lengths=k, d=d, g=g, hq=h,
@@ -72,7 +86,7 @@ def experiment_cases(suite):
         return [cases[0], cases[3]]
     if suite == "replay":
         return cases[::4] + cases[3::4]
-    if suite in ("causal", "holdout"):
+    if suite in ("causal", "holdout", "pair_holdout", "pair_edges"):
         return [c for c in cases if c["causal"]]
     return cases
 
@@ -110,10 +124,11 @@ def page_table(c, seed):
 
 def workload(c, table):
     requests = []
+    shared_prefix_len = min(16, min(c["kv_lengths"]))
     for i, (q, n) in enumerate(zip(c["query_lengths"], c["kv_lengths"])):
         requests.append(dict(request_id=str(i), phase="decode" if q == 1 else "micro_prefill",
                              query_len=q, kv_len=n, prefix_group="shared",
-                             shared_prefix_len=16, cache_page_ids=table[i][:(n+15)//16],
+                             shared_prefix_len=shared_prefix_len, cache_page_ids=table[i][:(n+15)//16],
                              last_page_len=(n-1) % 16+1))
     return AttentionBatchV2.from_dict(dict(
         batch_id="mixed_" + digest(c), architecture="sm90", phase="mixed", requests=requests,
@@ -342,6 +357,8 @@ def profile_case(c, args, environment, provenance, binary_cache):
             baselines={backend: flashinfer_telemetry(fi, backend)
                        for backend, fi in flashinfer_plans.items()})
         row.update(passed=True, counter_target=name)
+        if name in plans:
+            row["counter_attributes"] = plans[name].extension.attributes(q, c["layout"] == "NHD")
         return row
     for interface in INTERFACES:
         selected = {k: v for k, v in graphs.items() if k.endswith("/" + interface)}
@@ -375,9 +392,10 @@ def profile_case(c, args, environment, provenance, binary_cache):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout"), default="full")
+    parser.add_argument("--suite", choices=("smoke", "replay", "full", "causal", "holdout", "pair_edges", "pair_holdout", "pair_regression"), default="full")
     parser.add_argument("--attribution", action="store_true")
     parser.add_argument("--producer-copy", action="store_true", help="control vs vector Q, unchanged schedule")
+    parser.add_argument("--page-pair", action="store_true", help="vector Q control vs D128-local page-pair reuse")
     parser.add_argument("--counter-target")
     parser.add_argument("--case-index", type=int)
     parser.add_argument("--provider", default="local")
@@ -392,10 +410,12 @@ def main():
         raise FileExistsError("preserve existing evidence")
     if min(args.iterations, args.repeats) <= 0:
         raise ValueError("positive timing counts required")
-    if args.attribution and args.suite not in ("causal", "holdout"):
+    if args.attribution and args.suite not in ("causal", "holdout", "pair_edges", "pair_holdout", "pair_regression"):
         raise ValueError("attribution requires causal or holdout suite")
     if args.producer_copy and not args.attribution:
         raise ValueError("producer-copy requires attribution")
+    if args.page_pair and (not args.attribution or args.producer_copy):
+        raise ValueError("page-pair requires attribution and a fixed vector Q control")
     if args.counter_target and (not args.attribution or args.case_index is None):
         raise ValueError("counter capture requires attribution and a case index")
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -414,7 +434,7 @@ def main():
     result = dict(schema=SCHEMA, complete=False, environment=environment, seed=args.seed,
         source_sha256={p: hashlib.sha256((ROOT/p).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for p in paths},
         provenance=provenance, rows=[], planned_cases=len(cases),
-        experiment="vector_q_copy" if args.producer_copy else "post_affine_attribution" if args.attribution else "mixed",
+        experiment="page_pair_reuse" if args.page_pair else "vector_q_copy" if args.producer_copy else "post_affine_attribution" if args.attribution else "mixed",
         suite=args.suite,
         contract=dict(source="synthetic boundaries, not serving trace", kv="page16, no gather/repack",
                       timing="warm CUDA graph; complete producer+merge+interface conversion; output only",

@@ -23,12 +23,16 @@ def collect(args):
     ncu = shutil.which("ncu")
     source = getattr(args, "source_correlated", False)
     producer_copy = getattr(args, "producer_copy", False)
+    page_pair = getattr(args, "page_pair", False)
     if producer_copy and not source:
         raise ValueError("producer-copy counters require source correlation")
+    if page_pair and (not source or producer_copy):
+        raise ValueError("page-pair counters require source correlation and vector Q control")
     result = dict(schema=SCHEMA, complete=True, collected=False, rows=[],
         device=torch.cuda.get_device_name(), ncu=ncu,
         source_correlated=source,
         producer_copy=producer_copy,
+        page_pair=page_pair,
         contract="kernel replay, cache-control none, clock-control none, three warmups; not latency evidence")
     if not ncu:
         result["status"] = "profiler_unavailable"
@@ -51,12 +55,15 @@ def collect(args):
         # Keep cold compiler subprocesses outside Nsight injection. This run is
         # checked but never counted as profiling or timing evidence.
         warm_output = args.build_dir / "source_preflight.json"
+        control = "interior_q_vector/padded" if page_pair else "natural_compact_interior/padded"
         warm_command = [sys.executable, "-u", "benchmarks/profile_sm90_micro_prefill_mixed.py",
-            "--suite", "causal", "--attribution", "--counter-target", "natural_compact_interior/padded",
+            "--suite", "causal", "--attribution", "--counter-target", control,
             "--case-index", "6", "--cutlass-root", str(args.cutlass_root),
             "--build-dir", str(args.build_dir), "--output-json", str(warm_output)]
         if producer_copy:
             warm_command += ["--producer-copy"]
+        if page_pair:
+            warm_command += ["--page-pair"]
         print("prebuilding checked native and baseline modules outside Nsight", flush=True)
         warm = subprocess.run(warm_command, text=True, capture_output=True, timeout=900)
         checked = json.loads(warm_output.read_text()) if warm_output.exists() else {}
@@ -67,11 +74,13 @@ def collect(args):
             result.update(complete=False, status="preflight_failed")
             return result
     # D128/G8/BF16/HND, short, heterogeneous, and long-tail discovery cases.
-    for case_index in ((8,) if producer_copy else (6, 8, 10)):
+    for case_index in ((8,) if (producer_copy or page_pair) else (6, 8, 10)):
         targets = ("natural_compact_interior/padded", "interior_q_vector/padded") if producer_copy else (
             ("natural_compact_interior/padded", "flashinfer_fa2/packed") if source else (
             "natural_compact_interior/padded", "interior_kv_order/padded",
             "interior_min2/padded", "flashinfer_fa2/packed"))
+        if page_pair:
+            targets = ("interior_q_vector/padded", "interior_q_vector_page_pair/padded")
         for target in targets:
             print(f"collecting case {case_index}: {target}", flush=True)
             label = f"c{case_index}_{target.replace('/', '_')}"
@@ -97,6 +106,8 @@ def collect(args):
                 "--build-dir", str(args.build_dir), "--output-json", str(output)]
             if producer_copy:
                 command += ["--producer-copy"]
+            if page_pair:
+                command += ["--page-pair"]
             try:
                 proc = subprocess.run(command, text=True, capture_output=True, timeout=600)
             except subprocess.TimeoutExpired:
@@ -139,6 +150,7 @@ def main():
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--source-correlated", action="store_true")
     parser.add_argument("--producer-copy", action="store_true")
+    parser.add_argument("--page-pair", action="store_true")
     args = parser.parse_args()
     if args.output_json.exists():
         raise FileExistsError("preserve existing evidence")

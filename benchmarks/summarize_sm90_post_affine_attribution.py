@@ -52,15 +52,15 @@ def geomean(values):
     return math.exp(statistics.mean(map(math.log, values))) if values else None
 
 
-def comparison(row, interface, variant, mode):
+def comparison(row, interface, variant, mode, control_name=CONTROL):
     graph = row.get("graphs", {}).get(interface, {})
     winner = graph.get("fastest_tested_baseline")
     binaries = row.get("loaded_binary_provenance", {})
     if (not row.get("passed") or not winner or not winner.get("correctness_passed")
-            or not all(binaries.get(n, {}).get("resolved") for n in (CONTROL, variant))):
+            or not all(binaries.get(n, {}).get("resolved") for n in (control_name, variant))):
         return None
     graph = graph if mode == "warm" else row.get("cache_perturbed", {}).get(interface, {})
-    control, candidate, baseline = [n+"/"+interface for n in (CONTROL, variant, winner["baseline_id"])]
+    control, candidate, baseline = [n+"/"+interface for n in (control_name, variant, winner["baseline_id"])]
     trials = graph.get("paired_trials", [])
     if not trials or any(not all(isinstance(t.get("us", {}).get(n), (int, float))
             and math.isfinite(t["us"][n]) and t["us"][n] > 0
@@ -87,34 +87,40 @@ def aggregate(rows):
 def summarize(payload):
     experiment = payload.get("experiment")
     if (payload.get("schema") != "streamattn.sm90_micro_prefill_mixed.v1"
-            or experiment not in ("post_affine_attribution", "vector_q_copy")):
+            or experiment not in ("post_affine_attribution", "vector_q_copy", "page_pair_reuse")):
         raise ValueError("expected post-affine attribution artifact")
     variants = (CONTROL, "interior_q_vector") if experiment == "vector_q_copy" else VARIANTS
+    control = CONTROL
+    if experiment == "page_pair_reuse":
+        control = "interior_q_vector"
+        variants = (control, "interior_q_vector_page_pair")
     rows = payload["rows"]
     complete = bool(payload.get("complete") and len(rows) == payload.get("planned_cases"))
     result = dict(schema="streamattn.sm90_post_affine_attribution_summary.v1", experiment=experiment,
         suite=payload["suite"], environment=payload["environment"], seed=payload["seed"],
         complete=complete, cases=len(rows), correctness_passed=sum(bool(r.get("passed")) for r in rows),
-        promotion=False, interfaces={}, attribution=[],
+        promotion=False, control=control, interfaces={}, attribution=[],
         contract="fixed variants; cache perturbation not guaranteed cold; isolated times not additive; no public dispatch change")
     for interface in ("padded", "packed"):
         result["interfaces"][interface] = {}
         for mode in ("warm", "perturbed"):
             reports = {}
             for variant in variants:
-                measured = [r for row in rows if (r := comparison(row, interface, variant, mode))]
+                measured = [r for row in rows if (r := comparison(row, interface, variant, mode, control))]
                 reports[variant] = dict(**aggregate(measured), rows=measured,
                     by_trace={trace: aggregate([r for r in measured if r["case"]["trace"] == trace])
-                              for trace in sorted({r["case"]["trace"] for r in measured})})
+                              for trace in sorted({r["case"]["trace"] for r in measured})},
+                    by_dimension={str(d): aggregate([r for r in measured if r["case"]["d"] == d])
+                                  for d in sorted({r["case"]["d"] for r in measured})})
             result["interfaces"][interface][mode] = reports
     for row in rows:
         data = row.get("attribution", {})
         if not row.get("passed"):
             continue
-        if experiment == "vector_q_copy":
+        if experiment in ("vector_q_copy", "page_pair_reuse"):
             native = data.get("native", {})
-            if (CONTROL not in native or "interior_q_vector" not in native
-                    or native[CONTROL]["geometry"] != native["interior_q_vector"]["geometry"]):
+            if (control not in native or variants[1] not in native
+                    or native[control]["geometry"] != native[variants[1]]["geometry"]):
                 raise ValueError("vector-copy capture changed schedule geometry")
         result["attribution"].append(dict(case=row["case"],
             native={name: {k: entry[k] for k in ("geometry", "attributes", "workspace_allocated_bytes", "isolated_median_us")}
