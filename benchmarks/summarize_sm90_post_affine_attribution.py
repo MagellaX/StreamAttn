@@ -7,6 +7,11 @@ import json
 import math
 from pathlib import Path
 import statistics
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 CONTROL = "natural_compact_interior"
 VARIANTS = (CONTROL, "interior_kv_order", "interior_min2", "interior_min2_kv_order")

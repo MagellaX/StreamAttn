@@ -246,8 +246,16 @@ useful/issued work, DRAM/L2 traffic, executed instructions and native CUDA/SASS
 correlation. The larger traces have similar DRAM reads and tensor tile work to
 FA2 but substantially more native instructions. Scalar Q staging is the largest
 individual long-scoreboard location; paged addressing/copy issue is the larger
-aggregate instruction region. Test vector Q copies first with the existing
-single-state producer and fixed schedule. The actual FA2 binary lacks CUDA
+aggregate instruction region. Vector Q copies now pass 24 discovery and 24
+independent holdout cases with that single-state producer and fixed schedule.
+They reduce Q-region instructions 86.6% and total producer instructions 7.35%
+without extra registers or shared storage. Padded/packed complete-call gains
+over the native control are 1.100x/1.065x in discovery and 1.117x/1.081x on holdout.
+Every cell median improves, but three warm comparisons have losing individual
+pairs; no per-cell exceptions were fitted. Packed calls still lose to FA2, so
+this is a retained experimental improvement, not public promotion. Next isolate
+redundant page-address dependency work; do not widen the pipeline or refit splits.
+The actual FA2 binary lacks CUDA
 lineinfo, so its aggregate measurements must not be presented as source-level
 stall attribution. Producer-attributed stalls are also unavailable in this
 export.

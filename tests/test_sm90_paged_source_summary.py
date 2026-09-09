@@ -2,6 +2,9 @@ import csv
 import hashlib
 import io
 import json
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -112,3 +115,18 @@ def test_pc_instruction_totals_must_match_kernel_counter():
     row["profiler_csv"] = row["profiler_csv"].replace('"32"', '"33"')
     with pytest.raises(ValueError, match="PC instructions"):
         summarize(data)
+
+
+def test_attribution_cli_can_import_source_summary_outside_repo(tmp_path):
+    data = dict(schema="streamattn.sm90_micro_prefill_mixed.v1",
+                experiment="post_affine_attribution", rows=[], planned_cases=0,
+                complete=False, suite="causal", environment={}, seed=1,
+                source_counters=payload(capture()))
+    source, target = tmp_path / "input.json", tmp_path / "output.json"
+    source.write_text(json.dumps(data), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "benchmarks/summarize_sm90_post_affine_attribution.py"
+    subprocess.run([sys.executable, str(script), str(source), "--output-json", str(target)],
+                   cwd=tmp_path, check=True, capture_output=True, text=True)
+    summary = json.loads(target.read_text(encoding="utf-8"))["runs"][0]
+    assert not summary["complete"]
+    assert summary["source_counters"]["rows"][0]["source_correlation_available"]

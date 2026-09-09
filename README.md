@@ -760,10 +760,15 @@ decode routes and default schedules are unchanged.
 
 The [source-level follow-up](docs/sm90_paged_source_attribution.md) narrows that
 diagnosis: on the heterogeneous D128 trace, native and FA2 read almost the same
-DRAM bytes, while native executes **2.95x as many warp instructions**. The
-current experiment replaces scalar Q staging with aligned 16-byte copies,
-without changing attention math, tiles, or split scheduling. Page-address work
-is another measured suspect; a new pipeline architecture is not yet justified.
+DRAM bytes, while native executes **2.95x as many warp instructions**. Replacing
+scalar Q staging with aligned 16-byte copies cut Q-region instructions **86.6%**
+and total producer instructions **7.35%**, with unchanged register/shared usage.
+All **48 discovery/holdout cases** passed correctness. Complete-call gains over
+the native control were **1.100x / 1.065x padded/packed** in discovery and
+**1.117x / 1.081x** on the independent holdout. Every cell's median improved,
+but some individual warm pairs regressed. Packed calls still trail FlashInfer;
+the Q-copy option stays experimental, not a new public route. The next target
+is repeated page-address work, with the same exact attention math and schedule.
 
 Kernel research also tested delaying softmax denominator reduction until the
 end of each split. The exact R64 ablation improved the B1/M64/N16K anchor by
@@ -777,11 +782,10 @@ The source-correlated follow-up now locates the strongest short-K signal at
 scalar Q staging: one store waiting on its input accounts for **76-77% of
 long-scoreboard samples** in two short-K anchors, versus 53% at long K.
 These are sampled stalls, not runtime percentages or a promised speedup.
-That earlier contiguous-kernel result motivates a Q-staging experiment, but
-its stall percentages cannot be transferred to the current paged producer.
-The paged path needs its own source-correlated attribution before selecting
-the load/dependency change. Keep the retained online-softmax state. See the
-[mixed-batch comparison and source attribution](docs/sm90_micro_prefill_mixed.md).
+Those earlier contiguous-kernel stall percentages cannot be transferred to
+the paged producer. Its separate
+[source capture and vector-Q experiment](docs/sm90_paged_source_attribution.md)
+now directly test Q staging while preserving the retained online-softmax state.
 
 The architecture-basis harness now expands six H100 serving anchors into 84
 operation-floor cases and records required Nsight Compute counters plus build
