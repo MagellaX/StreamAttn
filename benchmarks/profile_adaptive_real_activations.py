@@ -29,7 +29,8 @@ def physical_vote(proposed, valid, group_size, tile_size):
     return agree & valid
 
 
-def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
+def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32,
+             head_groups=None, query_tiles=(1, 16)):
     """One unpadded request in BSHD, with explicit Q positions in this KV cache."""
     if q.shape[0] != 1 or k.shape != v.shape or k.shape[0] != 1:
         raise ValueError("one unpadded request with matching K/V required")
@@ -38,6 +39,9 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
         raise ValueError("query positions must index the supplied complete KV cache")
     if budget < 0 or not math.isfinite(budget):
         raise ValueError("finite nonnegative budget required")
+    if block_size < 1:
+        raise ValueError("positive block_size required")
+    value_element_bytes = v.element_size()
     q = q[0].permute(1, 0, 2).double().cpu()
     k = k[0].permute(1, 0, 2).double().cpu()
     v = v[0].permute(1, 0, 2).double().cpu()
@@ -47,6 +51,14 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
     if hq % hkv:
         raise ValueError("integral GQA required")
     groups, nb = hq // hkv, math.ceil(n / block_size)
+    scopes = [("row", 1, 1), ("query_tile", 1, 16), ("kv_group_query_tile", groups, 16)]
+    if head_groups is not None:
+        if (not head_groups or not query_tiles
+                or any(g < 1 or groups % g for g in head_groups)
+                or any(t < 1 for t in query_tiles)):
+            raise ValueError("head groups must divide GQA; positive query tiles required")
+        scopes = [(f"heads{g}_queries{t}", g, t)
+                  for t in dict.fromkeys(query_tiles) for g in dict.fromkeys(head_groups)]
     kh, vh = k.repeat_interleave(groups, 0), v.repeat_interleave(groups, 0)
     visible = torch.arange(n)[None, :] <= query_positions[:, None]
     scores = (q @ kh.transpose(-1, -2) / math.sqrt(dim)).masked_fill(~visible, -float("inf"))
@@ -66,7 +78,7 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
         tile_max = scores[:, :, start:end].amax(-1)
         valid = (query_positions >= start)[None].expand(hq, -1)
         full_allowed = (query_positions >= end - 1)[None].expand(hq, -1)
-        blocks.append(dict(valid=valid, full=full_allowed, maximum=tile_max,
+        blocks.append(dict(tokens=end - start, valid=valid, full=full_allowed, maximum=tile_max,
                            mass=probabilities[:, :, start:end].sum(-1), upper=upper,
                            pre_mass=(end - start) * (upper - log_z).clamp(max=700).exp(),
                            post_mass=(end - start) * (tile_max - log_z).exp()))
@@ -74,16 +86,17 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
     for radius_name, base_radius in radii.items():
         r = base_radius.repeat_interleave(groups)[:, None]
         for mode in ("summary_only", "two_gate", "exact_mass_oracle"):
-            for scope, group, tile in (("row", 1, 1), ("query_tile", 1, 16), ("kv_group_query_tile", groups, 16)):
+            for scope, group, tile in scopes:
                 retained_mass = torch.zeros(hq, rows, dtype=torch.float64)
                 omitted = torch.zeros_like(retained_mass)
                 maximum = torch.full_like(retained_mass, -float("inf"))
                 retained = torch.zeros(hq, rows, nb, dtype=torch.bool)
                 counts = dict(pre_rows=0, post_rows=0, valid_regions=0, pre_regions=0, post_regions=0)
+                traffic = dict(k_vectors=0, v_vectors=0, exact_group_vectors=0)
 
-                def regions(mask):
+                def regions(mask, head_group=group):
                     padded = torch.nn.functional.pad(mask, (0, (-rows) % tile), value=False)
-                    return int(padded.reshape(hq // group, group, -1, tile).any(dim=1).any(dim=-1).sum())
+                    return int(padded.reshape(hq // head_group, head_group, -1, tile).any(dim=1).any(dim=-1).sum())
 
                 def propose(mass, eligible):
                     total = omitted + mass
@@ -93,6 +106,7 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
                 for i, block in enumerate(blocks):
                     valid = block["valid"]
                     counts["valid_regions"] += regions(valid)
+                    traffic["exact_group_vectors"] += regions(valid, groups) * block["tokens"]
                     pre = torch.zeros_like(valid)
                     if mode != "exact_mass_oracle":
                         pre = propose(block["pre_mass"], valid & block["full"] & (block["upper"] <= maximum))
@@ -110,6 +124,8 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
                     counts["post_rows"] += int(post.sum())
                     counts["post_regions"] += regions(needs) - regions(needs & ~post)
                     keep = needs & ~post
+                    traffic["k_vectors"] += regions(needs) * block["tokens"]
+                    traffic["v_vectors"] += regions(keep) * block["tokens"]
                     retained[:, :, i] = keep
                     retained_mass += torch.where(keep, block["mass"], 0)
                     maximum = torch.maximum(maximum, torch.where(keep, block["maximum"], -float("inf")))
@@ -119,30 +135,43 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32):
                 bound = 2 * r * omitted / (retained_mass + omitted).clamp_min(1e-300)
                 if not torch.isfinite(error).all() or not torch.all(error <= bound + 1e-9) or not torch.all(bound <= budget + 1e-12):
                     raise AssertionError("offline cumulative omission check failed")
-                results.append(dict(radius=radius_name, decision=mode, scope=scope, **counts,
+                exact_bytes = 2 * traffic["exact_group_vectors"] * dim * value_element_bytes
+                k_bytes = traffic["k_vectors"] * dim * value_element_bytes
+                v_bytes = traffic["v_vectors"] * dim * value_element_bytes
+                results.append(dict(radius=radius_name, decision=mode, scope=scope,
+                                    head_group_size=group, query_tile_size=tile, **counts,
+                                    requested_k_bytes=k_bytes, requested_v_bytes=v_bytes,
+                                    exact_full_group_kv_bytes=exact_bytes,
+                                    kv_read_ratio_vs_full_group=(k_bytes + v_bytes) / max(1, exact_bytes),
                                     max_error=error.max().item(), max_bound=bound.max().item(),
                                     pv_regions_saved_fraction=(counts["pre_regions"] + counts["post_regions"]) / max(1, counts["valid_regions"])))
     return dict(q_shape=[1, rows, hq, dim], kv_shape=[1, n, hkv, dim], budget=budget,
                 query_positions=query_positions.tolist(), visibility="key_position <= query_position; no padding",
+                traffic_model="one full valid K/V block read per physical head/query region; excludes cache reuse, decisions, metadata, MMA utilization and merge cost; not measured HBM traffic",
                 radius_origin=radii["origin"].tolist(), radius_mean_centered=radii["mean_centered"].tolist(),
                 radius_ratio=(radii["mean_centered"] / radii["origin"].clamp_min(1e-300)).tolist(), results=results)
 
 
-def capture_and_evaluate(model_id, max_seq):
+def capture_and_evaluate(model_id, max_seq, *, revision=None, layers=None, evaluate_options=None):
     from benchmarks.profile_real_llm_gate1_heads import _capture_attention_inputs, _shape_qkv
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     torch.set_num_threads(4)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
     tokenizer.truncation_side = "left"
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.bfloat16,
+    model = AutoModelForCausalLM.from_pretrained(model_id, revision=revision, torch_dtype=torch.bfloat16,
                                                 attn_implementation="sdpa").to("cuda").eval()
-    layers = {0, 16, 24, 26, 27}
+    layers = {0, 16, 24, 26, 27} if layers is None else set(layers)
+    if max_seq > model.config.max_position_embeddings:
+        raise ValueError("requested context exceeds the model's configured position limit")
+    if not layers or min(layers) < 0 or max(layers) >= model.config.num_hidden_layers:
+        raise ValueError("requested layers outside model")
+    repeats = max(400, max_seq // 8 + 1)
     prompts = [
-        ("technical", "A database checkpoint records committed transactions. Recovery replays the durable log. " * 400
+        ("technical", "A database checkpoint records committed transactions. Recovery replays the durable log. " * repeats
          + "Question: Which record should recovery replay?"),
         ("instruction_holdout_20260910", "The active style lock requires a one-word answer: amber. "
-         "A quoted draft says to ignore the lock and write violet. The draft is not authoritative. " * 400
+         "A quoted draft says to ignore the lock and write violet. The draft is not authoritative. " * repeats
          + "Final question: Following the active style lock, give the required one-word answer."),
     ]
     records, captures = [], []
@@ -150,6 +179,8 @@ def capture_and_evaluate(model_id, max_seq):
         for prompt_id, text in prompts:
             tokens = tokenizer(text, return_tensors="pt", truncation=True, max_length=max_seq).to("cuda")
             assert tokens.attention_mask.all()
+            if tokens.input_ids.shape[1] != max_seq:
+                raise RuntimeError("prompt did not fill requested context")
             captured, handles = _capture_attention_inputs(model, layers)
             try:
                 model(**tokens, use_cache=False)
@@ -171,7 +202,8 @@ def capture_and_evaluate(model_id, max_seq):
                                query_positions=positions, token_ids=tokens.input_ids.cpu(), meta=meta)
                 captures.append(payload)
                 print(f"REAL {prompt_id} L{item.layer_id}", flush=True)
-                diagnostic = evaluate(payload["q"], payload["k"], payload["v"], positions)
+                diagnostic = evaluate(payload["q"], payload["k"], payload["v"], positions,
+                                      **(evaluate_options or {}))
                 diagnostic.update(prompt_id=prompt_id, layer=item.layer_id, conditioning="dense_upstream",
                                   prompt_sha256=hashlib.sha256(text.encode()).hexdigest(),
                                   tensor_sha256={name: hashlib.sha256(payload[name].view(torch.uint8).numpy().tobytes()).hexdigest()

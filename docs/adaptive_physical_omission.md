@@ -126,6 +126,10 @@ envelope, error budget, and physical grouping constrain this negative result.
 
 ## Next Research Decision
 
+**Update, September 30:** the head-group/read-cost experiment below has now
+been executed, including 8K Qwen and a second model family on Lightning H100.
+See [the measured frontier and next bound experiment](adaptive_head_group_frontier.md).
+
 The known-support execution floor is viable on the synthetic peak, but real
 physical admissibility is the present blocker. A faster loop for the same gate
 does not address that. Keep the adaptive objective; do not return to exact-only
@@ -139,6 +143,9 @@ before extrapolating this sample. Do not assume fewer grouped heads, a better
 center, or more skipping must be faster.
 
 ## Execution Record
+
+The following records the September 10 runs. Lightning execution was subsequently
+restored for the September 30 head-group experiment linked above.
 
 Lightning again rejected the submission before execution with `job
 reconciliation failed`, reporting zero cost; the job was deleted. Two bounded

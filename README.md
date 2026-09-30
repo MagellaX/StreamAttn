@@ -113,12 +113,18 @@ actual K/QK and V/PV bypass, but the complete prototype still loses to Flash
 SDPA. Supplying the retained support in advance makes execution much faster;
 that is an oracle diagnostic, not a usable selector or a serving speedup.
 
-A small real-activation check also exposes the harder problem: at the tested
-budget, no full G8 region was removable across ten Qwen3B captures, even with
-exact block-mass information under the same admission rule. That limited 2K
-result is not a universal impossibility claim. See the [physical-omission
-results and next research decision](docs/adaptive_physical_omission.md), and the
-[cumulative accounting contract](docs/adaptive_kernel_contract.md).
+Real-activation checks expose the harder problem. Across Qwen at 2K/8K and
+TinyLlama at 2K, smaller head groups allow a few more omissions, but independent
+KV reads outweigh those savings. The current pre-K gate skips no physical
+regions on these samples; full G8 sharing leaves zero or very little post-QK
+work removable. That makes tighter contribution bounds and preservation of KV
+reuse the next research questions, not another blind kernel sweep.
+
+These are limited dense-conditioned diagnostics, not a universal impossibility
+claim or an adaptive speedup. See the [head-sharing versus omission
+results](docs/adaptive_head_group_frontier.md), [physical-skipping
+measurements](docs/adaptive_physical_omission.md), and [cumulative accounting
+contract](docs/adaptive_kernel_contract.md).
 
 ### Exact native decode
 

@@ -1,0 +1,1935 @@
+{
+  "schema": "streamattn.adaptive_two_gate.v2",
+  "provider": "lightning",
+  "complete": true,
+  "input_source": "synthetic mechanism tests, not LLM activations",
+  "omission_commit_scope": "query_tile_and_head",
+  "numerical_protocol": "v2: cast L2 + 4*dtype_epsilon*selected_output_L2 + 1e-5*sqrt(D); omission measured separately",
+  "performance_promotion": false,
+  "cases": [
+    {
+      "kind": "cumulative",
+      "dtype": "torch.float16",
+      "q_shape": [
+        1,
+        1,
+        4,
+        32
+      ],
+      "kv_shape": [
+        1,
+        4096,
+        1,
+        32
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.01,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.00805044174194336,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.00013136863708496094,
+          "max_numerical_allowance": 0.003242996521294117,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            492,
+            492
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.00805044174194336,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.00013136863708496094,
+          "max_numerical_allowance": 0.003242996521294117,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            512,
+            512
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.00023794174194335938,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00023794174194335938,
+          "max_numerical_allowance": 0.0033186357468366623,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            512,
+            512,
+            512,
+            512
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.00805044174194336,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.00013136863708496094,
+          "max_numerical_allowance": 0.003242996521294117,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            492,
+            492
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 1.5914440155029297e-05,
+      "summary_build_wall_ms": 74.76732300000322,
+      "graph_ms": {
+        "adaptive": [
+          0.24173519611358643,
+          0.22731120586395265,
+          0.2273695945739746,
+          0.2273008108139038,
+          0.22734079360961915,
+          0.22510480880737305,
+          0.22508080005645753
+        ],
+        "mask_only_control": [
+          0.20209360122680664,
+          0.1952455997467041,
+          0.19145280122756958,
+          0.1913831949234009,
+          0.19146239757537842,
+          0.18963199853897095,
+          0.18960720300674438
+        ],
+        "zero_budget_control": [
+          0.1040719985961914,
+          0.1040727972984314,
+          0.10050719976425171,
+          0.10045039653778076,
+          0.1004520058631897,
+          0.09980639815330505,
+          0.09988639950752258
+        ],
+        "rowwise_diagnostic": [
+          0.22421760559082032,
+          0.22422080039978026,
+          0.21142399311065674,
+          0.2114176034927368,
+          0.21118481159210206,
+          0.20936479568481445,
+          0.2094183921813965
+        ],
+        "torch_flash_sdpa": [
+          0.011556000262498856,
+          0.011487200111150741,
+          0.011162400245666504,
+          0.011164800077676774,
+          0.0110895998775959,
+          0.01106960028409958,
+          0.011088799685239792
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.22731120586395265,
+        "mask_only_control": 0.19145280122756958,
+        "zero_budget_control": 0.1004520058631897,
+        "rowwise_diagnostic": 0.2114176034927368,
+        "torch_flash_sdpa": 0.011162400245666504
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "random_tails",
+      "dtype": "torch.float16",
+      "q_shape": [
+        2,
+        19,
+        8,
+        32
+      ],
+      "kv_shape": [
+        2,
+        137,
+        2,
+        32
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.00034363812301307917,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00034363812301307917,
+          "max_numerical_allowance": 0.005834318231791258,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.00034363812301307917,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00034363812301307917,
+          "max_numerical_allowance": 0.005834318231791258,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.00034363812301307917,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00034363812301307917,
+          "max_numerical_allowance": 0.005834318231791258,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.00034363812301307917,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00034363812301307917,
+          "max_numerical_allowance": 0.005834318231791258,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 0.0004733557580038905,
+      "summary_build_wall_ms": 1.0127580000016678,
+      "graph_ms": {
+        "adaptive": [
+          0.01311119943857193,
+          0.01279119998216629,
+          0.012770399451255798,
+          0.012758399546146392,
+          0.012785600125789642,
+          0.01276240050792694,
+          0.012779200077056884
+        ],
+        "mask_only_control": [
+          0.010779199749231338,
+          0.010675200074911118,
+          0.010674399882555008,
+          0.010690400004386902,
+          0.010687199980020523,
+          0.010659199953079224,
+          0.010690400004386902
+        ],
+        "zero_budget_control": [
+          0.006796000152826309,
+          0.0066767998039722444,
+          0.006685599684715271,
+          0.006677599996328354,
+          0.006684000045061112,
+          0.006692799925804138,
+          0.006678400188684463
+        ],
+        "rowwise_diagnostic": [
+          0.012426400184631347,
+          0.0123648002743721,
+          0.012351199984550476,
+          0.012334399670362473,
+          0.01234079971909523,
+          0.012337599694728852,
+          0.012333600223064423
+        ],
+        "torch_flash_sdpa": [
+          0.00860000029206276,
+          0.008563199639320373,
+          0.008542399853467941,
+          0.008719199895858764,
+          0.00854799970984459,
+          0.008539199829101562,
+          0.008559200167655944
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.012779200077056884,
+        "mask_only_control": 0.010687199980020523,
+        "zero_budget_control": 0.006684000045061112,
+        "rowwise_diagnostic": 0.01234079971909523,
+        "torch_flash_sdpa": 0.008559200167655944
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "causal",
+      "dtype": "torch.float16",
+      "q_shape": [
+        1,
+        65,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        65,
+        2,
+        64
+      ],
+      "options": {
+        "causal": true,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.0018648772966116667,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.0018648772966116667,
+          "max_numerical_allowance": 0.03654249757528305,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.0018648772966116667,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.0018648772966116667,
+          "max_numerical_allowance": 0.03654249757528305,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            120,
+            120
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.0018648772966116667,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.0018648772966116667,
+          "max_numerical_allowance": 0.03654249757528305,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.0018648772966116667,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.0018648772966116667,
+          "max_numerical_allowance": 0.03654249757528305,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 0.0020900683011859655,
+      "summary_build_wall_ms": 0.710572000002685,
+      "graph_ms": {
+        "adaptive": [
+          0.009058400243520736,
+          0.0087567999958992,
+          0.00878560021519661,
+          0.00875599980354309,
+          0.008773600310087204,
+          0.00878399983048439,
+          0.008764000236988067
+        ],
+        "mask_only_control": [
+          0.008004000037908554,
+          0.007900000363588334,
+          0.007902400195598602,
+          0.007897599786520004,
+          0.007918400317430496,
+          0.007904800027608872,
+          0.00790560021996498
+        ],
+        "zero_budget_control": [
+          0.005771199986338615,
+          0.005435200035572052,
+          0.005389599874615669,
+          0.005403200164437294,
+          0.005411199852824211,
+          0.005402399972081184,
+          0.005423200130462646
+        ],
+        "rowwise_diagnostic": [
+          0.008421599864959717,
+          0.008343999832868576,
+          0.008343999832868576,
+          0.008339200168848038,
+          0.008352799713611603,
+          0.008375199884176255,
+          0.008351200073957444
+        ],
+        "torch_flash_sdpa": [
+          0.007230400294065476,
+          0.00719280019402504,
+          0.007168799638748169,
+          0.007204800099134445,
+          0.00716560035943985,
+          0.0071712002158164975,
+          0.00719280019402504
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.008773600310087204,
+        "mask_only_control": 0.007904800027608872,
+        "zero_budget_control": 0.005411199852824211,
+        "rowwise_diagnostic": 0.008351200073957444,
+        "torch_flash_sdpa": 0.00719280019402504
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "peaked",
+      "dtype": "torch.float16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            8,
+            8
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            8,
+            8
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 2.095181480399333e-05,
+      "summary_build_wall_ms": 31.695775000002868,
+      "graph_ms": {
+        "adaptive": [
+          0.13606879711151124,
+          0.13409759998321533,
+          0.1340448021888733,
+          0.130076801776886,
+          0.12997679710388182,
+          0.12958879470825196,
+          0.12927279472351075
+        ],
+        "mask_only_control": [
+          0.4291952133178711,
+          0.4235968112945557,
+          0.4234951972961426,
+          0.413592004776001,
+          0.4139247894287109,
+          0.4138008117675781,
+          0.4122879981994629
+        ],
+        "zero_budget_control": [
+          0.21969680786132811,
+          0.21944959163665773,
+          0.21958320140838622,
+          0.2169895887374878,
+          0.21671040058135987,
+          0.21666240692138672,
+          0.21540000438690185
+        ],
+        "rowwise_diagnostic": [
+          0.1201848030090332,
+          0.12006880044937134,
+          0.12008880376815796,
+          0.12010079622268677,
+          0.11651599407196045,
+          0.116485595703125,
+          0.11589280366897584
+        ],
+        "torch_flash_sdpa": [
+          0.019192799925804138,
+          0.01903280019760132,
+          0.019062399864196777,
+          0.01905920058488846,
+          0.018648000061511995,
+          0.01863120049238205,
+          0.018669599294662477
+        ],
+        "known_support_traversal": [
+          0.018941600620746613,
+          0.01886720061302185,
+          0.01887039989233017,
+          0.018818399310111998,
+          0.018287999927997588,
+          0.01825519949197769,
+          0.01826400011777878
+        ],
+        "known_support_compact": [
+          0.00331760011613369,
+          0.0034696001559495924,
+          0.0032680001109838485,
+          0.003267199918627739,
+          0.003269600123167038,
+          0.003240799903869629,
+          0.0034272000193595886
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.130076801776886,
+        "mask_only_control": 0.4139247894287109,
+        "zero_budget_control": 0.2169895887374878,
+        "rowwise_diagnostic": 0.12006880044937134,
+        "torch_flash_sdpa": 0.01903280019760132,
+        "known_support_traversal": 0.018818399310111998,
+        "known_support_compact": 0.003269600123167038
+      },
+      "baseline_error": null,
+      "known_support_oracle": {
+        "shared_retained_blocks": [
+          0
+        ],
+        "diagnostic_only": true,
+        "valid_after_arbitrary_query_mutation": false,
+        "errors": {
+          "known_support_traversal": 0.00028507094248197973,
+          "known_support_compact": 0.00028507094248197973
+        }
+      }
+    },
+    {
+      "kind": "post_only",
+      "dtype": "torch.float16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": false
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            8
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            8
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 2.095181480399333e-05,
+      "summary_build_wall_ms": 30.71738500000265,
+      "graph_ms": {
+        "adaptive": [
+          0.18888959884643555,
+          0.1888360023498535,
+          0.1853767991065979,
+          0.18486080169677735,
+          0.18484799861907958,
+          0.18383439779281616,
+          0.18379600048065187
+        ],
+        "mask_only_control": [
+          0.3099535942077637,
+          0.3097624063491821,
+          0.30123438835144045,
+          0.3012480020523071,
+          0.3013416051864624,
+          0.29953761100769044,
+          0.29956960678100586
+        ],
+        "zero_budget_control": [
+          0.22095201015472413,
+          0.22095279693603515,
+          0.21666719913482665,
+          0.21666719913482665,
+          0.21663119792938232,
+          0.21536879539489745,
+          0.21542079448699952
+        ],
+        "rowwise_diagnostic": [
+          0.17040319442749025,
+          0.17027759552001953,
+          0.16678160429000854,
+          0.1667088031768799,
+          0.16567599773406982,
+          0.16561280488967894,
+          0.1656823992729187
+        ],
+        "torch_flash_sdpa": [
+          0.01926320046186447,
+          0.019151200354099274,
+          0.01873999983072281,
+          0.018719199299812316,
+          0.018701599538326265,
+          0.018659999966621398,
+          0.01870959997177124
+        ],
+        "known_support_traversal": [
+          0.018806399405002595,
+          0.018722400069236755,
+          0.01812320053577423,
+          0.018058399856090545,
+          0.018060000240802766,
+          0.018033599853515624,
+          0.018058399856090545
+        ],
+        "known_support_compact": [
+          0.003242399916052818,
+          0.003221600130200386,
+          0.003123199939727783,
+          0.0030896000564098356,
+          0.003126399964094162,
+          0.0030799999833106993,
+          0.0030920000746846197
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.18486080169677735,
+        "mask_only_control": 0.3012480020523071,
+        "zero_budget_control": 0.21666719913482665,
+        "rowwise_diagnostic": 0.1667088031768799,
+        "torch_flash_sdpa": 0.018719199299812316,
+        "known_support_traversal": 0.018060000240802766,
+        "known_support_compact": 0.003123199939727783
+      },
+      "baseline_error": null,
+      "known_support_oracle": {
+        "shared_retained_blocks": [
+          0
+        ],
+        "diagnostic_only": true,
+        "valid_after_arbitrary_query_mutation": false,
+        "errors": {
+          "known_support_traversal": 0.00028507094248197973,
+          "known_support_compact": 0.00028507094248197973
+        }
+      }
+    },
+    {
+      "kind": "mixed_rows",
+      "dtype": "torch.float16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.00028507094248197973,
+          "max_omission_bound": 6.968552818120699e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.00028507094248197973,
+          "max_numerical_allowance": 0.0056348880752921104,
+          "original_v1_limit_passed": true,
+          "counters": [
+            16320,
+            0,
+            16448,
+            2048,
+            2048,
+            2048
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.001,
+      "query_mutation_max_row_l2": 0.00028507094248197973,
+      "summary_build_wall_ms": 30.27552899999364,
+      "graph_ms": {
+        "adaptive": [
+          0.4823311805725098,
+          0.476148796081543,
+          0.47423439025878905,
+          0.4723775863647461,
+          0.4723400115966797,
+          0.4724703788757324,
+          0.4723663806915283
+        ],
+        "mask_only_control": [
+          0.41959199905395506,
+          0.41495599746704104,
+          0.4112368106842041,
+          0.4112800121307373,
+          0.4112800121307373,
+          0.41164321899414064,
+          0.4114960193634033
+        ],
+        "zero_budget_control": [
+          0.21680641174316406,
+          0.2166424036026001,
+          0.21529200077056884,
+          0.2153696060180664,
+          0.21540400981903077,
+          0.21540799140930175,
+          0.2153752088546753
+        ],
+        "rowwise_diagnostic": [
+          0.44323439598083497,
+          0.4425335884094238,
+          0.43927440643310545,
+          0.43940157890319825,
+          0.4396024227142334,
+          0.43978238105773926,
+          0.4396344184875488
+        ],
+        "torch_flash_sdpa": [
+          0.01867920011281967,
+          0.018500800430774688,
+          0.018426400423049927,
+          0.01839040070772171,
+          0.018413600325584412,
+          0.01839279979467392,
+          0.018379199504852294
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.4724703788757324,
+        "mask_only_control": 0.4114960193634033,
+        "zero_budget_control": 0.21540400981903077,
+        "rowwise_diagnostic": 0.4396344184875488,
+        "torch_flash_sdpa": 0.018413600325584412
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "cumulative",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        1,
+        1,
+        4,
+        32
+      ],
+      "kv_shape": [
+        1,
+        4096,
+        1,
+        32
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.01,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.007073879241943359,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.0008451938629150391,
+          "max_numerical_allowance": 0.025342237204313278,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            492,
+            492
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.007073879241943359,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.0008451938629150391,
+          "max_numerical_allowance": 0.025342237204313278,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            512,
+            512
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.0007386207580566406,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.0007386207580566406,
+          "max_numerical_allowance": 0.024988193064928055,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            512,
+            512,
+            512,
+            512
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.007073879241943359,
+          "max_omission_bound": 0.008890841156244278,
+          "max_omission_error": 0.007919073104858398,
+          "max_execution_error": 0.0008451938629150391,
+          "max_numerical_allowance": 0.025342237204313278,
+          "original_v1_limit_passed": true,
+          "counters": [
+            20,
+            0,
+            492,
+            512,
+            492,
+            492
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 1.5914440155029297e-05,
+      "summary_build_wall_ms": 15.986080000004677,
+      "graph_ms": {
+        "adaptive": [
+          0.23705840110778809,
+          0.2366879940032959,
+          0.22690320014953613,
+          0.22472720146179198,
+          0.22472240924835205,
+          0.224725604057312,
+          0.22466719150543213
+        ],
+        "mask_only_control": [
+          0.19919519424438475,
+          0.19906400442123412,
+          0.18935519456863403,
+          0.18931599855422973,
+          0.1893432021141052,
+          0.18933600187301636,
+          0.1893447995185852
+        ],
+        "zero_budget_control": [
+          0.1033951997756958,
+          0.10332080125808715,
+          0.1002128005027771,
+          0.10003600120544434,
+          0.10005840063095092,
+          0.10004639625549316,
+          0.10006480216979981
+        ],
+        "rowwise_diagnostic": [
+          0.22044639587402343,
+          0.22025840282440184,
+          0.20919439792633057,
+          0.20919039249420165,
+          0.2091991901397705,
+          0.20917599201202391,
+          0.20925600528717042
+        ],
+        "torch_flash_sdpa": [
+          0.0118087999522686,
+          0.011659199744462967,
+          0.011236800253391266,
+          0.011228799819946289,
+          0.011240799725055695,
+          0.0112015999853611,
+          0.011224000155925751
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.22472720146179198,
+        "mask_only_control": 0.1893447995185852,
+        "zero_budget_control": 0.10006480216979981,
+        "rowwise_diagnostic": 0.2091991901397705,
+        "torch_flash_sdpa": 0.011236800253391266
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "random_tails",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        2,
+        19,
+        8,
+        32
+      ],
+      "kv_shape": [
+        2,
+        137,
+        2,
+        32
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.002889720955863595,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002889720955863595,
+          "max_numerical_allowance": 0.04661313816905022,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.002889720955863595,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002889720955863595,
+          "max_numerical_allowance": 0.04661313816905022,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.002889720955863595,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002889720955863595,
+          "max_numerical_allowance": 0.04661313816905022,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.002889720955863595,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002889720955863595,
+          "max_numerical_allowance": 0.04661313816905022,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            1520,
+            160,
+            160,
+            160
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 0.004268982447683811,
+      "summary_build_wall_ms": 0.9106599999881837,
+      "graph_ms": {
+        "adaptive": [
+          0.013236799836158752,
+          0.012943999469280243,
+          0.012958399951457977,
+          0.012942400574684144,
+          0.012960800528526306,
+          0.012982399761676788,
+          0.012950399518013
+        ],
+        "mask_only_control": [
+          0.01090639978647232,
+          0.010807999968528747,
+          0.0107744000852108,
+          0.010787999629974366,
+          0.010786399990320206,
+          0.010789600014686585,
+          0.010804799944162368
+        ],
+        "zero_budget_control": [
+          0.006771200150251388,
+          0.006693600118160248,
+          0.006716799736022949,
+          0.006700800359249115,
+          0.006694400310516357,
+          0.006693600118160248,
+          0.006707199662923813
+        ],
+        "rowwise_diagnostic": [
+          0.01236959993839264,
+          0.012295199930667878,
+          0.01228479966521263,
+          0.012279199808835984,
+          0.01231520026922226,
+          0.012272799760103226,
+          0.012283200025558471
+        ],
+        "torch_flash_sdpa": [
+          0.008639200031757355,
+          0.008588799834251403,
+          0.008604799956083297,
+          0.00859839990735054,
+          0.008610399812459946,
+          0.008590400218963623,
+          0.008579199761152267
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.012958399951457977,
+        "mask_only_control": 0.010789600014686585,
+        "zero_budget_control": 0.006700800359249115,
+        "rowwise_diagnostic": 0.01228479966521263,
+        "torch_flash_sdpa": 0.00859839990735054
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "causal",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        1,
+        65,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        65,
+        2,
+        64
+      ],
+      "options": {
+        "causal": true,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.016001272946596146,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.016001272946596146,
+          "max_numerical_allowance": 0.291655957698822,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.016001272946596146,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.016001272946596146,
+          "max_numerical_allowance": 0.291655957698822,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            120,
+            120
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.016001272946596146,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.016001272946596146,
+          "max_numerical_allowance": 0.291655957698822,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.016001272946596146,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.016001272946596146,
+          "max_numerical_allowance": 0.291655957698822,
+          "original_v1_limit_passed": false,
+          "counters": [
+            0,
+            0,
+            792,
+            72,
+            72,
+            72
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 0.01316644623875618,
+      "summary_build_wall_ms": 0.5887400000119669,
+      "graph_ms": {
+        "adaptive": [
+          0.00917999967932701,
+          0.008820000290870666,
+          0.008790399879217148,
+          0.008803199976682663,
+          0.008791200071573257,
+          0.008787199854850769,
+          0.00878560021519661
+        ],
+        "mask_only_control": [
+          0.008018399775028228,
+          0.007906399667263031,
+          0.007867199927568435,
+          0.007919199764728546,
+          0.007927200198173523,
+          0.007889600098133087,
+          0.007915200293064117
+        ],
+        "zero_budget_control": [
+          0.005511200055480003,
+          0.005374399945139885,
+          0.00538799986243248,
+          0.0053911998867988585,
+          0.005381600186228752,
+          0.0053831998258829115,
+          0.005366399884223938
+        ],
+        "rowwise_diagnostic": [
+          0.008454400300979614,
+          0.008378399908542633,
+          0.008364000171422959,
+          0.008364000171422959,
+          0.008367999643087386,
+          0.008381599932909012,
+          0.008364000171422959
+        ],
+        "torch_flash_sdpa": [
+          0.007196799665689468,
+          0.007173600047826767,
+          0.007147199660539627,
+          0.007159200310707092,
+          0.007176800072193146,
+          0.007185599952936173,
+          0.0071439996361732485
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.008791200071573257,
+        "mask_only_control": 0.007915200293064117,
+        "zero_budget_control": 0.0053831998258829115,
+        "rowwise_diagnostic": 0.008367999643087386,
+        "torch_flash_sdpa": 0.007173600047826767
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    },
+    {
+      "kind": "peaked",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            8,
+            8
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            32640,
+            0,
+            128,
+            2048,
+            8,
+            8
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 0.0001602888514753431,
+      "summary_build_wall_ms": 31.754259000024376,
+      "graph_ms": {
+        "adaptive": [
+          0.13597840070724487,
+          0.13237040042877196,
+          0.13236960172653198,
+          0.1323799967765808,
+          0.13067760467529296,
+          0.12915600538253785,
+          0.12919360399246216
+        ],
+        "mask_only_control": [
+          0.42962799072265623,
+          0.4219535827636719,
+          0.42185359001159667,
+          0.42200160026550293,
+          0.4121607780456543,
+          0.4121088027954102,
+          0.4121511936187744
+        ],
+        "zero_budget_control": [
+          0.22249839305877686,
+          0.22217040061950682,
+          0.2193671941757202,
+          0.21935679912567138,
+          0.2152575969696045,
+          0.21525681018829346,
+          0.2152951955795288
+        ],
+        "rowwise_diagnostic": [
+          0.12127679586410522,
+          0.1212272047996521,
+          0.11830639839172363,
+          0.11822960376739503,
+          0.1154960036277771,
+          0.11549279689788819,
+          0.11552959680557251
+        ],
+        "torch_flash_sdpa": [
+          0.0191880002617836,
+          0.0190528005361557,
+          0.018838399648666383,
+          0.0188168004155159,
+          0.01857600063085556,
+          0.018540799617767334,
+          0.018569600582122803
+        ],
+        "known_support_traversal": [
+          0.018912799656391144,
+          0.018807199597358704,
+          0.01839199960231781,
+          0.018404799699783325,
+          0.017962400615215302,
+          0.017951199412345888,
+          0.017948800325393678
+        ],
+        "known_support_compact": [
+          0.003221600130200386,
+          0.0032095998525619508,
+          0.003187200054526329,
+          0.003168800100684166,
+          0.003116000071167946,
+          0.0031215999275445937,
+          0.0031536001712083816
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.13236960172653198,
+        "mask_only_control": 0.42185359001159667,
+        "zero_budget_control": 0.21935679912567138,
+        "rowwise_diagnostic": 0.11822960376739503,
+        "torch_flash_sdpa": 0.0188168004155159,
+        "known_support_traversal": 0.01839199960231781,
+        "known_support_compact": 0.003168800100684166
+      },
+      "baseline_error": null,
+      "known_support_oracle": {
+        "shared_retained_blocks": [
+          0
+        ],
+        "diagnostic_only": true,
+        "valid_after_arbitrary_query_mutation": false,
+        "errors": {
+          "known_support_traversal": 0.002269566524773836,
+          "known_support_compact": 0.002269566524773836
+        }
+      }
+    },
+    {
+      "kind": "post_only",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": false
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            8
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            32640,
+            128,
+            2048,
+            2048,
+            8
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 0.0001602888514753431,
+      "summary_build_wall_ms": 30.86431900001685,
+      "graph_ms": {
+        "adaptive": [
+          0.1895848035812378,
+          0.1892135977745056,
+          0.1887503981590271,
+          0.183843195438385,
+          0.18383599519729615,
+          0.1837488055229187,
+          0.18367120027542114
+        ],
+        "mask_only_control": [
+          0.3102319955825806,
+          0.31021120548248293,
+          0.309224009513855,
+          0.299511194229126,
+          0.2992799997329712,
+          0.2993920087814331,
+          0.29935760498046876
+        ],
+        "zero_budget_control": [
+          0.2211384057998657,
+          0.2210223913192749,
+          0.2154439926147461,
+          0.21543920040130615,
+          0.21543600559234619,
+          0.21539599895477296,
+          0.21541600227355956
+        ],
+        "rowwise_diagnostic": [
+          0.1704815983772278,
+          0.17039120197296143,
+          0.16572959423065187,
+          0.16569919586181642,
+          0.16571359634399413,
+          0.16571680307388306,
+          0.16568559408187866
+        ],
+        "torch_flash_sdpa": [
+          0.01940079927444458,
+          0.019259999692440032,
+          0.01884640008211136,
+          0.018746399879455568,
+          0.01880960017442703,
+          0.018800799548625947,
+          0.018848000466823576
+        ],
+        "known_support_traversal": [
+          0.01879359930753708,
+          0.01871200054883957,
+          0.018082399666309357,
+          0.018057599663734436,
+          0.018052799999713896,
+          0.018049600720405578,
+          0.01807519942522049
+        ],
+        "known_support_compact": [
+          0.003380800038576126,
+          0.0032159999012947083,
+          0.003112800046801567,
+          0.0031096000224351884,
+          0.0031272001564502717,
+          0.0031096000224351884,
+          0.003086400032043457
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.183843195438385,
+        "mask_only_control": 0.299511194229126,
+        "zero_budget_control": 0.21543920040130615,
+        "rowwise_diagnostic": 0.16571680307388306,
+        "torch_flash_sdpa": 0.01884640008211136,
+        "known_support_traversal": 0.01807519942522049,
+        "known_support_compact": 0.003112800046801567
+      },
+      "baseline_error": null,
+      "known_support_oracle": {
+        "shared_retained_blocks": [
+          0
+        ],
+        "diagnostic_only": true,
+        "valid_after_arbitrary_query_mutation": false,
+        "errors": {
+          "known_support_traversal": 0.002269566524773836,
+          "known_support_compact": 0.002269566524773836
+        }
+      }
+    },
+    {
+      "kind": "mixed_rows",
+      "dtype": "torch.bfloat16",
+      "q_shape": [
+        1,
+        16,
+        8,
+        64
+      ],
+      "kv_shape": [
+        1,
+        8192,
+        2,
+        64
+      ],
+      "options": {
+        "causal": false,
+        "error_budget": 0.001,
+        "enable_summary_gate": true
+      },
+      "block_size": 32,
+      "query_tile": 16,
+      "correctness": {
+        "adaptive": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "mask_only_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "zero_budget_control": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 0.0,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            0,
+            0,
+            32768,
+            2048,
+            2048,
+            2048
+          ]
+        },
+        "rowwise_diagnostic": {
+          "max_row_l2": 0.002269566524773836,
+          "max_omission_bound": 6.967278837199942e-11,
+          "max_omission_error": 0.0,
+          "max_execution_error": 0.002269566524773836,
+          "max_numerical_allowance": 0.04423244297504425,
+          "original_v1_limit_passed": true,
+          "counters": [
+            16320,
+            0,
+            16448,
+            2048,
+            2048,
+            2048
+          ]
+        }
+      },
+      "roundoff_allowance_l2": 0.006,
+      "query_mutation_max_row_l2": 0.002269566524773836,
+      "summary_build_wall_ms": 31.147999000012305,
+      "graph_ms": {
+        "adaptive": [
+          0.48212881088256837,
+          0.47186079025268557,
+          0.4721047878265381,
+          0.47188878059387207,
+          0.471835994720459,
+          0.47185359001159666,
+          0.4718791961669922
+        ],
+        "mask_only_control": [
+          0.42052879333496096,
+          0.4115744113922119,
+          0.41185760498046875,
+          0.4116231918334961,
+          0.4116936206817627,
+          0.4115744113922119,
+          0.4118343830108643
+        ],
+        "zero_budget_control": [
+          0.21956319808959962,
+          0.2154520034790039,
+          0.21543118953704835,
+          0.21542160511016845,
+          0.21541199684143067,
+          0.21542959213256835,
+          0.21542079448699952
+        ],
+        "rowwise_diagnostic": [
+          0.4413735866546631,
+          0.4384431838989258,
+          0.43869681358337403,
+          0.43856239318847656,
+          0.43857197761535643,
+          0.4382967948913574,
+          0.43871521949768066
+        ],
+        "torch_flash_sdpa": [
+          0.018690399825572968,
+          0.018616800010204316,
+          0.018619200587272643,
+          0.018662400543689728,
+          0.018607999384403228,
+          0.01860159933567047,
+          0.018621599674224852
+        ]
+      },
+      "median_graph_ms": {
+        "adaptive": 0.4718791961669922,
+        "mask_only_control": 0.4116936206817627,
+        "zero_budget_control": 0.21542959213256835,
+        "rowwise_diagnostic": 0.43857197761535643,
+        "torch_flash_sdpa": 0.018619200587272643
+      },
+      "baseline_error": null,
+      "known_support_oracle": null
+    }
+  ],
+  "failures": [],
+  "torch": "2.7.1+cu128",
+  "cuda": "12.8",
+  "python": "3.11.13",
+  "device": "NVIDIA H100 80GB HBM3",
+  "capability": [
+    9,
+    0
+  ],
+  "sources": {
+    "stream_attention/certified/attention.py": "c166bc4f2105cce3734ea7d2bb59d073f413bc0e28f6a93458dfc50f95dbc7d8",
+    "stream_attention/certified/summaries.py": "64560cb787ab0d3a11bf836cbe483fa67112410ab38b16b020d3b03ddfac43f3",
+    "stream_attention/kernels/certified_fwd_triton.py": "e2d494650a99f5c1c435c4165df2e73c7ed60ae00b62929b091af1ff6500a24e",
+    "benchmarks/profile_adaptive_two_gate.py": "0784a831d95783d97bca5f39a5c8379c3b167abc2dee0cdf68f27eeb91893839",
+    "benchmarks/adaptive_known_support.py": "93e270c7e6655d3cd0d8aaadfad71a86bb53a7f1d906dc180863b98967ee18d6"
+  },
+  "execution": {
+    "provider": "lightning",
+    "job_id": "job_01m3rse1m6bx4pvvk6trxrzvpd",
+    "platform_state": "running",
+    "reported_cost": 0.13884445,
+    "source": {
+      "base_sha": "d961db6451f513b41fb1a4d39c64735861e30969",
+      "overlay_sha256": "1d9830ad7915188862b25b4f426e02b80c93c5b677981a9bf91a439f33b5de63"
+    },
+    "machine": "nb-h100-1gpu-16vcpu-200gb",
+    "platform_message": ""
+  }
+}
