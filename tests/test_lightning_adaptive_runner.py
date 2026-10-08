@@ -76,3 +76,27 @@ def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
 
     assert calls == ["submit", "delete"]
     assert json.loads(output.read_text())["execution"]["platform_state"] == state
+
+
+def test_feasibility_replays_hashed_archives_without_model_download(tmp_path):
+    metadata = tmp_path / "capture.json"
+    metadata.write_text(json.dumps(dict(capture_remote_path="uploads/streamattn/test.captures.pt",
+        capture_archive_sha256="a" * 64, model="test-model", model_revision="pinned")))
+    args = types.SimpleNamespace(experiment="feasibility", capture_artifacts=[metadata],
+        teamspace_id="teamspace", cloud_account="cloud", output_json=tmp_path / "result.json")
+    command, source = runner.job_command(args)
+    assert source["schema"] == "streamattn.adaptive_feasibility.v1"
+    assert source["capture_inputs"][0]["sha256"] == "a" * 64
+    assert "--native" in command and "Capture hash mismatch" in command
+    assert "from_pretrained" not in command and "LIGHTNING_API_KEY" not in command
+    assert "group_frontier.py --provider" not in command
+
+
+@pytest.mark.parametrize("remote", ["../capture.pt", "uploads/streamattn/../capture.pt"])
+def test_feasibility_rejects_invalid_archive_paths(tmp_path, remote):
+    metadata = tmp_path / "capture.json"
+    metadata.write_text(json.dumps(dict(capture_remote_path=remote,
+        capture_archive_sha256="a" * 64, model="test", model_revision="pin")))
+    args = types.SimpleNamespace(experiment="feasibility", capture_artifacts=[metadata])
+    with pytest.raises(ValueError, match="invalid capture"):
+        runner.job_command(args)
