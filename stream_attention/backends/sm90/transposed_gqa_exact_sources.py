@@ -180,6 +180,14 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_nhd_exact_decode_out_
     torch::Tensor output,
     int64_t max_routes_per_row);
 
+void streamattn_selected_nhd_phase_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row, int64_t phase);
+std::vector<int64_t> streamattn_selected_nhd_resources_cuda();
+
 void streamattn_prepare_qhead_paged_routes64_out_cuda(
     torch::Tensor source_row_ptr,
     torch::Tensor source_atom_ids,
@@ -308,6 +316,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("paged_selected_fragmented_nhd_exact_decode_out",
         &streamattn_transposed_wgmma_paged_selected_fragmented_nhd_exact_decode_out_cuda,
         "StreamAttn direct NHD page-16 selected-route producer and static merge");
+  m.def("selected_nhd_phase_out", &streamattn_selected_nhd_phase_out_cuda,
+        "Diagnostic selected execution: 0 complete, 1 producer, 2 merge");
+  m.def("selected_nhd_resources", &streamattn_selected_nhd_resources_cuda,
+        "Compiled selected producer, native producer and merge resources");
   m.def("prepare_qhead_paged_routes64_out",
         &streamattn_prepare_qhead_paged_routes64_out_cuda,
         "StreamAttn device-side Q-head CSR to row-local PackedRoute64 lowering");
@@ -4692,7 +4704,8 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
     torch::Tensor partial_o,
     torch::Tensor partial_lse,
     torch::Tensor output,
-    int64_t max_routes_per_row) {
+    int64_t max_routes_per_row, int64_t phase = 0) {
+  TORCH_CHECK(phase >= 0 && phase <= 2, "phase must be 0, 1 or 2");
   TORCH_CHECK(q_group.is_cuda() && k_pages.is_cuda() && v_pages.is_cuda() &&
               route_row_ptr.is_cuda() && physical_page_ids.is_cuda() &&
               active_head_masks.is_cuda() && token_valid_masks.is_cuda() &&
@@ -4765,6 +4778,7 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   const dim3 partial_grid(groups * static_cast<int>(max_routes_per_row));
   const dim3 partial_block(128);
+  if (phase != 2) {
   streamattn_transposed_wgmma_exact_partial_kernel<
       16, false, kNHD, true><<<partial_grid, partial_block, 0, stream>>>(
       reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
@@ -4784,9 +4798,11 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
       physical_page_ids.data_ptr<int>(),
       active_head_masks.data_ptr<int>(),
       token_valid_masks.data_ptr<int>());
+  }
 
   const dim3 merge_grid(groups * active_heads);
   const dim3 merge_block(32);
+  if (phase != 1) {
   streamattn_transposed_wgmma_exact_merge_warp_kernel<<<
       merge_grid, merge_block, 0, stream>>>(
       partial_o.data_ptr<float>(),
@@ -4795,6 +4811,7 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
       groups,
       static_cast<int>(max_routes_per_row),
       active_heads);
+  }
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
@@ -4832,6 +4849,35 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_nhd_exact_decode_out_
       q_group, k_pages, v_pages, route_row_ptr, physical_page_ids,
       active_head_masks, token_valid_masks, partial_o, partial_lse, output,
       max_routes_per_row);
+}
+
+void streamattn_selected_nhd_phase_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row, int64_t phase) {
+  streamattn_transposed_wgmma_paged_selected_fragmented_impl<true>(
+      q_group, k_pages, v_pages, route_row_ptr, physical_page_ids,
+      active_head_masks, token_valid_masks, partial_o, partial_lse, output,
+      max_routes_per_row, phase);
+}
+
+std::vector<int64_t> streamattn_selected_nhd_resources_cuda() {
+  std::vector<int64_t> result;
+  auto append = [&](const void* kernel) {
+    cudaFuncAttributes attributes{};
+    C10_CUDA_CHECK(cudaFuncGetAttributes(&attributes, kernel));
+    result.insert(result.end(), {attributes.numRegs,
+        static_cast<int64_t>(attributes.sharedSizeBytes),
+        static_cast<int64_t>(attributes.localSizeBytes), attributes.maxThreadsPerBlock});
+  };
+  append(reinterpret_cast<const void*>(
+      streamattn_transposed_wgmma_exact_partial_kernel<16, false, true, true>));
+  append(reinterpret_cast<const void*>(
+      streamattn_transposed_wgmma_exact_partial_kernel<16, false, true>));
+  append(reinterpret_cast<const void*>(streamattn_transposed_wgmma_exact_merge_warp_kernel));
+  return result;
 }
 
 template <bool kNHD>

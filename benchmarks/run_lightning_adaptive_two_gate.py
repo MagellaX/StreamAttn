@@ -41,6 +41,7 @@ def job_command(args=None):
     frontier = args is not None and args.experiment == "group_frontier"
     feasibility = args is not None and args.experiment == "feasibility"
     long_context = args is not None and args.experiment == "long_context_feasibility"
+    attribution = args is not None and args.experiment == "executor_attribution"
     files = SOURCE_FILES + ("tests/test_certified_attention.py", "tests/test_adaptive_two_gate_gpu.py")
     schema = SCHEMA
     if frontier:
@@ -48,7 +49,7 @@ def job_command(args=None):
         files += FRONTIER_FILES + ("tests/test_adaptive_real_diagnostic.py",
                                    "benchmarks/run_lightning_adaptive_two_gate.py")
         schema = FRONTIER_SCHEMA
-    if feasibility or long_context:
+    if feasibility or long_context or attribution:
         # Keep the controller independent of a local CUDA/PyTorch installation.
         files += ("benchmarks/profile_adaptive_feasibility.py", "tests/test_adaptive_feasibility.py",
                   "benchmarks/run_lightning_adaptive_two_gate.py")
@@ -58,6 +59,12 @@ def job_command(args=None):
                       "benchmarks/profile_adaptive_real_activations.py",
                       "tests/test_adaptive_long_context.py", "docs/adaptive_long_context_protocol.md")
             schema = "streamattn.adaptive_long_context_feasibility.v1"
+        if attribution:
+            files += ("benchmarks/profile_adaptive_executor_attribution.py",
+                      "benchmarks/profile_adaptive_long_context.py",
+                      "tests/test_adaptive_executor_attribution.py",
+                      "docs/adaptive_executor_attribution_protocol.md")
+            schema = "streamattn.adaptive_executor_attribution.v1"
     sha = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=ROOT, text=True).strip()
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w:gz") as archive:
@@ -79,10 +86,12 @@ def job_command(args=None):
     ]
     remote_capture = None
     capture_inputs = []
-    if feasibility or long_context:
-        if feasibility and not args.capture_artifacts:
+    if feasibility or long_context or attribution:
+        if (feasibility or attribution) and not args.capture_artifacts:
             raise ValueError("feasibility requires existing capture metadata artifacts")
-        for path in (args.capture_artifacts or []) if feasibility else []:
+        if attribution and len(args.capture_artifacts) != 1:
+            raise ValueError("attribution requires exactly one existing source report")
+        for path in (args.capture_artifacts or []) if feasibility or attribution else []:
             result = json.loads(path.read_text(encoding="utf-8"))
             remote = result["capture_remote_path"]
             digest = result["capture_archive_sha256"]
@@ -126,8 +135,17 @@ def job_command(args=None):
                 "PY",
             ]
             paths = ["/tmp/" + Path(item["remote"]).name for item in capture_inputs]
-            commands.append(shlex.join(["python", "-u", "benchmarks/profile_adaptive_feasibility.py",
-                "--captures", *paths, "--native", "--output-json", "/tmp/adaptive.json"]))
+            if attribution:
+                report = args.capture_artifacts[0].resolve().relative_to(ROOT).as_posix()
+                commands += [
+                    "python -m pytest -q tests/test_adaptive_executor_attribution.py",
+                    shlex.join(["python", "-u", "benchmarks/profile_adaptive_executor_attribution.py",
+                        "--captures", paths[0], "--source-report", report,
+                        "--output-json", "/tmp/adaptive.json"]),
+                ]
+            else:
+                commands.append(shlex.join(["python", "-u", "benchmarks/profile_adaptive_feasibility.py",
+                    "--captures", *paths, "--native", "--output-json", "/tmp/adaptive.json"]))
     elif frontier:
         remote_capture = f"uploads/streamattn/{args.output_json.stem}.captures.pt"
         command = ["python", "-u", "benchmarks/profile_adaptive_group_frontier.py", "--provider", "lightning",
@@ -160,7 +178,7 @@ def job_command(args=None):
     return "\n".join(commands), dict(base_sha=sha, overlay_sha256=hashlib.sha256(stream.getvalue()).hexdigest(),
                                       schema=schema, capture_remote_path=remote_capture,
                                       capture_inputs=capture_inputs,
-                                      cutlass_source_commit=CUTLASS_SOURCE_COMMIT if feasibility or long_context else None)
+                                      cutlass_source_commit=CUTLASS_SOURCE_COMMIT if feasibility or long_context or attribution else None)
 
 
 def main():
@@ -176,7 +194,7 @@ def main():
     p.add_argument("--teamspace-id", default=os.getenv("LIGHTNING_TEAMSPACE_ID", "01jggw9j5v8ms266vgvgcs3q13"))
     p.add_argument("--cloud-account", default=os.getenv("LIGHTNING_CLOUD_ACCOUNT", "lightning-nebius-prod"))
     p.add_argument("--machine", default=os.getenv("LIGHTNING_MACHINE", "nb-h100-1gpu-16vcpu-200gb"))
-    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility", "long_context_feasibility"), default="physical_canary")
+    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility", "long_context_feasibility", "executor_attribution"), default="physical_canary")
     p.add_argument("--capture-artifacts", type=Path, nargs="+")
     p.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct")
     p.add_argument("--revision")
@@ -193,7 +211,7 @@ def main():
     command, source = job_command(args)
     api, job = JobApiV2(), None
     environment = {"PYTHONUNBUFFERED": "1", "HF_HUB_DISABLE_XET": "1"}
-    if args.experiment in ("group_frontier", "feasibility", "long_context_feasibility"):
+    if args.experiment in ("group_frontier", "feasibility", "long_context_feasibility", "executor_attribution"):
         from lightning_sdk.lightning_cloud.login import Auth
         from lightning_sdk.lightning_cloud.openapi import V1LoginRequest
         # Short-lived platform token enables capture upload to the same teamspace.

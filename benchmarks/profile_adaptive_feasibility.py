@@ -164,7 +164,7 @@ def graph_buffer_indices(copies, condition):
 
 
 def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, trials=7,
-                    buffer_copies=1):
+                    buffer_copies=1, selected_observer=None):
     """Offline route preparation; complete allocation-free native call is timed."""
     from benchmarks.micro_prefill_baselines import baseline_versions, prepare_baselines
     from benchmarks.profile_paged_exact_decode import _flashinfer_runner
@@ -269,6 +269,8 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
             workspace_bytes=plan.workspace_bytes, group_route_efficiency=routes.group_route_efficiency,
             active_kv_payload_bytes_per_copy=sum(schedule["retained_tokens_per_kv_head"]) * dim * k.element_size() * 2,
             runs=runs)
+        if selected_observer is not None:
+            item["attribution"] = selected_observer(plans)
         reused[signature] = item
         selected.append(item)
 
@@ -312,7 +314,12 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
             baseline_measurements=measurements, selected=rows, buffer_indices=indices[condition],
             calls_per_graph=buffer_copies, condition=condition)
     common = dict(unavailable=unavailable, versions=baseline_versions(),
-        full_native_backend=exact_plan.backend, timing="alternating paired CUDA graph replay; complete call; ms per attention call",
+        full_native_backend=exact_plan.backend,
+        full_native_geometry=dict(splits=exact_plan.splits,
+            producer_ctas=hk * exact_plan.splits,
+            tiles_per_split=math.ceil(math.ceil(n / 64) / exact_plan.splits),
+            workspace_bytes=exact_plan.workspace_bytes),
+        timing="alternating paired CUDA graph replay; complete call; ms per attention call",
         preparation_and_decisions_included=False, kv_gather_in_timing=False,
         buffer_copies=buffer_copies, full_kv_payload_bytes_per_copy=(k.numel() + v.numel()) * k.element_size(),
         hardware_memory_traffic_measured=False, cache_residency_guaranteed=False,

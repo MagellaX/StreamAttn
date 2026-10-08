@@ -203,7 +203,8 @@ def test_native_conditions_resolve_different_winners_and_normalize_calls(monkeyp
     class Exact:
         @staticmethod
         def build(q, cache):
-            return types.SimpleNamespace(run=run_factory("native", q), backend="test")
+            return types.SimpleNamespace(run=run_factory("native", q), backend="test",
+                                         splits=1, workspace_bytes=256)
 
     class Selected:
         @staticmethod
