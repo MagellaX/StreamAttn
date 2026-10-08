@@ -11,9 +11,10 @@ import sys
 import tarfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from lightning_sdk.api.job_api import JobApiV2
+if TYPE_CHECKING:
+    from lightning_sdk.api.job_api import JobApiV2
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -25,7 +26,8 @@ RESULT_SCHEMAS = {
     "canary": "streamattn.sm90_grouped_rs_prefill_canary.v1",
     "promotion": "streamattn.sm90_grouped_rs_prefill_promotion.v1",
 }
-TERMINAL_STATES = {"completed", "failed", "stop", "stopped", "cancelled", "error"}
+COMPLETED_STATES = {"complete", "completed"}
+TERMINAL_STATES = COMPLETED_STATES | {"failed", "stop", "stopped", "cancelled", "error"}
 OVERLAY_FILES = (
     "benchmarks/profile_sm90_grouped_rs_prefill_canary.py",
     "stream_attention/backends/sm90/__init__.py",
@@ -150,6 +152,8 @@ def _delete_job(api: JobApiV2, args: argparse.Namespace, job: Any) -> None:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    from lightning_sdk.api.job_api import JobApiV2
+
     api = JobApiV2()
     job = None
     try:
@@ -198,7 +202,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "could not parse grouped RS-PV prefill canary result "
                 f"from Lightning state={state}"
             )
-        if state != "completed":
+        if state not in COMPLETED_STATES:
             print(
                 f"warning: accepting complete structured result from state={state}",
                 flush=True,

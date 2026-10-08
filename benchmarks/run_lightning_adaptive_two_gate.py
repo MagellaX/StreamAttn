@@ -101,7 +101,9 @@ def main():
     from importlib.metadata import version
     from packaging.version import Version
     from lightning_sdk.api.job_api import JobApiV2
-    from benchmarks.run_lightning_sm90_grouped_rs_prefill_canary import TERMINAL_STATES, _delete_job
+    from benchmarks.run_lightning_sm90_grouped_rs_prefill_canary import (
+        COMPLETED_STATES, TERMINAL_STATES, _delete_job,
+    )
 
     p = argparse.ArgumentParser()
     p.add_argument("--output-json", type=Path, required=True)
@@ -182,7 +184,7 @@ def main():
             if hashlib.sha256(target.read_bytes()).hexdigest() != result["capture_archive_sha256"]:
                 raise RuntimeError("Downloaded capture hash mismatch")
         print(f"artifact complete={result['complete']}; {args.output_json}", flush=True)
-        if not result["complete"] or str(current.state) != "completed":
+        if not result["complete"] or str(current.state) not in COMPLETED_STATES:
             raise RuntimeError("Adaptive canary failed; evidence retained")
     finally:
         if job is not None:

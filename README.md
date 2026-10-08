@@ -951,6 +951,10 @@ A publishable performance result should record:
 - numerical tolerance or model-distribution gate
 - paired raw timings, not speedup alone
 
+GPU access checks are not performance results. Automated runs must finish
+successfully, retain complete result artifacts, and release their compute
+resources before they count as completed evidence.
+
 FlashInfer is the exact decode reference used by the promoted H100 phase
 diagrams. PyTorch SDPA is the general correctness fallback and training
 reference. FlashAttention-class implementations remain external references,
