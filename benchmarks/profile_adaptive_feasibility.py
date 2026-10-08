@@ -220,6 +220,13 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
         torch.cuda.synchronize()
         preparation_ms = (time.perf_counter() - start) * 1000
         graph, check = check_and_capture(schedule["method"], plan.run, references[schedule["method"]])
+        if schedule["method"] == "full":
+            # Full selected execution is itself an exact candidate. Keep its
+            # buffers alive while comparing later schedules against its graph.
+            name = "streamattn_selected_full_control"
+            valid[name], graphs[name] = plan.run, graph
+            measurements.append(dict(check, name=name))
+            fastest = min(measurements, key=lambda r: r["median_ms"])["name"]
         paired = []
         for trial in range(trials):
             order = ("exact", "selected") if trial % 2 == 0 else ("selected", "exact")
@@ -279,7 +286,8 @@ def main():
                 prompt_id=capture["prompt_id"], omitted={r["method"]:r["omitted_token_fraction"]
                                                        for r in diagnostic["schedules"]})), flush=True)
             if args.native:
-                with torch.inference_mode():
+                # Route metadata validation needs ordinary tensor version counters.
+                with torch.no_grad():
                     record["native"] = native_headroom(q, k, v, diagnostic, full, references,
                         iterations=args.iterations, trials=args.trials)
             records.append(record)

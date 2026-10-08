@@ -23,7 +23,7 @@ def test_active_states_are_not_terminal(state):
     assert state not in TERMINAL_STATES
 
 
-@pytest.mark.parametrize("state", ["complete", "completed", "failed", "stopped"])
+@pytest.mark.parametrize("state", ["complete", "completed", "fail", "failed", "stopped"])
 def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
     output = tmp_path / "result.json"
     calls = []

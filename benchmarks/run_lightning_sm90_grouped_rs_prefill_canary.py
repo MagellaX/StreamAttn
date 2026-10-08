@@ -27,7 +27,7 @@ RESULT_SCHEMAS = {
     "promotion": "streamattn.sm90_grouped_rs_prefill_promotion.v1",
 }
 COMPLETED_STATES = {"complete", "completed"}
-TERMINAL_STATES = COMPLETED_STATES | {"failed", "stop", "stopped", "cancelled", "error"}
+TERMINAL_STATES = COMPLETED_STATES | {"fail", "failed", "stop", "stopped", "cancelled", "error"}
 OVERLAY_FILES = (
     "benchmarks/profile_sm90_grouped_rs_prefill_canary.py",
     "stream_attention/backends/sm90/__init__.py",
