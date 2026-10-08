@@ -40,6 +40,7 @@ def upload_capture(path, *, api, teamspace_id, cloud_account, remote_path):
 def job_command(args=None):
     frontier = args is not None and args.experiment == "group_frontier"
     feasibility = args is not None and args.experiment == "feasibility"
+    long_context = args is not None and args.experiment == "long_context_feasibility"
     files = SOURCE_FILES + ("tests/test_certified_attention.py", "tests/test_adaptive_two_gate_gpu.py")
     schema = SCHEMA
     if frontier:
@@ -47,11 +48,16 @@ def job_command(args=None):
         files += FRONTIER_FILES + ("tests/test_adaptive_real_diagnostic.py",
                                    "benchmarks/run_lightning_adaptive_two_gate.py")
         schema = FRONTIER_SCHEMA
-    if feasibility:
+    if feasibility or long_context:
         # Keep the controller independent of a local CUDA/PyTorch installation.
         files += ("benchmarks/profile_adaptive_feasibility.py", "tests/test_adaptive_feasibility.py",
                   "benchmarks/run_lightning_adaptive_two_gate.py")
         schema = "streamattn.adaptive_feasibility.v1"
+        if long_context:
+            files += ("benchmarks/profile_adaptive_long_context.py",
+                      "benchmarks/profile_adaptive_real_activations.py",
+                      "tests/test_adaptive_long_context.py", "docs/adaptive_long_context_protocol.md")
+            schema = "streamattn.adaptive_long_context_feasibility.v1"
     sha = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=ROOT, text=True).strip()
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w:gz") as archive:
@@ -73,10 +79,10 @@ def job_command(args=None):
     ]
     remote_capture = None
     capture_inputs = []
-    if feasibility:
-        if not args.capture_artifacts:
+    if feasibility or long_context:
+        if feasibility and not args.capture_artifacts:
             raise ValueError("feasibility requires existing capture metadata artifacts")
-        for path in args.capture_artifacts:
+        for path in (args.capture_artifacts or []) if feasibility else []:
             result = json.loads(path.read_text(encoding="utf-8"))
             remote = result["capture_remote_path"]
             digest = result["capture_archive_sha256"]
@@ -97,19 +103,31 @@ def job_command(args=None):
             "PY",
             "export STREAMATTN_CUTLASS_ROOT=/tmp/flashmla-etap/csrc/cutlass",
             "python -m pytest -q tests/test_adaptive_feasibility.py tests/test_adaptive_real_diagnostic.py",
-            "python - <<'PY'",
-            "import hashlib,pathlib",
-            "from lightning_sdk.api import TeamspaceApi",
-            f"inputs={capture_inputs!r}",
-            "for item in inputs:",
-            "    target='/tmp/'+pathlib.PurePosixPath(item['remote']).name",
-            f"    TeamspaceApi().download_file(path=item['remote'],target_path=target,teamspace_id={args.teamspace_id!r},cloud_account={args.cloud_account!r},progress_bar=False)",
-            "    if hashlib.sha256(pathlib.Path(target).read_bytes()).hexdigest()!=item['sha256']: raise RuntimeError('Capture hash mismatch')",
-            "PY",
         ]
-        paths = ["/tmp/" + Path(item["remote"]).name for item in capture_inputs]
-        commands.append(shlex.join(["python", "-u", "benchmarks/profile_adaptive_feasibility.py",
-            "--captures", *paths, "--native", "--output-json", "/tmp/adaptive.json"]))
+        if long_context:
+            remote_capture = f"uploads/streamattn/{args.output_json.stem}.captures.pt"
+            commands += [
+                "python -m pip install -q 'transformers==4.51.3'",
+                "python -m pytest -q tests/test_adaptive_long_context.py",
+                shlex.join(["python", "-u", "benchmarks/profile_adaptive_long_context.py",
+                    "--output-json", "/tmp/adaptive.json", "--capture-remote", remote_capture,
+                    "--teamspace-id", args.teamspace_id, "--cloud-account", args.cloud_account]),
+            ]
+        else:
+            commands += [
+                "python - <<'PY'",
+                "import hashlib,pathlib",
+                "from lightning_sdk.api import TeamspaceApi",
+                f"inputs={capture_inputs!r}",
+                "for item in inputs:",
+                "    target='/tmp/'+pathlib.PurePosixPath(item['remote']).name",
+                f"    TeamspaceApi().download_file(path=item['remote'],target_path=target,teamspace_id={args.teamspace_id!r},cloud_account={args.cloud_account!r},progress_bar=False)",
+                "    if hashlib.sha256(pathlib.Path(target).read_bytes()).hexdigest()!=item['sha256']: raise RuntimeError('Capture hash mismatch')",
+                "PY",
+            ]
+            paths = ["/tmp/" + Path(item["remote"]).name for item in capture_inputs]
+            commands.append(shlex.join(["python", "-u", "benchmarks/profile_adaptive_feasibility.py",
+                "--captures", *paths, "--native", "--output-json", "/tmp/adaptive.json"]))
     elif frontier:
         remote_capture = f"uploads/streamattn/{args.output_json.stem}.captures.pt"
         command = ["python", "-u", "benchmarks/profile_adaptive_group_frontier.py", "--provider", "lightning",
@@ -142,7 +160,7 @@ def job_command(args=None):
     return "\n".join(commands), dict(base_sha=sha, overlay_sha256=hashlib.sha256(stream.getvalue()).hexdigest(),
                                       schema=schema, capture_remote_path=remote_capture,
                                       capture_inputs=capture_inputs,
-                                      cutlass_source_commit=CUTLASS_SOURCE_COMMIT if feasibility else None)
+                                      cutlass_source_commit=CUTLASS_SOURCE_COMMIT if feasibility or long_context else None)
 
 
 def main():
@@ -158,7 +176,7 @@ def main():
     p.add_argument("--teamspace-id", default=os.getenv("LIGHTNING_TEAMSPACE_ID", "01jggw9j5v8ms266vgvgcs3q13"))
     p.add_argument("--cloud-account", default=os.getenv("LIGHTNING_CLOUD_ACCOUNT", "lightning-nebius-prod"))
     p.add_argument("--machine", default=os.getenv("LIGHTNING_MACHINE", "nb-h100-1gpu-16vcpu-200gb"))
-    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility"), default="physical_canary")
+    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility", "long_context_feasibility"), default="physical_canary")
     p.add_argument("--capture-artifacts", type=Path, nargs="+")
     p.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct")
     p.add_argument("--revision")
@@ -175,7 +193,7 @@ def main():
     command, source = job_command(args)
     api, job = JobApiV2(), None
     environment = {"PYTHONUNBUFFERED": "1", "HF_HUB_DISABLE_XET": "1"}
-    if args.experiment in ("group_frontier", "feasibility"):
+    if args.experiment in ("group_frontier", "feasibility", "long_context_feasibility"):
         from lightning_sdk.lightning_cloud.login import Auth
         from lightning_sdk.lightning_cloud.openapi import V1LoginRequest
         # Short-lived platform token enables capture upload to the same teamspace.
@@ -220,7 +238,7 @@ def main():
             raise RuntimeError("No adaptive artifact; platform evidence and logs retained")
         result["execution"] = execution
         args.output_json.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-        if args.experiment == "group_frontier":
+        if args.experiment in ("group_frontier", "long_context_feasibility"):
             from lightning_sdk.api import TeamspaceApi
             if not result.get("capture_remote_path"):
                 raise RuntimeError("Diagnostic saved but capture upload failed; inspect retained job logs")

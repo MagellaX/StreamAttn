@@ -30,7 +30,7 @@ def physical_vote(proposed, valid, group_size, tile_size):
 
 
 def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32,
-             head_groups=None, query_tiles=(1, 16)):
+             head_groups=None, query_tiles=(1, 16), include_schedules=False):
     """One unpadded request in BSHD, with explicit Q positions in this KV cache."""
     if q.shape[0] != 1 or k.shape != v.shape or k.shape[0] != 1:
         raise ValueError("one unpadded request with matching K/V required")
@@ -145,6 +145,13 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32,
                                     kv_read_ratio_vs_full_group=(k_bytes + v_bytes) / max(1, exact_bytes),
                                     max_error=error.max().item(), max_bound=bound.max().item(),
                                     pv_regions_saved_fraction=(counts["pre_regions"] + counts["post_regions"]) / max(1, counts["valid_regions"])))
+                if include_schedules:
+                    if rows != 1 or group != groups or tile != 1:
+                        raise ValueError("schedule export requires one query and full GQA sharing")
+                    shared = retained[::groups, 0]
+                    if not torch.equal(retained[:, 0], shared.repeat_interleave(groups, 0)):
+                        raise AssertionError("exported schedule lost physical GQA sharing")
+                    results[-1]["kept_blocks"] = [r.nonzero().flatten().tolist() for r in shared]
     return dict(q_shape=[1, rows, hq, dim], kv_shape=[1, n, hkv, dim], budget=budget,
                 query_positions=query_positions.tolist(), visibility="key_position <= query_position; no padding",
                 traffic_model="one full valid K/V block read per physical head/query region; excludes cache reuse, decisions, metadata, MMA utilization and merge cost; not measured HBM traffic",
@@ -152,7 +159,8 @@ def evaluate(q, k, v, query_positions, *, budget=1e-3, block_size=32,
                 radius_ratio=(radii["mean_centered"] / radii["origin"].clamp_min(1e-300)).tolist(), results=results)
 
 
-def capture_and_evaluate(model_id, max_seq, *, revision=None, layers=None, evaluate_options=None):
+def capture_and_evaluate(model_id, max_seq, *, revision=None, layers=None, evaluate_options=None,
+                         capture_only=False, last_query_only=False):
     from benchmarks.profile_real_llm_gate1_heads import _capture_attention_inputs, _shape_qkv
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -196,14 +204,14 @@ def capture_and_evaluate(model_id, max_seq, *, revision=None, layers=None, evalu
                 groups = meta["q_per_kv"]
                 # Existing capture helper expands GQA; restore its compact storage.
                 k, v = k[:, :, ::groups].contiguous(), v[:, :, ::groups].contiguous()
-                q = q[:, -16:].contiguous()
+                q = q[:, -(1 if last_query_only else 16):].contiguous()
                 positions = torch.arange(k.shape[1] - q.shape[1], k.shape[1])
                 payload = dict(prompt_id=prompt_id, layer=item.layer_id, q=q.cpu(), k=k.cpu(), v=v.cpu(),
                                query_positions=positions, token_ids=tokens.input_ids.cpu(), meta=meta)
                 captures.append(payload)
                 print(f"REAL {prompt_id} L{item.layer_id}", flush=True)
-                diagnostic = evaluate(payload["q"], payload["k"], payload["v"], positions,
-                                      **(evaluate_options or {}))
+                diagnostic = {} if capture_only else evaluate(
+                    payload["q"], payload["k"], payload["v"], positions, **(evaluate_options or {}))
                 diagnostic.update(prompt_id=prompt_id, layer=item.layer_id, conditioning="dense_upstream",
                                   prompt_sha256=hashlib.sha256(text.encode()).hexdigest(),
                                   tensor_sha256={name: hashlib.sha256(payload[name].view(torch.uint8).numpy().tobytes()).hexdigest()
@@ -213,7 +221,9 @@ def capture_and_evaluate(model_id, max_seq, *, revision=None, layers=None, evalu
                 model=model_id, model_revision=getattr(model.config, "_commit_hash", None),
                 device=torch.cuda.get_device_name(), torch=torch.__version__, max_seq=max_seq,
                 conditioning="dense_upstream", diagnostic_only=True, performance_promotion=False,
-                scope="two prompts; 5 layers; last 16 prefill queries with append-position visibility; not autoregressive validation",
+                scope=f"two repeated-template prompts; {len(layers)} layers; last "
+                      f"{1 if last_query_only else 16} prefill queries; not autoregressive validation",
+                capture_only=capture_only,
                 sources={name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in
                          ("benchmarks/profile_adaptive_real_activations.py", "benchmarks/profile_real_llm_gate1_heads.py")},
                 records=records), captures

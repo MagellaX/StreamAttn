@@ -150,7 +150,21 @@ def frontier(q, k, v, query_positions, *, budget=1e-3, block_size=32):
                 q_shape=list(q.shape), kv_shape=list(k.shape), schedules=rows), full, references
 
 
-def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, trials=7):
+def graph_buffer_indices(copies, condition):
+    """Match graph call count while varying only the active input storage."""
+    if copies < 1:
+        raise ValueError("positive buffer copies required")
+    if condition == "warm_fixed_buffer":
+        return [0] * copies
+    if condition == "rotating_working_set":
+        if copies < 2:
+            raise ValueError("rotation requires independent buffers")
+        return list(range(copies))
+    raise ValueError("unknown working-set condition")
+
+
+def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, trials=7,
+                    buffer_copies=1):
     """Offline route preparation; complete allocation-free native call is timed."""
     from benchmarks.micro_prefill_baselines import baseline_versions, prepare_baselines
     from benchmarks.profile_paged_exact_decode import _flashinfer_runner
@@ -164,94 +178,149 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
     n, hk, dim = k.shape[1:]
     if n % 16 or diagnostic["group_size"] not in (4, 8) or dim not in (64, 128):
         raise ValueError("native scope requires page-16, G4/G8, D64/D128")
-    q, k, v = [t.cuda().contiguous() for t in (q, k, v)]
-    cache = PagedKVCache(k.view(n // 16, 16, hk, dim), v.view(n // 16, 16, hk, dim),
-        torch.arange(n // 16, device="cuda", dtype=torch.int32)[None],
-        torch.tensor([n], device="cuda", dtype=torch.int32), "NHD")
-    # Contiguous baselines receive equivalent direct HND storage prepared once.
-    runners, unavailable = prepare_baselines(q, k.transpose(1, 2).contiguous(),
-                                            v.transpose(1, 2).contiguous())
-    for backend in ("fa2", "fa3"):
-        name = "paged_flashinfer_" + backend
-        try:
-            runners[name], _ = _flashinfer_runner(q, cache, workspace_mb=128, backend=backend)
-        except Exception as exc:
-            unavailable[name] = f"{type(exc).__name__}: {exc}"
-    exact_plan = PagedExactDecodePlan.build(q, cache)
-    runners["streamattn_full_native"] = exact_plan.run
-    valid, graphs, measurements = {}, {}, []
+    conditions = ["warm_fixed_buffer"]
+    if buffer_copies > 1:
+        conditions.append("rotating_working_set")
+    indices = {c: graph_buffer_indices(buffer_copies, c) for c in conditions}
+    replicas, unavailable, keepalive = [], {}, []
+    for replica in range(buffer_copies):
+        qc, kc, vc = [t.to(device="cuda", copy=True).contiguous() for t in (q, k, v)]
+        cache = PagedKVCache(kc.view(n // 16, 16, hk, dim), vc.view(n // 16, 16, hk, dim),
+            torch.arange(n // 16, device="cuda", dtype=torch.int32)[None],
+            torch.tensor([n], device="cuda", dtype=torch.int32), "NHD")
+        runners, missing = prepare_baselines(qc, kc.transpose(1, 2).contiguous(),
+                                            vc.transpose(1, 2).contiguous())
+        unavailable[str(replica)] = missing
+        for backend in ("fa2", "fa3"):
+            name = "paged_flashinfer_" + backend
+            try:
+                runners[name], _ = _flashinfer_runner(qc, cache, workspace_mb=128, backend=backend)
+            except Exception as exc:
+                missing[name] = f"{type(exc).__name__}: {exc}"
+        exact_plan = PagedExactDecodePlan.build(qc, cache)
+        runners["streamattn_full_native"] = exact_plan.run
+        replicas.append((qc, kc, vc, cache, runners))
+    if len({r[1].data_ptr() for r in replicas}) != buffer_copies:
+        raise AssertionError("KV rotation must use independent allocations")
 
-    def check_and_capture(name, run, reference):
-        output = run().detach().float().cpu().reshape_as(reference)
-        difference = output.double() - reference
-        max_abs = float(difference.abs().max())
-        if not torch.isfinite(output).all() or max_abs > 0.02:
-            raise AssertionError(f"{name}: native reference error {max_abs}")
-        graph = _capture(run, warmup=3)
-        pilot = [_elapsed_graph_ms(graph, iterations=iterations) for _ in range(3)]
-        return graph, dict(name=name, median_ms=statistics.median(pilot), samples_ms=pilot,
-            max_abs_error_vs_fp64=max_abs, max_l2_error_vs_fp64=float(difference.norm(dim=-1).max()))
+    def check(runs, reference):
+        errors, l2s, combined = [], [], []
+        for run in runs:
+            output = run().detach().float().cpu().reshape_as(reference)
+            difference = output.double() - reference
+            error = float(difference.abs().max())
+            if not torch.isfinite(output).all() or error > 0.02:
+                raise AssertionError(f"native reference component error {error}")
+            errors.append(error)
+            l2s.append(float(difference.norm(dim=-1).max()))
+            combined.append(float((output.double() - full).norm(dim=-1).max()))
+        return dict(max_abs_error_vs_fp64=max(errors), max_l2_error_vs_fp64=max(l2s),
+                    max_combined_l2_error_vs_full_fp64=max(combined), replicas_checked=len(runs))
 
-    for name, run in runners.items():
+    def capture_cycle(runs, condition):
+        order = indices[condition]
+        def cycle():
+            for i in order:
+                runs[i]()
+        return _capture(cycle, warmup=3)
+
+    def elapsed(graph):
+        return _elapsed_graph_ms(graph, iterations=iterations) / buffer_copies
+
+    exact, exact_checks = {}, {}
+    names = set.intersection(*(set(r[4]) for r in replicas))
+    for name in sorted(names):
+        runs = [r[4][name] for r in replicas]
         try:
-            graph, measurement = check_and_capture(name, run, full)
-            valid[name], graphs[name] = run, graph
-            measurements.append(measurement)
+            exact_checks[name] = check(runs, full)
+            exact[name] = runs
         except Exception as exc:
             unavailable[name] = f"run:{type(exc).__name__}: {exc}"
-    external = [r for r in measurements if r["name"] != "streamattn_full_native"]
-    if not external or not any("flashinfer" in r["name"] for r in external):
+    if not any("flashinfer" in name for name in exact):
         raise RuntimeError("no correct FlashInfer comparison; headroom result is incomplete")
-    fastest = min(measurements, key=lambda r: r["median_ms"])["name"]
-    selected_rows, reused = [], {}
+
+    selected, reused = [], {}
     for schedule in diagnostic["schedules"]:
         signature = tuple(map(tuple, schedule["kept_blocks"]))
         if signature in reused:
-            selected_rows.append(dict(reused[signature], method=schedule["method"],
-                                      reused_identical_schedule=True))
+            selected.append(dict(reused[signature], method=schedule["method"],
+                                 reused_identical_schedule=True))
             continue
-        start = time.perf_counter()
-        problem = AttentionProblem.from_paged(q, cache, guarantee="schedule_exact")
-        logical = AttentionTilePlan.selected(problem, logical_tile_size=diagnostic["block_size"],
-            tile_ids_per_row=signature, policy_id="offline-feasibility",
-            reason=schedule["method"], route_granularity="kv_group", schedule_epoch=1)
-        routes = prepare_paged_routes64(logical, cache)
-        plan = PagedSelectedDecodePlan.build(q, cache, routes, schedule_epoch=1)
+        start, plans = time.perf_counter(), []
+        for qc, _, _, cache, _ in replicas:
+            problem = AttentionProblem.from_paged(qc, cache, guarantee="schedule_exact")
+            logical = AttentionTilePlan.selected(problem, logical_tile_size=diagnostic["block_size"],
+                tile_ids_per_row=signature, policy_id="offline-feasibility",
+                reason=schedule["method"], route_granularity="kv_group", schedule_epoch=1)
+            routes = prepare_paged_routes64(logical, cache)
+            plans.append(PagedSelectedDecodePlan.build(qc, cache, routes, schedule_epoch=1))
+        keepalive.extend(plans)
         torch.cuda.synchronize()
         preparation_ms = (time.perf_counter() - start) * 1000
-        graph, check = check_and_capture(schedule["method"], plan.run, references[schedule["method"]])
+        runs = [p.run for p in plans]
+        correctness = check(runs, references[schedule["method"]])
         if schedule["method"] == "full":
-            # Full selected execution is itself an exact candidate. Keep its
-            # buffers alive while comparing later schedules against its graph.
-            name = "streamattn_selected_full_control"
-            valid[name], graphs[name] = plan.run, graph
-            measurements.append(dict(check, name=name))
-            fastest = min(measurements, key=lambda r: r["median_ms"])["name"]
-        paired = []
-        for trial in range(trials):
-            order = ("exact", "selected") if trial % 2 == 0 else ("selected", "exact")
-            times = {}
-            for name in order:
-                times[name] = _elapsed_graph_ms(graphs[fastest] if name == "exact" else graph,
-                                                iterations=iterations)
-            paired.append(dict(trial=trial, order=list(order), **times,
-                               headroom_ms=times["exact"] - times["selected"],
-                               speedup=times["exact"] / times["selected"]))
-        result = dict(method=schedule["method"], preparation_ms_excluded=preparation_ms,
-            correctness=check, route_count=routes.route_count, producer_ctas=plan.producer_ctas,
+            exact["streamattn_selected_full_control"] = runs
+            exact_checks["streamattn_selected_full_control"] = correctness
+        plan = plans[0]
+        item = dict(method=schedule["method"], preparation_ms_excluded=preparation_ms,
+            correctness=correctness, route_count=routes.route_count, producer_ctas=plan.producer_ctas,
             max_routes_per_row=plan.max_routes_per_row, metadata_bytes=routes.metadata_bytes,
             workspace_bytes=plan.workspace_bytes, group_route_efficiency=routes.group_route_efficiency,
-            paired=paired, headroom_ms=statistics.median(r["headroom_ms"] for r in paired),
-            speedup=statistics.median(r["speedup"] for r in paired),
-            positive_trials=sum(r["headroom_ms"] > 0 for r in paired))
-        reused[signature] = result
-        selected_rows.append(result)
-    return dict(fastest_tested_correct_exact=fastest, baseline_measurements=measurements,
-        unavailable=unavailable, versions=baseline_versions(), selected=selected_rows,
-        full_native_backend=exact_plan.backend, timing="alternating paired CUDA graph replay; complete call",
+            active_kv_payload_bytes_per_copy=sum(schedule["retained_tokens_per_kv_head"]) * dim * k.element_size() * 2,
+            runs=runs)
+        reused[signature] = item
+        selected.append(item)
+
+    results = {}
+    for condition in conditions:
+        graphs, measurements = {}, []
+        for name, runs in exact.items():
+            try:
+                graph = capture_cycle(runs, condition)
+                pilot = [elapsed(graph) for _ in range(3)]
+                graphs[name] = graph
+                measurements.append(dict(name=name, median_ms=statistics.median(pilot),
+                                         samples_ms=pilot, **exact_checks[name]))
+            except Exception as exc:
+                unavailable[f"{condition}/{name}"] = f"graph:{type(exc).__name__}: {exc}"
+        if not any("flashinfer" in name for name in graphs):
+            raise RuntimeError(f"no graph-correct FlashInfer for {condition}")
+        fastest = min(measurements, key=lambda r: r["median_ms"])["name"]
+        rows, timed = [], {}
+        for item in selected:
+            signature = tuple(item["runs"])
+            if signature in timed:
+                rows.append(dict(timed[signature], method=item["method"], reused_identical_schedule=True))
+                continue
+            graph = capture_cycle(item["runs"], condition)
+            paired = []
+            for trial in range(trials):
+                order = ("exact", "selected") if trial % 2 == 0 else ("selected", "exact")
+                times = {name: elapsed(graphs[fastest] if name == "exact" else graph) for name in order}
+                paired.append(dict(trial=trial, order=list(order), **times,
+                    headroom_ms=times["exact"] - times["selected"],
+                    speedup=times["exact"] / times["selected"]))
+            row = dict({key: value for key, value in item.items() if key != "runs"},
+                paired=paired, headroom_ms=statistics.median(r["headroom_ms"] for r in paired),
+                speedup=statistics.median(r["speedup"] for r in paired),
+                positive_trials=sum(r["headroom_ms"] > 0 for r in paired),
+                active_kv_payload_bytes_per_cycle=item["active_kv_payload_bytes_per_copy"] * len(set(indices[condition])))
+            rows.append(row)
+            timed[signature] = row
+        results[condition] = dict(fastest_tested_correct_exact=fastest,
+            baseline_measurements=measurements, selected=rows, buffer_indices=indices[condition],
+            calls_per_graph=buffer_copies, condition=condition)
+    common = dict(unavailable=unavailable, versions=baseline_versions(),
+        full_native_backend=exact_plan.backend, timing="alternating paired CUDA graph replay; complete call; ms per attention call",
         preparation_and_decisions_included=False, kv_gather_in_timing=False,
+        buffer_copies=buffer_copies, full_kv_payload_bytes_per_copy=(k.numel() + v.numel()) * k.element_size(),
+        hardware_memory_traffic_measured=False, cache_residency_guaranteed=False,
         rounding_gate=dict(max_abs_per_component=0.02, separate_from_omission_budget=True,
                            formal_native_roundoff_certificate=False))
+    if buffer_copies == 1:
+        return dict(**common, **results["warm_fixed_buffer"])
+    return dict(**common, conditions=results)
 
 
 def main():
