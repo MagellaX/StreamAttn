@@ -87,6 +87,10 @@ def test_feasibility_replays_hashed_archives_without_model_download(tmp_path):
     command, source = runner.job_command(args)
     assert source["schema"] == "streamattn.adaptive_feasibility.v1"
     assert source["capture_inputs"][0]["sha256"] == "a" * 64
+    assert source["cutlass_source_commit"] == runner.CUTLASS_SOURCE_COMMIT
+    assert runner.CUTLASS_SOURCE_COMMIT in command
+    assert "export STREAMATTN_CUTLASS_ROOT=" in command
+    assert "include/cute/tensor.hpp" in command
     assert "--native" in command and "Capture hash mismatch" in command
     assert "from_pretrained" not in command and "LIGHTNING_API_KEY" not in command
     assert "group_frontier.py --provider" not in command

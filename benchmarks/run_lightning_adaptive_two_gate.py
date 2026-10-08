@@ -22,6 +22,8 @@ if str(ROOT) not in sys.path:
 from benchmarks.lightning_log_artifacts import result_from_logs
 from benchmarks.profile_adaptive_two_gate import SCHEMA, SOURCE_FILES
 
+CUTLASS_SOURCE_COMMIT = "39e616041ae6fb1243a0f6ac891e72d576b640e5"
+
 
 def upload_capture(path, *, api, teamspace_id, cloud_account, remote_path):
     """Keep signed upload URLs and credentials out of retained job logs."""
@@ -85,6 +87,15 @@ def job_command(args=None):
                                        model=result["model"], revision=result["model_revision"]))
         commands += [
             "python -m pip install -q ninja 'lightning-sdk==2026.9.18.post1' 'flashinfer-python==0.6.13' 'flashinfer-cubin==0.6.13'",
+            "python - <<'PY'",
+            "import pathlib,urllib.request,zipfile",
+            f"sha={CUTLASS_SOURCE_COMMIT!r}",
+            "urllib.request.urlretrieve(f'https://github.com/pengcuo/FlashMLA-ETAP/archive/{sha}.zip','/tmp/cutlass.zip')",
+            "with zipfile.ZipFile('/tmp/cutlass.zip') as z: z.extractall('/tmp')",
+            "pathlib.Path(f'/tmp/FlashMLA-ETAP-{sha}').rename('/tmp/flashmla-etap')",
+            "assert pathlib.Path('/tmp/flashmla-etap/csrc/cutlass/include/cute/tensor.hpp').is_file()",
+            "PY",
+            "export STREAMATTN_CUTLASS_ROOT=/tmp/flashmla-etap/csrc/cutlass",
             "python -m pytest -q tests/test_adaptive_feasibility.py tests/test_adaptive_real_diagnostic.py",
             "python - <<'PY'",
             "import hashlib,pathlib",
@@ -130,7 +141,8 @@ def job_command(args=None):
         ]
     return "\n".join(commands), dict(base_sha=sha, overlay_sha256=hashlib.sha256(stream.getvalue()).hexdigest(),
                                       schema=schema, capture_remote_path=remote_capture,
-                                      capture_inputs=capture_inputs)
+                                      capture_inputs=capture_inputs,
+                                      cutlass_source_commit=CUTLASS_SOURCE_COMMIT if feasibility else None)
 
 
 def main():
