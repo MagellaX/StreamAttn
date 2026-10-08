@@ -226,6 +226,17 @@ def main():
                 except Exception as exc:
                     print(f"logs pending: {type(exc).__name__}", flush=True)
             if state in TERMINAL_STATES:
+                # Platform completion can precede delivery of the final log chunks.
+                if state in COMPLETED_STATES and (result is None or not result.get("complete")):
+                    for _ in range(6):
+                        time.sleep(5)
+                        try:
+                            logs = api.get_logs_finished(job_id=job.id, teamspace_id=args.teamspace_id)
+                            result = result_from_logs(logs, schema=source["schema"])
+                        except Exception as exc:
+                            print(f"final logs pending: {type(exc).__name__}", flush=True)
+                        if result is not None and result.get("complete"):
+                            break
                 break
             time.sleep(30)
         args.output_json.parent.mkdir(parents=True, exist_ok=True)

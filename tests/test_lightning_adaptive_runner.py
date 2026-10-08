@@ -24,9 +24,11 @@ def test_active_states_are_not_terminal(state):
 
 
 @pytest.mark.parametrize("state", ["complete", "completed", "fail", "failed", "stopped"])
-def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
+@pytest.mark.parametrize("delayed", [False, True])
+def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state, delayed):
     output = tmp_path / "result.json"
     calls = []
+    reads = []
     job = types.SimpleNamespace(
         id="test-job", state=state, started_at=None, total_cost=0, message="",
     )
@@ -42,7 +44,8 @@ def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
             return job
 
         def get_logs_finished(self, **kwargs):
-            return json.dumps({"schema": "test.v1", "complete": True})
+            reads.append(1)
+            return json.dumps({"schema": "test.v1", "complete": not delayed or len(reads) > 1})
 
         def stop_job(self, **kwargs):
             pytest.fail("A terminal job must not be stopped again")
@@ -61,9 +64,9 @@ def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
     monkeypatch.setattr(runner, "job_command", lambda args: (
         "test-command", {"schema": "test.v1"},
     ))
-    monkeypatch.setattr(runner.time, "sleep", lambda delay: pytest.fail(
-        "Polling must stop as soon as a terminal state is returned",
-    ))
+    def sleep(delay):
+        assert delayed and state in COMPLETED_STATES and delay == 5
+    monkeypatch.setattr(runner.time, "sleep", sleep)
     monkeypatch.setattr(sys, "argv", [
         "runner", "--output-json", str(output), "--max-runtime", "60",
     ])
@@ -76,6 +79,9 @@ def test_adaptive_runner_finishes_and_cleans_up(monkeypatch, tmp_path, state):
 
     assert calls == ["submit", "delete"]
     assert json.loads(output.read_text())["execution"]["platform_state"] == state
+    assert len(reads) == (2 if delayed and state in COMPLETED_STATES else 1)
+    if state in COMPLETED_STATES:
+        assert json.loads(output.read_text())["complete"] is True
 
 
 def test_feasibility_replays_hashed_archives_without_model_download(tmp_path):

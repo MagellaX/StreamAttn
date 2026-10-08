@@ -133,6 +133,16 @@ deployed adaptive speedup; the native arithmetic allowance is also separate
 from the omission budget. See the [feasibility results and research
 decision](docs/adaptive_feasibility.md).
 
+A genuine **32K Qwen follow-up** now tests the same contract on ten fresh
+captures, in both warm and rotating-buffer replay. The contribution certificate
+allows up to **12.89% omission** and hindsight up to **15.82%**, but supplied
+schedules still lose all **140 paired comparisons per method** across the two
+conditions. The full selected executor itself takes about 35 microseconds warm,
+versus roughly 15 for the fastest tested exact baseline. The next question is
+how much of that execution overhead can be removed, not how to add another
+selector. See the [32K findings and cost-attribution
+decision](docs/adaptive_qwen32k_feasibility.md).
+
 These are limited dense-conditioned diagnostics, not a universal impossibility
 claim or an adaptive speedup. See the [head-sharing versus omission
 results](docs/adaptive_head_group_frontier.md), [physical-skipping

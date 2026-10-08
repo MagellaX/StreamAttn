@@ -149,31 +149,28 @@ performance confirmation.
 
 ## Decision Rule
 
-- Useful shared omissions and positive headroom: research a cheap replacement
-  for the full-information certificate, then charge its complete runtime cost.
-- Useful omissions but negative headroom: fix execution granularity or overhead
-  before adding a selector.
+- Positive conservative-comparator headroom: measure minimum plausible decision
+  and update cost before researching a cheap replacement certificate.
+- Positive headroom only with hindsight cancellation: investigate cheap
+  cancellation identification; this does not establish selector readiness.
+- Useful omissions but negative headroom: attribute executor costs before
+  changing execution granularity or adding a selector.
 - Little removal even under hindsight: do not keep tuning the current
   hard-omission formulation for that measured regime.
 - A positive complete adaptive path still needs adaptive-conditioned generation
   and held-out validation before any public promotion.
 
-The present 2K/8K captures cannot decide the long-context ambition. A separate,
-predeclared follow-up is Qwen at 32K with the same B1/M1/G8, block size, and
-budget, keeping the two prompt identities and layers 0/16/24/26/27. New capture
-costs and its native replay must be measured separately; do not tile or repeat
-old activation tensors and call them genuine 32K model evidence.
-
-The result does not justify building another selector yet. Qwen 8K has little
-removable shared work under the tested searches and no execution headroom;
-TinyLlama 2K exposes cancellation slack but leaves at most `0.300 us` in its
-best measured case. The next target remains the predeclared genuine 32K
-capture/replay, with cache/working-set effects made explicit. If that leaves
-useful shared omissions but loses time, attribute compact work, padded-grid
-work, and merge costs before changing the adaptive executor. Only a usable
-native margin justifies researching a cheaper certificate. Do not restart
-fixed seeds, exact-only tuning, or a selection-pass implementation as a
-substitute for that decision.
+The [predeclared genuine 32K follow-up](adaptive_qwen32k_feasibility.md) is now
+complete. It preserved B1/M1/G8, the block size, budget, two prompt identities
+and layers, while capturing fresh activations and separately testing warm and
+rotating working sets. Qwen's triangle/hindsight omission means increased to
+3.506%/4.639%, but every supplied schedule lost in both conditions. The 32K
+result closes context escalation under this hypothesis, not adaptive attention
+globally. Layer-0 schedules now justify fixed-schedule executor attribution;
+L26/L27 remain low-opportunity under the tested searches. Do not build another
+selector, loosen the contract or start an exact-only detour to avoid that
+decision. Positive hindsight-only results would still require cancellation
+identification research before selector integration.
 
 ## Focused Research Questions
 

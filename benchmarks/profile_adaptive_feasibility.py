@@ -151,7 +151,7 @@ def frontier(q, k, v, query_positions, *, budget=1e-3, block_size=32):
 
 
 def graph_buffer_indices(copies, condition):
-    """Match graph call count while varying only the active input storage."""
+    """Match graph call count for fixed or rotating prepared buffer sets."""
     if copies < 1:
         raise ValueError("positive buffer copies required")
     if condition == "warm_fixed_buffer":
