@@ -72,8 +72,9 @@ def test_attribution_has_no_search_and_no_additive_latency_claim():
     assert "int64_t phase = 0" in CUDA_SOURCE
 
 
-def test_runner_reuses_the_hashed_capture_and_saved_schedule(tmp_path):
+def test_runner_reuses_the_hashed_capture_and_saved_schedule(tmp_path, monkeypatch):
     from benchmarks import run_lightning_adaptive_two_gate as runner
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *a, **kw: "a1be014\n")
     args = types.SimpleNamespace(experiment="executor_attribution",
         capture_artifacts=[profile.ROOT / "artifacts/gate0/adaptive_qwen32k_feasibility_lightning_h100_20261009.json"],
         teamspace_id="teamspace", cloud_account="cloud", output_json=tmp_path / "result.json")
