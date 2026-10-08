@@ -117,8 +117,21 @@ Real-activation checks expose the harder problem. Across Qwen at 2K/8K and
 TinyLlama at 2K, smaller head groups allow a few more omissions, but independent
 KV reads outweigh those savings. The current pre-K gate skips no physical
 regions on these samples; full G8 sharing leaves zero or very little post-QK
-work removable. That makes tighter contribution bounds and preservation of KV
-reuse the next research questions, not another blind kernel sweep.
+work removable.
+
+A follow-up feasibility replay preserves full G8 sharing and a cumulative
+`1e-3` per-head output-L2 omission budget across 20 saved captures. An expensive
+offline value-contribution bound admits up to **2.54% omission on Qwen 8K** and
+**29.69% on TinyLlama 2K**. Hindsight schedules find more removal, but depend on
+the full answer and are not live selectors.
+
+Supplying those schedules for free still loses to the fastest tested exact
+backend on every Qwen capture. TinyLlama's two layer-0 hindsight schedules omit
+65-70% yet leave only **0.21-0.30 microseconds** of execution headroom. Selection,
+summary upkeep, and preparation would have to fit that margin. This is not a
+deployed adaptive speedup; the native arithmetic allowance is also separate
+from the omission budget. See the [feasibility results and research
+decision](docs/adaptive_feasibility.md).
 
 These are limited dense-conditioned diagnostics, not a universal impossibility
 claim or an adaptive speedup. See the [head-sharing versus omission

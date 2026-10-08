@@ -72,3 +72,28 @@ def test_nonfinite_activations_rejected():
     v[0, 0] = float("nan")
     with pytest.raises(ValueError, match="finite activations"):
         frontier(q, k, v, positions)
+
+
+@pytest.mark.parametrize("seed", [7, 19, 43])
+def test_multiple_kv_groups_match_independent_selected_softmax(seed):
+    gen = torch.Generator().manual_seed(seed)
+    q = torch.randn(1, 1, 16, 4, generator=gen, dtype=torch.float64)
+    k = torch.randn(1, 17, 2, 4, generator=gen, dtype=torch.float64)
+    v = torch.randn(1, 17, 2, 4, generator=gen, dtype=torch.float64) * 0.02
+    budget = 0.01
+    result, full, references = frontier(q, k, v, torch.tensor([16]),
+                                         budget=budget, block_size=4)
+    kh = k[0].permute(1, 0, 2).repeat_interleave(8, 0)
+    vh = v[0].permute(1, 0, 2).repeat_interleave(8, 0)
+    logits = torch.einsum("hd,hnd->hn", q[0, 0], kh) / 2
+    for schedule in result["schedules"]:
+        assert len(schedule["kept_blocks"]) == 2
+        keep = torch.zeros(2, 17, dtype=torch.bool)
+        for group, blocks in enumerate(schedule["kept_blocks"]):
+            for block in blocks:
+                keep[group, block * 4:(block + 1) * 4] = True
+        weights = logits.masked_fill(~keep.repeat_interleave(8, 0), -torch.inf).softmax(-1)
+        selected = torch.einsum("hn,hnd->hd", weights, vh)
+        torch.testing.assert_close(selected, references[schedule["method"]], rtol=1e-12, atol=1e-12)
+        assert (selected - full).norm(dim=-1).max() <= budget + 1e-12
+        assert schedule["retained_tokens_per_kv_head"] == keep.sum(-1).tolist()
