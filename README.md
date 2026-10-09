@@ -143,6 +143,16 @@ how much of that execution overhead can be removed, not how to add another
 selector. See the [32K findings and cost-attribution
 decision](docs/adaptive_qwen32k_feasibility.md).
 
+The first execution repair now carries one online-softmax state across four
+retained records instead of finalizing every record. On the same 32K layer-0
+capture, full selected execution falls from **35.0 to 16.6 microseconds** warm,
+close to the 16.3-microsecond native control. The unchanged 12.89%-omission
+schedule improves from **36.9 to 18.5 microseconds**, but still loses to the
+fastest tested exact baseline in warm and rotating replay. This removes a major
+execution penalty; it is **not yet an adaptive speedup**. The next unresolved
+cost is the selected-state merge geometry, not another selector. See the
+[state-ownership result](docs/adaptive_executor_state_ownership.md).
+
 These are limited dense-conditioned diagnostics, not a universal impossibility
 claim or an adaptive speedup. See the [head-sharing versus omission
 results](docs/adaptive_head_group_frontier.md), [physical-skipping

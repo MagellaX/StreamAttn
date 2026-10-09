@@ -153,12 +153,18 @@ investigate, not proof that padding or merging explains the roughly 20 us gap.
 
 The intuitive candidate is to carry one online-softmax output state across
 several retained records rather than emit a global partial state for every
-64-token record. **This is a hypothesis, not the next implementation yet.**
-First keep the retained schedule fixed and measure producer versus merge time,
-partial-state traffic, route/address overhead and launch dependencies. Establish
-how much cost can actually be removed. A merge-only saving cannot justify a
-redesign if the producer dominates, and reducing padded CTAs does not create
-additional useful parallelism.
+64-token record. That hypothesis has now been tested after fixed-support
+attribution. Producer time alone cannot dismiss grouping: initialization and
+epilogues are also producer costs. Nor does fewer padded CTAs guarantee useful
+parallelism or a speedup.
+
+The four-record candidate reduces full selected execution from 35.0 to 16.6 us
+warm, close to the 16.3 us native control. The identical triangle schedule
+improves from 36.9 to 18.5 us but remains slower than grouped full and the fastest
+tested exact baseline. Isolated producer timing improves while selected merge
+timing regresses. See the [state-ownership result and next geometry
+discriminator](adaptive_executor_state_ownership.md); no adaptive promotion or
+new selector follows this result.
 
 Only a demonstrated cost lever justifies changing this adaptive executor.
 Neither another fixed seed, another context increase, relaxed head sharing,
