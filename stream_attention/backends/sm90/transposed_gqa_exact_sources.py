@@ -187,6 +187,18 @@ void streamattn_selected_nhd_phase_out_cuda(
     torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
     int64_t max_routes_per_row, int64_t phase);
 std::vector<int64_t> streamattn_selected_nhd_resources_cuda();
+void streamattn_selected_nhd_grouped_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row);
+void streamattn_selected_nhd_grouped_phase_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row, int64_t phase);
 
 void streamattn_prepare_qhead_paged_routes64_out_cuda(
     torch::Tensor source_row_ptr,
@@ -320,6 +332,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "Diagnostic selected execution: 0 complete, 1 producer, 2 merge");
   m.def("selected_nhd_resources", &streamattn_selected_nhd_resources_cuda,
         "Compiled selected producer, native producer and merge resources");
+  m.def("selected_nhd_grouped_out", &streamattn_selected_nhd_grouped_out_cuda,
+        "Experimental four-record selected producer and merge");
+  m.def("selected_nhd_grouped_phase_out", &streamattn_selected_nhd_grouped_phase_out_cuda,
+        "Diagnostic four-record selected execution phases");
   m.def("prepare_qhead_paged_routes64_out",
         &streamattn_prepare_qhead_paged_routes64_out_cuda,
         "StreamAttn device-side Q-head CSR to row-local PackedRoute64 lowering");
@@ -2349,7 +2365,7 @@ __forceinline__ __device__ void streamattn_copy_selected_paged16_route(
 
 template <int kPagedPageSize = 0, bool kVariableLength = false,
           bool kNHD = false, bool kSelectedPaged = false,
-          bool kSelectedRowLocal = false>
+          bool kSelectedRowLocal = false, int kSelectedRecordsPerCta = 1>
 __global__ __launch_bounds__(128)
 void streamattn_transposed_wgmma_exact_partial_kernel(
     const Element* __restrict__ q_group,
@@ -2401,9 +2417,16 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     const int route_end = kSelectedRowLocal
         ? route_begin + route_counts[group]
         : route_row_ptr[group + 1];
-    selected_route = route_begin + split;
+    static_assert(!kSelectedRowLocal || kSelectedRecordsPerCta == 1,
+                  "row-local mutable routes retain one record per CTA");
+    selected_route = route_begin + split * kSelectedRecordsPerCta;
     tile_begin = 0;
-    tile_end = selected_route < route_end ? 1 : 0;
+    if constexpr (kSelectedRecordsPerCta == 1) {
+      tile_end = selected_route < route_end ? 1 : 0;
+    } else {
+      const int partition_record_end = min(route_end, selected_route + kSelectedRecordsPerCta);
+      tile_end = partition_record_end - selected_route;
+    }
   } else {
     const int num_tiles = (sequence_length + kBlockM - 1) / kBlockM;
     const int tiles_per_split = (num_tiles + num_splits - 1) / num_splits;
@@ -2547,22 +2570,23 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     const int write_pipe = read_pipe ^ 1;
     if (next_tile < tile_end) {
       if constexpr (kSelectedPaged) {
+        const int next_record = selected_route + next_tile;
         if (write_pipe == 0) {
           streamattn_copy_selected_paged16_route<kNHD>(
-              k_cache, route_physical_page_ids, selected_route, group, kv_heads,
+              k_cache, route_physical_page_ids, next_record, group, kv_heads,
               sK0Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
             streamattn_copy_selected_paged16_route<kNHD>(
-                v_cache, route_physical_page_ids, selected_route, group, kv_heads,
+                v_cache, route_physical_page_ids, next_record, group, kv_heads,
                 sV0Paged16, copy_kv, thr_copy_kv);
           }
         } else {
           streamattn_copy_selected_paged16_route<kNHD>(
-              k_cache, route_physical_page_ids, selected_route, group, kv_heads,
+              k_cache, route_physical_page_ids, next_record, group, kv_heads,
               sK1Paged16, copy_kv, thr_copy_kv);
           if constexpr (kSeparateVStages == 2) {
             streamattn_copy_selected_paged16_route<kNHD>(
-                v_cache, route_physical_page_ids, selected_route, group, kv_heads,
+                v_cache, route_physical_page_ids, next_record, group, kv_heads,
                 sV1Paged16, copy_kv, thr_copy_kv);
           }
         }
@@ -2632,13 +2656,14 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
 
     if constexpr (kSeparateVStages == 0) {
       if constexpr (kSelectedPaged) {
+        const int current_record = selected_route + tile;
         if (read_pipe == 0) {
           streamattn_copy_selected_paged16_route<kNHD>(
-              v_cache, route_physical_page_ids, selected_route, group, kv_heads,
+              v_cache, route_physical_page_ids, current_record, group, kv_heads,
               sV0Paged16, copy_kv, thr_copy_kv);
         } else {
           streamattn_copy_selected_paged16_route<kNHD>(
-              v_cache, route_physical_page_ids, selected_route, group, kv_heads,
+              v_cache, route_physical_page_ids, current_record, group, kv_heads,
               sV1Paged16, copy_kv, thr_copy_kv);
         }
       } else if constexpr (kPagedPageSize == 16) {
@@ -2668,6 +2693,7 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
     Tensor scores = make_tensor(
         tCrS.data(), streamattn_acc_rowcol<true>(tCrS.layout()));
     if constexpr (kSelectedPaged) {
+      const int current_record = selected_route + tile;
       CUTE_UNROLL
       for (int row = 0; row < size<0>(scores); ++row) {
         CUTE_UNROLL
@@ -2677,9 +2703,9 @@ void streamattn_transposed_wgmma_exact_partial_kernel(
           const int atom = token >> 4;
           const int token_in_atom = token & 15;
           const unsigned int head_mask = static_cast<unsigned int>(
-              route_active_head_masks[selected_route * 4 + atom]);
+              route_active_head_masks[current_record * 4 + atom]);
           const unsigned int token_mask = static_cast<unsigned int>(
-              route_token_valid_masks[selected_route * 4 + atom]);
+              route_token_valid_masks[current_record * 4 + atom]);
           const bool selected = ((head_mask >> head) & 1u) != 0u &&
               ((token_mask >> token_in_atom) & 1u) != 0u;
           if (!selected) {
@@ -4692,7 +4718,7 @@ void streamattn_prepare_qhead_paged_routes64_out_cuda(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-template <bool kNHD>
+template <bool kNHD, int kRecordsPerCta = 1>
 void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
     torch::Tensor q_group,
     torch::Tensor k_pages,
@@ -4756,6 +4782,8 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
   const int routes = static_cast<int>(physical_page_ids.size(0));
   TORCH_CHECK(max_routes_per_row > 0,
               "max_routes_per_row must be positive");
+  const int partitions = (static_cast<int>(max_routes_per_row) + kRecordsPerCta - 1) / kRecordsPerCta;
+  TORCH_CHECK(partitions <= 512, "selected merge supports at most 512 partitions per row");
   TORCH_CHECK(route_row_ptr.dim() == 1 && route_row_ptr.size(0) == groups + 1,
               "route_row_ptr must have shape [B*Hkv+1]");
   TORCH_CHECK(physical_page_ids.dim() == 2 &&
@@ -4765,52 +4793,39 @@ void streamattn_transposed_wgmma_paged_selected_fragmented_impl(
               token_valid_masks.sizes() == physical_page_ids.sizes(),
               "selected masks must have shape [routes,4]");
   TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
-                  {groups, max_routes_per_row, kBlockN, kHeadDim}),
-              "partial_o must have shape [B*Hkv,max_routes,8,D]");
+                  {groups, partitions, kBlockN, kHeadDim}),
+              "partial_o must have shape [B*Hkv,partitions,8,D]");
   TORCH_CHECK(partial_lse.sizes() == torch::IntArrayRef(
-                  {groups, max_routes_per_row, kBlockN}),
-              "partial_lse must have shape [B*Hkv,max_routes,8]");
+                  {groups, partitions, kBlockN}),
+              "partial_lse must have shape [B*Hkv,partitions,8]");
   TORCH_CHECK(output.sizes() == torch::IntArrayRef(
                   {groups, active_heads, kHeadDim}),
               "output must have shape [B*Hkv,4|8,D]");
   TORCH_CHECK(routes > 0, "selected route set must be non-empty");
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  const dim3 partial_grid(groups * static_cast<int>(max_routes_per_row));
+  const dim3 partial_grid(groups * partitions);
   const dim3 partial_block(128);
   if (phase != 2) {
-  streamattn_transposed_wgmma_exact_partial_kernel<
-      16, false, kNHD, true><<<partial_grid, partial_block, 0, stream>>>(
-      reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
-      reinterpret_cast<const Element*>(k_pages.data_ptr<at::BFloat16>()),
-      reinterpret_cast<const Element*>(v_pages.data_ptr<at::BFloat16>()),
-      partial_o.data_ptr<float>(),
-      partial_lse.data_ptr<float>(),
-      groups,
-      64,
-      static_cast<int>(max_routes_per_row),
-      active_heads,
-      nullptr,
-      0,
-      kv_heads,
-      nullptr,
-      route_row_ptr.data_ptr<int>(),
-      physical_page_ids.data_ptr<int>(),
-      active_head_masks.data_ptr<int>(),
-      token_valid_masks.data_ptr<int>());
+    streamattn_transposed_wgmma_exact_partial_kernel<
+        16, false, kNHD, true, false, kRecordsPerCta><<<partial_grid, partial_block, 0, stream>>>(
+        reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(k_pages.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(v_pages.data_ptr<at::BFloat16>()),
+        partial_o.data_ptr<float>(), partial_lse.data_ptr<float>(),
+        groups, 64, partitions, active_heads, nullptr, 0, kv_heads, nullptr,
+        route_row_ptr.data_ptr<int>(), physical_page_ids.data_ptr<int>(),
+        active_head_masks.data_ptr<int>(), token_valid_masks.data_ptr<int>());
   }
 
   const dim3 merge_grid(groups * active_heads);
   const dim3 merge_block(32);
   if (phase != 1) {
-  streamattn_transposed_wgmma_exact_merge_warp_kernel<<<
-      merge_grid, merge_block, 0, stream>>>(
-      partial_o.data_ptr<float>(),
-      partial_lse.data_ptr<float>(),
-      reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
-      groups,
-      static_cast<int>(max_routes_per_row),
-      active_heads);
+    streamattn_transposed_wgmma_exact_merge_warp_kernel<<<
+        merge_grid, merge_block, 0, stream>>>(
+        partial_o.data_ptr<float>(), partial_lse.data_ptr<float>(),
+        reinterpret_cast<Element*>(output.data_ptr<at::BFloat16>()),
+        groups, partitions, active_heads);
   }
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
@@ -4863,6 +4878,29 @@ void streamattn_selected_nhd_phase_out_cuda(
       max_routes_per_row, phase);
 }
 
+void streamattn_selected_nhd_grouped_phase_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row, int64_t phase) {
+  streamattn_transposed_wgmma_paged_selected_fragmented_impl<true, 4>(
+      q_group, k_pages, v_pages, route_row_ptr, physical_page_ids,
+      active_head_masks, token_valid_masks, partial_o, partial_lse, output,
+      max_routes_per_row, phase);
+}
+
+void streamattn_selected_nhd_grouped_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor route_row_ptr, torch::Tensor physical_page_ids,
+    torch::Tensor active_head_masks, torch::Tensor token_valid_masks,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t max_routes_per_row) {
+  streamattn_selected_nhd_grouped_phase_out_cuda(q_group, k_pages, v_pages,
+      route_row_ptr, physical_page_ids, active_head_masks, token_valid_masks,
+      partial_o, partial_lse, output, max_routes_per_row, 0);
+}
+
 std::vector<int64_t> streamattn_selected_nhd_resources_cuda() {
   std::vector<int64_t> result;
   auto append = [&](const void* kernel) {
@@ -4877,6 +4915,8 @@ std::vector<int64_t> streamattn_selected_nhd_resources_cuda() {
   append(reinterpret_cast<const void*>(
       streamattn_transposed_wgmma_exact_partial_kernel<16, false, true>));
   append(reinterpret_cast<const void*>(streamattn_transposed_wgmma_exact_merge_warp_kernel));
+  append(reinterpret_cast<const void*>(
+      streamattn_transposed_wgmma_exact_partial_kernel<16, false, true, true, false, 4>));
   return result;
 }
 

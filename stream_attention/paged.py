@@ -1122,6 +1122,7 @@ class PagedSelectedDecodePlan:
     query_group: torch.Tensor
     output_group: torch.Tensor
     launch: Any
+    records_per_cta: int = 1
     backend: str = PAGED_SELECTED_SM90_STATIC_BACKEND
 
     @classmethod
@@ -1134,7 +1135,10 @@ class PagedSelectedDecodePlan:
         schedule_epoch: int,
         output: Optional[torch.Tensor] = None,
         validate_metadata: bool = True,
+        records_per_cta: int = 1,
     ) -> "PagedSelectedDecodePlan":
+        if type(records_per_cta) is not int or records_per_cta not in {1, 4}:
+            raise ValueError("selected records_per_cta must be 1 or experimental 4")
         cache.validate(query, validate_metadata=validate_metadata)
         routes.validate_current(cache, schedule_epoch=schedule_epoch)
         if not query.is_cuda or torch.cuda.get_device_capability(query.device) != (9, 0):
@@ -1154,6 +1158,8 @@ class PagedSelectedDecodePlan:
         group_size = q_heads // cache.kv_heads
         if group_size not in {4, 8} or head_dim not in {64, 128}:
             raise ValueError("selected paged WGMMA supports G4/G8 and D64/D128")
+        if records_per_cta == 4 and (cache.normalized_layout != "NHD" or head_dim != 128 or group_size != 8):
+            raise ValueError("experimental four-record execution requires NHD/D128/G8")
         groups = batch * cache.kv_heads
         if routes.row_count != groups:
             raise ValueError("selected route rows must match batch * KV heads")
@@ -1165,6 +1171,9 @@ class PagedSelectedDecodePlan:
         max_routes = int(row_counts.max().item()) if row_counts.numel() else 0
         if max_routes <= 0:
             raise ValueError("every selected execution plan needs at least one route")
+        partitions = math.ceil(max_routes / records_per_cta)
+        if partitions > 512:
+            raise ValueError("selected merge supports at most 512 partitions per row")
         masks = routes.active_head_masks.detach().to(device="cpu", dtype=torch.int64)
         token_masks = routes.token_valid_masks.detach().to(
             device="cpu", dtype=torch.int64
@@ -1190,7 +1199,7 @@ class PagedSelectedDecodePlan:
 
         partial_o = torch.empty(
             groups,
-            max_routes,
+            partitions,
             8,
             head_dim,
             device=query.device,
@@ -1198,7 +1207,7 @@ class PagedSelectedDecodePlan:
         )
         partial_lse = torch.empty(
             groups,
-            max_routes,
+            partitions,
             8,
             device=query.device,
             dtype=torch.float32,
@@ -1213,6 +1222,8 @@ class PagedSelectedDecodePlan:
             if cache.normalized_layout == "NHD"
             else extension.paged_selected_fragmented_exact_decode_out
         )
+        if records_per_cta == 4:
+            launch = extension.selected_nhd_grouped_out
         return cls(
             query=query,
             cache=cache,
@@ -1224,6 +1235,7 @@ class PagedSelectedDecodePlan:
             query_group=query.view(batch, cache.kv_heads, group_size, head_dim),
             output_group=output.view(groups, group_size, head_dim),
             launch=launch,
+            records_per_cta=records_per_cta,
         )
 
     @property
@@ -1232,7 +1244,7 @@ class PagedSelectedDecodePlan:
 
     @property
     def producer_ctas(self) -> int:
-        return self.routes.row_count * self.max_routes_per_row
+        return self.routes.row_count * math.ceil(self.max_routes_per_row / self.records_per_cta)
 
     def run(self) -> torch.Tensor:
         """Run the static selected route and reject stale cache metadata."""

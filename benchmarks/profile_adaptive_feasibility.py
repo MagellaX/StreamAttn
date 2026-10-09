@@ -164,7 +164,7 @@ def graph_buffer_indices(copies, condition):
 
 
 def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, trials=7,
-                    buffer_copies=1, selected_observer=None):
+                    buffer_copies=1, selected_observer=None, records_per_cta_options=(1,)):
     """Offline route preparation; complete allocation-free native call is timed."""
     from benchmarks.micro_prefill_baselines import baseline_versions, prepare_baselines
     from benchmarks.profile_paged_exact_decode import _flashinfer_runner
@@ -173,6 +173,9 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
     from stream_attention.planning import AttentionProblem, AttentionTilePlan
     from stream_attention.selected_routes import prepare_paged_routes64
 
+    if not records_per_cta_options or any(type(c) is not int or c not in (1, 4)
+                                        for c in records_per_cta_options):
+        raise ValueError("selected grouping must be 1 or experimental 4")
     if torch.cuda.get_device_capability() != (9, 0) or q.dtype != torch.bfloat16:
         raise ValueError("matched executor requires H100 and BF16")
     n, hk, dim = k.shape[1:]
@@ -240,10 +243,12 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
         raise RuntimeError("no correct FlashInfer comparison; headroom result is incomplete")
 
     selected, reused = [], {}
-    for schedule in diagnostic["schedules"]:
+    for schedule, records_per_cta in ((s, c) for s in diagnostic["schedules"]
+                                      for c in records_per_cta_options):
         signature = tuple(map(tuple, schedule["kept_blocks"]))
-        if signature in reused:
-            selected.append(dict(reused[signature], method=schedule["method"],
+        reuse_key = (records_per_cta, signature)
+        if reuse_key in reused:
+            selected.append(dict(reused[reuse_key], method=schedule["method"],
                                  reused_identical_schedule=True))
             continue
         start, plans = time.perf_counter(), []
@@ -253,17 +258,21 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
                 tile_ids_per_row=signature, policy_id="offline-feasibility",
                 reason=schedule["method"], route_granularity="kv_group", schedule_epoch=1)
             routes = prepare_paged_routes64(logical, cache)
-            plans.append(PagedSelectedDecodePlan.build(qc, cache, routes, schedule_epoch=1))
+            grouping = {"records_per_cta": records_per_cta} if records_per_cta != 1 else {}
+            plans.append(PagedSelectedDecodePlan.build(qc, cache, routes, schedule_epoch=1, **grouping))
         keepalive.extend(plans)
         torch.cuda.synchronize()
         preparation_ms = (time.perf_counter() - start) * 1000
         runs = [p.run for p in plans]
         correctness = check(runs, references[schedule["method"]])
         if schedule["method"] == "full":
-            exact["streamattn_selected_full_control"] = runs
-            exact_checks["streamattn_selected_full_control"] = correctness
+            name = ("streamattn_selected_full_control" if records_per_cta == 1
+                    else "streamattn_grouped_selected_full_control")
+            exact[name] = runs
+            exact_checks[name] = correctness
         plan = plans[0]
-        item = dict(method=schedule["method"], preparation_ms_excluded=preparation_ms,
+        item = dict(method=schedule["method"], records_per_cta=records_per_cta,
+            preparation_ms_excluded=preparation_ms,
             correctness=correctness, route_count=routes.route_count, producer_ctas=plan.producer_ctas,
             max_routes_per_row=plan.max_routes_per_row, metadata_bytes=routes.metadata_bytes,
             workspace_bytes=plan.workspace_bytes, group_route_efficiency=routes.group_route_efficiency,
@@ -271,7 +280,7 @@ def native_headroom(q, k, v, diagnostic, full, references, *, iterations=100, tr
             runs=runs)
         if selected_observer is not None:
             item["attribution"] = selected_observer(plans)
-        reused[signature] = item
+        reused[reuse_key] = item
         selected.append(item)
 
     results = {}

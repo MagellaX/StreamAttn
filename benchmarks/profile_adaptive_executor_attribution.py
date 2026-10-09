@@ -88,7 +88,8 @@ def observe_selected(plans, *, iterations=100, trials=7):
     from stream_attention.backends.sm90.transposed_gqa_exact import compile_transposed_gqa_exact_extension
 
     extension = compile_transposed_gqa_exact_extension(head_dim=plans[0].query.shape[-1])
-    runs = {name: [phase_runner(p, extension.selected_nhd_phase_out, phase) for p in plans]
+    runs = {name: [phase_runner(p, extension.selected_nhd_phase_out if p.records_per_cta == 1
+                              else extension.selected_nhd_grouped_phase_out, phase) for p in plans]
             for name, phase in (("producer", 1), ("merge", 2), ("instrumented_complete", 0))}
     # Merge-only timing must consume genuine completed states, never zeros or random workspace.
     for plan, producer, merge in zip(plans, runs["producer"], runs["merge"]):
@@ -103,8 +104,8 @@ def observe_selected(plans, *, iterations=100, trials=7):
     resources = extension.selected_nhd_resources()
     keys = ("registers_per_thread", "static_shared_bytes", "local_bytes_per_thread", "max_threads")
     resource_rows = {name: dict(zip(keys, resources[i * 4:(i + 1) * 4]))
-        for i, name in enumerate(("selected_producer", "native_producer", "merge"))}
-    if len(resources) != 12:
+        for i, name in enumerate(("selected_producer", "native_producer", "merge", "grouped_selected_producer"))}
+    if len(resources) != 16:
         raise AssertionError("incomplete compiled resource report")
     conditions = {}
     for condition in ("warm_fixed_buffer", "rotating_working_set"):
@@ -124,7 +125,8 @@ def observe_selected(plans, *, iterations=100, trials=7):
                                  for name, values in samples.items()}
     plan = plans[0]
     counts = (plan.routes.row_ptr[1:] - plan.routes.row_ptr[:-1]).cpu().tolist()
-    geometry = state_geometry(counts, group_size=plan.query_group.shape[2], head_dim=plan.query.shape[-1])
+    geometry = state_geometry(counts, records_per_cta=plan.records_per_cta,
+                              group_size=plan.query_group.shape[2], head_dim=plan.query.shape[-1])
     if geometry["allocated_partial_bytes"] != plan.workspace_bytes:
         raise AssertionError("state accounting disagrees with allocation")
     return dict(geometry=geometry, compiled_resources=resource_rows, conditions=conditions,
@@ -139,6 +141,7 @@ def main():
     p.add_argument("--captures", type=Path, required=True)
     p.add_argument("--source-report", type=Path, required=True)
     p.add_argument("--output-json", type=Path, required=True)
+    p.add_argument("--grouped", action="store_true", help="predeclared C1/C4 fixed-support equivalence ladder")
     args = p.parse_args()
     if args.output_json.exists():
         raise FileExistsError(args.output_json)
@@ -169,14 +172,17 @@ def main():
             raise AssertionError("saved schedule violates original omission budget")
     with torch.no_grad():
         native = native_headroom(q, k, v, diagnostic, full, references,
-                                 buffer_copies=8, selected_observer=observe_selected)
-    result = dict(schema=SCHEMA, complete=True, diagnostic_only=True, performance_promotion=False,
+                                 buffer_copies=8, selected_observer=observe_selected,
+                                 records_per_cta_options=(1, 4) if args.grouped else (1,))
+    result = dict(schema="streamattn.adaptive_executor_grouped.v1" if args.grouped else SCHEMA,
+        complete=True, diagnostic_only=True, performance_promotion=False,
         device=torch.cuda.get_device_name(), torch=torch.__version__,
         prompt_id="technical", layer=0, archive_sha256=digest,
         source_report_sha256=hashlib.sha256(args.source_report.read_bytes()).hexdigest(),
         contract=source["contract"], schedule_origin="unchanged saved full/contribution_triangle schedules; no search",
         support_hashes={s["method"]: support_hash(s["kept_blocks"]) for s in diagnostic["schedules"]},
         schedules=diagnostic["schedules"], native=native,
+        records_per_cta_options=[1, 4] if args.grouped else [1],
         sources={name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in SOURCE_FILES})
     args.output_json.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result), flush=True)

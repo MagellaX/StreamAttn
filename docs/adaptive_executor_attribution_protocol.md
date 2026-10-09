@@ -53,3 +53,29 @@ certified decisions can fit it. No automatic selector or 64K escalation follows.
 The [attention-state algebra](https://docs.flashinfer.ai/tutorials/recursive_attention.html)
 permits accumulation across disjoint support. Selection granularity need not
 equal state-finalization granularity; that algebra does not predict latency.
+
+## Attribution result and frozen candidate
+
+The complete attribution artifact is
+`artifacts/gate0/adaptive_executor_attribution_lightning_h100_20261009_retry1.json`.
+The observed full native plan confirms 128 partitions per KV head and four
+64-token records per partition. Isolated warm producer/merge medians were
+12.524/16.511 us for full support and 11.395/18.442 us for saved triangle support.
+These are not additive: rotating isolated sums exceed complete-call latency.
+State export and merge therefore have enough visible cost to justify the
+conditional candidate, without attributing every producer cycle to fragmentation.
+
+Freeze C=4 before its GPU replay. Full support keeps 1024 records but changes
+the rectangular producer grid from 1024 to 256 CTAs and partial storage from
+4,227,072 to 1,056,768 bytes. The saved triangle keeps 892 records (386/506),
+changing valid tasks from 892 to 224, padded grid from 1012 to 254, and allocated
+partials from 4,177,536 to 1,048,512 bytes. These are geometry, not speed forecasts.
+The memo's 862-record example described hindsight; it is not substituted for
+the saved contribution-triangle schedule in this experiment.
+
+Run `--experiment executor_grouped` once with the same source report and archive.
+No grouping sweep. Verify C1/C4 against FP64 with holes, nonidentity physical
+pages, per-record head masks, partial final pages, initially empty heads and
+fully padded partitions before collecting the unchanged timing protocol. Compare
+complete selected calls, retain all candidates and errors, and resolve the
+fastest correct exact control separately in each working-set condition.

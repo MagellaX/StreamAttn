@@ -84,3 +84,33 @@ def test_runner_reuses_the_hashed_capture_and_saved_schedule(tmp_path, monkeypat
     assert "profile_adaptive_executor_attribution.py" in command
     assert "--source-report" in command and "Capture hash mismatch" in command
     assert "from_pretrained" not in command and "LIGHTNING_API_KEY" not in command
+
+
+def test_grouped_runner_uses_the_same_capture_and_runs_gpu_equivalence(tmp_path, monkeypatch):
+    from benchmarks import run_lightning_adaptive_two_gate as runner
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *a, **kw: "55e5741\n")
+    args = types.SimpleNamespace(experiment="executor_grouped",
+        capture_artifacts=[profile.ROOT / "artifacts/gate0/adaptive_qwen32k_feasibility_lightning_h100_20261009.json"],
+        teamspace_id="teamspace", cloud_account="cloud", output_json=tmp_path / "result.json")
+    command, source = runner.job_command(args)
+    assert source["schema"] == "streamattn.adaptive_executor_grouped.v1"
+    assert "--grouped" in command
+    assert "pytest -q tests/test_adaptive_executor_grouped_gpu.py" in command
+    assert source["capture_inputs"][0]["sha256"] == "304482bd0d1a1ed319dcb6f6e1a312506f9d48ce6b3670756bb06eaeface6e20"
+
+
+@pytest.mark.parametrize("grouping", [0, 2, True, 4.0])
+def test_selected_grouping_rejects_unsupported_values_before_allocation(grouping):
+    from stream_attention.paged import PagedSelectedDecodePlan
+    with pytest.raises(ValueError, match="records_per_cta"):
+        PagedSelectedDecodePlan.build(None, None, None, schedule_epoch=1, records_per_cta=grouping)
+
+
+def test_grouped_source_changes_record_identity_and_not_online_state_algebra():
+    assert "next_record = selected_route + next_tile" in CUDA_SOURCE
+    assert "current_record = selected_route + tile" in CUDA_SOURCE
+    assert "route_active_head_masks[current_record * 4 + atom]" in CUDA_SOURCE
+    assert "route_token_valid_masks[current_record * 4 + atom]" in CUDA_SOURCE
+    assert "selected_nhd_grouped_out" in CPP_SOURCE
+    assert "fragmented_impl<true, 4>" in CUDA_SOURCE
+    assert "selected merge supports at most 512 partitions" in CUDA_SOURCE

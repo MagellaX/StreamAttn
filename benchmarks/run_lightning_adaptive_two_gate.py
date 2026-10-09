@@ -41,7 +41,8 @@ def job_command(args=None):
     frontier = args is not None and args.experiment == "group_frontier"
     feasibility = args is not None and args.experiment == "feasibility"
     long_context = args is not None and args.experiment == "long_context_feasibility"
-    attribution = args is not None and args.experiment == "executor_attribution"
+    grouped = args is not None and args.experiment == "executor_grouped"
+    attribution = args is not None and args.experiment in ("executor_attribution", "executor_grouped")
     files = SOURCE_FILES + ("tests/test_certified_attention.py", "tests/test_adaptive_two_gate_gpu.py")
     schema = SCHEMA
     if frontier:
@@ -65,6 +66,9 @@ def job_command(args=None):
                       "tests/test_adaptive_executor_attribution.py",
                       "docs/adaptive_executor_attribution_protocol.md")
             schema = "streamattn.adaptive_executor_attribution.v1"
+            if grouped:
+                files += ("tests/test_adaptive_executor_grouped_gpu.py",)
+                schema = "streamattn.adaptive_executor_grouped.v1"
     sha = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=ROOT, text=True).strip()
     stream = io.BytesIO()
     with tarfile.open(fileobj=stream, mode="w:gz") as archive:
@@ -137,11 +141,11 @@ def job_command(args=None):
             paths = ["/tmp/" + Path(item["remote"]).name for item in capture_inputs]
             if attribution:
                 report = args.capture_artifacts[0].resolve().relative_to(ROOT).as_posix()
-                commands += [
+                commands += (["python -m pytest -q tests/test_adaptive_executor_grouped_gpu.py"] if grouped else []) + [
                     "python -m pytest -q tests/test_adaptive_executor_attribution.py",
                     shlex.join(["python", "-u", "benchmarks/profile_adaptive_executor_attribution.py",
                         "--captures", paths[0], "--source-report", report,
-                        "--output-json", "/tmp/adaptive.json"]),
+                        "--output-json", "/tmp/adaptive.json"] + (["--grouped"] if grouped else [])),
                 ]
             else:
                 commands.append(shlex.join(["python", "-u", "benchmarks/profile_adaptive_feasibility.py",
@@ -194,7 +198,7 @@ def main():
     p.add_argument("--teamspace-id", default=os.getenv("LIGHTNING_TEAMSPACE_ID", "01jggw9j5v8ms266vgvgcs3q13"))
     p.add_argument("--cloud-account", default=os.getenv("LIGHTNING_CLOUD_ACCOUNT", "lightning-nebius-prod"))
     p.add_argument("--machine", default=os.getenv("LIGHTNING_MACHINE", "nb-h100-1gpu-16vcpu-200gb"))
-    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility", "long_context_feasibility", "executor_attribution"), default="physical_canary")
+    p.add_argument("--experiment", choices=("physical_canary", "group_frontier", "feasibility", "long_context_feasibility", "executor_attribution", "executor_grouped"), default="physical_canary")
     p.add_argument("--capture-artifacts", type=Path, nargs="+")
     p.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct")
     p.add_argument("--revision")
@@ -211,7 +215,7 @@ def main():
     command, source = job_command(args)
     api, job = JobApiV2(), None
     environment = {"PYTHONUNBUFFERED": "1", "HF_HUB_DISABLE_XET": "1"}
-    if args.experiment in ("group_frontier", "feasibility", "long_context_feasibility", "executor_attribution"):
+    if args.experiment in ("group_frontier", "feasibility", "long_context_feasibility", "executor_attribution", "executor_grouped"):
         from lightning_sdk.lightning_cloud.login import Auth
         from lightning_sdk.lightning_cloud.openapi import V1LoginRequest
         # Short-lived platform token enables capture upload to the same teamspace.

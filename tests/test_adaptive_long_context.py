@@ -156,7 +156,8 @@ def test_combined_runner_freezes_fresh_protocol_and_dependencies(tmp_path, monke
     assert "LIGHTNING_API_KEY" not in command
 
 
-def test_native_conditions_resolve_different_winners_and_normalize_calls(monkeypatch):
+@pytest.mark.parametrize("groupings", [(1,), (1, 4)])
+def test_native_conditions_resolve_different_winners_and_normalize_calls(monkeypatch, groupings):
     from benchmarks import micro_prefill_baselines as baselines
     from benchmarks import profile_paged_exact_decode as paged_benchmark
     from benchmarks import profile_sm90_micro_prefill as timing
@@ -234,12 +235,18 @@ def test_native_conditions_resolve_different_winners_and_normalize_calls(monkeyp
     q = torch.zeros(1, 1, 8, 64, dtype=torch.bfloat16)
     k = torch.zeros(1, 32, 1, 64, dtype=torch.bfloat16)
     diagnostic, full, refs = frontier(q, k, k, torch.tensor([31]))
-    result = native_headroom(q, k, k, diagnostic, full, refs, buffer_copies=8, trials=3)
+    result = native_headroom(q, k, k, diagnostic, full, refs, buffer_copies=8, trials=3,
+                             records_per_cta_options=groupings)
     assert len(set(prepared)) == 8
     assert result["conditions"]["warm_fixed_buffer"]["fastest_tested_correct_exact"] == "flashinfer_a"
     assert result["conditions"]["rotating_working_set"]["fastest_tested_correct_exact"] == "flashinfer_b"
     for condition in result["conditions"].values():
         assert condition["calls_per_graph"] == 8
+        assert len(condition["selected"]) == len(diagnostic["schedules"]) * len(groupings)
+        assert {row["records_per_cta"] for row in condition["selected"]} == set(groupings)
+        if len(groupings) > 1:
+            assert "streamattn_grouped_selected_full_control" in {
+                row["name"] for row in condition["baseline_measurements"]}
         for schedule in condition["selected"]:
             assert schedule["correctness"]["replicas_checked"] == 8
             assert schedule["headroom_ms"] == -2
