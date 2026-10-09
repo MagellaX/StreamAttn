@@ -149,8 +149,8 @@ capture, full selected execution falls from **35.0 to 16.6 microseconds** warm,
 close to the 16.3-microsecond native control. The unchanged 12.89%-omission
 schedule improves from **36.9 to 18.5 microseconds**, but still loses to the
 fastest tested exact baseline in warm and rotating replay. This removes a major
-execution penalty; it is **not yet an adaptive speedup**. The next unresolved
-cost is the selected-state merge geometry, not another selector. See the
+execution penalty; it is **not yet an adaptive speedup**. The next question is
+why selected-state merging regresses, not how to add another selector. See the
 [state-ownership result](docs/adaptive_executor_state_ownership.md).
 
 These are limited dense-conditioned diagnostics, not a universal impossibility

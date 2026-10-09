@@ -18,6 +18,8 @@ This uses established [attention-state algebra](https://docs.flashinfer.ai/tutor
 not a new softmax identity. A hole in retained support need not end an online
 state. Current/next record IDs explicitly advance K/V loads and masks, while
 the existing WGMMA and asynchronous storage lifetimes remain intact.
+Grouping also activates the existing inter-record prefetch. This experiment
+does not isolate the individual savings from exports, staging and pipelining.
 
 The candidate is an opt-in `records_per_cta=4` on the static NHD/D128/G8 selected
 plan. Public dispatch remains unchanged. No new selector, KV repacking, head-
