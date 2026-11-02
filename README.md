@@ -161,6 +161,15 @@ contract](docs/adaptive_kernel_contract.md).
 
 ### Exact native decode
 
+Owner-only KV append fusion also improved the complete append-plus-attention
+call on twelve saved H100 D128/G8 states near 32K: **1.086x warm / 1.083x with
+four-cache rotation** against the better tested production geometry, and
+**1.139x / 1.064x** against the fastest validated FlashInfer route. The retained
+candidate produced byte-identical same-geometry outputs. The opt-in
+[`PagedAppendDecodePlan`](docs/paged_append_decode.md) carries its ownership
+contract; ordinary decode dispatch is unchanged. This is full-attention
+engineering progress, not an adaptive omission or whole-model speedup.
+
 The promoted SM90 kernels compute full-context GQA decode and use online
 softmax plus exact split-state merging. Contiguous and page-64 results below
 use FlashInfer 0.6.12; page-16 was re-gated against FlashInfer 0.6.17 on H100:

@@ -293,6 +293,8 @@ from .utils.memory import (
 )
 
 # Main API
+from .paged_append import PagedAppendDecodePlan
+
 __all__ = [
     # Main modules
     "StreamAttention",
@@ -448,6 +450,7 @@ __all__ = [
     "PagedDynamicSelectedDecodePlan",
     "PagedDynamicSelectedDecodeRunner",
     "PagedExactDecodePlan",
+    "PagedAppendDecodePlan",
     "PagedQuerySelectedDecodePlan",
     "PagedQuerySelectedDecodeRunner",
     "PagedSelectedDecodePlan",

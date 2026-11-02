@@ -154,6 +154,13 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cu
     torch::Tensor output,
     int64_t num_splits);
 
+void streamattn_paged_append_decode_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor page_table, torch::Tensor sequence_lengths,
+    torch::Tensor new_key, torch::Tensor new_value,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t num_splits);
+
 void streamattn_transposed_wgmma_paged_selected_fragmented_exact_decode_out_cuda(
     torch::Tensor q_group,
     torch::Tensor k_pages,
@@ -322,6 +329,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("paged_fragmented_nhd_ragged_exact_decode_out",
         &streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cuda,
         "StreamAttn direct NHD page-16 ragged fragmented exact producer and merge");
+  m.def("paged_append_decode_out", &streamattn_paged_append_decode_out_cuda,
+        "StreamAttn exclusive-tail NHD append, exact producer and merge");
   m.def("paged_selected_fragmented_exact_decode_out",
         &streamattn_transposed_wgmma_paged_selected_fragmented_exact_decode_out_cuda,
         "StreamAttn HND page-16 selected-route producer and static merge");
@@ -355,6 +364,7 @@ CUDA_SOURCE = r"""
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAGuard.h>
 
 #include <cute/tensor.hpp>
 #include <cutlass/arch/barrier.h>
@@ -4298,7 +4308,7 @@ void streamattn_transposed_wgmma_paged_fragmented_ragged_exact_decode_out_cuda(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-template <bool kVariableLength>
+template <bool kVariableLength, bool kAppendOwner = false>
 void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
     torch::Tensor q_group,
     torch::Tensor k_pages,
@@ -4308,7 +4318,9 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
     torch::Tensor partial_o,
     torch::Tensor partial_lse,
     torch::Tensor output,
-    int64_t num_splits) {
+    int64_t num_splits,
+    const torch::Tensor* new_key = nullptr,
+    const torch::Tensor* new_value = nullptr) {
   TORCH_CHECK(q_group.is_cuda() && k_pages.is_cuda() && v_pages.is_cuda() &&
               page_table.is_cuda() && partial_o.is_cuda() &&
               partial_lse.is_cuda() && output.is_cuda(),
@@ -4359,6 +4371,25 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
               "page-16 tables must contain a multiple of four pages");
   const int kv_len = max_pages * 16;
   const int logical_tiles = max_pages / 4;
+  if constexpr (kAppendOwner) {
+    static_assert(kVariableLength, "append requires current sequence lengths");
+    TORCH_CHECK(kHeadDim == 128 && batch == 1 && kv_heads == 2 &&
+                active_heads == 8 && kv_len == 32768 &&
+                (num_splits == 64 || num_splits == 128),
+                "append requires B1/Hkv2/G8/D128/NHD/page16/32K and 64|128 splits");
+    TORCH_CHECK(new_key != nullptr && new_value != nullptr,
+                "append requires incoming K/V");
+    for (const auto* incoming : {new_key, new_value}) {
+      TORCH_CHECK(incoming->is_cuda() && incoming->is_contiguous() &&
+                  incoming->scalar_type() == at::ScalarType::BFloat16 &&
+                  incoming->sizes() == torch::IntArrayRef({batch, kv_heads, kHeadDim}),
+                  "incoming K/V must be contiguous CUDA bf16 [B,Hkv,D]");
+    }
+    for (const auto& tensor : {k_pages, v_pages, page_table, *sequence_lengths,
+                              partial_o, partial_lse, output, *new_key, *new_value}) {
+      TORCH_CHECK(tensor.device() == q_group.device(), "append buffers must share a device");
+    }
+  }
   TORCH_CHECK(num_splits > 0 && num_splits <= logical_tiles,
               "num_splits must be in [1,max_pages/4]");
   TORCH_CHECK(partial_o.sizes() == torch::IntArrayRef(
@@ -4374,7 +4405,20 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   const dim3 partial_grid(groups * static_cast<int>(num_splits));
   const dim3 partial_block(128);
-  streamattn_transposed_wgmma_exact_partial_kernel<
+  if constexpr (kAppendOwner) {
+    streamattn_append_owner_partial_kernel<16, true, true><<<
+        partial_grid, partial_block, 0, stream>>>(
+        reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(k_pages.data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(v_pages.data_ptr<at::BFloat16>()),
+        partial_o.data_ptr<float>(), partial_lse.data_ptr<float>(),
+        groups, kv_len, static_cast<int>(num_splits), active_heads,
+        page_table.data_ptr<int>(), max_pages, kv_heads, sequence_lengths->data_ptr<int>(),
+        nullptr, nullptr, nullptr, nullptr, nullptr, 1,
+        reinterpret_cast<const Element*>(new_key->data_ptr<at::BFloat16>()),
+        reinterpret_cast<const Element*>(new_value->data_ptr<at::BFloat16>()));
+  } else {
+    streamattn_transposed_wgmma_exact_partial_kernel<
       16, kVariableLength, true><<<partial_grid, partial_block, 0, stream>>>(
       reinterpret_cast<const Element*>(q_group.data_ptr<at::BFloat16>()),
       reinterpret_cast<const Element*>(k_pages.data_ptr<at::BFloat16>()),
@@ -4389,6 +4433,7 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_impl(
       max_pages,
       kv_heads,
       kVariableLength ? sequence_lengths->data_ptr<int>() : nullptr);
+  }
 
   const dim3 merge_grid(groups * active_heads);
   const dim3 merge_block(32);
@@ -4430,6 +4475,19 @@ void streamattn_transposed_wgmma_paged_fragmented_nhd_ragged_exact_decode_out_cu
   streamattn_transposed_wgmma_paged_fragmented_nhd_impl<true>(
       q_group, k_pages, v_pages, page_table, &sequence_lengths, partial_o,
       partial_lse, output, num_splits);
+}
+
+void streamattn_paged_append_decode_out_cuda(
+    torch::Tensor q_group, torch::Tensor k_pages, torch::Tensor v_pages,
+    torch::Tensor page_table, torch::Tensor sequence_lengths,
+    torch::Tensor new_key, torch::Tensor new_value,
+    torch::Tensor partial_o, torch::Tensor partial_lse, torch::Tensor output,
+    int64_t num_splits) {
+  TORCH_CHECK(q_group.is_cuda(), "append query must be CUDA");
+  const c10::cuda::CUDAGuard guard(q_group.device());
+  streamattn_transposed_wgmma_paged_fragmented_nhd_impl<true, true>(
+      q_group, k_pages, v_pages, page_table, &sequence_lengths,
+      partial_o, partial_lse, output, num_splits, &new_key, &new_value);
 }
 
 enum StreamAttnRoutePrepareError : int {
@@ -5095,6 +5153,55 @@ void streamattn_transposed_wgmma_paged_dynamic_qhead_fragmented_nhd_exact_decode
       output, max_routes_per_group);
 }
 """
+
+
+def _with_append_owner(source: str) -> str:
+    """Specialize the normalized producer without changing its shared source ABI."""
+    begin = "template <int kPagedPageSize = 0, bool kVariableLength = false,"
+    end = "\n__global__ __launch_bounds__(128)\nvoid streamattn_transposed_wgmma_exact_merge_kernel("
+    anchor = "\ntemplate <bool kVariableLength, bool kAppendOwner = false>\n"
+    if any(source.count(marker) != 1 for marker in (begin, end, anchor)):
+        raise ValueError("append producer anchors changed; review specialization")
+    producer = source[source.index(begin):source.index(end)]
+    replacements = {
+        "streamattn_transposed_wgmma_exact_partial_kernel(": "streamattn_append_owner_partial_kernel(",
+        "int kSelectedRecordsPerCta = 1>": "int kSelectedRecordsPerCta = 1, bool kAppendOwner = true>",
+        "int query_positions_per_batch = 1) {": (
+            "int query_positions_per_batch = 1,\n"
+            "    const Element* __restrict__ new_k = nullptr,\n"
+            "    const Element* __restrict__ new_v = nullptr) {"),
+        "  __shared__ AsyncQKPVSharedStorage storage;": r"""  if constexpr (kAppendOwner) {
+    static_assert(kPagedPageSize == 16 && kVariableLength && kNHD && !kSelectedPaged,
+                  "append ownership requires full-support ragged NHD page-16");
+    const int new_position = sequence_length - 1;
+    const int new_tile = new_position / kBlockM;
+    if (new_tile >= tile_begin && new_tile < tile_end) {
+      const int batch_id = cache_group / kv_heads;
+      const int kv_head = cache_group % kv_heads;
+      const int page = page_table[batch_id * max_pages + new_position / 16];
+      const int token = new_position % 16;
+      const int64_t dst =
+          ((static_cast<int64_t>(page) * 16 + token) * kv_heads + kv_head) * kHeadDim;
+      for (int d = threadIdx.x; d < kHeadDim; d += blockDim.x) {
+        const int64_t src = static_cast<int64_t>(cache_group) * kHeadDim + d;
+        const_cast<Element*>(k_cache)[dst + d] = new_k[src];
+        const_cast<Element*>(v_cache)[dst + d] = new_v[src];
+      }
+      // Only this CTA reads the appended slot, not another CTA or stream.
+      __syncthreads();
+    }
+  }
+
+  __shared__ AsyncQKPVSharedStorage storage;""",
+    }
+    for old, new in replacements.items():
+        if producer.count(old) != 1:
+            raise ValueError(f"append specialization anchor changed: {old!r}")
+        producer = producer.replace(old, new, 1)
+    return source.replace(anchor, "\n" + producer + anchor, 1)
+
+
+CUDA_SOURCE = _with_append_owner(CUDA_SOURCE)
 
 
 def cuda_source_for_head_dim(head_dim: int) -> str:
